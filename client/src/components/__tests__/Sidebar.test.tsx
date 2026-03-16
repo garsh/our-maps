@@ -61,4 +61,15 @@ describe('Sidebar', () => {
     
     expect(mockHandlers.onUpdatePin).toHaveBeenCalledWith('1', { color: 'green' });
   });
+
+  it('calls onUpdatePin when an icon is selected', () => {
+    render(<Sidebar mapName="Test Map" pins={mockPins} {...mockHandlers} />);
+    
+    fireEvent.click(screen.getByText('Edit'));
+    const hotelIcon = screen.getByLabelText('icon-hotel');
+    
+    fireEvent.click(hotelIcon);
+    
+    expect(mockHandlers.onUpdatePin).toHaveBeenCalledWith('1', { icon: 'hotel' });
+  });
 });

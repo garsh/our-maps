@@ -39,7 +39,7 @@ describe('API Endpoints', () => {
       id: mapId,
       name: 'Test Map',
       pins: [
-        { id: 'pin-1', lat: 10, lng: 20, label: 'Pin 1', description: 'Desc 1', imageUrl: 'http://img.com/1', color: 'red' }
+        { id: 'pin-1', lat: 10, lng: 20, label: 'Pin 1', description: 'Desc 1', imageUrl: 'http://img.com/1', color: 'red', icon: 'hotel' }
       ]
     };
 
@@ -60,6 +60,7 @@ describe('API Endpoints', () => {
     expect(pins[0].description).toBe('Desc 1');
     expect(pins[0].image_url).toBe('http://img.com/1');
     expect(pins[0].color).toBe('red');
+    expect(pins[0].icon).toBe('hotel');
   });
 
   it('POST /api/maps should return 400 if map id is missing', async () => {
@@ -95,7 +96,7 @@ describe('API Endpoints', () => {
     const updateData = {
       name: 'New Name',
       pins: [
-        { id: 'new-pin', lat: 50, lng: 60, label: 'New Pin', description: 'New Desc', imageUrl: 'http://new.com', color: 'green' }
+        { id: 'new-pin', lat: 50, lng: 60, label: 'New Pin', description: 'New Desc', imageUrl: 'http://new.com', color: 'green', icon: 'airport' }
       ]
     };
 
@@ -113,5 +114,6 @@ describe('API Endpoints', () => {
     expect(pins[0].id).toBe('new-pin');
     expect(pins[0].description).toBe('New Desc');
     expect(pins[0].color).toBe('green');
+    expect(pins[0].icon).toBe('airport');
   });
 });

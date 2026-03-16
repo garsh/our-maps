@@ -1,6 +1,17 @@
 import { useState } from 'react';
 import SearchBar from './SearchBar';
-import type { Pin, PinColor } from '@shared/interfaces';
+import type { Pin, PinColor, PinIcon } from '@shared/interfaces';
+import { 
+  Bed, 
+  Utensils, 
+  Plane, 
+  Trees, 
+  Landmark, 
+  ShoppingBag, 
+  Camera, 
+  MapPin,
+  type LucideIcon
+} from 'lucide-react';
 
 interface SidebarProps {
   mapName: string;
@@ -14,6 +25,16 @@ interface SidebarProps {
 }
 
 const COLORS: PinColor[] = ['blue', 'red', 'green', 'orange', 'violet'];
+const ICONS: { type: PinIcon; Icon: LucideIcon }[] = [
+  { type: 'default', Icon: MapPin },
+  { type: 'hotel', Icon: Bed },
+  { type: 'restaurant', Icon: Utensils },
+  { type: 'airport', Icon: Plane },
+  { type: 'park', Icon: Trees },
+  { type: 'museum', Icon: Landmark },
+  { type: 'shopping', Icon: ShoppingBag },
+  { type: 'camera', Icon: Camera },
+];
 
 const Sidebar = ({
   mapName,
@@ -53,7 +74,18 @@ const Sidebar = ({
                   onClick={() => onPinClick(pin.lat, pin.lng)}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div data-color={pin.color || 'blue'} style={{ width: '12px', height: '12px', borderRadius: '50%', background: pin.color || 'blue', border: '1px solid #999' }} />
+                    <div data-color={pin.color || 'blue'} style={{ width: '16px', height: '16px', borderRadius: '50%', background: pin.color || 'blue', border: '1px solid #999', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {pin.icon && pin.icon !== 'default' && (
+                        (() => {
+                          const iconObj = ICONS.find(i => i.type === pin.icon);
+                          if (iconObj) {
+                            const { Icon } = iconObj;
+                            return <Icon size={10} color="white" />;
+                          }
+                          return null;
+                        })()
+                      )}
+                    </div>
                     <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{pin.label}</div>
                   </div>
                   <div style={{ fontSize: '0.75rem', color: '#666' }}>{pin.lat.toFixed(3)}, {pin.lng.toFixed(3)}</div>
@@ -104,6 +136,30 @@ const Sidebar = ({
                             padding: 0
                           }}
                         />
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: '8px' }}>
+                    <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '4px' }}>Icon</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                      {ICONS.map(({ type, Icon }) => (
+                        <button
+                          key={type}
+                          aria-label={`icon-${type}`}
+                          onClick={() => onUpdatePin(pin.id, { icon: type })}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: '4px',
+                            borderRadius: '4px',
+                            background: pin.icon === type || (!pin.icon && type === 'default') ? '#eee' : 'transparent',
+                            border: pin.icon === type || (!pin.icon && type === 'default') ? '1px solid #333' : '1px solid #ccc',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Icon size={16} color={pin.color || 'blue'} />
+                        </button>
                       ))}
                     </div>
                   </div>

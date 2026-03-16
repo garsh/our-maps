@@ -1,4 +1,5 @@
 export type PinColor = 'blue' | 'red' | 'green' | 'orange' | 'violet';
+export type PinIcon = 'default' | 'hotel' | 'restaurant' | 'airport' | 'park' | 'museum' | 'shopping' | 'camera';
 
 export interface Pin {
   id: string;
@@ -8,6 +9,7 @@ export interface Pin {
   description?: string;
   imageUrl?: string;
   color?: PinColor;
+  icon?: PinIcon;
 }
 
 export interface MapData {

@@ -163,3 +163,36 @@ test('default pin color', async ({ page }) => {
   const colorIndicator = page.locator('aside').getByText('Color City').locator('..').locator('div').first();
   await expect(colorIndicator).toHaveAttribute('data-color', 'blue');
 });
+
+test('visual categorization with pin icons', async ({ page }) => {
+  await page.goto('/');
+  
+  // 1. Add a pin
+  await page.route('**/search*', route => route.fulfill({ json: [{ place_id: 1, display_name: 'Icon City', lat: '10', lon: '10' }] }));
+  await page.getByPlaceholder('Search for a place...').fill('Icon City');
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('button', { name: '+ Add Pin' }).click();
+
+  // 2. Change icon to hotel
+  await page.getByRole('button', { name: 'Edit' }).click();
+  await page.getByLabel('icon-hotel').click();
+
+  // 3. Save and reload
+  await page.getByRole('button', { name: 'Save Map' }).click();
+  await page.waitForURL(/\?mapId=/);
+  
+  await page.reload();
+  await page.waitForSelector('.leaflet-marker-icon');
+
+  // 4. Verify marker is a custom pin (L.divIcon uses .leaflet-marker-icon with the custom class)
+  const marker = page.locator('.leaflet-marker-icon.custom-pin').first();
+  await expect(marker).toBeVisible();
+  
+  // Check if it contains an SVG with the hotel path (or just that it's a divIcon)
+  const svg = marker.locator('svg');
+  await expect(svg).toBeVisible();
+
+  // 5. Verify sidebar indicator shows an icon (it will have an SVG inside the color dot)
+  const iconIndicator = page.locator('aside').getByText('Icon City').locator('..').locator('div').first().locator('svg');
+  await expect(iconIndicator).toBeVisible();
+});

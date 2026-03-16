@@ -21,7 +21,7 @@ describe('SearchBar', () => {
       { place_id: 1, display_name: 'Test Location', lat: '10', lon: '20' }
     ];
     
-    (global.fetch as any).mockResolvedValueOnce({
+    (window.fetch as any).mockResolvedValueOnce({
       json: async () => mockResults
     });
 
@@ -35,7 +35,7 @@ describe('SearchBar', () => {
       expect(screen.getByText('Test Location')).toBeInTheDocument();
     });
 
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(window.fetch).toHaveBeenCalledWith(
       expect.stringContaining('q=Test')
     );
   });
@@ -45,7 +45,7 @@ describe('SearchBar', () => {
       { place_id: 1, display_name: 'Test Location', lat: '10', lon: '20' }
     ];
     
-    (global.fetch as any).mockResolvedValueOnce({
+    (window.fetch as any).mockResolvedValueOnce({
       json: async () => mockResults
     });
 
@@ -65,7 +65,7 @@ describe('SearchBar', () => {
       { place_id: 1, display_name: 'Test Location, Region', lat: '10', lon: '20' }
     ];
     
-    (global.fetch as any).mockResolvedValueOnce({
+    (window.fetch as any).mockResolvedValueOnce({
       json: async () => mockResults
     });
 

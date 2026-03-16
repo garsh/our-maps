@@ -23,6 +23,9 @@ async function migrate(db: Database) {
   if (!columnNames.includes('color')) {
     await db.exec("ALTER TABLE pins ADD COLUMN color TEXT DEFAULT 'blue'");
   }
+  if (!columnNames.includes('icon')) {
+    await db.exec("ALTER TABLE pins ADD COLUMN icon TEXT DEFAULT 'default'");
+  }
 }
 
 export async function getDb() {
@@ -48,6 +51,7 @@ export async function getDb() {
       description TEXT,
       image_url TEXT,
       color TEXT DEFAULT 'blue',
+      icon TEXT DEFAULT 'default',
       FOREIGN KEY (map_id) REFERENCES maps(id) ON DELETE CASCADE
     );
   `);

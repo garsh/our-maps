@@ -85,3 +85,6 @@ typings/
 # Playwright reports
 playwright-report/
 test-results/
+
+# Gemini CLI context
+GEMINI.md

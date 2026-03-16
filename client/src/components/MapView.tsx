@@ -47,7 +47,7 @@ const MapView = ({ center = [20, 0], zoom = 3, pins, onMapClick, targetLocation 
       <MapEvents onMapClick={onMapClick} />
       <MapController targetLocation={targetLocation} />
       {pins.map((pin) => (
-        <Marker key={pin.id} position={[pin.lat, pin.lng]} icon={getMarkerIcon(pin.color)}>
+        <Marker key={pin.id} position={[pin.lat, pin.lng]} icon={getMarkerIcon(pin.color, pin.icon)}>
           <Popup>
             <div style={{ maxWidth: '200px' }}>
               <strong style={{ display: 'block', fontSize: '1.1rem', marginBottom: '5px' }}>{pin.label}</strong>
