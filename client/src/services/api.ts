@@ -25,11 +25,11 @@ export const apiService = {
     return res.json();
   },
 
-  async updateMap(id: string, name: string, pins: Pin[]): Promise<{ message: string }> {
+  async updateMap(id: string, name: string, groups: any[], pins: Pin[]): Promise<{ message: string }> {
     const res = await fetch(`${API_BASE}/maps/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, pins }),
+      body: JSON.stringify({ name, groups, pins }),
     });
     if (!res.ok) throw new Error('Failed to update map');
     return res.json();

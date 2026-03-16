@@ -26,6 +26,12 @@ async function migrate(db: Database) {
   if (!columnNames.includes('icon')) {
     await db.exec("ALTER TABLE pins ADD COLUMN icon TEXT DEFAULT 'default'");
   }
+  if (!columnNames.includes('group_id')) {
+    await db.exec("ALTER TABLE pins ADD COLUMN group_id TEXT");
+  }
+  if (!columnNames.includes('position')) {
+    await db.exec("ALTER TABLE pins ADD COLUMN position INTEGER DEFAULT 0");
+  }
 }
 
 export async function getDb() {
@@ -42,9 +48,18 @@ export async function getDb() {
       name TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS pin_groups (
+      id TEXT PRIMARY KEY,
+      map_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      position INTEGER DEFAULT 0,
+      FOREIGN KEY (map_id) REFERENCES maps(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS pins (
       id TEXT PRIMARY KEY,
       map_id TEXT NOT NULL,
+      group_id TEXT,
       lat REAL NOT NULL,
       lng REAL NOT NULL,
       label TEXT,
@@ -52,7 +67,9 @@ export async function getDb() {
       image_url TEXT,
       color TEXT DEFAULT 'blue',
       icon TEXT DEFAULT 'default',
-      FOREIGN KEY (map_id) REFERENCES maps(id) ON DELETE CASCADE
+      position INTEGER DEFAULT 0,
+      FOREIGN KEY (map_id) REFERENCES maps(id) ON DELETE CASCADE,
+      FOREIGN KEY (group_id) REFERENCES pin_groups(id) ON DELETE SET NULL
     );
   `);
 

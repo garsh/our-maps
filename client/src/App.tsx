@@ -2,11 +2,14 @@ import { useEffect, useState, useCallback } from 'react'
 import MapView from './components/MapView'
 import Sidebar from './components/Sidebar'
 import { apiService } from './services/api'
-import type { Pin } from '@shared/interfaces'
+import type { Pin, PinGroup } from '@shared/interfaces'
+import { arrayMove } from '@dnd-kit/sortable'
+import type { DragEndEvent } from '@dnd-kit/core'
 
 function App() {
   const [message, setMessage] = useState('')
   const [pins, setPins] = useState<Pin[]>([])
+  const [groups, setGroups] = useState<PinGroup[]>([])
   const [mapId, setMapId] = useState<string | null>(null);
   const [mapName, setMapName] = useState('My Map');
   const [isSaving, setIsSaving] = useState(false);
@@ -34,6 +37,7 @@ function App() {
       const data = await apiService.getMap(id);
       setMapId(data.id);
       setMapName(data.name || 'My Map');
+      setGroups(data.groups || []);
       setPins(data.pins);
     } catch (err) {
       console.error('Failed to load map', err);
@@ -46,10 +50,10 @@ function App() {
     setError(null);
     try {
       if (mapId) {
-        await apiService.updateMap(mapId, mapName, pins);
+        await apiService.updateMap(mapId, mapName, groups, pins);
       } else {
         const newId = crypto.randomUUID();
-        await apiService.createMap({ id: newId, name: mapName, pins });
+        await apiService.createMap({ id: newId, name: mapName, groups, pins });
         setMapId(newId);
         window.history.pushState({}, '', `?mapId=${newId}`);
       }
@@ -66,7 +70,8 @@ function App() {
       id: crypto.randomUUID(),
       lat,
       lng,
-      label: `Pin ${pins.length + 1}`
+      label: `Pin ${pins.length + 1}`,
+      position: pins.length
     };
     setPins(prev => [...prev, newPin]);
   }, [pins.length]);
@@ -76,7 +81,8 @@ function App() {
       id: crypto.randomUUID(),
       lat,
       lng,
-      label: label
+      label: label,
+      position: pins.length
     };
     setPins(prev => [...prev, newPin]);
     setTargetLocation([lat, lng]);
@@ -88,6 +94,81 @@ function App() {
 
   const updatePin = (id: string, updates: Partial<Pin>) => {
     setPins(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+  };
+
+  const addGroup = () => {
+    const newGroup: PinGroup = {
+      id: crypto.randomUUID(),
+      name: `Group ${groups.length + 1}`,
+      position: groups.length
+    };
+    setGroups(prev => [...prev, newGroup]);
+  };
+
+  const updateGroup = (id: string, updates: Partial<PinGroup>) => {
+    setGroups(prev => prev.map(g => g.id === id ? { ...g, ...updates } : g));
+  };
+
+  const removeGroup = (id: string) => {
+    setGroups(prev => prev.filter(g => g.id !== id));
+    setPins(prev => prev.map(p => p.groupId === id ? { ...p, groupId: undefined } : p));
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    // Handle Group Reordering
+    if (active.data.current?.type === 'group') {
+      if (active.id !== over.id) {
+        setGroups((items) => {
+          const oldIndex = items.findIndex((i) => i.id === active.id);
+          const newIndex = items.findIndex((i) => i.id === over.id);
+          const newItems = arrayMove(items, oldIndex, newIndex);
+          return newItems.map((item, index) => ({ ...item, position: index }));
+        });
+      }
+      return;
+    }
+
+    // Handle Pin Reordering
+    if (active.data.current?.type === 'pin') {
+      const activePin = pins.find(p => p.id === active.id);
+      if (!activePin) return;
+
+      const overId = over.id;
+      const overData = over.data.current;
+
+      setPins((prevPins) => {
+        const activeIndex = prevPins.findIndex((p) => p.id === active.id);
+        
+        let newPins = [...prevPins];
+        let newGroupId = activePin.groupId;
+
+        if (overData?.type === 'group') {
+          // Dropped on a group
+          newGroupId = overId;
+        } else if (overData?.type === 'pin') {
+          // Dropped on another pin
+          const overPin = prevPins.find(p => p.id === overId);
+          newGroupId = overPin?.groupId;
+        }
+
+        // Update groupId if it changed
+        if (newGroupId !== activePin.groupId) {
+          newPins[activeIndex] = { ...newPins[activeIndex], groupId: newGroupId };
+        }
+
+        // Handle reordering if dropped on another pin or within same group/container
+        if (active.id !== overId && overData?.type === 'pin') {
+          const overIndex = prevPins.findIndex((p) => p.id === overId);
+          newPins = arrayMove(newPins, activeIndex, overIndex);
+        }
+
+        // Final position update for all pins
+        return newPins.map((p, index) => ({ ...p, position: index }));
+      });
+    }
   };
 
   const copyShareLink = () => {
@@ -133,12 +214,17 @@ function App() {
         <Sidebar 
           mapName={mapName}
           onMapNameChange={setMapName}
+          groups={groups}
+          onAddGroup={addGroup}
+          onUpdateGroup={updateGroup}
+          onRemoveGroup={removeGroup}
           pins={pins}
           onResultSelect={(lat, lng) => setTargetLocation([lat, lng])}
           onAddPin={addPinAtLocation}
           onRemovePin={removePin}
           onPinClick={(lat, lng) => setTargetLocation([lat, lng])}
           onUpdatePin={updatePin}
+          onDragEnd={handleDragEnd}
         />
 
         <main style={{ flex: 1, position: 'relative' }}>

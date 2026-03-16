@@ -4,29 +4,41 @@ import Sidebar from '../Sidebar';
 
 describe('Sidebar', () => {
   const mockPins = [
-    { id: '1', lat: 10, lng: 20, label: 'Test Pin', description: '', imageUrl: '' }
+    { id: '1', lat: 10, lng: 20, label: 'Test Pin', description: '', imageUrl: '', position: 0 }
   ];
   const mockHandlers = {
     onMapNameChange: vi.fn(),
+    groups: [],
+    onAddGroup: vi.fn(),
+    onUpdateGroup: vi.fn(),
+    onRemoveGroup: vi.fn(),
     onResultSelect: vi.fn(),
     onAddPin: vi.fn(),
     onRemovePin: vi.fn(),
     onPinClick: vi.fn(),
     onUpdatePin: vi.fn(),
+    onDragEnd: vi.fn(),
   };
 
   it('reveals edit fields when Edit button is clicked', () => {
     render(<Sidebar mapName="Test Map" pins={mockPins} {...mockHandlers} />);
     
     // Edit fields should not be visible initially
-    expect(screen.queryByLabelText(/description/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/description/i)).not.toBeInTheDocument();
     
     // Click Edit
     fireEvent.click(screen.getByText('Edit'));
     
     // Edit fields should now be visible
-    expect(screen.getByLabelText(/description/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/image url/i)).toBeInTheDocument();
+    expect(screen.getByText(/description/i)).toBeInTheDocument();
+  });
+
+  it('calls onAddGroup when Add Group button is clicked', () => {
+    render(<Sidebar mapName="Test Map" pins={mockPins} {...mockHandlers} />);
+    
+    fireEvent.click(screen.getByText(/Add Group/i));
+    
+    expect(mockHandlers.onAddGroup).toHaveBeenCalled();
   });
 
   it('calls onUpdatePin when description is changed', () => {

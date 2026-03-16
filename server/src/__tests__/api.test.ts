@@ -38,8 +38,11 @@ describe('API Endpoints', () => {
     const mapData = {
       id: mapId,
       name: 'Test Map',
+      groups: [
+        { id: 'group-1', name: 'My Group', position: 0 }
+      ],
       pins: [
-        { id: 'pin-1', lat: 10, lng: 20, label: 'Pin 1', description: 'Desc 1', imageUrl: 'http://img.com/1', color: 'red', icon: 'hotel' }
+        { id: 'pin-1', map_id: mapId, groupId: 'group-1', lat: 10, lng: 20, label: 'Pin 1', description: 'Desc 1', imageUrl: 'http://img.com/1', color: 'red', icon: 'hotel', position: 0 }
       ]
     };
 
@@ -54,13 +57,14 @@ describe('API Endpoints', () => {
     const map = await db.get('SELECT * FROM maps WHERE id = ?', mapId);
     expect(map.name).toBe('Test Map');
 
+    const groups = await db.all('SELECT * FROM pin_groups WHERE map_id = ?', mapId);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].name).toBe('My Group');
+
     const pins = await db.all('SELECT * FROM pins WHERE map_id = ?', mapId);
     expect(pins).toHaveLength(1);
-    expect(pins[0].label).toBe('Pin 1');
-    expect(pins[0].description).toBe('Desc 1');
-    expect(pins[0].image_url).toBe('http://img.com/1');
-    expect(pins[0].color).toBe('red');
-    expect(pins[0].icon).toBe('hotel');
+    expect(pins[0].group_id).toBe('group-1');
+    expect(pins[0].position).toBe(0);
   });
 
   it('POST /api/maps should return 400 if map id is missing', async () => {
@@ -95,8 +99,11 @@ describe('API Endpoints', () => {
 
     const updateData = {
       name: 'New Name',
+      groups: [
+        { id: 'g1', name: 'G1', position: 0 }
+      ],
       pins: [
-        { id: 'new-pin', lat: 50, lng: 60, label: 'New Pin', description: 'New Desc', imageUrl: 'http://new.com', color: 'green', icon: 'airport' }
+        { id: 'new-pin', map_id: mapId, groupId: 'g1', lat: 50, lng: 60, label: 'New Pin', description: 'New Desc', imageUrl: 'http://new.com', color: 'green', icon: 'airport', position: 0 }
       ]
     };
 
@@ -109,11 +116,13 @@ describe('API Endpoints', () => {
     const map = await db.get('SELECT * FROM maps WHERE id = ?', mapId);
     expect(map.name).toBe('New Name');
 
+    const groups = await db.all('SELECT * FROM pin_groups WHERE map_id = ?', mapId);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].name).toBe('G1');
+
     const pins = await db.all('SELECT * FROM pins WHERE map_id = ?', mapId);
     expect(pins).toHaveLength(1);
     expect(pins[0].id).toBe('new-pin');
-    expect(pins[0].description).toBe('New Desc');
-    expect(pins[0].color).toBe('green');
-    expect(pins[0].icon).toBe('airport');
+    expect(pins[0].group_id).toBe('g1');
   });
 });

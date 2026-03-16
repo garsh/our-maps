@@ -10,10 +10,19 @@ export interface Pin {
   imageUrl?: string;
   color?: PinColor;
   icon?: PinIcon;
+  groupId?: string;
+  position: number;
+}
+
+export interface PinGroup {
+  id: string;
+  name: string;
+  position: number;
 }
 
 export interface MapData {
   id: string;
   name: string;
+  groups: PinGroup[];
   pins: Pin[];
 }

@@ -196,3 +196,31 @@ test('visual categorization with pin icons', async ({ page }) => {
   const iconIndicator = page.locator('aside').getByText('Icon City').locator('..').locator('div').first().locator('svg');
   await expect(iconIndicator).toBeVisible();
 });
+
+test('pin grouping and persistence', async ({ page }) => {
+  await page.goto('/');
+  
+  // 1. Add a group
+  await page.getByRole('button', { name: 'Add Group' }).click();
+  await expect(page.getByText('Group 1 (0)')).toBeVisible();
+
+  // 2. Add a pin
+  await page.route('**/search*', route => route.fulfill({ json: [{ place_id: 1, display_name: 'Group City', lat: '10', lon: '10' }] }));
+  await page.getByPlaceholder('Search for a place...').fill('Group City');
+  await page.getByRole('button', { name: 'Search' }).click();
+  await page.getByRole('button', { name: '+ Add Pin' }).click();
+
+  // Initially it's in Default Pins
+  await expect(page.locator('h4:has-text("Default Pins") + ul')).toContainText('Group City');
+
+  // 3. Save map to get an ID
+  await page.getByRole('button', { name: 'Save Map' }).click();
+  await page.waitForURL(/\?mapId=/);
+
+  // Note: We can't easily drag and drop in this test without complex helper functions for dnd-kit,
+  // but we can verify that groups themselves persist.
+  
+  await page.reload();
+  await expect(page.getByText('Group 1 (0)')).toBeVisible();
+  await expect(page.locator('h4:has-text("Default Pins") + ul')).toContainText('Group City');
+});
