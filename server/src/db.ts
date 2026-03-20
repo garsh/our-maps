@@ -32,6 +32,12 @@ async function migrate(db: Database) {
   if (!columnNames.includes('position')) {
     await db.exec("ALTER TABLE pins ADD COLUMN position INTEGER DEFAULT 0");
   }
+
+  const mapTableInfo = await db.all("PRAGMA table_info(maps)");
+  const mapColumnNames = mapTableInfo.map((col: any) => col.name);
+  if (!mapColumnNames.includes('owner_id')) {
+    await db.exec("ALTER TABLE maps ADD COLUMN owner_id TEXT");
+  }
 }
 
 export async function getDb() {
@@ -42,10 +48,39 @@ export async function getDb() {
     driver: sqlite3.Database
   });
 
+  await db.exec('PRAGMA busy_timeout = 5000');
+
   await db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      picture TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS maps (
       id TEXT PRIMARY KEY,
-      name TEXT NOT NULL
+      name TEXT NOT NULL,
+      owner_id TEXT,
+      FOREIGN KEY (owner_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS map_permissions (
+      map_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('view', 'edit')),
+      PRIMARY KEY (map_id, user_id),
+      FOREIGN KEY (map_id) REFERENCES maps(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS user_map_access (
+      user_id TEXT NOT NULL,
+      map_id TEXT NOT NULL,
+      last_accessed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, map_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (map_id) REFERENCES maps(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS pin_groups (

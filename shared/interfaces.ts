@@ -1,6 +1,20 @@
 export type PinColor = 'blue' | 'red' | 'green' | 'orange' | 'violet';
 export type PinIcon = 'default' | 'hotel' | 'restaurant' | 'airport' | 'park' | 'museum' | 'shopping' | 'camera';
 
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  picture?: string;
+}
+
+export interface MapPermission {
+  userId: string;
+  userEmail: string;
+  userName: string;
+  role: 'view' | 'edit';
+}
+
 export interface Pin {
   id: string;
   lat: number;
@@ -23,6 +37,12 @@ export interface PinGroup {
 export interface MapData {
   id: string;
   name: string;
+  ownerId: string;
+  ownerName?: string;
+  ownerEmail?: string;
   groups: PinGroup[];
   pins: Pin[];
+  permissions?: MapPermission[];
+  userRole?: 'view' | 'edit' | 'owner';
+  lastAccessedAt?: string;
 }

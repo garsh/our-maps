@@ -1,6 +1,16 @@
 import { test, expect } from '@playwright/test';
 
+// Helper to login
+async function login(page: any) {
+  page.on('console', (msg: any) => console.log(`BROWSER: ${msg.text()}`));
+  await page.goto('/login');
+  await page.getByRole('button', { name: /Sign in with Mock Account/i }).click();
+  await expect(page).toHaveURL('/');
+}
+
 test('full map creation flow', async ({ page }) => {
+  await login(page);
+
   // Mock Nominatim API
   await page.route('https://nominatim.openstreetmap.org/search*', async route => {
     const json = [
@@ -14,18 +24,18 @@ test('full map creation flow', async ({ page }) => {
     await route.fulfill({ json });
   });
 
-  // 1. Open the app
-  await page.goto('/');
+  // Navigate to new map page
+  await page.getByRole('button', { name: 'Create New Map' }).click();
   await expect(page.locator('h1')).toContainText('Our Maps');
 
   // 2. Search for a location
-  const searchInput = page.getByPlaceholder('Search for a place...');
+  const searchInput = page.getByPlaceholder('Search pins or places...');
   await searchInput.fill('Tokyo');
-  await page.getByRole('button', { name: 'Search' }).click();
-
-  // 3. Add a pin from search results
+  
+  // 3. Add a pin from search results (wait for live results)
+  await expect(page.getByText('GLOBAL LOCATIONS')).toBeVisible();
   await expect(page.getByText('Test City, Test Country')).toBeVisible();
-  await page.getByRole('button', { name: '+ Add Pin' }).click();
+  await page.getByRole('button', { name: '+ Add to Map' }).click();
 
   // Verify pin added to sidebar
   await expect(page.locator('aside')).toContainText('Pins (1)');
@@ -34,54 +44,76 @@ test('full map creation flow', async ({ page }) => {
   // 4. Save the map
   await page.getByRole('button', { name: 'Save Map' }).click();
   
-  // 5. Check that the URL updates (contains mapId)
-  await page.waitForURL(/\?mapId=/);
-  const urlWithId = page.url();
-  expect(urlWithId).toContain('mapId=');
+  // 5. Check that the URL updates
+  await page.waitForURL(/\/map\//);
+  await page.waitForTimeout(2000);
+  await expect(page.getByText('Loading map...')).not.toBeVisible();
 
   // 6. Reload the page and verify the pin persists
   await page.reload();
-  await expect(page.locator('aside')).toContainText('Pins (1)');
-  await expect(page.locator('aside')).toContainText('Test City');
+  await page.waitForTimeout(3000);
+  // Wait for loading state to finish
+  await expect(page.getByText('Loading map...')).not.toBeVisible();
+  await expect(page.locator('aside')).toContainText('Pins (1)', { timeout: 10000 });
+  await expect(page.locator('aside')).toContainText('Test City', { timeout: 10000 });
 });
 
 test('updating an existing map', async ({ page }) => {
+  await login(page);
+  await page.getByRole('button', { name: 'Create New Map' }).click();
+
   // 1. Create a map first
-  await page.goto('/');
-  const searchInput = page.getByPlaceholder('Search for a place...');
-  await searchInput.fill('Initial Location');
+  const searchInput = page.getByPlaceholder('Search pins or places...');
   await page.route('**/search*', route => route.fulfill({ json: [{ place_id: 1, display_name: 'Initial', lat: '10', lon: '10' }] }));
-  await page.getByRole('button', { name: 'Search' }).click();
-  await page.getByRole('button', { name: '+ Add Pin' }).click();
+  await searchInput.fill('Initial Location');
+  await expect(page.getByText('Initial')).toBeVisible();
+  await page.getByRole('button', { name: '+ Add to Map' }).click();
   await page.getByRole('button', { name: 'Save Map' }).click();
-  await page.waitForURL(/\?mapId=/);
+  await page.waitForURL(/\/map\//);
+  await page.waitForTimeout(2000);
+  await expect(page.getByText('Loading map...')).not.toBeVisible();
+
+  // Wait for initial load
+  await expect(page.getByLabel('Map Name')).toHaveValue('My Map');
+  await page.waitForTimeout(1000);
 
   // 2. Change map name and add another pin
-  await page.locator('input[type="text"]').first().fill('Updated Map Name');
+  const nameInput = page.getByLabel('Map Name');
+  await nameInput.fill('Updated Map Name');
+  await nameInput.press('Enter');
   
-  await searchInput.fill('New Location');
+  // Verify state update
+  await expect(page.getByLabel('Map Name')).toHaveValue('Updated Map Name');
+  await page.waitForTimeout(1000);
+
+  await page.getByRole('button', { name: 'Save Map' }).click();
+  await page.waitForTimeout(3000);
+  
   await page.route('**/search*', route => route.fulfill({ json: [{ place_id: 2, display_name: 'New', lat: '20', lon: '20' }] }));
-  await page.getByRole('button', { name: 'Search' }).click();
-  await page.getByRole('button', { name: '+ Add Pin' }).click();
+  await searchInput.fill('New Location');
+  await expect(page.getByText('New', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '+ Add to Map' }).click();
 
   // 3. Update the map
-  await page.getByRole('button', { name: 'Update Map' }).click();
-  await page.waitForTimeout(1000); // Wait for API
+  await page.getByRole('button', { name: 'Save Map' }).click();
+  await page.waitForTimeout(3000);
 
-  // 4. Reload and verify everything is updated
   await page.reload();
-  await expect(page.locator('input[type="text"]').first()).toHaveValue('Updated Map Name');
-  await expect(page.locator('aside')).toContainText('Pins (2)');
+  await page.waitForTimeout(3000);
+  await expect(page.getByText('Loading map...')).not.toBeVisible();
+  await expect(page.getByLabel('Map Name')).toHaveValue('Updated Map Name', { timeout: 10000 });
+  await expect(page.locator('aside')).toContainText('Pins (2)', { timeout: 10000 });
 });
 
 test('rich pin metadata persistence and display', async ({ page }) => {
-  await page.goto('/');
+  await login(page);
+  await page.getByRole('button', { name: 'Create New Map' }).click();
   
   // 1. Add a pin
   await page.route('**/search*', route => route.fulfill({ json: [{ place_id: 1, display_name: 'Metadata City', lat: '10', lon: '10' }] }));
-  await page.getByPlaceholder('Search for a place...').fill('Metadata City');
-  await page.getByRole('button', { name: 'Search' }).click();
-  await page.getByRole('button', { name: '+ Add Pin' }).click();
+  await page.getByPlaceholder('Search pins or places...').fill('Metadata City');
+  await expect(page.getByText('Metadata City')).toBeVisible();
+  await page.getByRole('button', { name: '+ Add to Map' }).click();
 
   // 2. Edit metadata
   await page.getByRole('button', { name: 'Edit' }).click();
@@ -90,34 +122,35 @@ test('rich pin metadata persistence and display', async ({ page }) => {
 
   // 3. Save and reload
   await page.getByRole('button', { name: 'Save Map' }).click();
-  await page.waitForURL(/\?mapId=/);
-  const mapId = new URL(page.url()).searchParams.get('mapId');
+  await page.waitForURL(/\/map\//);
+  await page.waitForTimeout(3000);
   
   await page.reload();
-  await page.waitForSelector('.leaflet-marker-icon');
+  await page.waitForTimeout(3000);
+  await expect(page.getByText('Loading map...')).not.toBeVisible();
+  await page.waitForSelector('.leaflet-marker-icon', { timeout: 10000 });
 
   // 4. Verify in sidebar
   await page.getByRole('button', { name: 'Edit' }).click();
-  await expect(page.getByLabel('Description')).toHaveValue('This is a great place to test metadata.');
+  await expect(page.getByLabel('Description')).toHaveValue('This is a great place to test metadata.', { timeout: 10000 });
 
   // 5. Verify on map popup
-  // Clicking the marker can be tricky in Playwright/Leaflet, so we'll use the sidebar click to center/open if possible, 
-  // but Leaflet Markers need a direct click.
   await page.locator('.leaflet-marker-icon').first().click();
   
   const popup = page.locator('.leaflet-popup-content');
-  await expect(popup).toContainText('This is a great place to test metadata.');
+  await expect(popup).toContainText('This is a great place to test metadata.', { timeout: 10000 });
   await expect(popup.locator('img')).toHaveAttribute('src', /images.unsplash.com/);
 });
 
 test('visual categorization with pin colors', async ({ page }) => {
-  await page.goto('/');
+  await login(page);
+  await page.getByRole('button', { name: 'Create New Map' }).click();
   
   // 1. Add a pin
   await page.route('**/search*', route => route.fulfill({ json: [{ place_id: 1, display_name: 'Color City', lat: '10', lon: '10' }] }));
-  await page.getByPlaceholder('Search for a place...').fill('Color City');
-  await page.getByRole('button', { name: 'Search' }).click();
-  await page.getByRole('button', { name: '+ Add Pin' }).click();
+  await page.getByPlaceholder('Search pins or places...').fill('Color City');
+  await expect(page.getByText('Color City')).toBeVisible();
+  await page.getByRole('button', { name: '+ Add to Map' }).click();
 
   // 2. Change color to violet
   await page.getByRole('button', { name: 'Edit' }).click();
@@ -125,10 +158,13 @@ test('visual categorization with pin colors', async ({ page }) => {
 
   // 3. Save and reload
   await page.getByRole('button', { name: 'Save Map' }).click();
-  await page.waitForURL(/\?mapId=/);
+  await page.waitForURL(/\/map\//);
+  await page.waitForTimeout(3000);
   
   await page.reload();
-  await page.waitForSelector('.leaflet-marker-icon');
+  await page.waitForTimeout(3000);
+  await expect(page.getByText('Loading map...')).not.toBeVisible();
+  await page.waitForSelector('.leaflet-marker-icon', { timeout: 10000 });
 
   // 4. Verify marker icon URL contains violet
   const marker = page.locator('.leaflet-marker-icon').first();
@@ -140,20 +176,24 @@ test('visual categorization with pin colors', async ({ page }) => {
 });
 
 test('default pin color', async ({ page }) => {
-  await page.goto('/');
+  await login(page);
+  await page.getByRole('button', { name: 'Create New Map' }).click();
   
   // 1. Add a pin
   await page.route('**/search*', route => route.fulfill({ json: [{ place_id: 1, display_name: 'Color City', lat: '10', lon: '10' }] }));
-  await page.getByPlaceholder('Search for a place...').fill('Color City');
-  await page.getByRole('button', { name: 'Search' }).click();
-  await page.getByRole('button', { name: '+ Add Pin' }).click();
+  await page.getByPlaceholder('Search pins or places...').fill('Color City');
+  await expect(page.getByText('Color City')).toBeVisible();
+  await page.getByRole('button', { name: '+ Add to Map' }).click();
 
   // 2. Save and reload
   await page.getByRole('button', { name: 'Save Map' }).click();
-  await page.waitForURL(/\?mapId=/);
+  await page.waitForURL(/\/map\//);
+  await page.waitForTimeout(3000);
   
   await page.reload();
-  await page.waitForSelector('.leaflet-marker-icon');
+  await page.waitForTimeout(3000);
+  await expect(page.getByText('Loading map...')).not.toBeVisible();
+  await page.waitForSelector('.leaflet-marker-icon', { timeout: 10000 });
 
   // 3. Verify marker icon URL contains blue
   const marker = page.locator('.leaflet-marker-icon').first();
@@ -165,13 +205,14 @@ test('default pin color', async ({ page }) => {
 });
 
 test('visual categorization with pin icons', async ({ page }) => {
-  await page.goto('/');
+  await login(page);
+  await page.getByRole('button', { name: 'Create New Map' }).click();
   
   // 1. Add a pin
   await page.route('**/search*', route => route.fulfill({ json: [{ place_id: 1, display_name: 'Icon City', lat: '10', lon: '10' }] }));
-  await page.getByPlaceholder('Search for a place...').fill('Icon City');
-  await page.getByRole('button', { name: 'Search' }).click();
-  await page.getByRole('button', { name: '+ Add Pin' }).click();
+  await page.getByPlaceholder('Search pins or places...').fill('Icon City');
+  await expect(page.getByText('Icon City')).toBeVisible();
+  await page.getByRole('button', { name: '+ Add to Map' }).click();
 
   // 2. Change icon to hotel
   await page.getByRole('button', { name: 'Edit' }).click();
@@ -179,26 +220,29 @@ test('visual categorization with pin icons', async ({ page }) => {
 
   // 3. Save and reload
   await page.getByRole('button', { name: 'Save Map' }).click();
-  await page.waitForURL(/\?mapId=/);
+  await page.waitForURL(/\/map\//);
+  await page.waitForTimeout(3000);
   
   await page.reload();
-  await page.waitForSelector('.leaflet-marker-icon');
+  await page.waitForTimeout(3000);
+  await expect(page.getByText('Loading map...')).not.toBeVisible();
+  await page.waitForSelector('.leaflet-marker-icon', { timeout: 10000 });
 
-  // 4. Verify marker is a custom pin (L.divIcon uses .leaflet-marker-icon with the custom class)
+  // 4. Verify marker is a custom pin
   const marker = page.locator('.leaflet-marker-icon.custom-pin').first();
   await expect(marker).toBeVisible();
   
-  // Check if it contains an SVG with the hotel path (or just that it's a divIcon)
   const svg = marker.locator('svg');
   await expect(svg).toBeVisible();
 
-  // 5. Verify sidebar indicator shows an icon (it will have an SVG inside the color dot)
+  // 5. Verify sidebar indicator shows an icon
   const iconIndicator = page.locator('aside').getByText('Icon City').locator('..').locator('div').first().locator('svg');
   await expect(iconIndicator).toBeVisible();
 });
 
 test('pin grouping and persistence', async ({ page }) => {
-  await page.goto('/');
+  await login(page);
+  await page.getByRole('button', { name: 'Create New Map' }).click();
   
   // 1. Add a group
   await page.getByRole('button', { name: 'Add Group' }).click();
@@ -206,21 +250,42 @@ test('pin grouping and persistence', async ({ page }) => {
 
   // 2. Add a pin
   await page.route('**/search*', route => route.fulfill({ json: [{ place_id: 1, display_name: 'Group City', lat: '10', lon: '10' }] }));
-  await page.getByPlaceholder('Search for a place...').fill('Group City');
-  await page.getByRole('button', { name: 'Search' }).click();
-  await page.getByRole('button', { name: '+ Add Pin' }).click();
+  await page.getByPlaceholder('Search pins or places...').fill('Group City');
+  await expect(page.getByText('Group City')).toBeVisible();
+  await page.getByRole('button', { name: '+ Add to Map' }).click();
 
   // Initially it's in Default Pins
   await expect(page.locator('h4:has-text("Default Pins") + ul')).toContainText('Group City');
 
   // 3. Save map to get an ID
   await page.getByRole('button', { name: 'Save Map' }).click();
-  await page.waitForURL(/\?mapId=/);
+  await page.waitForURL(/\/map\//);
+  await page.waitForTimeout(3000);
 
-  // Note: We can't easily drag and drop in this test without complex helper functions for dnd-kit,
-  // but we can verify that groups themselves persist.
-  
   await page.reload();
-  await expect(page.getByText('Group 1 (0)')).toBeVisible();
-  await expect(page.locator('h4:has-text("Default Pins") + ul')).toContainText('Group City');
+  await page.waitForTimeout(3000);
+  await expect(page.getByText('Loading map...')).not.toBeVisible();
+  await expect(page.getByText('Group 1 (0)')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('h4:has-text("Default Pins") + ul')).toContainText('Group City', { timeout: 10000 });
+});
+
+test('export and import UI', async ({ page }) => {
+  await login(page);
+  await page.getByRole('button', { name: 'Create New Map' }).click();
+
+  // Verify Export button and dropdown
+  const exportBtn = page.getByRole('button', { name: 'Export' });
+  await expect(exportBtn).toBeVisible();
+  await exportBtn.click();
+  
+  await expect(page.getByText('Full JSON (.json)')).toBeVisible();
+  await expect(page.getByText('GeoJSON (.geojson)')).toBeVisible();
+  await expect(page.getByText('KML (.kml)')).toBeVisible();
+
+  // Click again to close
+  await exportBtn.click();
+  await expect(page.getByText('Full JSON (.json)')).not.toBeVisible();
+
+  // Verify Import button
+  await expect(page.getByRole('button', { name: 'Import' })).toBeVisible();
 });

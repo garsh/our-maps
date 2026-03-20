@@ -21,13 +21,29 @@ describe('API Endpoints', () => {
     }
   });
 
+  const mockUser = {
+    id: 'test-user-id',
+    email: 'test@example.com',
+    name: 'Test User',
+    picture: ''
+  };
+
+  const authHeader = { 'x-mock-user': JSON.stringify(mockUser) };
+
   beforeEach(async () => {
     const db = await getDb();
+    await db.exec('DELETE FROM user_map_access');
+    await db.exec('DELETE FROM map_permissions');
     await db.exec('DELETE FROM pins');
     await db.exec('DELETE FROM maps');
+    await db.exec('DELETE FROM users');
+    // Ensure test user exists for FK constraints
+    await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', mockUser.id, mockUser.email, mockUser.name);
   });
 
   it('GET /api/hello should return hello message', async () => {
+    // Hello doesn't need auth, but middleware is applied globally now? No, usually selective.
+    // Wait, I applied it to all /api/maps routes. /api/hello is separate.
     const res = await request(app).get('/api/hello');
     expect(res.status).toBe(200);
     expect(res.body.message).toBe('Hello from Our Maps Server!');
@@ -48,14 +64,17 @@ describe('API Endpoints', () => {
 
     const res = await request(app)
       .post('/api/maps')
+      .set(authHeader)
       .send(mapData);
 
     expect(res.status).toBe(201);
     expect(res.body.id).toBe(mapId);
+    expect(res.body.ownerId).toBe(mockUser.id);
 
     const db = await getDb();
     const map = await db.get('SELECT * FROM maps WHERE id = ?', mapId);
     expect(map.name).toBe('Test Map');
+    expect(map.owner_id).toBe(mockUser.id);
 
     const groups = await db.all('SELECT * FROM pin_groups WHERE map_id = ?', mapId);
     expect(groups).toHaveLength(1);
@@ -69,12 +88,12 @@ describe('API Endpoints', () => {
 
   it('POST /api/maps should return 400 if map id is missing', async () => {
     const mapData = { name: 'Invalid Map' };
-    const res = await request(app).post('/api/maps').send(mapData);
+    const res = await request(app).post('/api/maps').set(authHeader).send(mapData);
     expect(res.status).toBe(400);
   });
 
   it('GET /api/maps/:id should return 404 for non-existent map', async () => {
-    const res = await request(app).get('/api/maps/does-not-exist');
+    const res = await request(app).get('/api/maps/does-not-exist').set(authHeader);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Map not found');
   });
@@ -82,20 +101,21 @@ describe('API Endpoints', () => {
   it('GET /api/maps/:id should return map data', async () => {
     const mapId = 'test-map-id';
     const db = await getDb();
-    await db.run('INSERT INTO maps (id, name) VALUES (?, ?)', mapId, 'Loaded Map');
+    await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', mapId, 'Loaded Map', mockUser.id);
     await db.run('INSERT INTO pins (id, map_id, lat, lng, label) VALUES (?, ?, ?, ?, ?)', 
       'p1', mapId, 5, 5, 'L1');
 
-    const res = await request(app).get(`/api/maps/${mapId}`);
+    const res = await request(app).get(`/api/maps/${mapId}`).set(authHeader);
     expect(res.status).toBe(200);
     expect(res.body.name).toBe('Loaded Map');
     expect(res.body.pins).toHaveLength(1);
+    expect(res.body.userRole).toBe('owner');
   });
 
   it('PUT /api/maps/:id should update map name and pins', async () => {
     const mapId = 'update-map-id';
     const db = await getDb();
-    await db.run('INSERT INTO maps (id, name) VALUES (?, ?)', mapId, 'Old Name');
+    await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', mapId, 'Old Name', mockUser.id);
 
     const updateData = {
       name: 'New Name',
@@ -109,6 +129,7 @@ describe('API Endpoints', () => {
 
     const res = await request(app)
       .put(`/api/maps/${mapId}`)
+      .set(authHeader)
       .send(updateData);
 
     expect(res.status).toBe(200);

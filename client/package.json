@@ -14,12 +14,17 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@react-oauth/google": "^0.13.4",
+    "@tmcw/togeojson": "^7.1.2",
     "@types/leaflet": "^1.9.21",
+    "fuse.js": "^7.1.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.577.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-leaflet": "^5.0.0"
+    "react-leaflet": "^5.0.0",
+    "react-router-dom": "^7.13.1",
+    "tokml": "^0.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

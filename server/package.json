@@ -4,7 +4,8 @@
   "description": "Express backend for Our Maps",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/index.ts",
+    "dev": "nodemon --watch 'src/**/*.ts' --ignore database.sqlite --exec 'ts-node' src/index.ts",
+    "dev:no-watch": "ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest run"
@@ -14,7 +15,9 @@
   "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
+    "dotenv": "^17.3.1",
     "express": "^4.21.0",
+    "google-auth-library": "^10.6.1",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7"
   },
