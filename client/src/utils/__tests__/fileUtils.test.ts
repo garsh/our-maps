@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { mapDataToGeoJSON, geoJSONToPins } from '../fileUtils';
-import type { MapData, Pin } from '@shared/interfaces';
+import type { MapData } from '@shared/interfaces';
 
 describe('fileUtils', () => {
   const mockMapData: MapData = {

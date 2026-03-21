@@ -1,4 +1,4 @@
-import type { Pin, MapData, MapPermission } from '@shared/interfaces';
+import type { Pin, MapData } from '@shared/interfaces';
 
 const API_BASE = '/api';
 

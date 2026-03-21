@@ -8,7 +8,7 @@ import LoginPage from './pages/LoginPage';
 import ShareDialog from './components/ShareDialog';
 import { apiService } from './services/api'
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import type { Pin, PinGroup, MapPermission } from '@shared/interfaces'
+import type { Pin, PinGroup, MapPermission, MapData } from '@shared/interfaces'
 import { arrayMove } from '@dnd-kit/sortable'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { Loader2 } from 'lucide-react';
