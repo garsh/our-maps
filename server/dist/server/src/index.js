@@ -13,7 +13,10 @@ const maps_1 = __importDefault(require("./routes/maps"));
 const app = (0, express_1.default)();
 exports.app = app;
 const port = process.env.PORT || 3001;
-app.use((0, cors_1.default)());
+// Allow all origins or configure specific ones via env
+app.use((0, cors_1.default)({
+    origin: process.env.CORS_ORIGIN || '*',
+}));
 app.use(express_1.default.json());
 // API Routes
 app.use('/api/maps', maps_1.default);

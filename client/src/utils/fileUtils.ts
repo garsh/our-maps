@@ -1,6 +1,6 @@
 import tokml from 'tokml';
-import { kml } from '@tmcw/togeojson';
-import type { MapData, Pin, PinColor, PinIcon } from '@shared/interfaces';
+import type { MapData, Pin, PinGroup, PinColor, PinIcon } from '@shared/interfaces';
+import { parseKmlHierarchy } from './kmlUtils';
 
 /**
  * Converts MapData to a GeoJSON FeatureCollection
@@ -31,28 +31,81 @@ export const mapDataToGeoJSON = (mapData: MapData) => {
 };
 
 /**
- * Parses GeoJSON FeatureCollection into Pins.
- * Ensures that imported pins default to standard blue 'default' icon
- * unless they have specific properties matching our known types.
+ * Generates a unique ID with a fallback for non-secure contexts.
  */
-export const geoJSONToPins = (geojson: any): Pin[] => {
-  if (!geojson || geojson.type !== 'FeatureCollection') return [];
+const generateId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
 
-  return geojson.features
+/**
+ * Parses GeoJSON FeatureCollection into Pins and Groups.
+ * Extracts group info from 'folder' property (used by togeojson for KML layers).
+ */
+export const geoJSONToData = (geojson: any): { pins: Pin[], groups: PinGroup[] } => {
+  if (!geojson || geojson.type !== 'FeatureCollection') return { pins: [], groups: [] };
+
+  const pins: Pin[] = [];
+  const groups: PinGroup[] = [];
+  const groupMap = new Map<string, string>(); // name -> id
+
+  geojson.features
     .filter((f: any) => f.geometry && f.geometry.type === 'Point')
-    .map((f: any, index: number) => {
+    .forEach((f: any, index: number) => {
       const [lng, lat] = f.geometry.coordinates;
       const props = f.properties || {};
       
-      // Strict validation for colors and icons to avoid weird looking pins from external sources
+      // Handle Groups (KML folders / layers)
+      let groupId = props.groupId;
+      
+      // Helper to find folder name deeply
+      const findFolderName = (obj: any): string | undefined => {
+        if (!obj || typeof obj !== 'object') return undefined;
+        
+        // Direct checks
+        if (obj.folder) return obj.folder;
+        if (obj.layer) return obj.layer;
+        if (obj.parentName) return obj.parentName;
+        
+        // Check nested 'meta' or similar common property containers
+        if (obj.meta) {
+          const nested = findFolderName(obj.meta);
+          if (nested) return nested;
+        }
+        
+        return undefined;
+      };
+
+      const folderName = findFolderName(props);
+      
+      if (!groupId && folderName) {
+        if (groupMap.has(folderName)) {
+          groupId = groupMap.get(folderName);
+        } else {
+          groupId = generateId();
+          groupMap.set(folderName, groupId);
+          groups.push({
+            id: groupId,
+            name: folderName,
+            position: groups.length
+          });
+        }
+      }
+
       const validColors: PinColor[] = ['blue', 'red', 'green', 'orange', 'violet'];
       const validIcons: PinIcon[] = ['default', 'hotel', 'restaurant', 'airport', 'park', 'museum', 'shopping', 'camera'];
 
       const color = validColors.includes(props.color) ? props.color : 'blue';
       const icon = validIcons.includes(props.icon) ? props.icon : 'default';
 
-      return {
-        id: props.id || crypto.randomUUID(),
+      pins.push({
+        id: props.id || generateId(),
         lat,
         lng,
         label: props.name || props.label || 'Imported Pin',
@@ -60,10 +113,12 @@ export const geoJSONToPins = (geojson: any): Pin[] => {
         imageUrl: props.imageUrl || '',
         color,
         icon,
-        groupId: props.groupId,
+        groupId,
         position: props.position ?? index
-      };
+      });
     });
+
+  return { pins, groups };
 };
 
 /**
@@ -111,7 +166,7 @@ export const exportMap = (mapData: MapData, format: 'json' | 'geojson' | 'kml') 
  * Imports map data from a file string
  */
 export const importMapFile = async (file: File): Promise<Partial<MapData>> => {
-  const content = await file.text();
+  const content = (await file.text()).trim();
   const extension = file.name.split('.').pop()?.toLowerCase();
 
   try {
@@ -120,21 +175,33 @@ export const importMapFile = async (file: File): Promise<Partial<MapData>> => {
       if (Array.isArray(data.pins)) {
         return data;
       }
-    } else if (extension === 'geojson') {
-      const data = JSON.parse(content);
-      const pins = geoJSONToPins(data);
-      return { pins, groups: [] };
-    } else if (extension === 'kml') {
-      const parser = new DOMParser();
-      const kmlDoc = parser.parseFromString(content, 'text/xml');
-      const name = extractMapNameFromKML(kmlDoc);
-      const geojson = kml(kmlDoc);
-      const pins = geoJSONToPins(geojson);
-      return { name, pins, groups: [] };
+    } else if (extension === 'geojson' || extension === 'kml') {
+      let pins: Pin[] = [];
+      let groups: PinGroup[] = [];
+      let name: string | undefined;
+
+      if (extension === 'geojson') {
+        const geojson = JSON.parse(content);
+        const data = geoJSONToData(geojson);
+        pins = data.pins;
+        groups = data.groups;
+      } else {
+        const parser = new DOMParser();
+        const kmlDoc = parser.parseFromString(content, 'text/xml');
+        const errorNode = kmlDoc.querySelector('parsererror');
+        if (errorNode) throw new Error('KML file has invalid XML structure');
+        
+        name = extractMapNameFromKML(kmlDoc);
+        const result = parseKmlHierarchy(kmlDoc);
+        pins = result.pins;
+        groups = result.groups;
+      }
+      
+      return { name, pins, groups };
     }
   } catch (error) {
     console.error('Failed to parse import file:', error);
-    throw new Error('Invalid file format or corrupted data');
+    throw new Error(error instanceof Error ? error.message : 'Invalid file format or corrupted data');
   }
 
   throw new Error('Unsupported file extension');

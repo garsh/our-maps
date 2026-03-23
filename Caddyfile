@@ -1,0 +1,21 @@
+{
+	# Tell Caddy to use the certificate for this IP when clients don't send SNI
+	default_sni 192.168.4.146
+}
+
+ourmaps.mooo.com {
+	reverse_proxy our-maps:3000
+}
+
+# Replace "192.168.4.146" with your actual local IP address or a custom local domain.
+# If you have a real domain, place it here and Caddy will fetch a real Let's Encrypt cert!
+192.168.4.146 {
+	tls internal
+	reverse_proxy our-maps:3000
+}
+
+# Also allow access via localhost if you are testing on the same machine
+localhost {
+	tls internal
+	reverse_proxy our-maps:3000
+}

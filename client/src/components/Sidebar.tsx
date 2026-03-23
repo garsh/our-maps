@@ -52,12 +52,15 @@ interface SidebarProps {
   onResultSelect: (lat: number, lng: number) => void;
   onAddPin: (lat: number, lng: number, label: string) => void;
   onRemovePin: (id: string) => void;
-  onPinClick: (lat: number, lng: number) => void;
+  onPinClick: (pin: Pin) => void;
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
   onDragEnd: (event: DragEndEvent) => void;
   userRole?: 'owner' | 'edit' | 'view';
   onShare?: () => void;
   onImport?: (data: Partial<MapData>) => void;
+  mapBounds?: string | null;
+  editingPinId: string | null;
+  onSetEditingPinId: (id: string | null) => void;
 }
 
 const COLORS: PinColor[] = ['blue', 'red', 'green', 'orange', 'violet'];
@@ -82,7 +85,7 @@ const SortablePin = ({
   readOnly
 }: { 
   pin: Pin, 
-  onPinClick: (lat: number, lng: number) => void,
+  onPinClick: (pin: Pin) => void,
   onRemovePin: (id: string) => void,
   onUpdatePin: (id: string, updates: Partial<Pin>) => void,
   editingPinId: string | null,
@@ -111,6 +114,7 @@ const SortablePin = ({
 
   return (
     <li 
+      id={`pin-${pin.id}`}
       ref={setNodeRef} 
       style={{ ...style, padding: '0.6rem', borderBottom: '1px solid #eee', background: 'white' }}
     >
@@ -123,7 +127,7 @@ const SortablePin = ({
           )}
           <div 
             style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', flex: 1 }}
-            onClick={() => onPinClick(pin.lat, pin.lng)}
+            onClick={() => onPinClick(pin)}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div 
@@ -256,18 +260,18 @@ const SortableGroup = ({
   onRemovePin,
   onUpdatePin,
   editingPinId,
-  setEditingPinId,
+  onSetEditingPinId,
   readOnly
 }: { 
   group: PinGroup,
   groupPins: Pin[],
   onUpdateGroup: (id: string, updates: Partial<PinGroup>) => void,
   onRemoveGroup: (id: string) => void,
-  onPinClick: (lat: number, lng: number) => void,
+  onPinClick: (pin: Pin) => void,
   onRemovePin: (id: string) => void,
   onUpdatePin: (id: string, updates: Partial<Pin>) => void,
   editingPinId: string | null,
-  setEditingPinId: (id: string | null) => void,
+  onSetEditingPinId: (id: string | null) => void,
   readOnly: boolean
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -350,7 +354,7 @@ const SortableGroup = ({
                   onRemovePin={onRemovePin}
                   onUpdatePin={onUpdatePin}
                   editingPinId={editingPinId}
-                  setEditingPinId={setEditingPinId}
+                  setEditingPinId={onSetEditingPinId}
                   readOnly={readOnly}
                 />
               ))}
@@ -383,9 +387,11 @@ const Sidebar = ({
   onDragEnd,
   userRole = 'owner',
   onShare,
-  onImport
+  onImport,
+  mapBounds,
+  editingPinId,
+  onSetEditingPinId
 }: SidebarProps) => {
-  const [editingPinId, setEditingPinId] = useState<string | null>(null);
   const [localMapName, setLocalMapName] = useState(mapName);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const readOnly = userRole === 'view';
@@ -438,7 +444,7 @@ const Sidebar = ({
   const defaultPins = pins.filter(p => !p.groupId);
 
   return (
-    <aside style={{ width: '300px', background: '#f8f9fa', borderRight: '1px solid #dee2e6', display: 'flex', flexDirection: 'column', padding: '1.5rem', boxSizing: 'border-box' }}>
+    <aside style={{ flex: 1, background: '#f8f9fa', display: 'flex', flexDirection: 'column', padding: '1.5rem', boxSizing: 'border-box', overflow: 'hidden' }}>
       <div style={{ marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
           <label htmlFor="map-name" style={{ display: 'block', fontWeight: 'bold' }}>Map Name</label>
@@ -470,7 +476,13 @@ const Sidebar = ({
         </div>
       </div>
 
-      <SearchBar onResultSelect={onResultSelect} onAddPin={onAddPin} pins={pins} disabled={readOnly} />
+      <SearchBar 
+        onResultSelect={onResultSelect} 
+        onAddPin={onAddPin} 
+        pins={pins} 
+        disabled={readOnly} 
+        mapBounds={mapBounds}
+      />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', marginTop: '1rem' }}>
         <h3 style={{ margin: 0 }}>Pins ({pins.length})</h3>
@@ -502,7 +514,7 @@ const Sidebar = ({
                 onRemovePin={onRemovePin}
                 onUpdatePin={onUpdatePin}
                 editingPinId={editingPinId}
-                setEditingPinId={setEditingPinId}
+                onSetEditingPinId={onSetEditingPinId}
                 readOnly={readOnly}
               />
             ))}
@@ -522,7 +534,7 @@ const Sidebar = ({
                     onRemovePin={onRemovePin}
                     onUpdatePin={onUpdatePin}
                     editingPinId={editingPinId}
-                    setEditingPinId={setEditingPinId}
+                    setEditingPinId={onSetEditingPinId}
                     readOnly={readOnly}
                   />
                 ))}

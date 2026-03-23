@@ -29,6 +29,11 @@ export function MapEditor() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [targetLocation, setTargetLocation] = useState<[number, number] | null>(null);
+  const [targetPinId, setTargetPinId] = useState<string | null>(null);
+  const [editingPinId, setEditingPinId] = useState<string | null>(null);
+  const [mapBounds, setMapBounds] = useState<string | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(300);
+  const [isResizing, setIsResizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -45,6 +50,19 @@ export function MapEditor() {
       setIsMapLoading(false);
     }
   }, [id]);
+
+  // Auto-save logic
+  useEffect(() => {
+    if (userRole === 'view' || isMapLoading) return;
+    // Don't auto-save empty new maps
+    if (!mapId && pins.length === 0 && mapName === 'My Map') return;
+    
+    const timer = setTimeout(() => {
+      handleSave();
+    }, 2000); // 2 second debounce for auto-save
+
+    return () => clearTimeout(timer);
+  }, [mapName, pins, groups]);
 
   const loadMap = async (mapId: string) => {
     setIsMapLoading(true);
@@ -70,6 +88,9 @@ export function MapEditor() {
     setIsSaving(true);
     setError(null);
     try {
+      // Add a small artificial delay so the UI state is detectable
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       if (mapId) {
         await apiService.updateMap(mapId, mapName, groups, pins);
       } else {
@@ -79,7 +100,7 @@ export function MapEditor() {
           name: mapName, 
           groups, 
           pins,
-          ownerId: user?.id || '', // Will be set by server mostly
+          ownerId: user?.id || '',
         });
         setMapId(newId);
         navigate(`/map/${newId}`, { replace: true });
@@ -95,7 +116,6 @@ export function MapEditor() {
   const handleShare = async (email: string, role: 'view' | 'edit') => {
     if (!mapId) return;
     await apiService.shareMap(mapId, email, role);
-    // Reload permissions
     const data = await apiService.getMap(mapId);
     setPermissions(data.permissions || []);
   };
@@ -106,8 +126,28 @@ export function MapEditor() {
     setPermissions(prev => prev.filter(p => p.userId !== userId));
   };
 
+  const handlePinSelect = (pin: Pin) => {
+    setTargetLocation([pin.lat, pin.lng]);
+    setTargetPinId(pin.id);
+    // Reset targetPinId after a short delay so it can be re-triggered
+    setTimeout(() => setTargetPinId(null), 500);
+  };
+
+  const handleEditPin = (pin: Pin) => {
+    handlePinSelect(pin);
+    setEditingPinId(pin.id);
+    // Scroll sidebar to the pin
+    setTimeout(() => {
+      const element = document.getElementById(`pin-${pin.id}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 100);
+  };
+
   const handleMapClick = useCallback((lat: number, lng: number) => {
     if (userRole === 'view') return;
+    setEditingPinId(null);
     const newPin: Pin = {
       id: crypto.randomUUID(),
       lat,
@@ -128,7 +168,7 @@ export function MapEditor() {
       position: pins.length
     };
     setPins(prev => [...prev, newPin]);
-    setTargetLocation([lat, lng]);
+    handlePinSelect(newPin);
   };
 
   const removePin = (id: string) => {
@@ -216,9 +256,28 @@ export function MapEditor() {
     if (data.name) setMapName(data.name);
     if (data.pins) setPins(data.pins);
     if (data.groups) setGroups(data.groups);
-    setSuccessMessage('Map imported! Don\'t forget to save.');
+    setSuccessMessage('Map imported! Auto-saving...');
     setTimeout(() => setSuccessMessage(null), 3000);
   };
+
+  const handleResize = useCallback((e: MouseEvent) => {
+    const newWidth = e.clientX;
+    if (newWidth > 200 && newWidth < 600) {
+      setSidebarWidth(newWidth);
+    }
+  }, []);
+
+  const stopResize = useCallback(() => {
+    setIsResizing(false);
+    window.removeEventListener('mousemove', handleResize);
+    window.removeEventListener('mouseup', stopResize);
+  }, [handleResize]);
+
+  const startResize = useCallback(() => {
+    setIsResizing(true);
+    window.addEventListener('mousemove', handleResize);
+    window.addEventListener('mouseup', stopResize);
+  }, [handleResize, stopResize]);
 
   if (isMapLoading) {
     return (
@@ -230,49 +289,68 @@ export function MapEditor() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: 'sans-serif' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: 'sans-serif', userSelect: isResizing ? 'none' : 'auto' }}>
       <header style={{ padding: '0.8rem 1.5rem', background: '#2c3e50', color: '#ecf0f1', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 5px rgba(0,0,0,0.2)', zIndex: 1000 }}>
         <div style={{ cursor: 'pointer' }} onClick={() => navigate('/')}>
           <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Our Maps</h1>
           <small style={{ color: error ? '#e74c3c' : (successMessage ? '#2ecc71' : '#bdc3c7') }}>
-            {error || successMessage || (isSaving ? 'Saving...' : 'Ready')}
+            {error || successMessage || (isSaving ? 'Auto-saving...' : 'All changes saved')}
           </small>
         </div>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           {userRole !== 'view' && (
-            <button 
-              onClick={handleSave} 
-              disabled={isSaving}
-              style={{ padding: '0.5rem 1rem', cursor: 'pointer', background: '#27ae60', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold' }}
-            >
-              {isSaving ? 'Saving...' : 'Save Map'}
-            </button>
+            <div style={{ fontSize: '0.8rem', color: '#bdc3c7' }}>
+              {isSaving ? 'Saving...' : 'Cloud Sync Enabled'}
+            </div>
           )}
         </div>
       </header>
       
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <Sidebar 
-          mapName={mapName}
-          onMapNameChange={setMapName}
-          groups={groups}
-          onAddGroup={addGroup}
-          onUpdateGroup={updateGroup}
-          onRemoveGroup={removeGroup}
-          pins={pins}
-          onResultSelect={(lat, lng) => setTargetLocation([lat, lng])}
-          onAddPin={addPinAtLocation}
-          onRemovePin={removePin}
-          onPinClick={(lat, lng) => setTargetLocation([lat, lng])}
-          onUpdatePin={updatePin}
-          onDragEnd={handleDragEnd}
-          userRole={userRole}
-          onShare={() => setIsSharing(true)}
-          onImport={handleImport}
-        />
+        <div style={{ width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex' }}>
+          <Sidebar 
+            mapName={mapName}
+            onMapNameChange={setMapName}
+            groups={groups}
+            onAddGroup={addGroup}
+            onUpdateGroup={updateGroup}
+            onRemoveGroup={removeGroup}
+            pins={pins}
+            onResultSelect={(lat, lng) => setTargetLocation([lat, lng])}
+            onAddPin={addPinAtLocation}
+            onRemovePin={removePin}
+            onPinClick={handlePinSelect}
+            onUpdatePin={updatePin}
+            onDragEnd={handleDragEnd}
+            userRole={userRole}
+            onShare={() => setIsSharing(true)}
+            onImport={handleImport}
+            mapBounds={mapBounds}
+            editingPinId={editingPinId}
+            onSetEditingPinId={setEditingPinId}
+          />
+          <div 
+            onMouseDown={startResize}
+            style={{ width: '4px', cursor: 'col-resize', background: '#dee2e6', transition: 'background 0.2s', zIndex: 100 }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#3498db'}
+            onMouseLeave={(e) => e.currentTarget.style.background = '#dee2e6'}
+          />
+        </div>
 
         <main style={{ flex: 1, position: 'relative' }}>
-          <MapView pins={pins} onMapClick={handleMapClick} targetLocation={targetLocation} />
+          <MapView 
+            pins={pins} 
+            onMapClick={handleMapClick} 
+            onEditPin={(id) => {
+              const pin = pins.find(p => p.id === id);
+              if (pin) handleEditPin(pin);
+            }}
+            onUpdatePin={updatePin}
+            targetLocation={targetLocation} 
+            targetPinId={targetPinId}
+            onBoundsChange={setMapBounds}
+            userRole={userRole}
+          />
         </main>
       </div>
 

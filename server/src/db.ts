@@ -44,7 +44,7 @@ export async function getDb() {
   if (db) return db;
 
   db = await open({
-    filename: path.join(__dirname, currentDbName),
+    filename: process.env.DB_PATH || path.join(__dirname, currentDbName),
     driver: sqlite3.Database
   });
 

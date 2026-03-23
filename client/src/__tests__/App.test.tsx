@@ -1,4 +1,4 @@
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { MapEditor } from '../App';
@@ -85,19 +85,24 @@ describe('App Components Error Handling', () => {
       </MemoryRouter>
     );
 
-    // Wait for load
+    // Wait for map to load
     await waitFor(() => {
-      expect(screen.getByText(/Ready/i)).toBeInTheDocument();
+      expect(screen.getByText(/All changes saved/i)).toBeInTheDocument();
     });
 
-    const saveButton = screen.getByRole('button', { name: /save map/i });
-    
+
+    // Trigger auto-save by changing map name
+    const nameInput = screen.getByLabelText(/map name/i);
+
     await act(async () => {
-      saveButton.click();
+      fireEvent.change(nameInput, { target: { value: 'Trigger Error' } });
+      fireEvent.blur(nameInput);
     });
 
+    // Wait for the debounced save to fail
     await waitFor(() => {
-      expect(screen.getByText(/failed to save map/i)).toBeInTheDocument();
-    });
+      expect(screen.getByText(/Failed to save map/i)).toBeInTheDocument();
+    }, { timeout: 5000 });
+
   });
 });

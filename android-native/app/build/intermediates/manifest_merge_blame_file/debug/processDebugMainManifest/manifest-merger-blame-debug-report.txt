@@ -1,0 +1,241 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.google.ourmaps"
+4    android:versionCode="1"
+5    android:versionName="1.0" >
+6
+7    <uses-sdk
+7-->INJECTED
+8        android:minSdkVersion="24"
+8-->INJECTED
+9        android:targetSdkVersion="34" />
+9-->INJECTED
+10
+11    <uses-permission android:name="android.permission.INTERNET" />
+11-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:5:5-67
+11-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:5:22-64
+12    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+12-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:6:5-79
+12-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:6:22-76
+13    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+13-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:7:5-81
+13-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:7:22-78
+14    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+14-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:8:5-79
+14-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:8:22-76
+15    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+15-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:9:5-80
+15-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:9:22-78
+16
+17    <permission
+17-->[androidx.core:core:1.12.0] /home/zach/.gradle/caches/9.3.1/transforms/1800fa76c6ff8aa7a890fe3504cf316d/transformed/core-1.12.0/AndroidManifest.xml:22:5-24:47
+18        android:name="com.google.ourmaps.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+18-->[androidx.core:core:1.12.0] /home/zach/.gradle/caches/9.3.1/transforms/1800fa76c6ff8aa7a890fe3504cf316d/transformed/core-1.12.0/AndroidManifest.xml:23:9-81
+19        android:protectionLevel="signature" />
+19-->[androidx.core:core:1.12.0] /home/zach/.gradle/caches/9.3.1/transforms/1800fa76c6ff8aa7a890fe3504cf316d/transformed/core-1.12.0/AndroidManifest.xml:24:9-44
+20
+21    <uses-permission android:name="com.google.ourmaps.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+21-->[androidx.core:core:1.12.0] /home/zach/.gradle/caches/9.3.1/transforms/1800fa76c6ff8aa7a890fe3504cf316d/transformed/core-1.12.0/AndroidManifest.xml:26:5-97
+21-->[androidx.core:core:1.12.0] /home/zach/.gradle/caches/9.3.1/transforms/1800fa76c6ff8aa7a890fe3504cf316d/transformed/core-1.12.0/AndroidManifest.xml:26:22-94
+22
+23    <supports-screens
+23-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:9:5-12:40
+24        android:anyDensity="true"
+24-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:10:9-34
+25        android:largeScreens="true"
+25-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:11:9-36
+26        android:normalScreens="true" />
+26-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:12:9-37
+27
+28    <uses-feature
+28-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:14:5-16:36
+29        android:name="android.hardware.location.network"
+29-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:15:9-57
+30        android:required="false" />
+30-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:16:9-33
+31    <uses-feature
+31-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:17:5-19:36
+32        android:name="android.hardware.location.gps"
+32-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:18:9-53
+33        android:required="false" />
+33-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:19:9-33
+34    <uses-feature
+34-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:20:5-22:36
+35        android:name="android.hardware.telephony"
+35-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:21:9-50
+36        android:required="false" />
+36-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:22:9-33
+37    <uses-feature
+37-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:23:5-25:36
+38        android:name="android.hardware.wifi"
+38-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:24:9-45
+39        android:required="false" />
+39-->[org.osmdroid:osmdroid-android:6.1.18] /home/zach/.gradle/caches/9.3.1/transforms/560455108d39c725fe22b63ec9cdc3ec/transformed/jetified-osmdroid-android-6.1.18/AndroidManifest.xml:25:9-33
+40
+41    <application
+41-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:11:5-32:19
+42        android:allowBackup="true"
+42-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:12:9-35
+43        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+43-->[androidx.core:core:1.12.0] /home/zach/.gradle/caches/9.3.1/transforms/1800fa76c6ff8aa7a890fe3504cf316d/transformed/core-1.12.0/AndroidManifest.xml:28:18-86
+44        android:dataExtractionRules="@xml/data_extraction_rules"
+44-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:13:9-65
+45        android:debuggable="true"
+46        android:extractNativeLibs="false"
+46-->INJECTED
+47        android:fullBackupContent="@xml/backup_rules"
+47-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:14:9-54
+48        android:icon="@mipmap/ic_launcher"
+48-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:15:9-43
+49        android:label="@string/app_name"
+49-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:16:9-41
+50        android:networkSecurityConfig="@xml/network_security_config"
+50-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:20:9-69
+51        android:roundIcon="@mipmap/ic_launcher_round"
+51-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:17:9-54
+52        android:supportsRtl="true"
+52-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:18:9-35
+53        android:theme="@style/Theme.OurMaps" >
+53-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:19:9-45
+54        <activity
+54-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:22:9-31:20
+55            android:name="com.google.ourmaps.MainActivity"
+55-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:23:13-41
+56            android:exported="true"
+56-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:24:13-36
+57            android:label="@string/app_name"
+57-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:25:13-45
+58            android:theme="@style/Theme.OurMaps" >
+58-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:26:13-49
+59            <intent-filter>
+59-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:27:13-30:29
+60                <action android:name="android.intent.action.MAIN" />
+60-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:28:17-69
+60-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:28:25-66
+61
+62                <category android:name="android.intent.category.LAUNCHER" />
+62-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:29:17-77
+62-->/home/zach/our-maps/android-native/app/src/main/AndroidManifest.xml:29:27-74
+63            </intent-filter>
+64        </activity>
+65        <activity
+65-->[androidx.compose.ui:ui-tooling-android:1.5.4] /home/zach/.gradle/caches/9.3.1/transforms/1e08e140ac1ba00bfeb40ca7a8f78d65/transformed/jetified-ui-tooling-release/AndroidManifest.xml:23:9-25:39
+66            android:name="androidx.compose.ui.tooling.PreviewActivity"
+66-->[androidx.compose.ui:ui-tooling-android:1.5.4] /home/zach/.gradle/caches/9.3.1/transforms/1e08e140ac1ba00bfeb40ca7a8f78d65/transformed/jetified-ui-tooling-release/AndroidManifest.xml:24:13-71
+67            android:exported="true" />
+67-->[androidx.compose.ui:ui-tooling-android:1.5.4] /home/zach/.gradle/caches/9.3.1/transforms/1e08e140ac1ba00bfeb40ca7a8f78d65/transformed/jetified-ui-tooling-release/AndroidManifest.xml:25:13-36
+68        <activity
+68-->[androidx.compose.ui:ui-test-manifest:1.5.4] /home/zach/.gradle/caches/9.3.1/transforms/47f86a5e10d6dad675f98b6aec78d0fa/transformed/jetified-ui-test-manifest-1.5.4/AndroidManifest.xml:23:9-25:39
+69            android:name="androidx.activity.ComponentActivity"
+69-->[androidx.compose.ui:ui-test-manifest:1.5.4] /home/zach/.gradle/caches/9.3.1/transforms/47f86a5e10d6dad675f98b6aec78d0fa/transformed/jetified-ui-test-manifest-1.5.4/AndroidManifest.xml:24:13-63
+70            android:exported="true" />
+70-->[androidx.compose.ui:ui-test-manifest:1.5.4] /home/zach/.gradle/caches/9.3.1/transforms/47f86a5e10d6dad675f98b6aec78d0fa/transformed/jetified-ui-test-manifest-1.5.4/AndroidManifest.xml:25:13-36
+71        <activity
+71-->[com.google.android.gms:play-services-auth:21.0.0] /home/zach/.gradle/caches/9.3.1/transforms/3d48ced500afa68bd3d54d194a1ac533/transformed/jetified-play-services-auth-21.0.0/AndroidManifest.xml:23:9-27:75
+72            android:name="com.google.android.gms.auth.api.signin.internal.SignInHubActivity"
+72-->[com.google.android.gms:play-services-auth:21.0.0] /home/zach/.gradle/caches/9.3.1/transforms/3d48ced500afa68bd3d54d194a1ac533/transformed/jetified-play-services-auth-21.0.0/AndroidManifest.xml:24:13-93
+73            android:excludeFromRecents="true"
+73-->[com.google.android.gms:play-services-auth:21.0.0] /home/zach/.gradle/caches/9.3.1/transforms/3d48ced500afa68bd3d54d194a1ac533/transformed/jetified-play-services-auth-21.0.0/AndroidManifest.xml:25:13-46
+74            android:exported="false"
+74-->[com.google.android.gms:play-services-auth:21.0.0] /home/zach/.gradle/caches/9.3.1/transforms/3d48ced500afa68bd3d54d194a1ac533/transformed/jetified-play-services-auth-21.0.0/AndroidManifest.xml:26:13-37
+75            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+75-->[com.google.android.gms:play-services-auth:21.0.0] /home/zach/.gradle/caches/9.3.1/transforms/3d48ced500afa68bd3d54d194a1ac533/transformed/jetified-play-services-auth-21.0.0/AndroidManifest.xml:27:13-72
+76        <!--
+77            Service handling Google Sign-In user revocation. For apps that do not integrate with
+78            Google Sign-In, this service will never be started.
+79        -->
+80        <service
+80-->[com.google.android.gms:play-services-auth:21.0.0] /home/zach/.gradle/caches/9.3.1/transforms/3d48ced500afa68bd3d54d194a1ac533/transformed/jetified-play-services-auth-21.0.0/AndroidManifest.xml:33:9-37:51
+81            android:name="com.google.android.gms.auth.api.signin.RevocationBoundService"
+81-->[com.google.android.gms:play-services-auth:21.0.0] /home/zach/.gradle/caches/9.3.1/transforms/3d48ced500afa68bd3d54d194a1ac533/transformed/jetified-play-services-auth-21.0.0/AndroidManifest.xml:34:13-89
+82            android:exported="true"
+82-->[com.google.android.gms:play-services-auth:21.0.0] /home/zach/.gradle/caches/9.3.1/transforms/3d48ced500afa68bd3d54d194a1ac533/transformed/jetified-play-services-auth-21.0.0/AndroidManifest.xml:35:13-36
+83            android:permission="com.google.android.gms.auth.api.signin.permission.REVOCATION_NOTIFICATION"
+83-->[com.google.android.gms:play-services-auth:21.0.0] /home/zach/.gradle/caches/9.3.1/transforms/3d48ced500afa68bd3d54d194a1ac533/transformed/jetified-play-services-auth-21.0.0/AndroidManifest.xml:36:13-107
+84            android:visibleToInstantApps="true" />
+84-->[com.google.android.gms:play-services-auth:21.0.0] /home/zach/.gradle/caches/9.3.1/transforms/3d48ced500afa68bd3d54d194a1ac533/transformed/jetified-play-services-auth-21.0.0/AndroidManifest.xml:37:13-48
+85
+86        <activity
+86-->[com.google.android.gms:play-services-base:18.0.1] /home/zach/.gradle/caches/9.3.1/transforms/b15927829c46d5f8adb83a2ace782644/transformed/jetified-play-services-base-18.0.1/AndroidManifest.xml:20:9-22:45
+87            android:name="com.google.android.gms.common.api.GoogleApiActivity"
+87-->[com.google.android.gms:play-services-base:18.0.1] /home/zach/.gradle/caches/9.3.1/transforms/b15927829c46d5f8adb83a2ace782644/transformed/jetified-play-services-base-18.0.1/AndroidManifest.xml:20:19-85
+88            android:exported="false"
+88-->[com.google.android.gms:play-services-base:18.0.1] /home/zach/.gradle/caches/9.3.1/transforms/b15927829c46d5f8adb83a2ace782644/transformed/jetified-play-services-base-18.0.1/AndroidManifest.xml:22:19-43
+89            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+89-->[com.google.android.gms:play-services-base:18.0.1] /home/zach/.gradle/caches/9.3.1/transforms/b15927829c46d5f8adb83a2ace782644/transformed/jetified-play-services-base-18.0.1/AndroidManifest.xml:21:19-78
+90
+91        <meta-data
+91-->[com.google.android.gms:play-services-basement:18.2.0] /home/zach/.gradle/caches/9.3.1/transforms/a9c6f801d31fa28372babe83159fc7e4/transformed/jetified-play-services-basement-18.2.0/AndroidManifest.xml:21:9-23:69
+92            android:name="com.google.android.gms.version"
+92-->[com.google.android.gms:play-services-basement:18.2.0] /home/zach/.gradle/caches/9.3.1/transforms/a9c6f801d31fa28372babe83159fc7e4/transformed/jetified-play-services-basement-18.2.0/AndroidManifest.xml:22:13-58
+93            android:value="@integer/google_play_services_version" />
+93-->[com.google.android.gms:play-services-basement:18.2.0] /home/zach/.gradle/caches/9.3.1/transforms/a9c6f801d31fa28372babe83159fc7e4/transformed/jetified-play-services-basement-18.2.0/AndroidManifest.xml:23:13-66
+94
+95        <provider
+95-->[androidx.emoji2:emoji2:1.4.0] /home/zach/.gradle/caches/9.3.1/transforms/8d0396d2f6b0e65ad31341549958408a/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:24:9-32:20
+96            android:name="androidx.startup.InitializationProvider"
+96-->[androidx.emoji2:emoji2:1.4.0] /home/zach/.gradle/caches/9.3.1/transforms/8d0396d2f6b0e65ad31341549958408a/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:25:13-67
+97            android:authorities="com.google.ourmaps.androidx-startup"
+97-->[androidx.emoji2:emoji2:1.4.0] /home/zach/.gradle/caches/9.3.1/transforms/8d0396d2f6b0e65ad31341549958408a/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:26:13-68
+98            android:exported="false" >
+98-->[androidx.emoji2:emoji2:1.4.0] /home/zach/.gradle/caches/9.3.1/transforms/8d0396d2f6b0e65ad31341549958408a/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:27:13-37
+99            <meta-data
+99-->[androidx.emoji2:emoji2:1.4.0] /home/zach/.gradle/caches/9.3.1/transforms/8d0396d2f6b0e65ad31341549958408a/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:29:13-31:52
+100                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+100-->[androidx.emoji2:emoji2:1.4.0] /home/zach/.gradle/caches/9.3.1/transforms/8d0396d2f6b0e65ad31341549958408a/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:30:17-75
+101                android:value="androidx.startup" />
+101-->[androidx.emoji2:emoji2:1.4.0] /home/zach/.gradle/caches/9.3.1/transforms/8d0396d2f6b0e65ad31341549958408a/transformed/jetified-emoji2-1.4.0/AndroidManifest.xml:31:17-49
+102            <meta-data
+102-->[androidx.lifecycle:lifecycle-process:2.7.0] /home/zach/.gradle/caches/9.3.1/transforms/ed07761e2b1c3c37c2e3d6447b85ea44/transformed/jetified-lifecycle-process-2.7.0/AndroidManifest.xml:29:13-31:52
+103                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+103-->[androidx.lifecycle:lifecycle-process:2.7.0] /home/zach/.gradle/caches/9.3.1/transforms/ed07761e2b1c3c37c2e3d6447b85ea44/transformed/jetified-lifecycle-process-2.7.0/AndroidManifest.xml:30:17-78
+104                android:value="androidx.startup" />
+104-->[androidx.lifecycle:lifecycle-process:2.7.0] /home/zach/.gradle/caches/9.3.1/transforms/ed07761e2b1c3c37c2e3d6447b85ea44/transformed/jetified-lifecycle-process-2.7.0/AndroidManifest.xml:31:17-49
+105            <meta-data
+105-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:29:13-31:52
+106                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+106-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:30:17-85
+107                android:value="androidx.startup" />
+107-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:31:17-49
+108        </provider>
+109
+110        <receiver
+110-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:34:9-52:20
+111            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+111-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:35:13-76
+112            android:directBootAware="false"
+112-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:36:13-44
+113            android:enabled="true"
+113-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:37:13-35
+114            android:exported="true"
+114-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:38:13-36
+115            android:permission="android.permission.DUMP" >
+115-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:39:13-57
+116            <intent-filter>
+116-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:40:13-42:29
+117                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+117-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:41:17-91
+117-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:41:25-88
+118            </intent-filter>
+119            <intent-filter>
+119-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:43:13-45:29
+120                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+120-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:44:17-85
+120-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:44:25-82
+121            </intent-filter>
+122            <intent-filter>
+122-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:46:13-48:29
+123                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+123-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:47:17-88
+123-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:47:25-85
+124            </intent-filter>
+125            <intent-filter>
+125-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:49:13-51:29
+126                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+126-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:50:17-95
+126-->[androidx.profileinstaller:profileinstaller:1.3.0] /home/zach/.gradle/caches/9.3.1/transforms/1edbf87e634c5c7ec193c51c14835aff/transformed/jetified-profileinstaller-1.3.0/AndroidManifest.xml:50:25-92
+127            </intent-filter>
+128        </receiver>
+129    </application>
+130
+131</manifest>

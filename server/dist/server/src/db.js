@@ -46,7 +46,7 @@ async function getDb() {
     if (db)
         return db;
     db = await (0, sqlite_1.open)({
-        filename: path_1.default.join(__dirname, currentDbName),
+        filename: process.env.DB_PATH || path_1.default.join(__dirname, currentDbName),
         driver: sqlite3_1.default.Database
     });
     await db.exec('PRAGMA busy_timeout = 5000');

@@ -18,9 +18,10 @@ interface SearchBarProps {
   pins: Pin[];
   disabled?: boolean;
   debounceMs?: number;
+  mapBounds?: string | null;
 }
 
-const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500 }: SearchBarProps) => {
+const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500, mapBounds }: SearchBarProps) => {
   const [query, setQuery] = useState('');
   const [globalResults, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -58,9 +59,11 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500 
     const handler = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`
-        );
+        let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`;
+        if (mapBounds) {
+          url += `&viewbox=${mapBounds}`;
+        }
+        const response = await fetch(url);
         const data = await response.json();
         const formatted: SearchResult[] = data.map((item: any) => ({
           place_id: item.place_id,
@@ -78,7 +81,7 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500 
     }, debounceMs);
 
     return () => clearTimeout(handler);
-  }, [query, debounceMs]);
+  }, [query, debounceMs, mapBounds]);
 
   const handleResultClick = (result: SearchResult) => {
     onResultSelect(parseFloat(result.lat), parseFloat(result.lon));

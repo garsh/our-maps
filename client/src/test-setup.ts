@@ -1,13 +1,21 @@
-import '@testing-library/jest-dom'
-import { vi } from 'vitest'
-
 // Mock crypto.randomUUID
-if (!window.crypto) {
-  (window as any).crypto = {};
-}
 if (!window.crypto.randomUUID) {
-  (window.crypto as any).randomUUID = () => Math.random().toString(36).substring(2);
+  Object.defineProperty(window.crypto, 'randomUUID', {
+    value: () => 'test-uuid-' + Math.random().toString(36).substring(2),
+    writable: true,
+  });
 }
 
-// Mock fetch
-window.fetch = vi.fn();
+// Polyfill File for Node environment if needed
+if (typeof File === 'undefined') {
+  global.File = class File extends Blob {
+    name: string;
+    lastModified: number;
+
+    constructor(fileBits: BlobPart[], fileName: string, options?: FilePropertyBag) {
+      super(fileBits, options);
+      this.name = fileName;
+      this.lastModified = options?.lastModified || Date.now();
+    }
+  } as any;
+}

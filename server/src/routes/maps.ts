@@ -271,4 +271,22 @@ router.delete('/:id/share/:userId', async (req: AuthRequest, res) => {
   }
 });
 
+// DELETE delete map
+router.delete('/:id', async (req: AuthRequest, res) => {
+  const mapId = req.params.id;
+  const userId = req.user!.id;
+  const db = await getDb();
+
+  try {
+    const map = await db.get('SELECT owner_id FROM maps WHERE id = ?', mapId);
+    if (!map) return res.status(404).json({ error: 'Map not found' });
+    if (map.owner_id !== userId) return res.status(403).json({ error: 'Only owner can delete the map' });
+
+    await db.run('DELETE FROM maps WHERE id = ?', mapId);
+    res.json({ message: 'Map deleted' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

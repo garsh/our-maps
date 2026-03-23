@@ -88,3 +88,7 @@ test-results/
 
 # Gemini CLI context
 GEMINI.md
+
+# Android Keys
+*.keystore
+*.jks

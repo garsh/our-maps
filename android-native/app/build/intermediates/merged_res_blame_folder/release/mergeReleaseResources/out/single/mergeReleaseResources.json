@@ -1,0 +1,26 @@
+[
+    {
+        "merged": "com.google.ourmaps.app-release-62:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.google.ourmaps.app-main-63:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.google.ourmaps.app-release-62:/xml_data_extraction_rules.xml.flat",
+        "source": "com.google.ourmaps.app-main-63:/xml/data_extraction_rules.xml"
+    },
+    {
+        "merged": "com.google.ourmaps.app-release-62:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "com.google.ourmaps.app-main-63:/drawable/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.google.ourmaps.app-release-62:/xml_backup_rules.xml.flat",
+        "source": "com.google.ourmaps.app-main-63:/xml/backup_rules.xml"
+    },
+    {
+        "merged": "com.google.ourmaps.app-release-62:/xml_network_security_config.xml.flat",
+        "source": "com.google.ourmaps.app-main-63:/xml/network_security_config.xml"
+    },
+    {
+        "merged": "com.google.ourmaps.app-release-62:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.google.ourmaps.app-main-63:/mipmap-anydpi-v26/ic_launcher.xml"
+    }
+]

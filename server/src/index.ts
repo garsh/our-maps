@@ -8,7 +8,10 @@ import mapsRouter from './routes/maps';
 const app = express();
 const port = process.env.PORT || 3001;
 
-app.use(cors());
+// Allow all origins or configure specific ones via env
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*',
+}));
 app.use(express.json());
 
 // API Routes

@@ -1,6 +1,6 @@
 import type { Pin, MapData } from '@shared/interfaces';
 
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 const getHeaders = () => {
   const token = localStorage.getItem('token');
@@ -96,6 +96,15 @@ export const apiService = {
       headers: getHeaders(),
     });
     if (!res.ok) throw new Error('Failed to remove share');
+    return res.json();
+  },
+
+  async deleteMap(id: string): Promise<any> {
+    const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to delete map');
     return res.json();
   }
 };

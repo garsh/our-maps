@@ -1,0 +1,12 @@
+node_modules
+client/node_modules
+server/node_modules
+client/dist
+server/dist
+.env
+.git
+.gitignore
+android-native
+database.sqlite
+playwright-report
+test-results

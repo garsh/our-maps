@@ -1,0 +1,34 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    depends_on:
+      - our-maps
+
+  our-maps:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: our-maps
+    # Expose port 3000 publicly so the Android app can connect via plain HTTP without TLS errors
+    ports:
+      - "3000:3000"
+    volumes:
+      - our_maps_data:/data
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+
+volumes:
+  our_maps_data:
+  caddy_data:
+  caddy_config:
