@@ -1,4 +1,4 @@
-export type PinColor = 'blue' | 'red' | 'green' | 'orange' | 'violet';
+export type PinColor = string;
 export type PinIcon = 'default' | 'hotel' | 'restaurant' | 'airport' | 'park' | 'museum' | 'shopping' | 'camera';
 
 export interface User {

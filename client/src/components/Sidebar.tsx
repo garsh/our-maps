@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import SearchBar from './SearchBar';
-import type { Pin, PinColor, PinIcon, PinGroup } from '@shared/interfaces';
+import type { Pin, PinIcon, PinGroup } from '@shared/interfaces';
 import { 
   Bed, 
   Utensils, 
@@ -63,7 +63,7 @@ interface SidebarProps {
   onSetEditingPinId: (id: string | null) => void;
 }
 
-const COLORS: PinColor[] = ['blue', 'red', 'green', 'orange', 'violet'];
+const COLORS = ['blue', 'red', 'green', 'orange'];
 const ICONS: { type: PinIcon; Icon: LucideIcon }[] = [
   { type: 'default', Icon: MapPin },
   { type: 'hotel', Icon: Bed },
@@ -172,7 +172,7 @@ const SortablePin = ({
       {editingPinId === pin.id && !readOnly && (
         <div style={{ padding: '8px', background: '#f9f9f9', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px', fontSize: '0.8rem' }}>
           <div style={{ marginBottom: '6px' }}>
-            <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: 'bold', marginBottom: '2px' }}>Label</label>
+            <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: 'bold', marginBottom: '2px' }}>Name</label>
             <input 
               id={`label-${pin.id}`}
               type="text" 
@@ -183,7 +183,7 @@ const SortablePin = ({
           </div>
           <div style={{ marginBottom: '6px' }}>
             <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '2px' }}>Color</label>
-            <div style={{ display: 'flex', gap: '4px' }}>
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
               {COLORS.map(color => (
                 <button
                   key={color}
@@ -200,6 +200,41 @@ const SortablePin = ({
                   }}
                 />
               ))}
+              <div style={{ position: 'relative', width: '18px', height: '18px' }}>
+                <input 
+                  type="color"
+                  value={(!pin.color || COLORS.includes(pin.color)) ? '#8e44ad' : pin.color}
+                  onChange={(e) => onUpdatePin(pin.id, { color: e.target.value })}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    opacity: 0,
+                    cursor: 'pointer',
+                    zIndex: 2
+                  }}
+                />
+                <div 
+                  style={{
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    background: (!pin.color || COLORS.includes(pin.color)) ? '#8e44ad' : pin.color,
+                    border: pin.color && !COLORS.includes(pin.color) ? '2px solid #333' : '1px solid #ccc',
+                    zIndex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '10px',
+                    color: 'white',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  +
+                </div>
+              </div>
             </div>
           </div>
           <div style={{ marginBottom: '6px' }}>

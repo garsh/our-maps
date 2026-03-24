@@ -15,6 +15,7 @@ interface MapViewProps {
   onBoundsChange: (bounds: string) => void;
   targetLocation?: [number, number] | null;
   targetPinId?: string | null;
+  boundsToFit?: L.LatLngBounds | null;
   userRole?: 'owner' | 'edit' | 'view';
 }
 
@@ -38,7 +39,7 @@ const MapEvents = ({ onMapClick, onBoundsChange }: { onMapClick: (lat: number, l
   return null;
 };
 
-const MapController = ({ targetLocation }: { targetLocation?: [number, number] | null }) => {
+const MapController = ({ targetLocation, boundsToFit }: { targetLocation?: [number, number] | null, boundsToFit?: L.LatLngBounds | null }) => {
   const map = useMap();
   
   useEffect(() => {
@@ -47,10 +48,16 @@ const MapController = ({ targetLocation }: { targetLocation?: [number, number] |
     }
   }, [targetLocation, map]);
 
+  useEffect(() => {
+    if (boundsToFit && boundsToFit.isValid()) {
+      map.fitBounds(boundsToFit, { padding: [50, 50], maxZoom: 16 });
+    }
+  }, [boundsToFit, map]);
+
   return null;
 };
 
-const MapView = ({ center = [20, 0], zoom = 3, pins, onMapClick, onEditPin, onUpdatePin, onBoundsChange, targetLocation, targetPinId, userRole = 'owner' }: MapViewProps) => {
+const MapView = ({ center = [20, 0], zoom = 3, pins, onMapClick, onEditPin, onUpdatePin, onBoundsChange, targetLocation, targetPinId, boundsToFit, userRole = 'owner' }: MapViewProps) => {
   const markerRefs = useRef<Record<string, L.Marker | null>>({});
   const [editingPopupPinId, setEditingPopupPinId] = useState<string | null>(null);
   const readOnly = userRole === 'view';
@@ -73,7 +80,7 @@ const MapView = ({ center = [20, 0], zoom = 3, pins, onMapClick, onEditPin, onUp
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <MapEvents onMapClick={onMapClick} onBoundsChange={onBoundsChange} />
-      <MapController targetLocation={targetLocation} />
+      <MapController targetLocation={targetLocation} boundsToFit={boundsToFit} />
       {pins.map((pin) => (
         <Marker 
           key={pin.id} 
@@ -86,7 +93,7 @@ const MapView = ({ center = [20, 0], zoom = 3, pins, onMapClick, onEditPin, onUp
               {editingPopupPinId === pin.id ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#666', display: 'block', marginBottom: '2px' }}>NAME</label>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#666', display: 'block', marginBottom: '2px' }}>Name</label>
                     <input 
                       value={pin.label || ''} 
                       onChange={(e) => onUpdatePin(pin.id, { label: e.target.value })}
@@ -104,7 +111,13 @@ const MapView = ({ center = [20, 0], zoom = 3, pins, onMapClick, onEditPin, onUp
                       style={{ width: '100%', padding: '6px', boxSizing: 'border-box', borderRadius: '4px', border: '1px solid #ccc', fontFamily: 'inherit', resize: 'vertical' }}
                     />
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <button 
+                      onClick={() => onEditPin(pin.id)}
+                      style={{ background: 'none', border: 'none', color: '#9b59b6', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'underline', padding: 0 }}
+                    >
+                      More options...
+                    </button>
                     <button 
                       onClick={() => setEditingPopupPinId(null)}
                       style={{ padding: '5px 15px', background: '#27ae60', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
@@ -127,16 +140,6 @@ const MapView = ({ center = [20, 0], zoom = 3, pins, onMapClick, onEditPin, onUp
                           style={{ background: '#3498db', color: 'white', border: 'none', borderRadius: '3px', padding: '2px 6px', fontSize: '0.7rem', cursor: 'pointer', whiteSpace: 'nowrap' }}
                         >
                           Edit
-                        </button>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onEditPin(pin.id);
-                          }}
-                          style={{ background: '#9b59b6', color: 'white', border: 'none', borderRadius: '3px', padding: '2px 6px', fontSize: '0.7rem', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                          title="Open full edit in sidebar"
-                        >
-                          More
                         </button>
                       </div>
                     )}

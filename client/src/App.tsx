@@ -12,6 +12,7 @@ import type { Pin, PinGroup, MapPermission, MapData } from '@shared/interfaces'
 import { arrayMove } from '@dnd-kit/sortable'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { Loader2 } from 'lucide-react';
+import L from 'leaflet';
 
 export function MapEditor() {
   const { id } = useParams<{ id: string }>();
@@ -30,6 +31,7 @@ export function MapEditor() {
   const [isSharing, setIsSharing] = useState(false);
   const [targetLocation, setTargetLocation] = useState<[number, number] | null>(null);
   const [targetPinId, setTargetPinId] = useState<string | null>(null);
+  const [boundsToFit, setBoundsToFit] = useState<L.LatLngBounds | null>(null);
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
   const [mapBounds, setMapBounds] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(300);
@@ -72,6 +74,11 @@ export function MapEditor() {
       setMapName(data.name || 'My Map');
       setGroups(data.groups || []);
       setPins(data.pins);
+      if (data.pins && data.pins.length > 0) {
+        const bounds = L.latLngBounds(data.pins.map(p => [p.lat, p.lng]));
+        setBoundsToFit(bounds);
+        setTimeout(() => setBoundsToFit(null), 1000);
+      }
       setUserRole(data.userRole || 'view');
       setPermissions(data.permissions || []);
     } catch (err) {
@@ -254,7 +261,14 @@ export function MapEditor() {
 
   const handleImport = (data: Partial<MapData>) => {
     if (data.name) setMapName(data.name);
-    if (data.pins) setPins(data.pins);
+    if (data.pins) {
+      setPins(data.pins);
+      if (data.pins.length > 0) {
+        const bounds = L.latLngBounds(data.pins.map(p => [p.lat, p.lng]));
+        setBoundsToFit(bounds);
+        setTimeout(() => setBoundsToFit(null), 1000);
+      }
+    }
     if (data.groups) setGroups(data.groups);
     setSuccessMessage('Map imported! Auto-saving...');
     setTimeout(() => setSuccessMessage(null), 3000);
@@ -348,6 +362,7 @@ export function MapEditor() {
             onUpdatePin={updatePin}
             targetLocation={targetLocation} 
             targetPinId={targetPinId}
+            boundsToFit={boundsToFit}
             onBoundsChange={setMapBounds}
             userRole={userRole}
           />

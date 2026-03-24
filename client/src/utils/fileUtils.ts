@@ -1,5 +1,5 @@
 import tokml from 'tokml';
-import type { MapData, Pin, PinGroup, PinColor, PinIcon } from '@shared/interfaces';
+import type { MapData, Pin, PinGroup, PinIcon } from '@shared/interfaces';
 import { parseKmlHierarchy } from './kmlUtils';
 
 /**
@@ -98,10 +98,12 @@ export const geoJSONToData = (geojson: any): { pins: Pin[], groups: PinGroup[] }
         }
       }
 
-      const validColors: PinColor[] = ['blue', 'red', 'green', 'orange', 'violet'];
       const validIcons: PinIcon[] = ['default', 'hotel', 'restaurant', 'airport', 'park', 'museum', 'shopping', 'camera'];
 
-      const color = validColors.includes(props.color) ? props.color : 'blue';
+      // Lenient color validation to support hex codes
+      const color = (props.color && (props.color.startsWith('#') || ['blue', 'red', 'green', 'orange', 'violet'].includes(props.color))) 
+        ? props.color 
+        : 'blue';
       const icon = validIcons.includes(props.icon) ? props.icon : 'default';
 
       pins.push({

@@ -31,9 +31,31 @@ const ICON_SVG_PATHS: Record<Exclude<PinIcon, 'default'>, string> = {
 // I'll actually just use simplified versions.
 
 export function getMarkerIcon(color: PinColor = 'blue', icon: PinIcon = 'default') {
+  const isHex = color.startsWith('#');
+  const colorCode = isHex ? color : (COLOR_CODES[color] || COLOR_CODES.blue);
+
   if (icon === 'default') {
+    if (isHex) {
+      const html = `
+        <div style="position: relative; width: 25px; height: 41px;">
+          <svg width="25" height="41" viewBox="0 0 25 41" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12.5 0C5.596 0 0 5.596 0 12.5C0 21.875 12.5 35 12.5 35C12.5 35 25 21.875 25 12.5C25 5.596 19.404 0 12.5 0Z" fill="${colorCode}"/>
+            <path d="M12.5 0C5.596 0 0 5.596 0 12.5C0 15.5 1.5 18.5 3.5 21" stroke="black" stroke-opacity="0.1" stroke-width="1"/>
+            <circle cx="12.5" cy="12.5" r="4" fill="white" fill-opacity="0.3"/>
+          </svg>
+        </div>
+      `;
+      return L.divIcon({
+        className: 'custom-pin-hex',
+        html,
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+      });
+    }
+
     return new L.Icon({
-      iconUrl: ICON_URLS[color],
+      iconUrl: ICON_URLS[color] || ICON_URLS.blue,
       shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
       iconSize: [25, 41],
       iconAnchor: [12, 41],
@@ -42,7 +64,6 @@ export function getMarkerIcon(color: PinColor = 'blue', icon: PinIcon = 'default
     });
   }
 
-  const colorCode = COLOR_CODES[color];
   const svgPath = ICON_SVG_PATHS[icon as Exclude<PinIcon, 'default'>];
 
   const html = `
