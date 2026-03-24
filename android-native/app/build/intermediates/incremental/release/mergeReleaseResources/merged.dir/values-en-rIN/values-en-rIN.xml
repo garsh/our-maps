@@ -106,6 +106,8 @@
     <string msgid="994099543833979061" name="time_picker_minute_text_field">"for minutes"</string>
     <string msgid="7352665290700284516" name="time_picker_period_toggle_description">"Select a.m. or p.m."</string>
     <string msgid="2232702812657998674" name="time_picker_pm">"PM"</string>
+    <string msgid="3765533235322692011" name="tooltip_description">"tooltip"</string>
+    <string msgid="3124740595719787496" name="tooltip_label">"show tooltip"</string>
     <string msgid="2732804537909054941" name="tooltip_long_press_label">"Show tooltip"</string>
     <string msgid="8191239805703103845" name="tooltip_pane_description">"Tooltip"</string>
 </resources>

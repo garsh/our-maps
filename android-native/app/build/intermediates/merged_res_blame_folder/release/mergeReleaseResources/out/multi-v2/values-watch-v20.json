@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.google.ourmaps.app-mergeReleaseResources-60:/values-watch-v20/values-watch-v20.xml",
+            "outputFile": "com.google.ourmaps.app-mergeReleaseResources-61:/values-watch-v20/values-watch-v20.xml",
             "map": [
                 {
                     "source": "/home/zach/.gradle/caches/9.3.1/transforms/3d48ced500afa68bd3d54d194a1ac533/transformed/jetified-play-services-auth-21.0.0/res/values-watch-v20/values.xml",

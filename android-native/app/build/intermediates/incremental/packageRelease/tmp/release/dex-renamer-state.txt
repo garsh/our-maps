@@ -1,7 +1,10 @@
-#Sat Mar 21 23:25:07 PDT 2026
+#Mon Mar 23 23:59:23 PDT 2026
 base.0=/home/zach/our-maps/android-native/app/build/intermediates/dex/release/mergeDexRelease/classes.dex
 base.1=/home/zach/our-maps/android-native/app/build/intermediates/dex/release/mergeDexRelease/classes2.dex
+base.2=/home/zach/our-maps/android-native/app/build/intermediates/dex/release/mergeDexRelease/classes3.dex
 path.0=classes.dex
 path.1=classes2.dex
+path.2=classes3.dex
 renamed.0=classes.dex
 renamed.1=classes2.dex
+renamed.2=classes3.dex
