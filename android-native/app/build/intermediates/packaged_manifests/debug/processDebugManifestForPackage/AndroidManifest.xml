@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <permission
         android:name="com.google.ourmaps.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
@@ -51,6 +54,11 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.OurMaps" >
+        <service
+            android:name="com.google.ourmaps.services.MapDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <activity
             android:name="com.google.ourmaps.MainActivity"
             android:exported="true"

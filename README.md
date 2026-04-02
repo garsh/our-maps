@@ -14,6 +14,10 @@ The `android-native/` directory contains a completely independent, native Androi
 -   **Native UI**: Built with Jetpack Compose for a modern, performant experience.
 -   **Networking**: Uses Retrofit to communicate with the shared backend (configured for `10.0.2.2` for emulator access).
 -   **Maps**: Integrated with OSMDroid for OpenStreetMap support.
+-   **Pin Editor**: Advanced pin editor with color and icon selectors matching the web app.
+-   **Map Management**: Create, import (KML), and delete maps directly from the app.
+-   **Offline Support**: View cached maps and download map areas for offline use.
+-   **Modern Styling**: Marker symbols and colors aligned with the web application.
 
 ### Testing
 Unit tests for the ViewModels and Repositories are included. You can run them via Android Studio or the command line:

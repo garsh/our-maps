@@ -15,4 +15,10 @@ interface MapApi {
 
     @POST("maps")
     suspend fun createMap(@Body mapData: MapData): MapData
+
+    @retrofit2.http.PUT("maps/{id}")
+    suspend fun updateMap(@Path("id") id: String, @Body mapData: MapData): retrofit2.Response<Unit>
+
+    @retrofit2.http.DELETE("maps/{id}")
+    suspend fun deleteMap(@Path("id") id: String): retrofit2.Response<Unit>
 }

@@ -636,6 +636,19 @@
       externalAnnotations="annotations.zip"
       proguardRules="proguard.txt"/>
   <library
+      name="androidx.compose.material:material-icons-extended-android:1.5.4@aar"
+      jars="/home/zach/.gradle/caches/9.3.1/transforms/d7647b31ddb8ba3d575b6499ea3d1313/transformed/jetified-material-icons-extended-release/jars/classes.jar"
+      resolved="androidx.compose.material:material-icons-extended-android:1.5.4"
+      folder="/home/zach/.gradle/caches/9.3.1/transforms/d7647b31ddb8ba3d575b6499ea3d1313/transformed/jetified-material-icons-extended-release"
+      manifest="AndroidManifest.xml"
+      resFolder="res"
+      assetsFolder="assets"
+      lintJar="lint.jar"
+      publicResources="public.txt"
+      symbolFile="R.txt"
+      externalAnnotations="annotations.zip"
+      proguardRules="proguard.txt"/>
+  <library
       name="androidx.compose.material:material-ripple-android:1.5.4@aar"
       jars="/home/zach/.gradle/caches/9.3.1/transforms/1d6507ca808ff17d9b9418e0b79319e7/transformed/jetified-material-ripple-release/jars/classes.jar"
       resolved="androidx.compose.material:material-ripple-android:1.5.4"

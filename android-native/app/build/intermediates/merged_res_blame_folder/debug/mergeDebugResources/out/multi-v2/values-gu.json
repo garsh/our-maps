@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.google.ourmaps.app-mergeDebugResources-65:/values-gu/values-gu.xml",
+            "outputFile": "com.google.ourmaps.app-mergeDebugResources-66:/values-gu/values-gu.xml",
             "map": [
                 {
                     "source": "/home/zach/.gradle/caches/9.3.1/transforms/7c5400628896f320a86505b026f4af53/transformed/jetified-foundation-release/res/values-gu/values-gu.xml",

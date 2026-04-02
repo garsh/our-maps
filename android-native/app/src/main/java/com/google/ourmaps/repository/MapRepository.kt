@@ -1,20 +1,32 @@
 package com.google.ourmaps.repository
 
+import android.content.Context
 import com.google.gson.Gson
 import com.google.ourmaps.api.MapApi
 import com.google.ourmaps.model.MapData
+import com.google.ourmaps.utils.OfflineManager
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
-class MapRepository {
+class MapRepository(private val context: Context) {
 
     private val api: MapApi
 
     companion object {
         var userJson: String? = null
+        
+        @Volatile
+        private var INSTANCE: MapRepository? = null
+        fun getInstance(context: Context): MapRepository {
+            return INSTANCE ?: synchronized(this) {
+                val instance = MapRepository(context.applicationContext)
+                INSTANCE = instance
+                instance
+            }
+        }
     }
 
     init {
@@ -51,7 +63,13 @@ class MapRepository {
             val maps = api.getMaps()
             Result.success(maps)
         } catch (e: Exception) {
-            Result.failure(e)
+            // Fallback to offline maps
+            val offlineMaps = OfflineManager.getAllOfflineMaps(context)
+            if (offlineMaps.isNotEmpty()) {
+                Result.success(offlineMaps)
+            } else {
+                Result.failure(e)
+            }
         }
     }
 
@@ -59,6 +77,41 @@ class MapRepository {
         return try {
             val map = api.getMap(id)
             Result.success(map)
+        } catch (e: Exception) {
+            // Fallback to offline map
+            val offlineMap = OfflineManager.getOfflineMap(context, id)
+            if (offlineMap != null) {
+                Result.success(offlineMap)
+            } else {
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun createMap(mapData: MapData): Result<MapData> {
+        return try {
+            val map = api.createMap(mapData)
+            Result.success(map)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateMap(id: String, mapData: MapData): Result<Unit> {
+        return try {
+            val response = api.updateMap(id, mapData)
+            if (response.isSuccessful) Result.success(Unit)
+            else Result.failure(Exception("Update failed"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteMap(id: String): Result<Unit> {
+        return try {
+            val response = api.deleteMap(id)
+            if (response.isSuccessful) Result.success(Unit)
+            else Result.failure(Exception("Delete failed"))
         } catch (e: Exception) {
             Result.failure(e)
         }

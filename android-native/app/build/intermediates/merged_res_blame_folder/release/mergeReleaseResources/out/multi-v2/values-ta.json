@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.google.ourmaps.app-mergeReleaseResources-61:/values-ta/values-ta.xml",
+            "outputFile": "com.google.ourmaps.app-mergeReleaseResources-62:/values-ta/values-ta.xml",
             "map": [
                 {
                     "source": "/home/zach/.gradle/caches/9.3.1/transforms/3e21b8a01712a3ac2da63fb7fbbfdc7e/transformed/material-1.11.0/res/values-ta/values-ta.xml",

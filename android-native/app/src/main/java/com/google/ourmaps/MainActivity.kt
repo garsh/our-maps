@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
@@ -41,9 +42,11 @@ import com.google.ourmaps.ui.theme.DarkSlateBlue
 import com.google.ourmaps.ui.theme.LightGray
 import com.google.ourmaps.ui.theme.OurMapsTheme
 import com.google.ourmaps.ui.theme.SuccessGreen
-import com.google.ourmaps.viewmodel.AuthViewModel
-import com.google.ourmaps.viewmodel.MapListViewModel
-import com.google.ourmaps.viewmodel.UiState
+import com.google.ourmaps.utils.KmlHelper
+import com.google.ourmaps.utils.NotificationHelper
+import com.google.ourmaps.utils.OfflineManager
+import com.google.ourmaps.repository.MapRepository
+import com.google.ourmaps.viewmodel.*
 import org.osmdroid.config.Configuration
 import java.text.SimpleDateFormat
 import java.util.*
@@ -52,10 +55,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Configuration.getInstance().load(this, getSharedPreferences("osmdroid", MODE_PRIVATE))
+        Configuration.getInstance().userAgentValue = packageName
+        
+        NotificationHelper.createNotificationChannel(this)
+        
+        val repository = MapRepository.getInstance(this)
+        val factory = OurMapsViewModelFactory(repository)
+
         setContent {
             OurMapsTheme {
                 Surface(color = MaterialTheme.colorScheme.background) {
-                    App()
+                    App(factory = factory)
                 }
             }
         }
@@ -63,7 +73,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun App(authViewModel: AuthViewModel = viewModel()) {
+fun App(authViewModel: AuthViewModel = viewModel(), factory: OurMapsViewModelFactory) {
     val navController = rememberNavController()
     val user by authViewModel.user.collectAsState()
     val context = LocalContext.current
@@ -80,8 +90,16 @@ fun App(authViewModel: AuthViewModel = viewModel()) {
         authViewModel.handleSignInResult(task)
     }
 
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { }
+
     LaunchedEffect(Unit) {
         authViewModel.checkExistingLogin(context)
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     if (user == null) {
@@ -91,7 +109,9 @@ fun App(authViewModel: AuthViewModel = viewModel()) {
     } else {
         NavHost(navController = navController, startDestination = "mapList") {
             composable("mapList") {
+                val mapListViewModel: MapListViewModel = viewModel(factory = factory)
                 MapListScreen(
+                    viewModel = mapListViewModel,
                     onMapClick = { mapId -> navController.navigate("mapDetail/$mapId") },
                     onLogout = { authViewModel.logout(context, googleSignInClient) },
                     userPicture = user?.picture,
@@ -100,8 +120,10 @@ fun App(authViewModel: AuthViewModel = viewModel()) {
             }
             composable("mapDetail/{mapId}") { backStackEntry ->
                 val mapId = backStackEntry.arguments?.getString("mapId") ?: return@composable
+                val mapDetailViewModel: MapDetailViewModel = viewModel(factory = factory)
                 MapDetailScreen(
                     mapId = mapId,
+                    viewModel = mapDetailViewModel,
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -140,7 +162,7 @@ fun LoginScreen(onLoginClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapListScreen(
-    viewModel: MapListViewModel = viewModel(),
+    viewModel: MapListViewModel,
     onMapClick: (String) -> Unit,
     onLogout: () -> Unit,
     userPicture: String?,
@@ -148,6 +170,93 @@ fun MapListScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var newMapName by remember { mutableStateOf("") }
+    var mapToDelete by remember { mutableStateOf<MapData?>(null) }
+    val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        viewModel.fetchMaps()
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            try {
+                val inputStream = context.contentResolver.openInputStream(it)
+                inputStream?.use { stream ->
+                    val newMapId = java.util.UUID.randomUUID().toString()
+                    val mapData = KmlHelper.parseKmlToMapData(stream, newMapId, "me")
+                    viewModel.importMap(mapData) { mapId ->
+                        onMapClick(mapId)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    if (showCreateDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = false },
+            title = { Text("Create New Map") },
+            text = {
+                OutlinedTextField(
+                    value = newMapName,
+                    onValueChange = { newMapName = it },
+                    label = { Text("Map Name") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (newMapName.isNotBlank()) {
+                        viewModel.createMap(newMapName) { mapId ->
+                            showCreateDialog = false
+                            onMapClick(mapId)
+                        }
+                    }
+                }) {
+                    Text("Create")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (mapToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { mapToDelete = null },
+            title = { Text("Delete Map?") },
+            text = { Text("Are you sure you want to delete '${mapToDelete?.name}'? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        mapToDelete?.let { map ->
+                            viewModel.deleteMap(map.id) {
+                                OfflineManager.removeOfflineMap(context, map.id)
+                                mapToDelete = null
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { mapToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -179,17 +288,43 @@ fun MapListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { /* TODO: Add Map */ },
-                containerColor = SuccessGreen,
-                contentColor = Color.White
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Create New Map")
+            var showFabMenu by remember { mutableStateOf(false) }
+            
+            Box {
+                FloatingActionButton(
+                    onClick = { showFabMenu = !showFabMenu },
+                    containerColor = SuccessGreen,
+                    contentColor = Color.White
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Menu")
+                }
+                
+                DropdownMenu(
+                    expanded = showFabMenu,
+                    onDismissRequest = { showFabMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Create New Map") },
+                        onClick = {
+                            showFabMenu = false
+                            newMapName = ""
+                            showCreateDialog = true
+                        },
+                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Import KML") },
+                        onClick = {
+                            showFabMenu = false
+                            importLauncher.launch(arrayOf("application/vnd.google-earth.kml+xml", "text/xml", "application/xml"))
+                        },
+                        leadingIcon = { Icon(Icons.Default.Place, contentDescription = null) }
+                    )
+                }
             }
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize().background(LightGray)) {
-            // Search Bar inspired by web app
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -235,7 +370,11 @@ fun MapListScreen(
                         } else {
                             LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
                                 items(filteredMaps) { map ->
-                                    MapListItem(map, onMapClick)
+                                    MapListItem(
+                                        map = map, 
+                                        onClick = onMapClick,
+                                        onDeleteClick = { mapToDelete = it }
+                                    )
                                 }
                             }
                         }
@@ -247,7 +386,7 @@ fun MapListScreen(
 }
 
 @Composable
-fun MapListItem(map: MapData, onClick: (String) -> Unit) {
+fun MapListItem(map: MapData, onClick: (String) -> Unit, onDeleteClick: (MapData) -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -258,7 +397,21 @@ fun MapListItem(map: MapData, onClick: (String) -> Unit) {
         shape = RoundedCornerShape(8.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            Text(text = map.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = DarkSlateBlue)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = map.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = DarkSlateBlue,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                if (map.ownerId == "me" || map.userRole == "owner") {
+                    IconButton(onClick = { onDeleteClick(map) }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete Map", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = if (map.ownerId == "me") "Owner" else "Shared by ${map.ownerName ?: "Unknown"}",
@@ -268,7 +421,7 @@ fun MapListItem(map: MapData, onClick: (String) -> Unit) {
             Spacer(modifier = Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Default.Search, // Placeholder for Clock
+                    imageVector = Icons.Default.Search,
                     contentDescription = null,
                     modifier = Modifier.size(14.dp),
                     tint = Color.LightGray
@@ -287,7 +440,6 @@ fun MapListItem(map: MapData, onClick: (String) -> Unit) {
 private fun formatDate(dateString: String?): String {
     if (dateString == null) return "Never"
     return try {
-        // Mock parser for ISO string
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
         val date = sdf.parse(dateString) ?: return "Never"
         SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(date)

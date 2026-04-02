@@ -17,23 +17,14 @@ object KmlHelper {
         parser.nextTag()
 
         val pins = mutableListOf<Pin>()
+        val groups = mutableListOf<com.google.ourmaps.model.PinGroup>()
         var mapName = "Imported Map"
 
         while (parser.next() != XmlPullParser.END_DOCUMENT) {
             if (parser.eventType != XmlPullParser.START_TAG) continue
             
-            when (parser.name) {
-                "Document" -> {
-                    // Look for name inside Document
-                    while (parser.next() != XmlPullParser.END_TAG || parser.name != "Document") {
-                        if (parser.eventType == XmlPullParser.START_TAG && parser.name == "name") {
-                            mapName = readText(parser)
-                        } else if (parser.eventType == XmlPullParser.START_TAG && parser.name == "Placemark") {
-                            pins.add(readPlacemark(parser))
-                        }
-                    }
-                }
-                "Placemark" -> pins.add(readPlacemark(parser))
+            if (parser.name == "Document" || parser.name == "Folder" || parser.name == "kml") {
+                parseContainer(parser, pins, groups, null, if (parser.name == "Document") { name -> mapName = name } else null)
             }
         }
 
@@ -43,11 +34,76 @@ object KmlHelper {
             ownerId = ownerId,
             ownerName = null,
             ownerEmail = null,
-            groups = emptyList(),
+            groups = groups,
             pins = pins,
             userRole = "owner",
             lastAccessedAt = null
         )
+    }
+
+    private fun parseContainer(
+        parser: XmlPullParser,
+        pins: MutableList<Pin>,
+        groups: MutableList<com.google.ourmaps.model.PinGroup>,
+        currentGroupId: String?,
+        onNameFound: ((String) -> Unit)?
+    ) {
+        while (parser.next() != XmlPullParser.END_TAG) {
+            if (parser.eventType != XmlPullParser.START_TAG) continue
+
+            when (parser.name) {
+                "name" -> {
+                    val name = readText(parser)
+                    onNameFound?.invoke(name)
+                }
+                "Folder" -> {
+                    // Extract folder name first if possible or handle inside
+                    // For simplicity in this stream parser, we might miss the name if it's after other tags.
+                    // A proper DOM parser is often better for KML, but recursive Pull is okay if structure is standard.
+                    // We'll Create a group for this folder.
+                    val newGroupId = java.util.UUID.randomUUID().toString()
+                    // We need to find the name of this folder.
+                    // This recursion is tricky with PullParser. 
+                    // Let's simplified: If we hit Folder, we create a group and recurse.
+                    // The name might be the first child.
+                    
+                    var folderName = "Untitled Group"
+                    // We need to peek or just start parsing children.
+                    // Let's assume standard KML: <Folder><name>...</name>...
+                    
+                    val tempPins = mutableListOf<Pin>() // We might need to assign them later
+                    
+                    // Actually, let's just make a new group and update its name if we find one.
+                    val group = com.google.ourmaps.model.PinGroup(newGroupId, folderName, groups.size)
+                    groups.add(group)
+                    
+                    parseContainer(parser, pins, groups, newGroupId) { name -> 
+                        // Update group name in the list (mutable)
+                        val index = groups.indexOf(group)
+                        if (index != -1) {
+                            groups[index] = group.copy(name = name)
+                        }
+                    }
+                }
+                "Placemark" -> {
+                    pins.add(readPlacemark(parser).copy(groupId = currentGroupId))
+                }
+                else -> skip(parser)
+            }
+        }
+    }
+
+    private fun skip(parser: XmlPullParser) {
+        if (parser.eventType != XmlPullParser.START_TAG) {
+            throw IllegalStateException()
+        }
+        var depth = 1
+        while (depth != 0) {
+            when (parser.next()) {
+                XmlPullParser.END_TAG -> depth--
+                XmlPullParser.START_TAG -> depth++
+            }
+        }
     }
 
     private fun readPlacemark(parser: XmlPullParser): Pin {

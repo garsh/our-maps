@@ -1,6 +1,7 @@
 package com.google.ourmaps.viewmodel
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.google.ourmaps.model.MapData
 import com.google.ourmaps.repository.MapRepository
@@ -15,7 +16,7 @@ sealed class UiState<out T> {
     data class Error(val message: String) : UiState<Nothing>()
 }
 
-class MapListViewModel(private val repository: MapRepository = MapRepository()) : ViewModel() {
+class MapListViewModel(private val repository: MapRepository) : ViewModel() {
 
     private val _uiState = MutableStateFlow<UiState<List<MapData>>>(UiState.Loading)
     val uiState: StateFlow<UiState<List<MapData>>> = _uiState.asStateFlow()
@@ -29,15 +30,57 @@ class MapListViewModel(private val repository: MapRepository = MapRepository()) 
             _uiState.value = UiState.Loading
             val result = repository.getMaps()
             result.onSuccess { maps ->
-                _uiState.value = UiState.Success(maps)
+                val sortedMaps = maps.sortedByDescending { it.lastAccessedAt }
+                _uiState.value = UiState.Success(sortedMaps)
             }.onFailure { e ->
                 _uiState.value = UiState.Error(e.message ?: "Unknown error")
             }
         }
     }
+
+    fun createMap(name: String, onSuccess: (String) -> Unit) {
+        viewModelScope.launch {
+            val newMap = MapData(
+                id = java.util.UUID.randomUUID().toString(),
+                name = name,
+                ownerId = "me",
+                ownerName = null,
+                ownerEmail = null,
+                groups = emptyList(),
+                pins = emptyList(),
+                userRole = "owner",
+                lastAccessedAt = null
+            )
+            val result = repository.createMap(newMap)
+            result.onSuccess { createdMap ->
+                fetchMaps()
+                onSuccess(createdMap.id)
+            }
+        }
+    }
+
+    fun importMap(mapData: MapData, onSuccess: (String) -> Unit) {
+        viewModelScope.launch {
+            val result = repository.createMap(mapData)
+            result.onSuccess { createdMap ->
+                fetchMaps()
+                onSuccess(createdMap.id)
+            }
+        }
+    }
+
+    fun deleteMap(id: String, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            val result = repository.deleteMap(id)
+            result.onSuccess {
+                fetchMaps()
+                onSuccess()
+            }
+        }
+    }
 }
 
-class MapDetailViewModel(private val repository: MapRepository = MapRepository()) : ViewModel() {
+class MapDetailViewModel(private val repository: MapRepository) : ViewModel() {
 
     private val _uiState = MutableStateFlow<UiState<MapData>>(UiState.Loading)
     val uiState: StateFlow<UiState<MapData>> = _uiState.asStateFlow()
@@ -51,6 +94,32 @@ class MapDetailViewModel(private val repository: MapRepository = MapRepository()
             }.onFailure { e ->
                 _uiState.value = UiState.Error(e.message ?: "Unknown error")
             }
+        }
+    }
+
+    fun updateMap(mapData: MapData) {
+        viewModelScope.launch {
+            val result = repository.updateMap(mapData.id, mapData)
+            result.onSuccess {
+                _uiState.value = UiState.Success(mapData)
+            }
+        }
+    }
+
+    fun deleteMap(id: String, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            val result = repository.deleteMap(id)
+            result.onSuccess { onSuccess() }
+        }
+    }
+}
+
+class OurMapsViewModelFactory(private val repository: MapRepository) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        return when {
+            modelClass.isAssignableFrom(MapListViewModel::class.java) -> MapListViewModel(repository) as T
+            modelClass.isAssignableFrom(MapDetailViewModel::class.java) -> MapDetailViewModel(repository) as T
+            else -> throw IllegalArgumentException("Unknown ViewModel class")
         }
     }
 }

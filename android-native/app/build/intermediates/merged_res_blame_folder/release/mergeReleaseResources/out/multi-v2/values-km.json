@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.google.ourmaps.app-mergeReleaseResources-61:/values-km/values-km.xml",
+            "outputFile": "com.google.ourmaps.app-mergeReleaseResources-62:/values-km/values-km.xml",
             "map": [
                 {
                     "source": "/home/zach/.gradle/caches/9.3.1/transforms/1800fa76c6ff8aa7a890fe3504cf316d/transformed/core-1.12.0/res/values-km/values-km.xml",
