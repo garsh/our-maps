@@ -83,6 +83,12 @@ fun MapDetailScreen(
     var editingGroupId by remember { mutableStateOf<String?>(null) }
     var editingGroupName by remember { mutableStateOf("") }
 
+    // Search
+    var isSearching by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
+    var isGeocoding by remember { mutableStateOf(false) }
+
     // New layer creation
     var showCreateLayerDialog by remember { mutableStateOf(false) }
     var newLayerName by remember { mutableStateOf("") }
@@ -103,6 +109,11 @@ fun MapDetailScreen(
     // Download confirmation
     var showDownloadConfirm by remember { mutableStateOf(false) }
     var downloadSummary by remember { mutableStateOf<DownloadSummary?>(null) }
+
+    // Share Map
+    var showShareDialog by remember { mutableStateOf(false) }
+    var shareEmail by remember { mutableStateOf("") }
+    var shareRole by remember { mutableStateOf("view") }
 
     // Offline status
     var isOfflineAvailable by remember(mapId) { 
@@ -342,6 +353,90 @@ fun MapDetailScreen(
         )
     }
 
+    if (showShareDialog) {
+        val mapData = (uiState as? UiState.Success)?.data
+        AlertDialog(
+            onDismissRequest = { showShareDialog = false },
+            title = { Text("Manage Map Access") },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    if (mapData?.userRole == "owner") {
+                        Text("Add New User", style = MaterialTheme.typography.titleSmall)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = shareEmail,
+                            onValueChange = { shareEmail = it },
+                            label = { Text("User Email") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Permission Level", style = MaterialTheme.typography.labelMedium)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = shareRole == "view", onClick = { shareRole = "view" })
+                            Text("Viewer")
+                            Spacer(modifier = Modifier.width(16.dp))
+                            RadioButton(selected = shareRole == "edit", onClick = { shareRole = "edit" })
+                            Text("Editor")
+                        }
+                        
+                        Button(
+                            onClick = {
+                                if (shareEmail.isNotBlank()) {
+                                    viewModel.shareMap(shareEmail, shareRole) {
+                                        shareEmail = ""
+                                        Toast.makeText(context, "Map shared successfully", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        ) {
+                            Text("Invite User")
+                        }
+                        
+                        Divider(modifier = Modifier.padding(vertical = 16.dp))
+                    }
+
+                    Text("Who Has Access", style = MaterialTheme.typography.titleSmall)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    val accessList = mapData?.access ?: emptyList()
+                    if (accessList.isEmpty()) {
+                        Text("Only you have access", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                    } else {
+                        LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
+                            items(accessList) { mapUser ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(mapUser.name ?: mapUser.email, style = MaterialTheme.typography.bodyMedium)
+                                        Text(mapUser.role.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                    }
+                                    if (mapData?.userRole == "owner" && mapUser.role != "owner") {
+                                        IconButton(onClick = {
+                                            viewModel.removeShare(mapUser.id) {
+                                                Toast.makeText(context, "Permission removed", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }) {
+                                            Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.Red, modifier = Modifier.size(20.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showShareDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             val title = (uiState as? UiState.Success)?.data?.name ?: "Loading..."
@@ -402,7 +497,7 @@ fun MapDetailScreen(
                                             rawBbox.centerWithDateLine.longitude - (maxOf(minSpan, rawBbox.longitudeSpan) / 2.0)
                                         )
                                     } else rawBbox
-                                    x
+                                    
                                     var totalTiles = TileCalculator.countTiles(boundingBox, 1, 10)
                                     state.data.pins.forEach { pin ->
                                         totalTiles += TileCalculator.countTiles(BoundingBox(pin.lat + 0.005, pin.lng + 0.005, pin.lat - 0.005, pin.lng - 0.005), 11, 16)
@@ -432,6 +527,14 @@ fun MapDetailScreen(
                             },
                             leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
                         )
+                        DropdownMenuItem(
+                            text = { Text("Invite Others") },
+                            onClick = {
+                                showMenu = false
+                                showShareDialog = true
+                            },
+                            leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null) }
+                        )
                         Divider()
                         DropdownMenuItem(
                             text = { Text("Delete Map", color = MaterialTheme.colorScheme.error) },
@@ -442,6 +545,17 @@ fun MapDetailScreen(
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = DarkSlateBlue, titleContentColor = Color.White, navigationIconContentColor = Color.White, actionIconContentColor = Color.White)
             )
+        },
+        floatingActionButton = {
+            if (!isSearching && selectedPin == null && uiState is UiState.Success) {
+                FloatingActionButton(
+                    onClick = { isSearching = true },
+                    containerColor = DarkSlateBlue,
+                    contentColor = Color.White
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Pin")
+                }
+            }
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize().background(LightGray)) {
@@ -609,6 +723,84 @@ fun MapDetailScreen(
                                     Text(text = "${mapData.pins.size} Pins", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
                                     Spacer(modifier = Modifier.height(16.dp))
                                     Text("Long press on map to add a pin. Tap marker to edit.", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                }
+                            }
+                        }
+                    }
+
+                    if (isSearching) {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.background
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { isSearching = false; searchQuery = ""; searchResults = emptyList() }) {
+                                        Icon(Icons.Default.ArrowBack, contentDescription = "Close Search")
+                                    }
+                                    OutlinedTextField(
+                                        value = searchQuery,
+                                        onValueChange = { searchQuery = it },
+                                        placeholder = { Text("Search for a place...") },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true,
+                                        trailingIcon = {
+                                            if (searchQuery.isNotEmpty()) {
+                                                if (isGeocoding) {
+                                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                                } else {
+                                                    IconButton(onClick = { searchQuery = "" }) {
+                                                        Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                                
+                                LaunchedEffect(searchQuery) {
+                                    if (searchQuery.length > 2) {
+                                        isGeocoding = true
+                                        searchResults = GeocodingService.search(context, searchQuery, mapViewRef?.boundingBox)
+                                        isGeocoding = false
+                                    } else {
+                                        searchResults = emptyList()
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+                                
+                                LazyColumn {
+                                    items(searchResults) { result ->
+                                        ListItem(
+                                            headlineContent = { Text(result.name) },
+                                            supportingContent = { Text(result.description) },
+                                            leadingContent = { Icon(Icons.Default.Place, contentDescription = null) },
+                                            modifier = Modifier.clickable {
+                                                val newPin = Pin(
+                                                    id = java.util.UUID.randomUUID().toString(),
+                                                    lat = result.location.latitude,
+                                                    lng = result.location.longitude,
+                                                    label = result.name,
+                                                    description = result.description,
+                                                    imageUrl = null,
+                                                    color = "blue",
+                                                    icon = "default",
+                                                    groupId = null,
+                                                    position = mapData.pins.size
+                                                )
+                                                viewModel.updateMap(mapData.copy(pins = mapData.pins + newPin))
+                                                
+                                                mapViewRef?.controller?.animateTo(result.location)
+                                                mapViewRef?.controller?.setZoom(16.0)
+                                                
+                                                isSearching = false
+                                                searchQuery = ""
+                                                searchResults = emptyList()
+                                                selectedPin = newPin
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }

@@ -26,6 +26,14 @@ data class PinGroup(
     val position: Int
 )
 
+data class MapUser(
+    val id: String,
+    val email: String,
+    val name: String?,
+    val picture: String?,
+    val role: String // 'owner' | 'edit' | 'view'
+)
+
 data class MapData(
     val id: String,
     val name: String,
@@ -34,6 +42,7 @@ data class MapData(
     val ownerEmail: String?,
     val groups: List<PinGroup>,
     val pins: List<Pin>,
-    val userRole: String?, // 'owner' | 'edit' | 'view'
+    val userRole: String?, // Current user's role
+    val access: List<MapUser>?, // List of all users with access
     val lastAccessedAt: String?
 )

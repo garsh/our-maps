@@ -116,4 +116,24 @@ class MapRepository(private val context: Context) {
             Result.failure(e)
         }
     }
+
+    suspend fun shareMap(id: String, email: String, role: String): Result<Unit> {
+        return try {
+            val response = api.shareMap(id, mapOf("email" to email, "role" to role))
+            if (response.isSuccessful) Result.success(Unit)
+            else Result.failure(Exception("Share failed: ${response.code()}"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun removeShare(id: String, userId: String): Result<Unit> {
+        return try {
+            val response = api.removeShare(id, userId)
+            if (response.isSuccessful) Result.success(Unit)
+            else Result.failure(Exception("Remove share failed"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

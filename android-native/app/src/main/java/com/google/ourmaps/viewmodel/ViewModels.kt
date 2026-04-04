@@ -49,6 +49,7 @@ class MapListViewModel(private val repository: MapRepository) : ViewModel() {
                 groups = emptyList(),
                 pins = emptyList(),
                 userRole = "owner",
+                access = null,
                 lastAccessedAt = null
             )
             val result = repository.createMap(newMap)
@@ -123,6 +124,32 @@ class MapDetailViewModel(
             result.onSuccess { 
                 // Local cleanup is handled in the UI callback
                 onSuccess() 
+            }
+        }
+    }
+
+    fun shareMap(email: String, role: String, onSuccess: () -> Unit) {
+        val state = _uiState.value
+        if (state is UiState.Success) {
+            viewModelScope.launch {
+                val result = repository.shareMap(state.data.id, email, role)
+                result.onSuccess { 
+                    loadMap(state.data.id) // Refresh to show new access list
+                    onSuccess() 
+                }
+            }
+        }
+    }
+
+    fun removeShare(userId: String, onSuccess: () -> Unit) {
+        val state = _uiState.value
+        if (state is UiState.Success) {
+            viewModelScope.launch {
+                val result = repository.removeShare(state.data.id, userId)
+                result.onSuccess {
+                    loadMap(state.data.id) // Refresh list
+                    onSuccess()
+                }
             }
         }
     }

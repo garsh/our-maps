@@ -36,9 +36,10 @@ object KmlHelper {
             ownerEmail = null,
             groups = groups,
             pins = pins,
-            userRole = "owner",
+            userRole = null,
+            access = null,
             lastAccessedAt = null
-        )
+            )
     }
 
     private fun parseContainer(

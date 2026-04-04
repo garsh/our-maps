@@ -21,4 +21,16 @@ interface MapApi {
 
     @retrofit2.http.DELETE("maps/{id}")
     suspend fun deleteMap(@Path("id") id: String): retrofit2.Response<Unit>
+
+    @POST("maps/{id}/share")
+    suspend fun shareMap(
+        @Path("id") id: String,
+        @Body shareData: Map<String, String>
+    ): retrofit2.Response<Unit>
+
+    @retrofit2.http.DELETE("maps/{id}/share/{userId}")
+    suspend fun removeShare(
+        @Path("id") id: String,
+        @Path("userId") userId: String
+    ): retrofit2.Response<Unit>
 }
