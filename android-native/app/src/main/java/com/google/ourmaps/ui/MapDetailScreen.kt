@@ -1,11 +1,14 @@
 package com.google.ourmaps.ui
 
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,14 +25,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.ourmaps.model.Pin
+import com.google.ourmaps.model.PinGroup
 import com.google.ourmaps.ui.theme.DarkSlateBlue
 import com.google.ourmaps.ui.theme.LightGray
 import com.google.ourmaps.ui.theme.SuccessGreen
-import com.google.ourmaps.utils.KmlHelper
-import com.google.ourmaps.utils.MarkerUtils
-import com.google.ourmaps.utils.OfflineManager
-import com.google.ourmaps.utils.DownloadProgressTracker
-import com.google.ourmaps.utils.TileCalculator
+import com.google.ourmaps.utils.*
 import com.google.ourmaps.services.MapDownloadService
 import com.google.gson.Gson
 import com.google.ourmaps.viewmodel.MapDetailViewModel
@@ -73,9 +73,28 @@ fun MapDetailScreen(
     // Background download status
     val activeDownloads by DownloadProgressTracker.activeDownloads.collectAsState()
     val progressMap by DownloadProgressTracker.downloadProgress.collectAsState()
-    
     val isDownloading = activeDownloads.contains(mapId)
     val downloadProgress = progressMap[mapId] ?: 0f
+
+    // Layer / Group visibility
+    var visibleGroupIds by remember { mutableStateOf<Set<String?>>(emptySet()) }
+    var showLayersDialog by remember { mutableStateOf(false) }
+    // Layer editing
+    var editingGroupId by remember { mutableStateOf<String?>(null) }
+    var editingGroupName by remember { mutableStateOf("") }
+
+    // New layer creation
+    var showCreateLayerDialog by remember { mutableStateOf(false) }
+    var newLayerName by remember { mutableStateOf("") }
+    var pendingPinForNewLayer by remember { mutableStateOf<Pin?>(null) }
+    // Initialize visibility once data loads
+    LaunchedEffect(uiState) {
+        val state = uiState
+        if (state is UiState.Success && visibleGroupIds.isEmpty()) {
+            val allGroups = state.data.groups.map { it.id }.toSet() + (null as String?)
+            visibleGroupIds = allGroups
+        }
+    }
 
     var selectedPin by remember { mutableStateOf<Pin?>(null) }
     var showMenu by remember { mutableStateOf(false) }
@@ -93,7 +112,7 @@ fun MapDetailScreen(
     // Track if we've already auto-zoomed for the current map
     var hasAutoZoomed by remember(mapId) { mutableStateOf(false) }
 
-    // Reference to MapView for downloading
+    // Reference to MapView
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -166,17 +185,12 @@ fun MapDetailScreen(
                 Button(
                     onClick = {
                         showDownloadConfirm = false
-                        val mv = mapViewRef
                         val state = uiState
-                        if (mv != null && state is UiState.Success) {
+                        if (state is UiState.Success) {
                             val intent = Intent(context, MapDownloadService::class.java).apply {
                                 putExtra("map_data", Gson().toJson(state.data))
-                                val bboxData = mapOf(
-                                    "n" to downloadSummary!!.bbox.latNorth,
-                                    "e" to downloadSummary!!.bbox.lonEast,
-                                    "s" to downloadSummary!!.bbox.latSouth,
-                                    "w" to downloadSummary!!.bbox.lonWest
-                                )
+                                val bbox = downloadSummary!!.bbox
+                                val bboxData = mapOf("n" to bbox.latNorth, "e" to bbox.lonEast, "s" to bbox.latSouth, "w" to bbox.lonWest)
                                 putExtra("bounding_box", Gson().toJson(bboxData))
                             }
                             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -199,6 +213,135 @@ fun MapDetailScreen(
         )
     }
 
+    if (showLayersDialog && uiState is UiState.Success) {
+        val mapData = (uiState as UiState.Success).data
+        AlertDialog(
+            onDismissRequest = { 
+                showLayersDialog = false
+                editingGroupId = null
+            },
+            title = { Text("Map Layers") },
+            text = {
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    item {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable {
+                            visibleGroupIds = if (visibleGroupIds.contains(null)) visibleGroupIds - null else visibleGroupIds + null
+                        }.padding(vertical = 8.dp)) {
+                            Checkbox(checked = visibleGroupIds.contains(null), onCheckedChange = {
+                                visibleGroupIds = if (it) visibleGroupIds + null else visibleGroupIds - null
+                            })
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Default (No Group)", modifier = Modifier.weight(1f))
+                        }
+                    }
+                    items(mapData.groups) { group ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable {
+                            visibleGroupIds = if (visibleGroupIds.contains(group.id)) visibleGroupIds - group.id else visibleGroupIds + group.id
+                        }.padding(vertical = 8.dp)) {
+                            Checkbox(checked = visibleGroupIds.contains(group.id), onCheckedChange = {
+                                visibleGroupIds = if (it) visibleGroupIds + group.id else visibleGroupIds - group.id
+                            })
+                            Spacer(modifier = Modifier.width(8.dp))
+                            
+                            if (editingGroupId == group.id) {
+                                OutlinedTextField(
+                                    value = editingGroupName,
+                                    onValueChange = { editingGroupName = it },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true,
+                                    trailingIcon = {
+                                        IconButton(onClick = {
+                                            val updatedGroups = mapData.groups.map { 
+                                                if (it.id == group.id) it.copy(name = editingGroupName) else it 
+                                            }
+                                            viewModel.updateMap(mapData.copy(groups = updatedGroups))
+                                            editingGroupId = null
+                                        }) {
+                                            Icon(Icons.Default.Check, contentDescription = "Save")
+                                        }
+                                    }
+                                )
+                            } else {
+                                Text(group.name, modifier = Modifier.weight(1f))
+                                IconButton(onClick = {
+                                    editingGroupId = group.id
+                                    editingGroupName = group.name
+                                }) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Rename", modifier = Modifier.size(16.dp))
+                                }
+                                IconButton(onClick = {
+                                    // Move pins in this group back to default
+                                    val updatedPins = mapData.pins.map { 
+                                        if (it.groupId == group.id) it.copy(groupId = null) else it 
+                                    }
+                                    val updatedGroups = mapData.groups.filter { it.id != group.id }
+                                    visibleGroupIds = visibleGroupIds - group.id
+                                    viewModel.updateMap(mapData.copy(groups = updatedGroups, pins = updatedPins))
+                                }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete Layer", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { 
+                    showLayersDialog = false
+                    editingGroupId = null
+                }) {
+                    Text("Done")
+                }
+            }
+        )
+    }
+
+    if (showCreateLayerDialog && uiState is UiState.Success) {
+        val mapData = (uiState as UiState.Success).data
+        AlertDialog(
+            onDismissRequest = { showCreateLayerDialog = false },
+            title = { Text("Create New Layer") },
+            text = {
+                OutlinedTextField(
+                    value = newLayerName,
+                    onValueChange = { newLayerName = it },
+                    label = { Text("Layer Name") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (newLayerName.isNotBlank()) {
+                        val nid = java.util.UUID.randomUUID().toString()
+                        visibleGroupIds = visibleGroupIds + nid
+                        val newGroups = mapData.groups + com.google.ourmaps.model.PinGroup(nid, newLayerName, mapData.groups.size)
+                        
+                        // If we started this from a pin, move that pin to the new group
+                        val updatedPins = if (pendingPinForNewLayer != null) {
+                            mapData.pins.map { 
+                                if (it.id == pendingPinForNewLayer?.id) it.copy(groupId = nid) else it 
+                            }
+                        } else {
+                            mapData.pins
+                        }
+                        
+                        viewModel.updateMap(mapData.copy(groups = newGroups, pins = updatedPins))
+                        showCreateLayerDialog = false
+                        newLayerName = ""
+                        pendingPinForNewLayer = null
+                    }
+                }) {
+                    Text("Create")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateLayerDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             val title = (uiState as? UiState.Success)?.data?.name ?: "Loading..."
@@ -211,12 +354,7 @@ fun MapDetailScreen(
                             Text(title, fontWeight = FontWeight.Bold)
                             if (isOfflineAvailable) {
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Icon(
-                                    Icons.Default.CloudDone, 
-                                    contentDescription = "Available Offline",
-                                    tint = SuccessGreen,
-                                    modifier = Modifier.size(16.dp)
-                                )
+                                Icon(Icons.Default.CloudDone, contentDescription = "Available Offline", tint = SuccessGreen, modifier = Modifier.size(16.dp))
                             }
                         }
                         if (isDownloading) {
@@ -227,73 +365,53 @@ fun MapDetailScreen(
                                     color = SuccessGreen,
                                     trackColor = Color.White.copy(alpha = 0.3f)
                                 )
-                                Text(
-                                    text = "${(downloadProgress * 100).toInt()}% downloaded",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White.copy(alpha = 0.8f),
-                                    fontSize = 8.sp
-                                )
+                                Text(text = "${(downloadProgress * 100).toInt()}% downloaded", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f), fontSize = 8.sp)
                             }
                         }
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                    }
+                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back") }
                 },
                 actions = {
-                    IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "More options")
-                    }
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
+                    IconButton(onClick = { showLayersDialog = true }) { Icon(Icons.Default.Layers, contentDescription = "Layers") }
+                    IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More options") }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                         DropdownMenuItem(
-                            text = { 
-                                Text(if (isOfflineAvailable) "Update Offline Map" else "Download Map (Offline)") 
-                            },
+                            text = { Text(if (isOfflineAvailable) "Update Offline Map" else "Download Map (Offline)") },
                             onClick = {
-                                Log.i("MapDownload", "Download button clicked")
                                 showMenu = false
                                 val mv = mapViewRef
                                 val state = uiState
                                 if (mv != null && state is UiState.Success) {
                                     val markers = mv.overlays.filterIsInstance<Marker>()
-                                    val boundingBox = if (markers.size > 1) {
-                                        val points = markers.map { it.position }
-                                        BoundingBox.fromGeoPoints(points)
+                                    val rawBbox = if (markers.size > 1) {
+                                        BoundingBox.fromGeoPoints(markers.map { it.position })
                                     } else if (markers.size == 1) {
                                         val p = markers[0].position
                                         BoundingBox(p.latitude + 0.01, p.longitude + 0.01, p.latitude - 0.01, p.longitude - 0.01)
                                     } else {
                                         mv.boundingBox
                                     }
-                                    
-                                    // Calculate summary
+                                    val minSpan = 0.01
+                                    val boundingBox = if (rawBbox.latitudeSpan < minSpan || rawBbox.longitudeSpan < minSpan) {
+                                        BoundingBox(
+                                            rawBbox.centerWithDateLine.latitude + (maxOf(minSpan, rawBbox.latitudeSpan) / 2.0),
+                                            rawBbox.centerWithDateLine.longitude + (maxOf(minSpan, rawBbox.longitudeSpan) / 2.0),
+                                            rawBbox.centerWithDateLine.latitude - (maxOf(minSpan, rawBbox.latitudeSpan) / 2.0),
+                                            rawBbox.centerWithDateLine.longitude - (maxOf(minSpan, rawBbox.longitudeSpan) / 2.0)
+                                        )
+                                    } else rawBbox
+                                    x
                                     var totalTiles = TileCalculator.countTiles(boundingBox, 1, 10)
                                     state.data.pins.forEach { pin ->
-                                        val box = BoundingBox(pin.lat + 0.005, pin.lng + 0.005, pin.lat - 0.005, pin.lng - 0.005)
-                                        totalTiles += TileCalculator.countTiles(box, 11, 16)
+                                        totalTiles += TileCalculator.countTiles(BoundingBox(pin.lat + 0.005, pin.lng + 0.005, pin.lat - 0.005, pin.lng - 0.005), 11, 16)
                                     }
-                                    
-                                    downloadSummary = DownloadSummary(
-                                        tileCount = totalTiles,
-                                        sizeMB = TileCalculator.estimateSizeMB(totalTiles),
-                                        bbox = boundingBox
-                                    )
+                                    downloadSummary = DownloadSummary(totalTiles, TileCalculator.estimateSizeMB(totalTiles), boundingBox)
                                     showDownloadConfirm = true
-                                } else {
-                                    Log.e("MapDownload", "MapView or State is not ready")
                                 }
                             },
-                            leadingIcon = { 
-                                Icon(
-                                    if (isOfflineAvailable) Icons.Default.CloudSync else Icons.Default.Download, 
-                                    contentDescription = null
-                                ) 
-                            }
+                            leadingIcon = { Icon(if (isOfflineAvailable) Icons.Default.CloudSync else Icons.Default.Download, contentDescription = null) }
                         )
                         if (isOfflineAvailable) {
                             DropdownMenuItem(
@@ -302,96 +420,57 @@ fun MapDetailScreen(
                                     showMenu = false
                                     OfflineManager.removeOfflineMap(context, mapId)
                                     isOfflineAvailable = false
-                                    Toast.makeText(context, "Offline cache removed", Toast.LENGTH_SHORT).show()
                                 },
-                                leadingIcon = { 
-                                    Icon(Icons.Default.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.error) 
-                                }
+                                leadingIcon = { Icon(Icons.Default.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                             )
                         }
                         DropdownMenuItem(
                             text = { Text("Export KML") },
                             onClick = {
                                 showMenu = false
-                                val state = uiState
-                                if (state is UiState.Success) {
-                                    exportLauncher.launch("${state.data.name.replace(" ", "_")}.kml")
-                                }
+                                (uiState as? UiState.Success)?.let { exportLauncher.launch("${it.data.name.replace(" ", "_")}.kml") }
                             },
                             leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
                         )
                         Divider()
                         DropdownMenuItem(
                             text = { Text("Delete Map", color = MaterialTheme.colorScheme.error) },
-                            onClick = {
-                                showMenu = false
-                                showDeleteConfirm = true
-                            },
+                            onClick = { showMenu = false; showDeleteConfirm = true },
                             leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                         )
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = DarkSlateBlue,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White,
-                    actionIconContentColor = Color.White
-                )
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = DarkSlateBlue, titleContentColor = Color.White, navigationIconContentColor = Color.White, actionIconContentColor = Color.White)
             )
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize().background(LightGray)) {
             when (val state = uiState) {
-                is UiState.Loading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                }
-                is UiState.Error -> {
-                    Text("Error: ${state.message}", modifier = Modifier.align(Alignment.Center), color = Color.Red)
-                }
+                is UiState.Loading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                is UiState.Error -> Text("Error: ${state.message}", modifier = Modifier.align(Alignment.Center), color = Color.Red)
                 is UiState.Success -> {
                     val mapData = state.data
-                    
                     Column {
                         Box(modifier = Modifier.weight(1f)) {
                             AndroidView(
                                 modifier = Modifier.fillMaxSize(),
                                 factory = { ctx ->
-                                    Log.i("MapDownload", "MapView factory called")
                                     MapView(ctx).apply {
                                         setTileSource(permissiveTileSource)
                                         setMultiTouchControls(true)
                                         zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
-                                        
-                                        // Set map to use cache first (offline-friendly)
                                         setUseDataConnection(true)
-                                        
                                         mapViewRef = this
-                                        Log.i("MapDownload", "mapViewRef set")
-
                                         val eventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
                                             override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                                                 selectedPin = null
                                                 overlays.forEach { if (it is Marker) it.closeInfoWindow() }
                                                 return true
                                             }
-
                                             override fun longPressHelper(p: GeoPoint?): Boolean {
                                                 p?.let {
-                                                    val newPin = Pin(
-                                                        id = java.util.UUID.randomUUID().toString(),
-                                                        lat = it.latitude,
-                                                        lng = it.longitude,
-                                                        label = "New Pin",
-                                                        description = "",
-                                                        imageUrl = null,
-                                                        color = "blue",
-                                                        icon = "default",
-                                                        groupId = null,
-                                                        position = mapData.pins.size
-                                                    )
-                                                    val updatedPins = mapData.pins.toMutableList()
-                                                    updatedPins.add(newPin)
-                                                    viewModel.updateMap(mapData.copy(pins = updatedPins))
+                                                    val newPin = Pin(java.util.UUID.randomUUID().toString(), it.latitude, it.longitude, "New Pin", "", null, "blue", "default", null, mapData.pins.size)
+                                                    viewModel.updateMap(mapData.copy(pins = mapData.pins + newPin))
                                                 }
                                                 return true
                                             }
@@ -399,246 +478,137 @@ fun MapDetailScreen(
                                         overlays.add(eventsOverlay)
                                     }
                                 },
-                                update = { mapView ->
-                                    // Keep events overlay
-                                    if (mapView.overlays.size > 1) {
-                                        mapView.overlays.subList(1, mapView.overlays.size).forEach { 
-                                            if (it is Marker) it.closeInfoWindow() 
-                                        }
-                                        mapView.overlays.subList(1, mapView.overlays.size).clear()
+                                update = { mv ->
+                                    if (mv.overlays.size > 1) {
+                                        mv.overlays.subList(1, mv.overlays.size).forEach { if (it is Marker) it.closeInfoWindow() }
+                                        mv.overlays.subList(1, mv.overlays.size).clear()
                                     }
-
-                                    mapData.pins.forEach { pin ->
-                                        val marker = Marker(mapView)
-                                        marker.position = GeoPoint(pin.lat, pin.lng)
-                                        marker.title = pin.label
-                                        marker.snippet = pin.description
-                                        marker.icon = MarkerUtils.getColoredMarker(context, pin.color, pin.icon)
-                                        
-                                        marker.setOnMarkerClickListener { m, _ ->
-                                            selectedPin = pin
-                                            m.showInfoWindow()
-                                            true
+                                    mapData.pins.filter { it.groupId in visibleGroupIds }.forEach { pin ->
+                                        val marker = Marker(mv).apply {
+                                            position = GeoPoint(pin.lat, pin.lng)
+                                            title = pin.label
+                                            snippet = pin.description
+                                            icon = MarkerUtils.getColoredMarker(context, pin.color ?: "blue", pin.icon ?: "default")
+                                            setOnMarkerClickListener { m, _ ->
+                                                selectedPin = pin
+                                                m.showInfoWindow()
+                                                true
+                                            }
                                         }
-                                        mapView.overlays.add(marker)
+                                        mv.overlays.add(marker)
                                     }
-                                    
-                                    mapView.invalidate()
-
+                                    mv.invalidate()
                                     if (!hasAutoZoomed && mapData.pins.isNotEmpty()) {
                                         if (mapData.pins.size == 1) {
-                                            val p = mapData.pins[0]
-                                            mapView.controller.setCenter(GeoPoint(p.lat, p.lng))
-                                            mapView.controller.setZoom(15.0)
+                                            mv.controller.setCenter(GeoPoint(mapData.pins[0].lat, mapData.pins[0].lng))
+                                            mv.controller.setZoom(15.0)
                                             hasAutoZoomed = true
                                         } else {
-                                            if (mapView.width > 0 && mapView.height > 0) {
+                                            if (mv.width > 0 && mv.height > 0) {
                                                 try {
-                                                    val points = mapData.pins.map { GeoPoint(it.lat, it.lng) }
-                                                    val boundingBox = BoundingBox.fromGeoPoints(points)
-                                                    mapView.zoomToBoundingBox(boundingBox, true, 100)
+                                                    mv.zoomToBoundingBox(BoundingBox.fromGeoPoints(mapData.pins.map { GeoPoint(it.lat, it.lng) }), true, 100)
                                                     hasAutoZoomed = true
-                                                } catch (e: Exception) {
-                                                    e.printStackTrace()
-                                                }
+                                                } catch (e: Exception) { }
                                             } else {
-                                                mapView.addOnLayoutChangeListener(object : android.view.View.OnLayoutChangeListener {
+                                                mv.addOnLayoutChangeListener(object : android.view.View.OnLayoutChangeListener {
                                                     override fun onLayoutChange(v: android.view.View, l: Int, t: Int, r: Int, b: Int, ol: Int, ot: Int, or: Int, ob: Int) {
-                                                        mapView.removeOnLayoutChangeListener(this)
-                                                        if (mapData.pins.size > 1) {
-                                                            try {
-                                                                val points = mapData.pins.map { GeoPoint(it.lat, it.lng) }
-                                                                val boundingBox = BoundingBox.fromGeoPoints(points)
-                                                                mapView.zoomToBoundingBox(boundingBox, true, 100)
-                                                                hasAutoZoomed = true
-                                                            } catch (e: Exception) {
-                                                                e.printStackTrace()
-                                                            }
-                                                        }
+                                                        mv.removeOnLayoutChangeListener(this)
+                                                        try { mv.zoomToBoundingBox(BoundingBox.fromGeoPoints(mapData.pins.map { GeoPoint(it.lat, it.lng) }), true, 100); hasAutoZoomed = true } catch (e: Exception) {}
                                                     }
                                                 })
                                             }
                                         }
                                     } else if (!hasAutoZoomed && mapData.pins.isEmpty()) {
-                                        mapView.controller.setZoom(2.0)
-                                        mapView.controller.setCenter(GeoPoint(20.0, 0.0))
-                                        hasAutoZoomed = true
+                                        mv.controller.setZoom(2.0); mv.controller.setCenter(GeoPoint(20.0, 0.0)); hasAutoZoomed = true
                                     }
                                 }
                             )
                         }
-                        
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            color = Color.White,
-                            shadowElevation = 16.dp,
-                            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
-                        ) {
+                        Surface(modifier = Modifier.fillMaxWidth(), color = Color.White, shadowElevation = 16.dp, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)) {
                             Column(modifier = Modifier.padding(24.dp)) {
                                 if (selectedPin != null) {
-                                    var editedLabel by remember(selectedPin?.id) { mutableStateOf(selectedPin?.label ?: "") }
-                                    var editedDescription by remember(selectedPin?.id) { mutableStateOf(selectedPin?.description ?: "") }
-                                    var editedColor by remember(selectedPin?.id) { mutableStateOf(selectedPin?.color ?: "blue") }
-                                    var editedIcon by remember(selectedPin?.id) { mutableStateOf(selectedPin?.icon ?: "default") }
-
+                                    // Always get the freshest pin data from mapData
+                                    val pin = mapData.pins.find { it.id == selectedPin?.id } ?: selectedPin!!
+                                    
+                                    var editedLabel by remember(pin.id) { mutableStateOf(pin.label ?: "") }
+                                    var editedDescription by remember(pin.id) { mutableStateOf(pin.description ?: "") }
+                                    var editedColor by remember(pin.id) { mutableStateOf(pin.color ?: "blue") }
+                                    var editedIcon by remember(pin.id) { mutableStateOf(pin.icon ?: "default") }
+                                    val updatePin = { l: String, d: String, c: String, i: String, g: String? ->
+                                        viewModel.updateMap(mapData.copy(pins = mapData.pins.map { if (it.id == pin.id) it.copy(label = l, description = d, color = c, icon = i, groupId = g) else it }))
+                                    }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text("Edit Pin", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                                         IconButton(onClick = {
-                                            val updatedPins = mapData.pins.filter { it.id != selectedPin?.id }
-                                            viewModel.updateMap(mapData.copy(pins = updatedPins))
-                                            selectedPin = null
-                                        }) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete Pin", tint = Color.Red)
-                                        }
+                                            val gmmUri = Uri.parse("google.navigation:q=${pin.lat},${pin.lng}")
+                                            val mapIntent = Intent(Intent.ACTION_VIEW, gmmUri).apply { setPackage("com.google.android.apps.maps") }
+                                            try { context.startActivity(mapIntent) } catch (e: Exception) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:${pin.lat},${pin.lng}?q=${pin.lat},${pin.lng}"))) }
+                                        }) { Icon(Icons.Default.Directions, contentDescription = "Directions", tint = DarkSlateBlue) }
+                                        IconButton(onClick = { viewModel.updateMap(mapData.copy(pins = mapData.pins.filter { it.id != pin.id })); selectedPin = null }) { Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red) }
                                     }
-
-                                    val updatePin = { newLabel: String, newDescription: String, newColor: String, newIcon: String ->
-                                        val updatedPins = mapData.pins.map { 
-                                            if (it.id == selectedPin?.id) it.copy(
-                                                label = newLabel,
-                                                description = newDescription,
-                                                color = newColor,
-                                                icon = newIcon
-                                            ) else it 
-                                        }
-                                        viewModel.updateMap(mapData.copy(pins = updatedPins))
-                                    }
-
-                                    OutlinedTextField(
-                                        value = editedLabel,
-                                        onValueChange = { 
-                                            editedLabel = it
-                                            updatePin(it, editedDescription, editedColor, editedIcon)
-                                        },
-                                        label = { Text("Name") },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
+                                    OutlinedTextField(value = editedLabel, onValueChange = { editedLabel = it; updatePin(it, editedDescription, editedColor, editedIcon, pin.groupId) }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    OutlinedTextField(
-                                        value = editedDescription,
-                                        onValueChange = { 
-                                            editedDescription = it
-                                            updatePin(editedLabel, it, editedColor, editedIcon)
-                                        },
-                                        label = { Text("Description") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        minLines = 2
-                                    )
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    
-                                    Text("Color", style = MaterialTheme.typography.labelMedium)
-                                    Row(
-                                        modifier = Modifier.padding(vertical = 8.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        val colorMap = mapOf(
-                                            "blue" to Color(0xFF2A81CB),
-                                            "red" to Color(0xFFCB2B3E),
-                                            "green" to Color(0xFF2AAD27),
-                                            "orange" to Color(0xFFCB8427),
-                                            "violet" to Color(0xFF9C2BCB)
-                                        )
-                                        colorMap.forEach { (colorName, colorValue) ->
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(36.dp)
-                                                    .background(colorValue, CircleShape)
-                                                    .clickable { 
-                                                        editedColor = colorName 
-                                                        updatePin(editedLabel, editedDescription, colorName, editedIcon)
-                                                    }
-                                                    .padding(4.dp)
-                                            ) {
-                                                if (editedColor == colorName) {
-                                                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp).align(Alignment.Center))
-                                                }
-                                            }
-                                        }
-                                        
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        
-                                        var hexInput by remember(selectedPin?.id) { 
-                                            mutableStateOf(if (editedColor.startsWith("#")) editedColor else "") 
-                                        }
-                                        
-                                        OutlinedTextField(
-                                            value = hexInput,
-                                            onValueChange = { 
-                                                if (it.length <= 7) {
-                                                    hexInput = it
-                                                    if (it.length == 7 && it.startsWith("#")) {
-                                                        editedColor = it
-                                                        updatePin(editedLabel, editedDescription, it, editedIcon)
-                                                    } else if (it.length == 6 && !it.startsWith("#")) {
-                                                        val fullHex = "#$it"
-                                                        editedColor = fullHex
-                                                        updatePin(editedLabel, editedDescription, fullHex, editedIcon)
-                                                    }
-                                                }
-                                            },
-                                            label = { Text("Hex") },
-                                            modifier = Modifier.width(100.dp),
-                                            textStyle = MaterialTheme.typography.bodySmall,
-                                            placeholder = { Text("#RRGGBB") },
-                                            singleLine = true
-                                        )
+                                    OutlinedTextField(value = editedDescription, onValueChange = { editedDescription = it; updatePin(editedLabel, it, editedColor, editedIcon, pin.groupId) }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    var showGroupDropdown by remember { mutableStateOf(false) }
+                                    val currentGroupName = remember(pin.id, pin.groupId, mapData.groups) {
+                                        mapData.groups.find { it.id == pin.groupId }?.name ?: "No Group (Default)"
                                     }
-
+                                    
+                                    Box(modifier = Modifier.fillMaxWidth().clickable { showGroupDropdown = true }) {
+                                        OutlinedTextField(
+                                            value = currentGroupName,
+                                            onValueChange = { },
+                                            readOnly = true,
+                                            label = { Text("Layer") },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            enabled = false,
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                                                disabledBorderColor = MaterialTheme.colorScheme.outline,
+                                                disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                            ),
+                                            trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) }
+                                        )
+                                        DropdownMenu(expanded = showGroupDropdown, onDismissRequest = { showGroupDropdown = false }) {
+                                            DropdownMenuItem(text = { Text("No Group (Default)") }, onClick = { updatePin(editedLabel, editedDescription, editedColor, editedIcon, null); showGroupDropdown = false })
+                                            mapData.groups.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { updatePin(editedLabel, editedDescription, editedColor, editedIcon, g.id); showGroupDropdown = false }) }
+                                            Divider()
+                                            DropdownMenuItem(
+                                                text = { Text("Create New Layer...") },
+                                                onClick = {
+                                                    showGroupDropdown = false
+                                                    pendingPinForNewLayer = pin
+                                                    newLayerName = ""
+                                                    showCreateLayerDialog = true
+                                                },
+                                                leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) }
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text("Color", style = MaterialTheme.typography.labelMedium)
+                                    Row(modifier = Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        val colors = mapOf("blue" to Color(0xFF2A81CB), "red" to Color(0xFFCB2B3E), "green" to Color(0xFF2AAD27), "orange" to Color(0xFFCB8427), "violet" to Color(0xFF9C2BCB))
+                                        colors.forEach { (n, v) -> Box(modifier = Modifier.size(36.dp).background(v, CircleShape).clickable { editedColor = n; updatePin(editedLabel, editedDescription, n, editedIcon, pin.groupId) }.padding(4.dp)) { if (editedColor == n) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(20.dp).align(Alignment.Center)) } }
+                                    }
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text("Icon", style = MaterialTheme.typography.labelMedium)
                                     Column {
-                                        Row(modifier = Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            listOf("default", "hotel", "restaurant", "airport").forEach { type ->
-                                                FilterChip(
-                                                    selected = editedIcon == type,
-                                                    onClick = { 
-                                                        editedIcon = type 
-                                                        updatePin(editedLabel, editedDescription, editedColor, type)
-                                                    },
-                                                    label = { Text(type.replaceFirstChar { it.uppercase() }, fontSize = 10.sp) }
-                                                )
-                                            }
-                                        }
-                                        Row(modifier = Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            listOf("park", "museum", "shopping", "camera").forEach { type ->
-                                                FilterChip(
-                                                    selected = editedIcon == type,
-                                                    onClick = { 
-                                                        editedIcon = type 
-                                                        updatePin(editedLabel, editedDescription, editedColor, type)
-                                                    },
-                                                    label = { Text(type.replaceFirstChar { it.uppercase() }, fontSize = 10.sp) }
-                                                )
+                                        listOf(listOf("default", "hotel", "restaurant", "airport"), listOf("park", "museum", "shopping", "camera")).forEach { row ->
+                                            Row(modifier = Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                row.forEach { t -> FilterChip(selected = editedIcon == t, onClick = { editedIcon = t; updatePin(editedLabel, editedDescription, editedColor, t, pin.groupId) }, label = { Text(t.replaceFirstChar { it.uppercase() }, fontSize = 10.sp) }) }
                                             }
                                         }
                                     }
-
                                     Spacer(modifier = Modifier.height(16.dp))
-                                    Button(
-                                        onClick = { selectedPin = null },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(8.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)
-                                    ) {
-                                        Text("Done")
-                                    }
+                                    Button(onClick = { selectedPin = null }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)) { Text("Done") }
                                 } else {
-                                    Column(modifier = Modifier.fillMaxWidth()) {
-                                        Text(
-                                            text = mapData.name,
-                                            style = MaterialTheme.typography.headlineSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = DarkSlateBlue
-                                        )
-                                        Text(
-                                            text = "${mapData.pins.size} Pins",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = Color.Gray
-                                        )
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                        Text("Long press on map to add a pin. Tap marker to edit.", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                                    }
+                                    Text(text = mapData.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = DarkSlateBlue)
+                                    Text(text = "${mapData.pins.size} Pins", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text("Long press on map to add a pin. Tap marker to edit.", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                                 }
                             }
                         }

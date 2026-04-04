@@ -54,13 +54,18 @@ import java.util.*
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Configuration.getInstance().load(this, getSharedPreferences("osmdroid", MODE_PRIVATE))
-        Configuration.getInstance().userAgentValue = packageName
+        val osmdroidConfig = Configuration.getInstance()
+        osmdroidConfig.load(this, getSharedPreferences("osmdroid", MODE_PRIVATE))
+        osmdroidConfig.userAgentValue = packageName
+        
+        // Performance optimizations for downloads
+        osmdroidConfig.tileDownloadThreads = 8
+        osmdroidConfig.tileDownloadMaxQueueSize = 100
         
         NotificationHelper.createNotificationChannel(this)
         
         val repository = MapRepository.getInstance(this)
-        val factory = OurMapsViewModelFactory(repository)
+        val factory = OurMapsViewModelFactory(repository, this)
 
         setContent {
             OurMapsTheme {

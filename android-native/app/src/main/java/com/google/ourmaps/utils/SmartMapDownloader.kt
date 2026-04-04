@@ -24,7 +24,7 @@ class SmartMapDownloader(
     private var totalTasks = 0
     private var completedTasks = 0
     private var runningTasks = 0
-    private val maxConcurrentTasks = 3
+    private val maxConcurrentTasks = 5 // Slightly more parallel for small areas
 
     data class DownloadTask(val box: BoundingBox, val minZoom: Int, val maxZoom: Int)
 
@@ -68,8 +68,14 @@ class SmartMapDownloader(
     }
 
     private fun shouldMerge(b1: BoundingBox, b2: BoundingBox): Boolean {
-        val latCenterDist = abs(b1.centerWithDateLine.latitude - b2.centerWithDateLine.latitude)
-        val lngCenterDist = abs(b1.centerWithDateLine.longitude - b2.centerWithDateLine.longitude)
+        // Simple center-to-center distance check
+        val b1LatCenter = (b1.latNorth + b1.latSouth) / 2.0
+        val b1LonCenter = (b1.lonEast + b1.lonWest) / 2.0
+        val b2LatCenter = (b2.latNorth + b2.latSouth) / 2.0
+        val b2LonCenter = (b2.lonEast + b2.lonWest) / 2.0
+        
+        val latCenterDist = abs(b1LatCenter - b2LatCenter)
+        val lngCenterDist = abs(b1LonCenter - b2LonCenter)
         return latCenterDist < 0.02 && lngCenterDist < 0.02
     }
 

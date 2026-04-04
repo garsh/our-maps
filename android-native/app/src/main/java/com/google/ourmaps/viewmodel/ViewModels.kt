@@ -80,7 +80,10 @@ class MapListViewModel(private val repository: MapRepository) : ViewModel() {
     }
 }
 
-class MapDetailViewModel(private val repository: MapRepository) : ViewModel() {
+class MapDetailViewModel(
+    private val repository: MapRepository,
+    private val context: android.content.Context
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow<UiState<MapData>>(UiState.Loading)
     val uiState: StateFlow<UiState<MapData>> = _uiState.asStateFlow()
@@ -91,6 +94,10 @@ class MapDetailViewModel(private val repository: MapRepository) : ViewModel() {
             val result = repository.getMap(id)
             result.onSuccess { map ->
                 _uiState.value = UiState.Success(map)
+                // Auto-sync: if this map is already downloaded, update the local metadata cache
+                if (com.google.ourmaps.utils.OfflineManager.isMapDownloaded(context, id)) {
+                    com.google.ourmaps.utils.OfflineManager.saveMapOffline(context, map)
+                }
             }.onFailure { e ->
                 _uiState.value = UiState.Error(e.message ?: "Unknown error")
             }
@@ -102,6 +109,10 @@ class MapDetailViewModel(private val repository: MapRepository) : ViewModel() {
             val result = repository.updateMap(mapData.id, mapData)
             result.onSuccess {
                 _uiState.value = UiState.Success(mapData)
+                // Auto-sync: update local cache immediately on save
+                if (com.google.ourmaps.utils.OfflineManager.isMapDownloaded(context, mapData.id)) {
+                    com.google.ourmaps.utils.OfflineManager.saveMapOffline(context, mapData)
+                }
             }
         }
     }
@@ -109,16 +120,22 @@ class MapDetailViewModel(private val repository: MapRepository) : ViewModel() {
     fun deleteMap(id: String, onSuccess: () -> Unit) {
         viewModelScope.launch {
             val result = repository.deleteMap(id)
-            result.onSuccess { onSuccess() }
+            result.onSuccess { 
+                // Local cleanup is handled in the UI callback
+                onSuccess() 
+            }
         }
     }
 }
 
-class OurMapsViewModelFactory(private val repository: MapRepository) : ViewModelProvider.Factory {
+class OurMapsViewModelFactory(
+    private val repository: MapRepository,
+    private val context: android.content.Context
+) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         return when {
             modelClass.isAssignableFrom(MapListViewModel::class.java) -> MapListViewModel(repository) as T
-            modelClass.isAssignableFrom(MapDetailViewModel::class.java) -> MapDetailViewModel(repository) as T
+            modelClass.isAssignableFrom(MapDetailViewModel::class.java) -> MapDetailViewModel(repository, context) as T
             else -> throw IllegalArgumentException("Unknown ViewModel class")
         }
     }
