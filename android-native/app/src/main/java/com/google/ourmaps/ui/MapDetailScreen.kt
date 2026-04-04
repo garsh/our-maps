@@ -243,6 +243,30 @@ fun MapDetailScreen(
                             })
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Default (No Group)", modifier = Modifier.weight(1f))
+                            
+                            IconButton(onClick = {
+                                val groupPins = mapData.pins.filter { it.groupId == null }
+                                if (groupPins.size >= 2) {
+                                    val origin = groupPins.first()
+                                    val destination = groupPins.last()
+                                    val waypoints = if (groupPins.size > 2) {
+                                        groupPins.subList(1, groupPins.size - 1).joinToString("|") { "${it.lat},${it.lng}" }
+                                    } else ""
+                                    
+                                    val uriString = "https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=$waypoints&travelmode=driving&dir_action=navigate"
+                                    val uri = Uri.parse(uriString)
+                                    val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps") }
+                                    try { context.startActivity(intent) } catch (e: Exception) { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+                                } else if (groupPins.size == 1) {
+                                    val pin = groupPins[0]
+                                    val uri = Uri.parse("google.navigation:q=${pin.lat},${pin.lng}")
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps") })
+                                } else {
+                                    Toast.makeText(context, "No pins in this layer", Toast.LENGTH_SHORT).show()
+                                }
+                            }) {
+                                Icon(Icons.Default.Route, contentDescription = "Navigate Layer", modifier = Modifier.size(16.dp), tint = DarkSlateBlue)
+                            }
                         }
                     }
                     items(mapData.groups) { group ->
@@ -274,6 +298,31 @@ fun MapDetailScreen(
                                 )
                             } else {
                                 Text(group.name, modifier = Modifier.weight(1f))
+                                
+                                IconButton(onClick = {
+                                    val groupPins = mapData.pins.filter { it.groupId == group.id }
+                                    if (groupPins.size >= 2) {
+                                        val origin = groupPins.first()
+                                        val destination = groupPins.last()
+                                        val waypoints = if (groupPins.size > 2) {
+                                            groupPins.subList(1, groupPins.size - 1).joinToString("|") { "${it.lat},${it.lng}" }
+                                        } else ""
+                                        
+                                        val uriString = "https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=$waypoints&travelmode=driving&dir_action=navigate"
+                                        val uri = Uri.parse(uriString)
+                                        val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps") }
+                                        try { context.startActivity(intent) } catch (e: Exception) { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+                                    } else if (groupPins.size == 1) {
+                                        val pin = groupPins[0]
+                                        val uri = Uri.parse("google.navigation:q=${pin.lat},${pin.lng}")
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps") })
+                                    } else {
+                                        Toast.makeText(context, "No pins in this layer", Toast.LENGTH_SHORT).show()
+                                    }
+                                }) {
+                                    Icon(Icons.Default.Route, contentDescription = "Navigate Layer", modifier = Modifier.size(16.dp), tint = DarkSlateBlue)
+                                }
+
                                 IconButton(onClick = {
                                     editingGroupId = group.id
                                     editingGroupName = group.name
