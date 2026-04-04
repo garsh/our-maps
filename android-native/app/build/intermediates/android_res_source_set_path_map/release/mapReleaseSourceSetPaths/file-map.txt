@@ -1,7 +1,0 @@
-com.google.ourmaps.app-resValues-0 /home/zach/our-maps/android-native/app/build/generated/res/resValues/release
-com.google.ourmaps.app-updated_navigation_xml-1 /home/zach/our-maps/android-native/app/build/generated/updated_navigation_xml/release
-com.google.ourmaps.app-packageReleaseResources-2 /home/zach/our-maps/android-native/app/build/intermediates/incremental/release/packageReleaseResources/merged.dir
-com.google.ourmaps.app-packageReleaseResources-3 /home/zach/our-maps/android-native/app/build/intermediates/incremental/release/packageReleaseResources/stripped.dir
-com.google.ourmaps.app-release-4 /home/zach/our-maps/android-native/app/build/intermediates/merged_res/release/mergeReleaseResources
-com.google.ourmaps.app-main-5 /home/zach/our-maps/android-native/app/src/main/res
-com.google.ourmaps.app-release-6 /home/zach/our-maps/android-native/app/src/release/res
