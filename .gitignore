@@ -92,3 +92,6 @@ GEMINI.md
 # Android Keys
 *.keystore
 *.jks
+
+# build
+android-native/app/build/*
