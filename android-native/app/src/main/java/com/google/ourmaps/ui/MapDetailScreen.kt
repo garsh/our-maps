@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -52,6 +53,7 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import java.io.OutputStream
+import kotlinx.coroutines.launch
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
@@ -71,6 +73,7 @@ fun MapDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     
     // Custom TileSource that allows bulk downloading
     val permissiveTileSource = remember {
@@ -106,6 +109,7 @@ fun MapDetailScreen(
     var showCreateLayerDialog by remember { mutableStateOf(false) }
     var newLayerName by remember { mutableStateOf("") }
     var pendingPinForNewLayer by remember { mutableStateOf<Pin?>(null) }
+    
     // Initialize visibility once data loads
     LaunchedEffect(uiState) {
         val state = uiState
@@ -117,10 +121,16 @@ fun MapDetailScreen(
 
     var selectedPin by remember { mutableStateOf<Pin?>(null) }
     var isEditingPin by remember { mutableStateOf(false) }
-    var showLegend by remember { mutableStateOf(false) }
+    
+    val scaffoldState = rememberBottomSheetScaffoldState()
+    val density = LocalDensity.current
+    var peekHeightPx by remember { mutableIntStateOf(0) }
+    val sheetPeekHeight = remember(peekHeightPx) { with(density) { (peekHeightPx).toDp() + 24.dp } }
 
-    BackHandler(enabled = selectedPin != null || isSearching) {
-        if (isSearching) {
+    BackHandler(enabled = selectedPin != null || isSearching || scaffoldState.bottomSheetState.currentValue == SheetValue.Expanded) {
+        if (scaffoldState.bottomSheetState.currentValue == SheetValue.Expanded) {
+            coroutineScope.launch { scaffoldState.bottomSheetState.partialExpand() }
+        } else if (isSearching) {
             isSearching = false
             searchQuery = ""
             searchResults = emptyList()
@@ -129,6 +139,7 @@ fun MapDetailScreen(
             isEditingPin = false
         }
     }
+    
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     
@@ -553,508 +564,509 @@ fun MapDetailScreen(
         )
     }
 
-    if (showLegend && uiState is UiState.Success) {
-        val mapData = (uiState as UiState.Success).data
-        ModalBottomSheet(
-            onDismissRequest = { showLegend = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ) {
-            LegendContent(
-                mapData = mapData,
-                visibleGroupIds = visibleGroupIds,
-                onPinClick = { pin ->
-                    selectedPin = pin
-                    isEditingPin = false
-                    showLegend = false
-                    mapViewRef?.controller?.animateTo(GeoPoint(pin.lat, pin.lng))
-                    mapViewRef?.controller?.setZoom(17.0)
-                }
-            )
-        }
-    }
-
-    Scaffold(
-        topBar = {
-            val title = (uiState as? UiState.Success)?.data?.name ?: "Loading..."
-            CenterAlignedTopAppBar(
-                title = { 
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(title, fontWeight = FontWeight.Bold)
-                            if (isOfflineAvailable) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Icon(Icons.Default.CloudDone, contentDescription = "Available Offline", tint = SuccessGreen, modifier = Modifier.size(16.dp))
-                            }
-                        }
-                        if (isDownloading) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                LinearProgressIndicator(
-                                    progress = downloadProgress,
-                                    modifier = Modifier.fillMaxWidth(0.6f).height(4.dp).padding(top = 4.dp),
-                                    color = SuccessGreen,
-                                    trackColor = Color.White.copy(alpha = 0.3f)
-                                )
-                                Text(text = "${(downloadProgress * 100).toInt()}% downloaded", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f), fontSize = 8.sp)
-                            }
-                        }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back") }
-                },
-                actions = {
-                    IconButton(onClick = { showLayersDialog = true }) { Icon(Icons.Default.Layers, contentDescription = "Layers") }
-                    IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More options") }
-                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text(if (isOfflineAvailable) "Update Offline Map" else "Download Map (Offline)") },
-                            onClick = {
-                                showMenu = false
-                                val mv = mapViewRef
-                                val state = uiState
-                                if (mv != null && state is UiState.Success) {
-                                    val markers = mv.overlays.filterIsInstance<Marker>()
-                                    val rawBbox = if (markers.size > 1) {
-                                        BoundingBox.fromGeoPoints(markers.map { it.position })
-                                    } else if (markers.size == 1) {
-                                        val p = markers[0].position
-                                        BoundingBox(p.latitude + 0.01, p.longitude + 0.01, p.latitude - 0.01, p.longitude - 0.01)
-                                    } else {
-                                        mv.boundingBox
-                                    }
-                                    val minSpan = 0.01
-                                    val boundingBox = if (rawBbox.latitudeSpan < minSpan || rawBbox.longitudeSpan < minSpan) {
-                                        BoundingBox(
-                                            rawBbox.centerWithDateLine.latitude + (maxOf(minSpan, rawBbox.latitudeSpan) / 2.0),
-                                            rawBbox.centerWithDateLine.longitude + (maxOf(minSpan, rawBbox.longitudeSpan) / 2.0),
-                                            rawBbox.centerWithDateLine.latitude - (maxOf(minSpan, rawBbox.latitudeSpan) / 2.0),
-                                            rawBbox.centerWithDateLine.longitude - (maxOf(minSpan, rawBbox.longitudeSpan) / 2.0)
-                                        )
-                                    } else rawBbox
-                                    
-                                    var totalTiles = TileCalculator.countTiles(boundingBox, 1, 10)
-                                    state.data.pins.forEach { pin ->
-                                        totalTiles += TileCalculator.countTiles(BoundingBox(pin.lat + 0.005, pin.lng + 0.005, pin.lat - 0.005, pin.lng - 0.005), 11, 16)
-                                    }
-                                    downloadSummary = DownloadSummary(totalTiles, TileCalculator.estimateSizeMB(totalTiles), boundingBox)
-                                    showDownloadConfirm = true
-                                }
-                            },
-                            leadingIcon = { Icon(if (isOfflineAvailable) Icons.Default.CloudSync else Icons.Default.Download, contentDescription = null) }
-                        )
-                        if (isOfflineAvailable) {
-                            DropdownMenuItem(
-                                text = { Text("Delete Offline Cache") },
-                                onClick = {
-                                    showMenu = false
-                                    OfflineManager.removeOfflineMap(context, mapId)
-                                    isOfflineAvailable = false
-                                },
-                                leadingIcon = { Icon(Icons.Default.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text("Export KML") },
-                            onClick = {
-                                showMenu = false
-                                (uiState as? UiState.Success)?.let { exportLauncher.launch("${it.data.name.replace(" ", "_")}.kml") }
-                            },
-                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Invite Others") },
-                            onClick = {
-                                showMenu = false
-                                showShareDialog = true
-                            },
-                            leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null) }
-                        )
-                        Divider()
-                        DropdownMenuItem(
-                            text = { Text("Delete Map", color = MaterialTheme.colorScheme.error) },
-                            onClick = { showMenu = false; showDeleteConfirm = true },
-                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = DarkSlateBlue, titleContentColor = Color.White, navigationIconContentColor = Color.White, actionIconContentColor = Color.White)
+    BottomSheetScaffold(
+        scaffoldState = scaffoldState,
+        sheetPeekHeight = sheetPeekHeight,
+        sheetContainerColor = Color.White,
+        sheetShape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        sheetDragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(vertical = 12.dp)
+                    .width(40.dp)
+                    .height(4.dp)
+                    .background(Color.LightGray, RoundedCornerShape(2.dp))
             )
         },
-        floatingActionButton = {
-            Column(horizontalAlignment = Alignment.End) {
-                if (uiState is UiState.Success) {
-                    FloatingActionButton(
-                        onClick = {
-                            locationOverlay?.let { overlay ->
-                                if (overlay.myLocation != null) {
-                                    mapViewRef?.controller?.animateTo(overlay.myLocation)
-                                    mapViewRef?.controller?.setZoom(17.0)
-                                } else {
-                                    Toast.makeText(context, "Location not available", Toast.LENGTH_SHORT).show()
-                                }
+        sheetContent = {
+            if (uiState is UiState.Success) {
+                val mapData = (uiState as UiState.Success).data
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Peek Portion
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp)
+                            .onGloballyPositioned { layoutCoordinates ->
+                                peekHeightPx = layoutCoordinates.size.height
                             }
-                        },
-                        containerColor = Color.White,
-                        contentColor = DarkSlateBlue,
-                        modifier = Modifier.padding(bottom = 16.dp).size(48.dp)
                     ) {
-                        Icon(Icons.Default.MyLocation, contentDescription = "My Location")
+                        if (selectedPin != null) {
+                            val pin = mapData.pins.find { it.id == selectedPin?.id } ?: selectedPin!!
+                            
+                            if (!isEditingPin) {
+                                // View Mode
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(pin.label ?: "Unnamed Pin", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                    IconButton(onClick = { selectedPin = null }) { Icon(Icons.Default.Close, contentDescription = "Close") }
+                                }
+                                
+                                if (!pin.description.isNullOrBlank()) {
+                                    Text(pin.description!!, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 8.dp))
+                                }
+                                
+                                val groupName = mapData.groups.find { it.id == pin.groupId }?.name ?: "Default Layer"
+                                AssistChip(
+                                    onClick = { },
+                                    label = { Text(groupName) },
+                                    leadingIcon = { Icon(Icons.Default.Layers, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                )
+                                
+                                Spacer(modifier = Modifier.height(16.dp))
+                                
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(
+                                        onClick = {
+                                            val gmmUri = Uri.parse("google.navigation:q=${pin.lat},${pin.lng}")
+                                            val mapIntent = Intent(Intent.ACTION_VIEW, gmmUri).apply { setPackage("com.google.android.apps.maps") }
+                                            try { context.startActivity(mapIntent) } catch (e: Exception) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:${pin.lat},${pin.lng}?q=${pin.lat},${pin.lng}"))) }
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.buttonColors(containerColor = DarkSlateBlue)
+                                    ) {
+                                        Icon(Icons.Default.Directions, contentDescription = null)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Directions")
+                                    }
+                                    
+                                    if (mapData.userRole == "owner" || mapData.userRole == "edit") {
+                                        OutlinedButton(
+                                            onClick = { isEditingPin = true },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(Icons.Default.Edit, contentDescription = null)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("Edit")
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Edit Mode
+                                var editedLabel by remember(pin.id) { mutableStateOf(pin.label ?: "") }
+                                var editedDescription by remember(pin.id) { mutableStateOf(pin.description ?: "") }
+                                var editedColor by remember(pin.id) { mutableStateOf(pin.color ?: "blue") }
+                                var editedIcon by remember(pin.id) { mutableStateOf(pin.icon ?: "default") }
+                                val updatePinFn = { l: String, d: String, c: String, i: String, g: String? ->
+                                    viewModel.updateMap(mapData.copy(pins = mapData.pins.map { if (it.id == pin.id) it.copy(label = l, description = d, color = c, icon = i, groupId = g) else it }))
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Edit Pin", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                    IconButton(onClick = { 
+                                        viewModel.updateMap(mapData.copy(pins = mapData.pins.filter { it.id != pin.id }))
+                                        selectedPin = null 
+                                    }) { Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red) }
+                                }
+                                OutlinedTextField(value = editedLabel, onValueChange = { editedLabel = it; updatePinFn(it, editedDescription, editedColor, editedIcon, pin.groupId) }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(value = editedDescription, onValueChange = { editedDescription = it; updatePinFn(editedLabel, it, editedColor, editedIcon, pin.groupId) }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                var showGroupDropdown by remember { mutableStateOf(false) }
+                                val currentGroupName = remember(pin.id, pin.groupId, mapData.groups) {
+                                    mapData.groups.find { it.id == pin.groupId }?.name ?: "No Group (Default)"
+                                }
+                                
+                                Box(modifier = Modifier.fillMaxWidth().clickable { showGroupDropdown = true }) {
+                                    OutlinedTextField(
+                                        value = currentGroupName,
+                                        onValueChange = { },
+                                        readOnly = true,
+                                        label = { Text("Layer") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        enabled = false,
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                                            disabledBorderColor = MaterialTheme.colorScheme.outline,
+                                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) }
+                                    )
+                                    DropdownMenu(expanded = showGroupDropdown, onDismissRequest = { showGroupDropdown = false }) {
+                                        DropdownMenuItem(text = { Text("No Group (Default)") }, onClick = { updatePinFn(editedLabel, editedDescription, editedColor, editedIcon, null); showGroupDropdown = false })
+                                        mapData.groups.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { updatePinFn(editedLabel, editedDescription, editedColor, editedIcon, g.id); showGroupDropdown = false }) }
+                                        Divider()
+                                        DropdownMenuItem(
+                                            text = { Text("Create New Layer...") },
+                                            onClick = {
+                                                showGroupDropdown = false
+                                                pendingPinForNewLayer = pin
+                                                newLayerName = ""
+                                                showCreateLayerDialog = true
+                                            },
+                                            leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) }
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text("Color", style = MaterialTheme.typography.labelMedium)
+                                Row(modifier = Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    val colors = mapOf("blue" to Color(0xFF2A81CB), "red" to Color(0xFFCB2B3E), "green" to Color(0xFF2AAD27), "orange" to Color(0xFFCB8427), "violet" to Color(0xFF9C2BCB))
+                                    colors.forEach { (n, v) -> Box(modifier = Modifier.size(36.dp).background(v, CircleShape).clickable { editedColor = n; updatePinFn(editedLabel, editedDescription, n, editedIcon, pin.groupId) }.padding(4.dp)) { if (editedColor == n) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(20.dp).align(Alignment.Center)) } }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Icon", style = MaterialTheme.typography.labelMedium)
+                                Column {
+                                    listOf(listOf("default", "hotel", "restaurant", "airport"), listOf("park", "museum", "shopping", "camera")).forEach { row ->
+                                        Row(modifier = Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            row.forEach { t -> FilterChip(selected = editedIcon == t, onClick = { editedIcon = t; updatePinFn(editedLabel, editedDescription, editedColor, t, pin.groupId) }, label = { Text(t.replaceFirstChar { it.uppercase() }, fontSize = 10.sp) }) }
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(onClick = { isEditingPin = false }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)) { Text("Done Editing") }
+                            }
+                        } else {
+                            Text(text = mapData.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = DarkSlateBlue)
+                            Text(text = "${mapData.pins.size} Pins", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                        }
                     }
-                }
 
-                if (!isSearching && selectedPin == null && uiState is UiState.Success) {
-                    FloatingActionButton(
-                        onClick = { isSearching = true },
-                        containerColor = DarkSlateBlue,
-                        contentColor = Color.White
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Pin")
-                    }
+                    // Legend portion (only visible when expanded or scrollable)
+                    Divider(modifier = Modifier.padding(vertical = 16.dp))
+                    LegendContent(
+                        mapData = mapData,
+                        visibleGroupIds = visibleGroupIds,
+                        onPinClick = { pin ->
+                            selectedPin = pin
+                            isEditingPin = false
+                            coroutineScope.launch { scaffoldState.bottomSheetState.partialExpand() }
+                            mapViewRef?.controller?.animateTo(GeoPoint(pin.lat, pin.lng))
+                            mapViewRef?.controller?.setZoom(17.0)
+                        }
+                    )
                 }
+            } else {
+                // Empty content for loading/error states
+                Box(modifier = Modifier.fillMaxWidth().height(100.dp))
             }
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize().background(LightGray)) {
-            when (val state = uiState) {
-                is UiState.Loading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                is UiState.Error -> Text("Error: ${state.message}", modifier = Modifier.align(Alignment.Center), color = Color.Red)
-                is UiState.Success -> {
-                    val mapData = state.data
-                    Column {
-                        Box(modifier = Modifier.weight(1f)) {
-                            AndroidView(
-                                modifier = Modifier.fillMaxSize(),
-                                factory = { ctx ->
-                                    MapView(ctx).apply {
-                                        setTileSource(permissiveTileSource)
-                                        setMultiTouchControls(true)
-                                        zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
-                                        setUseDataConnection(true)
-                                        mapViewRef = this
-                                        
-                                        val locOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this)
-                                        locOverlay.enableMyLocation()
-                                        
-                                        // Set custom blue dot icon
-                                        ContextCompat.getDrawable(ctx, com.google.ourmaps.R.drawable.blue_dot)?.let { drawable ->
-                                            val bitmap = MarkerUtils.drawableToBitmap(drawable)
-                                            locOverlay.setPersonIcon(bitmap)
-                                            locOverlay.setDirectionIcon(bitmap)
+            val mapName = (uiState as? UiState.Success)?.data?.name ?: "Loading..."
+            
+            Column {
+                CenterAlignedTopAppBar(
+                    title = { 
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(mapName, fontWeight = FontWeight.Bold)
+                                if (isOfflineAvailable) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Icon(Icons.Default.CloudDone, contentDescription = "Available Offline", tint = SuccessGreen, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                            if (isDownloading) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    LinearProgressIndicator(
+                                        progress = downloadProgress,
+                                        modifier = Modifier.fillMaxWidth(0.6f).height(4.dp).padding(top = 4.dp),
+                                        color = SuccessGreen,
+                                        trackColor = Color.White.copy(alpha = 0.3f)
+                                    )
+                                    Text(text = "${(downloadProgress * 100).toInt()}% downloaded", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f), fontSize = 8.sp)
+                                }
+                            }
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back") }
+                    },
+                    actions = {
+                        IconButton(onClick = { showLayersDialog = true }) { Icon(Icons.Default.Layers, contentDescription = "Layers") }
+                        IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More options") }
+                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(if (isOfflineAvailable) "Update Offline Map" else "Download Map (Offline)") },
+                                onClick = {
+                                    showMenu = false
+                                    val mv = mapViewRef
+                                    val state = uiState
+                                    if (mv != null && state is UiState.Success) {
+                                        val markers = mv.overlays.filterIsInstance<Marker>()
+                                        val rawBbox = if (markers.size > 1) {
+                                            BoundingBox.fromGeoPoints(markers.map { it.position })
+                                        } else if (markers.size == 1) {
+                                            val p = markers[0].position
+                                            BoundingBox(p.latitude + 0.01, p.longitude + 0.01, p.latitude - 0.01, p.longitude - 0.01)
+                                        } else {
+                                            mv.boundingBox
                                         }
+                                        val minSpan = 0.01
+                                        val boundingBox = if (rawBbox.latitudeSpan < minSpan || rawBbox.longitudeSpan < minSpan) {
+                                            BoundingBox(
+                                                rawBbox.centerWithDateLine.latitude + (maxOf(minSpan, rawBbox.latitudeSpan) / 2.0),
+                                                rawBbox.centerWithDateLine.longitude + (maxOf(minSpan, rawBbox.longitudeSpan) / 2.0),
+                                                rawBbox.centerWithDateLine.latitude - (maxOf(minSpan, rawBbox.latitudeSpan) / 2.0),
+                                                rawBbox.centerWithDateLine.longitude - (maxOf(minSpan, rawBbox.longitudeSpan) / 2.0)
+                                            )
+                                        } else rawBbox
                                         
-                                        locationOverlay = locOverlay
-                                        overlays.add(locOverlay)
-
-                                        val eventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
-                                            override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
-                                                selectedPin = null
-                                                overlays.forEach { if (it is Marker) it.closeInfoWindow() }
-                                                return true
-                                            }
-                                            override fun longPressHelper(p: GeoPoint?): Boolean {
-                                                p?.let {
-                                                    val newPin = Pin(java.util.UUID.randomUUID().toString(), it.latitude, it.longitude, "New Pin", "", null, "blue", "default", null, mapData.pins.size)
-                                                    viewModel.updateMap(mapData.copy(pins = mapData.pins + newPin))
-                                                }
-                                                return true
-                                            }
-                                        })
-                                        overlays.add(eventsOverlay)
+                                        var totalTiles = TileCalculator.countTiles(boundingBox, 1, 10)
+                                        state.data.pins.forEach { pin ->
+                                            totalTiles += TileCalculator.countTiles(BoundingBox(pin.lat + 0.005, pin.lng + 0.005, pin.lat - 0.005, pin.lng - 0.005), 11, 16)
+                                        }
+                                        downloadSummary = DownloadSummary(totalTiles, TileCalculator.estimateSizeMB(totalTiles), boundingBox)
+                                        showDownloadConfirm = true
                                     }
                                 },
-                                update = { mv ->
-                                    // Remove all markers but keep location and event overlays
-                                    val markersToRemove = mv.overlays.filterIsInstance<Marker>()
-                                    markersToRemove.forEach { it.closeInfoWindow() }
-                                    mv.overlays.removeAll(markersToRemove)
+                                leadingIcon = { Icon(if (isOfflineAvailable) Icons.Default.CloudSync else Icons.Default.Download, contentDescription = null) }
+                            )
+                            if (isOfflineAvailable) {
+                                DropdownMenuItem(
+                                    text = { Text("Delete Offline Cache") },
+                                    onClick = {
+                                        showMenu = false
+                                        OfflineManager.removeOfflineMap(context, mapId)
+                                        isOfflineAvailable = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Export KML") },
+                                onClick = {
+                                    showMenu = false
+                                    (uiState as? UiState.Success)?.let { exportLauncher.launch("${it.data.name.replace(" ", "_")}.kml") }
+                                },
+                                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Invite Others") },
+                                onClick = {
+                                    showMenu = false
+                                    showShareDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null) }
+                            )
+                            Divider()
+                            DropdownMenuItem(
+                                text = { Text("Delete Map", color = MaterialTheme.colorScheme.error) },
+                                onClick = { showMenu = false; showDeleteConfirm = true },
+                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = DarkSlateBlue, titleContentColor = Color.White, navigationIconContentColor = Color.White, actionIconContentColor = Color.White)
+                )
+
+                Box(modifier = Modifier.weight(1f)) {
+                    if (uiState is UiState.Success) {
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = { ctx ->
+                                MapView(ctx).apply {
+                                    setTileSource(permissiveTileSource)
+                                    setMultiTouchControls(true)
+                                    zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
+                                    setUseDataConnection(true)
+                                    mapViewRef = this
                                     
-                                    mapData.pins.filter { it.groupId in visibleGroupIds }.forEach { pin ->
-                                        val marker = Marker(mv).apply {
-                                            position = GeoPoint(pin.lat, pin.lng)
-                                            title = pin.label
-                                            snippet = pin.description
-                                            icon = MarkerUtils.getColoredMarker(context, pin.color ?: "blue", pin.icon ?: "default")
-                                            setOnMarkerClickListener { m, _ ->
-                                                selectedPin = pin
-                                                isEditingPin = false
-                                                m.showInfoWindow()
-                                                true
-                                            }
-                                        }
-                                        mv.overlays.add(marker)
+                                    val locOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this)
+                                    locOverlay.enableMyLocation()
+                                    
+                                    // Set custom blue dot icon
+                                    ContextCompat.getDrawable(ctx, com.google.ourmaps.R.drawable.blue_dot)?.let { drawable ->
+                                        val bitmap = MarkerUtils.drawableToBitmap(drawable)
+                                        locOverlay.setPersonIcon(bitmap)
+                                        locOverlay.setDirectionIcon(bitmap)
                                     }
-                                    mv.invalidate()
-                                    if (!hasAutoZoomed && mapData.pins.isNotEmpty()) {
-                                        if (mapData.pins.size == 1) {
-                                            mv.controller.setCenter(GeoPoint(mapData.pins[0].lat, mapData.pins[0].lng))
-                                            mv.controller.setZoom(15.0)
-                                            hasAutoZoomed = true
+                                    
+                                    locationOverlay = locOverlay
+                                    overlays.add(locOverlay)
+
+                                    val eventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
+                                        override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
+                                            selectedPin = null
+                                            coroutineScope.launch { scaffoldState.bottomSheetState.partialExpand() }
+                                            overlays.forEach { if (it is Marker) it.closeInfoWindow() }
+                                            return true
+                                        }
+                                        override fun longPressHelper(p: GeoPoint?): Boolean {
+                                            p?.let {
+                                                val currentMap = (viewModel.uiState.value as? UiState.Success)?.data ?: return@let
+                                                val newPin = Pin(java.util.UUID.randomUUID().toString(), it.latitude, it.longitude, "New Pin", "", null, "blue", "default", null, currentMap.pins.size)
+                                                viewModel.updateMap(currentMap.copy(pins = currentMap.pins + newPin))
+                                            }
+                                            return true
+                                        }
+                                    })
+                                    overlays.add(eventsOverlay)
+                                }
+                            },
+                            update = { mv ->
+                                val successState = uiState as? UiState.Success ?: return@AndroidView
+                                val currentMapData = successState.data
+                                
+                                // Remove all markers but keep location and event overlays
+                                val markersToRemove = mv.overlays.filterIsInstance<Marker>()
+                                markersToRemove.forEach { it.closeInfoWindow() }
+                                mv.overlays.removeAll(markersToRemove)
+                                
+                                currentMapData.pins.filter { it.groupId in visibleGroupIds }.forEach { pin ->
+                                    val marker = Marker(mv).apply {
+                                        position = GeoPoint(pin.lat, pin.lng)
+                                        setTitle(pin.label ?: "Unnamed Pin")
+                                        setSnippet(pin.description ?: "")
+                                        icon = MarkerUtils.getColoredMarker(context, pin.color ?: "blue", pin.icon ?: "default")
+                                        setOnMarkerClickListener { m, _ ->
+                                            selectedPin = pin
+                                            isEditingPin = false
+                                            coroutineScope.launch { scaffoldState.bottomSheetState.partialExpand() }
+                                            m.showInfoWindow()
+                                            true
+                                        }
+                                    }
+                                    mv.overlays.add(marker)
+                                }
+                                mv.invalidate()
+                                if (!hasAutoZoomed && currentMapData.pins.isNotEmpty()) {
+                                    if (currentMapData.pins.size == 1) {
+                                        mv.controller.setCenter(GeoPoint(currentMapData.pins[0].lat, currentMapData.pins[0].lng))
+                                        mv.controller.setZoom(15.0)
+                                        hasAutoZoomed = true
+                                    } else {
+                                        if (mv.width > 0 && mv.height > 0) {
+                                            try {
+                                                mv.zoomToBoundingBox(BoundingBox.fromGeoPoints(currentMapData.pins.map { GeoPoint(it.lat, it.lng) }), true, 100)
+                                                hasAutoZoomed = true
+                                            } catch (e: Exception) { }
                                         } else {
-                                            if (mv.width > 0 && mv.height > 0) {
-                                                try {
-                                                    mv.zoomToBoundingBox(BoundingBox.fromGeoPoints(mapData.pins.map { GeoPoint(it.lat, it.lng) }), true, 100)
-                                                    hasAutoZoomed = true
-                                                } catch (e: Exception) { }
-                                            } else {
-                                                mv.addOnLayoutChangeListener(object : android.view.View.OnLayoutChangeListener {
-                                                    override fun onLayoutChange(v: android.view.View, l: Int, t: Int, r: Int, b: Int, ol: Int, ot: Int, or: Int, ob: Int) {
-                                                        mv.removeOnLayoutChangeListener(this)
-                                                        try { mv.zoomToBoundingBox(BoundingBox.fromGeoPoints(mapData.pins.map { GeoPoint(it.lat, it.lng) }), true, 100); hasAutoZoomed = true } catch (e: Exception) {}
-                                                    }
-                                                })
+                                            mv.addOnLayoutChangeListener(object : android.view.View.OnLayoutChangeListener {
+                                                override fun onLayoutChange(v: android.view.View, l: Int, t: Int, r: Int, b: Int, ol: Int, ot: Int, or: Int, ob: Int) {
+                                                    mv.removeOnLayoutChangeListener(this)
+                                                    try { mv.zoomToBoundingBox(BoundingBox.fromGeoPoints(currentMapData.pins.map { GeoPoint(it.lat, it.lng) }), true, 100); hasAutoZoomed = true } catch (e: Exception) {}
+                                                }
+                                            })
+                                        }
+                                    }
+                                } else if (!hasAutoZoomed && currentMapData.pins.isEmpty()) {
+                                    mv.controller.setZoom(2.0); mv.controller.setCenter(GeoPoint(20.0, 0.0)); hasAutoZoomed = true
+                                }
+                            }
+                        )
+                    } else if (uiState is UiState.Loading) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    } else if (uiState is UiState.Error) {
+                        Text("Error: ${(uiState as UiState.Error).message}", modifier = Modifier.align(Alignment.Center), color = Color.Red)
+                    }
+                    
+                    // Floating Action Buttons
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.End
+                    ) {
+                        if (uiState is UiState.Success) {
+                            FloatingActionButton(
+                                onClick = {
+                                    locationOverlay?.let { overlay ->
+                                        if (overlay.myLocation != null) {
+                                            mapViewRef?.controller?.animateTo(overlay.myLocation)
+                                            mapViewRef?.controller?.setZoom(17.0)
+                                        } else {
+                                            Toast.makeText(context, "Location not available", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                containerColor = Color.White,
+                                contentColor = DarkSlateBlue,
+                                modifier = Modifier.padding(bottom = 16.dp).size(48.dp)
+                            ) {
+                                Icon(Icons.Default.MyLocation, contentDescription = "My Location")
+                            }
+                        }
+
+                        if (!isSearching && selectedPin == null && uiState is UiState.Success) {
+                            FloatingActionButton(
+                                onClick = { isSearching = true },
+                                containerColor = DarkSlateBlue,
+                                contentColor = Color.White
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Add Pin")
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (isSearching) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    val mapData = (uiState as? UiState.Success)?.data
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { isSearching = false; searchQuery = ""; searchResults = emptyList() }) {
+                                Icon(Icons.Default.ArrowBack, contentDescription = "Close Search")
+                            }
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = { Text("Search for a place...") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                trailingIcon = {
+                                    if (searchQuery.isNotEmpty()) {
+                                        if (isGeocoding) {
+                                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                        } else {
+                                            IconButton(onClick = { searchQuery = "" }) {
+                                                Icon(Icons.Default.Clear, contentDescription = "Clear")
                                             }
                                         }
-                                    } else if (!hasAutoZoomed && mapData.pins.isEmpty()) {
-                                        mv.controller.setZoom(2.0); mv.controller.setCenter(GeoPoint(20.0, 0.0)); hasAutoZoomed = true
                                     }
                                 }
                             )
                         }
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(), 
-                            color = Color.White, 
-                            shadowElevation = 16.dp, 
-                            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .padding(horizontal = 24.dp, vertical = 8.dp)
-                                    .pointerInput(Unit) {
-                                        var totalDrag = 0f
-                                        detectVerticalDragGestures(
-                                            onDragEnd = {
-                                                if (totalDrag < -50f) {
-                                                    showLegend = true
-                                                }
-                                                totalDrag = 0f
-                                            },
-                                            onVerticalDrag = { change, dragAmount ->
-                                                change.consume()
-                                                totalDrag += dragAmount
-                                            }
-                                        )
-                                    }
-                            ) {
-                                // Swipe handle
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.CenterHorizontally)
-                                        .width(40.dp)
-                                        .height(4.dp)
-                                        .background(Color.LightGray, RoundedCornerShape(2.dp))
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                if (selectedPin != null) {
-                                    val pin = mapData.pins.find { it.id == selectedPin?.id } ?: selectedPin!!
-                                    
-                                    if (!isEditingPin) {
-                                        // View Mode
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(pin.label ?: "Unnamed Pin", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                                            IconButton(onClick = { selectedPin = null }) { Icon(Icons.Default.Close, contentDescription = "Close") }
-                                        }
-                                        
-                                        if (!pin.description.isNullOrBlank()) {
-                                            Text(pin.description!!, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 8.dp))
-                                        }
-                                        
-                                        val groupName = mapData.groups.find { it.id == pin.groupId }?.name ?: "Default Layer"
-                                        AssistChip(
-                                            onClick = { },
-                                            label = { Text(groupName) },
-                                            leadingIcon = { Icon(Icons.Default.Layers, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                        )
-                                        
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                        
-                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Button(
-                                                onClick = {
-                                                    val gmmUri = Uri.parse("google.navigation:q=${pin.lat},${pin.lng}")
-                                                    val mapIntent = Intent(Intent.ACTION_VIEW, gmmUri).apply { setPackage("com.google.android.apps.maps") }
-                                                    try { context.startActivity(mapIntent) } catch (e: Exception) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:${pin.lat},${pin.lng}?q=${pin.lat},${pin.lng}"))) }
-                                                },
-                                                modifier = Modifier.weight(1f),
-                                                colors = ButtonDefaults.buttonColors(containerColor = DarkSlateBlue)
-                                            ) {
-                                                Icon(Icons.Default.Directions, contentDescription = null)
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Text("Directions")
-                                            }
-                                            
-                                            if (mapData.userRole == "owner" || mapData.userRole == "edit") {
-                                                OutlinedButton(
-                                                    onClick = { isEditingPin = true },
-                                                    modifier = Modifier.weight(1f)
-                                                ) {
-                                                    Icon(Icons.Default.Edit, contentDescription = null)
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Text("Edit")
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        // Edit Mode
-                                        var editedLabel by remember(pin.id) { mutableStateOf(pin.label ?: "") }
-                                        var editedDescription by remember(pin.id) { mutableStateOf(pin.description ?: "") }
-                                        var editedColor by remember(pin.id) { mutableStateOf(pin.color ?: "blue") }
-                                        var editedIcon by remember(pin.id) { mutableStateOf(pin.icon ?: "default") }
-                                        val updatePin = { l: String, d: String, c: String, i: String, g: String? ->
-                                            viewModel.updateMap(mapData.copy(pins = mapData.pins.map { if (it.id == pin.id) it.copy(label = l, description = d, color = c, icon = i, groupId = g) else it }))
-                                        }
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text("Edit Pin", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                                            IconButton(onClick = { 
-                                                viewModel.updateMap(mapData.copy(pins = mapData.pins.filter { it.id != pin.id }))
-                                                selectedPin = null 
-                                            }) { Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red) }
-                                        }
-                                        OutlinedTextField(value = editedLabel, onValueChange = { editedLabel = it; updatePin(it, editedDescription, editedColor, editedIcon, pin.groupId) }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        OutlinedTextField(value = editedDescription, onValueChange = { editedDescription = it; updatePin(editedLabel, it, editedColor, editedIcon, pin.groupId) }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        var showGroupDropdown by remember { mutableStateOf(false) }
-                                        val currentGroupName = remember(pin.id, pin.groupId, mapData.groups) {
-                                            mapData.groups.find { it.id == pin.groupId }?.name ?: "No Group (Default)"
-                                        }
-                                        
-                                        Box(modifier = Modifier.fillMaxWidth().clickable { showGroupDropdown = true }) {
-                                            OutlinedTextField(
-                                                value = currentGroupName,
-                                                onValueChange = { },
-                                                readOnly = true,
-                                                label = { Text("Layer") },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                enabled = false,
-                                                colors = OutlinedTextFieldDefaults.colors(
-                                                    disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                                                    disabledBorderColor = MaterialTheme.colorScheme.outline,
-                                                    disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                                ),
-                                                trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) }
-                                            )
-                                            DropdownMenu(expanded = showGroupDropdown, onDismissRequest = { showGroupDropdown = false }) {
-                                                DropdownMenuItem(text = { Text("No Group (Default)") }, onClick = { updatePin(editedLabel, editedDescription, editedColor, editedIcon, null); showGroupDropdown = false })
-                                                mapData.groups.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { updatePin(editedLabel, editedDescription, editedColor, editedIcon, g.id); showGroupDropdown = false }) }
-                                                Divider()
-                                                DropdownMenuItem(
-                                                    text = { Text("Create New Layer...") },
-                                                    onClick = {
-                                                        showGroupDropdown = false
-                                                        pendingPinForNewLayer = pin
-                                                        newLayerName = ""
-                                                        showCreateLayerDialog = true
-                                                    },
-                                                    leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) }
-                                                )
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                        Text("Color", style = MaterialTheme.typography.labelMedium)
-                                        Row(modifier = Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            val colors = mapOf("blue" to Color(0xFF2A81CB), "red" to Color(0xFFCB2B3E), "green" to Color(0xFF2AAD27), "orange" to Color(0xFFCB8427), "violet" to Color(0xFF9C2BCB))
-                                            colors.forEach { (n, v) -> Box(modifier = Modifier.size(36.dp).background(v, CircleShape).clickable { editedColor = n; updatePin(editedLabel, editedDescription, n, editedIcon, pin.groupId) }.padding(4.dp)) { if (editedColor == n) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(20.dp).align(Alignment.Center)) } }
-                                        }
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Text("Icon", style = MaterialTheme.typography.labelMedium)
-                                        Column {
-                                            listOf(listOf("default", "hotel", "restaurant", "airport"), listOf("park", "museum", "shopping", "camera")).forEach { row ->
-                                                Row(modifier = Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    row.forEach { t -> FilterChip(selected = editedIcon == t, onClick = { editedIcon = t; updatePin(editedLabel, editedDescription, editedColor, t, pin.groupId) }, label = { Text(t.replaceFirstChar { it.uppercase() }, fontSize = 10.sp) }) }
-                                                }
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                        Button(onClick = { isEditingPin = false }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)) { Text("Done Editing") }
-                                    }
-                                } else {
-                                    Text(text = mapData.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = DarkSlateBlue)
-                                    Text(text = "${mapData.pins.size} Pins", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Text("Long press on map to add a pin. Tap marker to edit.", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                                }
+                        
+                        LaunchedEffect(searchQuery) {
+                            if (searchQuery.length > 2) {
+                                isGeocoding = true
+                                searchResults = GeocodingService.search(context, searchQuery, mapViewRef?.boundingBox)
+                                isGeocoding = false
+                            } else {
+                                searchResults = emptyList()
                             }
                         }
-                    }
 
-                    if (isSearching) {
-                        Surface(
-                            modifier = Modifier.fillMaxSize(),
-                            color = MaterialTheme.colorScheme.background
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(onClick = { isSearching = false; searchQuery = ""; searchResults = emptyList() }) {
-                                        Icon(Icons.Default.ArrowBack, contentDescription = "Close Search")
-                                    }
-                                    OutlinedTextField(
-                                        value = searchQuery,
-                                        onValueChange = { searchQuery = it },
-                                        placeholder = { Text("Search for a place...") },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true,
-                                        trailingIcon = {
-                                            if (searchQuery.isNotEmpty()) {
-                                                if (isGeocoding) {
-                                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                                } else {
-                                                    IconButton(onClick = { searchQuery = "" }) {
-                                                        Icon(Icons.Default.Clear, contentDescription = "Clear")
-                                                    }
-                                                }
-                                            }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        LazyColumn {
+                            items(searchResults) { result ->
+                                ListItem(
+                                    headlineContent = { Text(result.name) },
+                                    supportingContent = { Text(result.description) },
+                                    leadingContent = { Icon(Icons.Default.Place, contentDescription = null) },
+                                    modifier = Modifier.clickable {
+                                        if (mapData != null) {
+                                            val newPin = Pin(
+                                                id = java.util.UUID.randomUUID().toString(),
+                                                lat = result.location.latitude,
+                                                lng = result.location.longitude,
+                                                label = result.name,
+                                                description = result.description,
+                                                imageUrl = null,
+                                                color = "blue",
+                                                icon = "default",
+                                                groupId = null,
+                                                position = mapData.pins.size
+                                            )
+                                            viewModel.updateMap(mapData.copy(pins = mapData.pins + newPin))
+                                            
+                                            mapViewRef?.controller?.animateTo(result.location)
+                                            mapViewRef?.controller?.setZoom(16.0)
+                                            
+                                            isSearching = false
+                                            searchQuery = ""
+                                            searchResults = emptyList()
+                                            selectedPin = newPin
                                         }
-                                    )
-                                }
-                                
-                                LaunchedEffect(searchQuery) {
-                                    if (searchQuery.length > 2) {
-                                        isGeocoding = true
-                                        searchResults = GeocodingService.search(context, searchQuery, mapViewRef?.boundingBox)
-                                        isGeocoding = false
-                                    } else {
-                                        searchResults = emptyList()
                                     }
-                                }
-
-                                Spacer(modifier = Modifier.height(16.dp))
-                                
-                                LazyColumn {
-                                    items(searchResults) { result ->
-                                        ListItem(
-                                            headlineContent = { Text(result.name) },
-                                            supportingContent = { Text(result.description) },
-                                            leadingContent = { Icon(Icons.Default.Place, contentDescription = null) },
-                                            modifier = Modifier.clickable {
-                                                val newPin = Pin(
-                                                    id = java.util.UUID.randomUUID().toString(),
-                                                    lat = result.location.latitude,
-                                                    lng = result.location.longitude,
-                                                    label = result.name,
-                                                    description = result.description,
-                                                    imageUrl = null,
-                                                    color = "blue",
-                                                    icon = "default",
-                                                    groupId = null,
-                                                    position = mapData.pins.size
-                                                )
-                                                viewModel.updateMap(mapData.copy(pins = mapData.pins + newPin))
-                                                
-                                                mapViewRef?.controller?.animateTo(result.location)
-                                                mapViewRef?.controller?.setZoom(16.0)
-                                                
-                                                isSearching = false
-                                                searchQuery = ""
-                                                searchResults = emptyList()
-                                                selectedPin = newPin
-                                            }
-                                        )
-                                    }
-                                }
+                                )
                             }
                         }
                     }
