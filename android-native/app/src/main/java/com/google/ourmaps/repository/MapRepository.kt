@@ -50,7 +50,7 @@ class MapRepository(private val context: Context) {
             .build()
 
         val retrofit = Retrofit.Builder()
-            .baseUrl("http://192.168.4.146:3000/api/")
+            .baseUrl("http://47.144.129.56:3000/api/")
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()

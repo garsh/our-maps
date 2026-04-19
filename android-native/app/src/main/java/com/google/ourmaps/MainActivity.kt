@@ -99,12 +99,21 @@ fun App(authViewModel: AuthViewModel = viewModel(), factory: OurMapsViewModelFac
         contract = ActivityResultContracts.RequestPermission()
     ) { }
 
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { }
+
     LaunchedEffect(Unit) {
         authViewModel.checkExistingLogin(context)
         
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
+
+        locationPermissionLauncher.launch(arrayOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ))
     }
 
     if (user == null) {

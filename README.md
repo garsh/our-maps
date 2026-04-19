@@ -13,8 +13,11 @@ The `android-native/` directory contains a completely independent, native Androi
 ### Features
 -   **Native UI**: Built with Jetpack Compose for a modern, performant experience.
 -   **Networking**: Uses Retrofit to communicate with the shared backend (configured for `10.0.2.2` for emulator access).
--   **Maps**: Integrated with OSMDroid for OpenStreetMap support.
+-   **Maps**: Integrated with OSMDroid for OpenStreetMap support with current location tracking.
+-   **Legend**: View a organized list of all pins in the map with togglable layer visibility.
+-   **Pin Viewer**: View pin details without entering edit mode.
 -   **Pin Editor**: Advanced pin editor with color and icon selectors matching the web app.
+-   **Sharing**: Share maps with others with email auto-completion for frequent collaborators.
 -   **Map Management**: Create, import (KML), and delete maps directly from the app.
 -   **Offline Support**: View cached maps and download map areas for offline use.
 -   **Modern Styling**: Marker symbols and colors aligned with the web application.
@@ -38,9 +41,9 @@ You can easily self-host Our Maps using Docker and Docker Compose. This packages
    ```bash
    docker compose up -d
    ```
-2. For web browsers, access the application securely at `https://localhost` or `https://192.168.4.146` (with your local IP address).
+2. For web browsers, access the application securely at `https://localhost` or `https://47.144.129.56` (with your local IP address).
    *(Note: Since it uses a self-signed local certificate via Caddy, your browser will warn you. You can safely bypass this warning for local development.)*
-3. For the Android App, keep your Retrofit base URL using plain HTTP on port 3000: `http://192.168.4.146:3000/api/`
+3. For the Android App, keep your Retrofit base URL using plain HTTP on port 3000: `http://47.144.129.56:3000/api/`
 4. To view logs:
    ```bash
    docker compose logs -f
