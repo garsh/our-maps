@@ -89,9 +89,9 @@ class MapDetailViewModel(
     private val _uiState = MutableStateFlow<UiState<MapData>>(UiState.Loading)
     val uiState: StateFlow<UiState<MapData>> = _uiState.asStateFlow()
 
-    fun loadMap(id: String) {
+    fun loadMap(id: String, silent: Boolean = false) {
         viewModelScope.launch {
-            _uiState.value = UiState.Loading
+            if (!silent) _uiState.value = UiState.Loading
             val result = repository.getMap(id)
             result.onSuccess { map ->
                 _uiState.value = UiState.Success(map)
@@ -100,7 +100,7 @@ class MapDetailViewModel(
                     com.google.ourmaps.utils.OfflineManager.saveMapOffline(context, map)
                 }
             }.onFailure { e ->
-                _uiState.value = UiState.Error(e.message ?: "Unknown error")
+                if (!silent) _uiState.value = UiState.Error(e.message ?: "Unknown error")
             }
         }
     }
@@ -134,7 +134,7 @@ class MapDetailViewModel(
             viewModelScope.launch {
                 val result = repository.shareMap(state.data.id, email, role)
                 result.onSuccess { 
-                    loadMap(state.data.id) // Refresh to show new access list
+                    loadMap(state.data.id, silent = true) // Refresh to show new access list
                     onSuccess() 
                 }
             }
@@ -147,7 +147,7 @@ class MapDetailViewModel(
             viewModelScope.launch {
                 val result = repository.removeShare(state.data.id, userId)
                 result.onSuccess {
-                    loadMap(state.data.id) // Refresh list
+                    loadMap(state.data.id, silent = true) // Refresh list
                     onSuccess()
                 }
             }

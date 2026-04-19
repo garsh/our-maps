@@ -2,6 +2,7 @@ package com.google.ourmaps.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -19,6 +20,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -111,6 +118,17 @@ fun MapDetailScreen(
     var selectedPin by remember { mutableStateOf<Pin?>(null) }
     var isEditingPin by remember { mutableStateOf(false) }
     var showLegend by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = selectedPin != null || isSearching) {
+        if (isSearching) {
+            isSearching = false
+            searchQuery = ""
+            searchResults = emptyList()
+        } else {
+            selectedPin = null
+            isEditingPin = false
+        }
+    }
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     
@@ -482,6 +500,7 @@ fun MapDetailScreen(
                                     viewModel.shareMap(shareEmail, shareRole) {
                                         CollaboratorManager.addEmail(context, shareEmail)
                                         shareEmail = ""
+                                        showShareDialog = false
                                         Toast.makeText(context, "Map shared successfully", Toast.LENGTH_SHORT).show()
                                     }
                                 }
@@ -549,9 +568,6 @@ fun MapDetailScreen(
                     showLegend = false
                     mapViewRef?.controller?.animateTo(GeoPoint(pin.lat, pin.lng))
                     mapViewRef?.controller?.setZoom(17.0)
-                },
-                onToggleGroup = { groupId ->
-                    visibleGroupIds = if (visibleGroupIds.contains(groupId)) visibleGroupIds - groupId else visibleGroupIds + groupId
                 }
             )
         }
@@ -589,7 +605,6 @@ fun MapDetailScreen(
                     IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back") }
                 },
                 actions = {
-                    IconButton(onClick = { showLegend = true }) { Icon(Icons.Default.List, contentDescription = "Legend") }
                     IconButton(onClick = { showLayersDialog = true }) { Icon(Icons.Default.Layers, contentDescription = "Layers") }
                     IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More options") }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
@@ -721,6 +736,14 @@ fun MapDetailScreen(
                                         
                                         val locOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this)
                                         locOverlay.enableMyLocation()
+                                        
+                                        // Set custom blue dot icon
+                                        ContextCompat.getDrawable(ctx, com.google.ourmaps.R.drawable.blue_dot)?.let { drawable ->
+                                            val bitmap = MarkerUtils.drawableToBitmap(drawable)
+                                            locOverlay.setPersonIcon(bitmap)
+                                            locOverlay.setDirectionIcon(bitmap)
+                                        }
+                                        
                                         locationOverlay = locOverlay
                                         overlays.add(locOverlay)
 
@@ -789,8 +812,41 @@ fun MapDetailScreen(
                                 }
                             )
                         }
-                        Surface(modifier = Modifier.fillMaxWidth(), color = Color.White, shadowElevation = 16.dp, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)) {
-                            Column(modifier = Modifier.padding(24.dp)) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(), 
+                            color = Color.White, 
+                            shadowElevation = 16.dp, 
+                            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .padding(horizontal = 24.dp, vertical = 8.dp)
+                                    .pointerInput(Unit) {
+                                        var totalDrag = 0f
+                                        detectVerticalDragGestures(
+                                            onDragEnd = {
+                                                if (totalDrag < -50f) {
+                                                    showLegend = true
+                                                }
+                                                totalDrag = 0f
+                                            },
+                                            onVerticalDrag = { change, dragAmount ->
+                                                change.consume()
+                                                totalDrag += dragAmount
+                                            }
+                                        )
+                                    }
+                            ) {
+                                // Swipe handle
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.CenterHorizontally)
+                                        .width(40.dp)
+                                        .height(4.dp)
+                                        .background(Color.LightGray, RoundedCornerShape(2.dp))
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+
                                 if (selectedPin != null) {
                                     val pin = mapData.pins.find { it.id == selectedPin?.id } ?: selectedPin!!
                                     
@@ -1012,9 +1068,10 @@ fun MapDetailScreen(
 fun LegendContent(
     mapData: com.google.ourmaps.model.MapData,
     visibleGroupIds: Set<String?>,
-    onPinClick: (Pin) -> Unit,
-    onToggleGroup: (String?) -> Unit
+    onPinClick: (Pin) -> Unit
 ) {
+    var expandedGroupIds by remember { mutableStateOf<Set<String?>>(visibleGroupIds) }
+
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
         Text("Map Legend", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
@@ -1024,15 +1081,17 @@ fun LegendContent(
             item {
                 LegendGroupHeader(
                     name = "Default Layer",
-                    isVisible = visibleGroupIds.contains(null),
-                    onToggle = { onToggleGroup(null) }
+                    isExpanded = expandedGroupIds.contains(null),
+                    onToggle = { 
+                        expandedGroupIds = if (expandedGroupIds.contains(null)) expandedGroupIds - null else expandedGroupIds + null
+                    }
                 )
             }
             
             val defaultPins = mapData.pins.filter { it.groupId == null }
-            if (defaultPins.isEmpty() && visibleGroupIds.contains(null)) {
+            if (defaultPins.isEmpty() && expandedGroupIds.contains(null)) {
                 item { Text("No pins in this layer", modifier = Modifier.padding(start = 32.dp, bottom = 8.dp), style = MaterialTheme.typography.bodySmall, color = Color.Gray) }
-            } else if (visibleGroupIds.contains(null)) {
+            } else if (expandedGroupIds.contains(null)) {
                 items(defaultPins) { pin ->
                     LegendPinItem(pin = pin, onClick = { onPinClick(pin) })
                 }
@@ -1043,15 +1102,17 @@ fun LegendContent(
                 item {
                     LegendGroupHeader(
                         name = group.name,
-                        isVisible = visibleGroupIds.contains(group.id),
-                        onToggle = { onToggleGroup(group.id) }
+                        isExpanded = expandedGroupIds.contains(group.id),
+                        onToggle = { 
+                            expandedGroupIds = if (expandedGroupIds.contains(group.id)) expandedGroupIds - group.id else expandedGroupIds + group.id
+                        }
                     )
                 }
                 
                 val groupPins = mapData.pins.filter { it.groupId == group.id }
-                if (groupPins.isEmpty() && visibleGroupIds.contains(group.id)) {
+                if (groupPins.isEmpty() && expandedGroupIds.contains(group.id)) {
                     item { Text("No pins in this layer", modifier = Modifier.padding(start = 32.dp, bottom = 8.dp), style = MaterialTheme.typography.bodySmall, color = Color.Gray) }
-                } else if (visibleGroupIds.contains(group.id)) {
+                } else if (expandedGroupIds.contains(group.id)) {
                     items(groupPins) { pin ->
                         LegendPinItem(pin = pin, onClick = { onPinClick(pin) })
                     }
@@ -1063,13 +1124,15 @@ fun LegendContent(
 }
 
 @Composable
-fun LegendGroupHeader(name: String, isVisible: Boolean, onToggle: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onToggle() }.padding(vertical = 4.dp)) {
-        Checkbox(checked = isVisible, onCheckedChange = { onToggle() })
+fun LegendGroupHeader(name: String, isExpanded: Boolean, onToggle: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically, 
+        modifier = Modifier.fillMaxWidth().clickable { onToggle() }.padding(vertical = 8.dp)
+    ) {
         Icon(Icons.Default.Layers, contentDescription = null, modifier = Modifier.size(20.dp), tint = DarkSlateBlue)
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(12.dp))
         Text(name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-        Icon(if (isVisible) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown, contentDescription = null)
+        Icon(if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
     }
 }
 
