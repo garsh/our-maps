@@ -11,7 +11,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { Pin, PinGroup, MapPermission, MapData } from '@shared/interfaces'
 import { arrayMove } from '@dnd-kit/sortable'
 import type { DragEndEvent } from '@dnd-kit/core'
-import { Loader2 } from 'lucide-react';
+import { Loader2, Map as MapIcon } from 'lucide-react';
 import L from 'leaflet';
 
 export function MapEditor() {
@@ -295,33 +295,63 @@ export function MapEditor() {
 
   if (isMapLoading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#f8f9fa' }}>
-        <Loader2 size={48} className="animate-spin" style={{ color: '#3498db', marginBottom: '1rem' }} />
-        <h2 style={{ color: '#2c3e50' }}>Loading map...</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-color)' }}>
+        <Loader2 size={64} className="animate-spin" style={{ color: 'var(--primary-color)', marginBottom: '1.5rem' }} />
+        <h2 style={{ color: 'var(--primary-color)', fontWeight: '700' }}>Loading your map...</h2>
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: 'sans-serif', userSelect: isResizing ? 'none' : 'auto' }}>
-      <header style={{ padding: '0.8rem 1.5rem', background: '#2c3e50', color: '#ecf0f1', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 5px rgba(0,0,0,0.2)', zIndex: 1000 }}>
-        <div style={{ cursor: 'pointer' }} onClick={() => navigate('/')}>
-          <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Our Maps</h1>
-          <small style={{ color: error ? '#e74c3c' : (successMessage ? '#2ecc71' : '#bdc3c7') }}>
-            {error || successMessage || (isSaving ? 'Auto-saving...' : 'All changes saved')}
-          </small>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: 'inherit', userSelect: isResizing ? 'none' : 'auto' }}>
+      <header style={{ 
+        padding: '0.75rem 1.5rem', 
+        background: 'var(--primary-color)', 
+        color: 'white', 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        boxShadow: 'var(--shadow-md)', 
+        zIndex: 1000 
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', cursor: 'pointer' }} onClick={() => navigate('/')}>
+          <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px', borderRadius: '12px', display: 'flex' }}>
+            <MapIcon size={24} />
+          </div>
+          <div>
+            <h1 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800', lineHeight: 1.1 }}>Our Maps</h1>
+            <small style={{ color: error ? '#ffbdad' : (successMessage ? '#b8ffd1' : 'rgba(255,255,255,0.7)'), fontWeight: '600', fontSize: '0.75rem' }}>
+              {error || successMessage || (isSaving ? 'Syncing...' : 'All changes saved')}
+            </small>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+        
+        <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
           {userRole !== 'view' && (
-            <div style={{ fontSize: '0.8rem', color: '#bdc3c7' }}>
-              {isSaving ? 'Saving...' : 'Cloud Sync Enabled'}
+            <div style={{ 
+              fontSize: '0.75rem', 
+              background: 'rgba(255,255,255,0.1)', 
+              padding: '4px 12px', 
+              borderRadius: '50px',
+              border: '1px solid rgba(255,255,255,0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}>
+              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: isSaving ? '#ffcc00' : '#4ade80' }} />
+              {isSaving ? 'Saving changes...' : 'Cloud Sync Enabled'}
             </div>
           )}
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>{user?.name}</span>
+            {user?.picture && <img src={user.picture} alt={user.name} style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.2)' }} />}
+          </div>
         </div>
       </header>
       
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <div style={{ width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex' }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', background: 'var(--bg-color)' }}>
+        <div style={{ width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', position: 'relative', zIndex: 10 }}>
           <Sidebar 
             mapName={mapName}
             onMapNameChange={setMapName}
@@ -345,10 +375,23 @@ export function MapEditor() {
           />
           <div 
             onMouseDown={startResize}
-            style={{ width: '4px', cursor: 'col-resize', background: '#dee2e6', transition: 'background 0.2s', zIndex: 100 }}
-            onMouseEnter={(e) => e.currentTarget.style.background = '#3498db'}
-            onMouseLeave={(e) => e.currentTarget.style.background = '#dee2e6'}
-          />
+            style={{ 
+              width: '1px', 
+              cursor: 'col-resize', 
+              background: 'var(--border-color)', 
+              position: 'relative',
+              zIndex: 100
+            }}
+          >
+            <div style={{
+               position: 'absolute',
+               left: '-2px',
+               width: '5px',
+               height: '100%',
+               background: isResizing ? 'var(--primary-color)' : 'transparent',
+               transition: 'background 0.2s'
+            }} />
+          </div>
         </div>
 
         <main style={{ flex: 1, position: 'relative' }}>

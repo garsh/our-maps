@@ -17,12 +17,26 @@ export default function LoginPage() {
   const isMockMode = import.meta.env.VITE_MOCK_AUTH === 'true' || !import.meta.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID === 'MOCK_CLIENT_ID';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#f0f2f5' }}>
-      <div style={{ background: 'white', padding: '2rem', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', textAlign: 'center' }}>
-        <h1 style={{ marginBottom: '1.5rem', color: '#2c3e50' }}>Welcome to Our Maps</h1>
-        <p style={{ marginBottom: '2rem', color: '#666' }}>Sign in to create, share, and explore maps.</p>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-color)' }}>
+      <div style={{ background: 'var(--surface-color)', padding: '3rem', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)', textAlign: 'center', maxWidth: '450px', width: '90%' }}>
+        <h1 style={{ marginBottom: '1rem', color: 'var(--primary-color)', fontSize: '2.5rem', fontWeight: '800' }}>Our Maps</h1>
+        <p style={{ marginBottom: '2.5rem', color: 'var(--text-secondary)', fontSize: '1.1rem', lineHeight: '1.5' }}>
+          Create, share, and manage your custom locations with ease.
+        </p>
         
-        {error && <div style={{ color: 'red', marginBottom: '1rem' }}>{error}</div>}
+        {error && (
+          <div style={{ 
+            background: 'rgba(203, 43, 62, 0.1)', 
+            color: 'var(--error-color)', 
+            padding: '12px', 
+            borderRadius: 'var(--radius-sm)', 
+            marginBottom: '1.5rem',
+            fontSize: '0.9rem',
+            border: '1px solid rgba(203, 43, 62, 0.2)'
+          }}>
+            {error}
+          </div>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           {!isMockMode ? (
@@ -37,24 +51,32 @@ export default function LoginPage() {
                 setError('Login failed. Please try again.');
               }}
               useOneTap
+              shape="pill"
+              theme="filled_blue"
+              size="large"
             />
           ) : (
             <button 
               onClick={() => login()}
               style={{ 
-                padding: '0.75rem 1.5rem', 
+                padding: '0.75rem 2rem', 
                 fontSize: '1rem', 
                 background: '#4285F4', 
                 color: 'white', 
                 border: 'none', 
-                borderRadius: '4px', 
+                borderRadius: '50px', 
                 cursor: 'pointer',
-                fontWeight: 'bold'
+                fontWeight: 'bold',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
               }}
             >
               Sign in with Mock Account (Dev)
             </button>
           )}
+        </div>
+        
+        <div style={{ marginTop: '3rem', fontSize: '0.8rem', color: '#aaa' }}>
+          By signing in, you agree to our terms and privacy policy.
         </div>
       </div>
     </div>

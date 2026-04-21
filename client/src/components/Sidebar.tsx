@@ -63,7 +63,14 @@ interface SidebarProps {
   onSetEditingPinId: (id: string | null) => void;
 }
 
-const COLORS = ['blue', 'red', 'green', 'orange'];
+const COLORS = [
+  { name: 'blue', value: '#2A81CB' },
+  { name: 'red', value: '#CB2B3E' },
+  { name: 'green', value: '#2AAD27' },
+  { name: 'orange', value: '#CB8427' },
+  { name: 'violet', value: '#9C2BCB' }
+];
+
 const ICONS: { type: PinIcon; Icon: LucideIcon }[] = [
   { type: 'default', Icon: MapPin },
   { type: 'hotel', Icon: Bed },
@@ -108,20 +115,31 @@ const SortablePin = ({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    zIndex: isDragging ? 1 : 0,
+    zIndex: isDragging ? 10 : 0,
     opacity: isDragging ? 0.5 : 1,
   };
+
+  const currentColor = COLORS.find(c => c.name === pin.color)?.value || pin.color || '#2A81CB';
 
   return (
     <li 
       id={`pin-${pin.id}`}
       ref={setNodeRef} 
-      style={{ ...style, padding: '0.6rem', borderBottom: '1px solid #eee', background: 'white' }}
+      style={{ 
+        ...style, 
+        padding: '0.75rem 1rem', 
+        marginBottom: '4px',
+        borderRadius: 'var(--radius-sm)',
+        background: editingPinId === pin.id ? 'var(--bg-color)' : 'white',
+        border: editingPinId === pin.id ? '1px solid var(--primary-color)' : '1px solid transparent',
+        boxShadow: isDragging ? 'var(--shadow-md)' : 'none',
+        transition: 'all 0.2s ease'
+      }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
           {!readOnly && (
-            <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '8px', color: '#ccc' }}>
+            <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '12px', color: '#ccc' }}>
               <GripVertical size={16} />
             </div>
           )}
@@ -129,81 +147,102 @@ const SortablePin = ({
             style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', flex: 1 }}
             onClick={() => onPinClick(pin)}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <div 
-                data-color={pin.color || 'blue'} 
-                style={{ width: '16px', height: '16px', borderRadius: '50%', background: pin.color || 'blue', border: '1px solid #999', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                style={{ 
+                  width: '32px', 
+                  height: '32px', 
+                  borderRadius: '10px', 
+                  background: `${currentColor}15`, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  flexShrink: 0 
+                }}
               >
-                {pin.icon && pin.icon !== 'default' && (
-                  (() => {
-                    const iconObj = ICONS.find(i => i.type === pin.icon);
-                    if (iconObj) {
-                      const { Icon } = iconObj;
-                      return <Icon size={10} color="white" />;
-                    }
-                    return null;
-                  })()
+                {(() => {
+                    const iconObj = ICONS.find(i => i.type === pin.icon) || ICONS[0];
+                    const { Icon } = iconObj;
+                    return <Icon size={16} color={currentColor} />;
+                })()}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: '700', fontSize: '0.9rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pin.label}</div>
+                {pin.description && (
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pin.description}</div>
                 )}
               </div>
-              <div style={{ fontWeight: 'bold', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pin.label}</div>
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '4px' }}>
+        <div style={{ display: 'flex', gap: '8px', marginLeft: '8px' }}>
           {!readOnly && (
             <button 
               onClick={() => setEditingPinId(editingPinId === pin.id ? null : pin.id)}
-              style={{ background: '#3498db', color: 'white', border: 'none', borderRadius: '4px', padding: '2px 6px', cursor: 'pointer', fontSize: '0.7rem' }}
+              style={{ 
+                background: editingPinId === pin.id ? 'var(--primary-color)' : 'transparent', 
+                color: editingPinId === pin.id ? 'white' : 'var(--primary-color)', 
+                border: '1px solid var(--primary-color)', 
+                borderRadius: '6px', 
+                padding: '4px 8px', 
+                cursor: 'pointer', 
+                fontSize: '0.7rem',
+                fontWeight: '600'
+              }}
             >
               {editingPinId === pin.id ? 'Close' : 'Edit'}
             </button>
           )}
-          {!readOnly && (
+          {!readOnly && editingPinId !== pin.id && (
             <button 
               onClick={() => onRemovePin(pin.id)}
-              style={{ background: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', padding: '2px 6px', cursor: 'pointer', fontSize: '0.7rem' }}
+              style={{ background: 'transparent', color: '#aaa', border: 'none', padding: '4px', cursor: 'pointer' }}
+              className="delete-btn"
             >
-              <Trash2 size={12} />
+              <Trash2 size={14} />
             </button>
           )}
         </div>
       </div>
 
       {editingPinId === pin.id && !readOnly && (
-        <div style={{ padding: '8px', background: '#f9f9f9', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px', fontSize: '0.8rem' }}>
-          <div style={{ marginBottom: '6px' }}>
-            <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: 'bold', marginBottom: '2px' }}>Name</label>
+        <div style={{ padding: '1rem 0 0 0', marginTop: '1rem', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem' }}>
+          <div style={{ marginBottom: '12px' }}>
+            <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '6px', color: 'var(--text-secondary)' }}>Name</label>
             <input 
               id={`label-${pin.id}`}
               type="text" 
               value={pin.label} 
               onChange={(e) => onUpdatePin(pin.id, { label: e.target.value })}
-              style={{ width: '100%', padding: '2px 4px', boxSizing: 'border-box' }}
+              className="input-field"
+              style={{ padding: '8px 12px' }}
             />
           </div>
-          <div style={{ marginBottom: '6px' }}>
-            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '2px' }}>Color</label>
-            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontWeight: '700', marginBottom: '8px', color: 'var(--text-secondary)' }}>Color</label>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               {COLORS.map(color => (
                 <button
-                  key={color}
-                  aria-label={`color-${color}`}
-                  onClick={() => onUpdatePin(pin.id, { color })}
+                  key={color.name}
+                  aria-label={`color-${color.name}`}
+                  onClick={() => onUpdatePin(pin.id, { color: color.name })}
                   style={{
-                    width: '18px',
-                    height: '18px',
-                    borderRadius: '50%',
-                    background: color,
-                    border: pin.color === color || (!pin.color && color === 'blue') ? '2px solid #333' : '1px solid #ccc',
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '8px',
+                    background: color.value,
+                    border: pin.color === color.name || (!pin.color && color.name === 'blue') ? '2px solid var(--text-primary)' : 'none',
                     cursor: 'pointer',
-                    padding: 0
+                    padding: 0,
+                    boxShadow: 'var(--shadow-sm)'
                   }}
                 />
               ))}
-              <div style={{ position: 'relative', width: '18px', height: '18px' }}>
+              <div style={{ position: 'relative', width: '28px', height: '28px' }}>
                 <input 
                   type="color"
-                  value={(!pin.color || COLORS.includes(pin.color)) ? '#8e44ad' : pin.color}
+                  value={(!pin.color || COLORS.some(c => c.name === pin.color)) ? '#8e44ad' : pin.color}
                   onChange={(e) => onUpdatePin(pin.id, { color: e.target.value })}
                   style={{
                     position: 'absolute',
@@ -218,18 +257,17 @@ const SortablePin = ({
                 />
                 <div 
                   style={{
-                    width: '18px',
-                    height: '18px',
-                    borderRadius: '50%',
-                    background: (!pin.color || COLORS.includes(pin.color)) ? '#8e44ad' : pin.color,
-                    border: pin.color && !COLORS.includes(pin.color) ? '2px solid #333' : '1px solid #ccc',
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '8px',
+                    background: (!pin.color || COLORS.some(c => c.name === pin.color)) ? '#f1f1f1' : pin.color,
+                    border: pin.color && !COLORS.some(c => c.name === pin.color) ? '2px solid var(--text-primary)' : '1px dashed #ccc',
                     zIndex: 1,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '10px',
-                    color: 'white',
-                    fontWeight: 'bold'
+                    fontSize: '14px',
+                    color: pin.color && !COLORS.some(c => c.name === pin.color) ? 'white' : '#666'
                   }}
                 >
                   +
@@ -237,9 +275,10 @@ const SortablePin = ({
               </div>
             </div>
           </div>
-          <div style={{ marginBottom: '6px' }}>
-            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '2px' }}>Icon</label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
+
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontWeight: '700', marginBottom: '8px', color: 'var(--text-secondary)' }}>Icon</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
               {ICONS.map(({ type, Icon }) => (
                 <button
                   key={type}
@@ -249,35 +288,41 @@ const SortablePin = ({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: '2px',
-                    borderRadius: '4px',
-                    background: pin.icon === type || (!pin.icon && type === 'default') ? '#eee' : 'transparent',
-                    border: pin.icon === type || (!pin.icon && type === 'default') ? '1px solid #333' : '1px solid #ccc',
-                    cursor: 'pointer'
+                    height: '36px',
+                    borderRadius: '8px',
+                    background: pin.icon === type || (!pin.icon && type === 'default') ? 'var(--primary-color)' : 'white',
+                    border: '1px solid var(--border-color)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
                   }}
                 >
-                  <Icon size={12} color={pin.color || 'blue'} />
+                  <Icon size={16} color={pin.icon === type || (!pin.icon && type === 'default') ? 'white' : currentColor} />
                 </button>
               ))}
             </div>
           </div>
-          <div style={{ marginBottom: '6px' }}>
-            <label htmlFor={`desc-${pin.id}`} style={{ display: 'block', fontWeight: 'bold', marginBottom: '2px' }}>Description</label>
+
+          <div style={{ marginBottom: '12px' }}>
+            <label htmlFor={`desc-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '6px', color: 'var(--text-secondary)' }}>Description</label>
             <textarea 
               id={`desc-${pin.id}`}
               value={pin.description || ''} 
               onChange={(e) => onUpdatePin(pin.id, { description: e.target.value })}
-              style={{ width: '100%', padding: '2px 4px', minHeight: '40px', boxSizing: 'border-box' }}
+              className="input-field"
+              style={{ minHeight: '80px', resize: 'vertical', padding: '8px 12px' }}
             />
           </div>
-          <div style={{ marginBottom: '4px' }}>
-            <label htmlFor={`img-${pin.id}`} style={{ display: 'block', fontWeight: 'bold', marginBottom: '2px' }}>Image URL</label>
+          
+          <div style={{ marginBottom: '12px' }}>
+            <label htmlFor={`img-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '6px', color: 'var(--text-secondary)' }}>Image URL</label>
             <input 
               id={`img-${pin.id}`}
               type="text" 
               value={pin.imageUrl || ''} 
               onChange={(e) => onUpdatePin(pin.id, { imageUrl: e.target.value })}
-              style={{ width: '100%', padding: '2px 4px', boxSizing: 'border-box' }}
+              className="input-field"
+              placeholder="https://example.com/image.jpg"
+              style={{ padding: '8px 12px' }}
             />
           </div>
         </div>
@@ -330,6 +375,7 @@ const SortableGroup = ({
     transition,
     marginBottom: '1rem',
     opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 100 : 0
   };
 
   return (
@@ -337,19 +383,21 @@ const SortableGroup = ({
       <div style={{ 
         display: 'flex', 
         alignItems: 'center', 
-        background: '#e9ecef', 
-        padding: '0.5rem', 
-        borderRadius: '4px',
-        fontWeight: 'bold',
-        fontSize: '0.9rem'
+        background: isExpanded ? 'rgba(72, 61, 139, 0.05)' : 'white', 
+        padding: '0.75rem 1rem', 
+        borderRadius: 'var(--radius-md)',
+        border: '1px solid var(--border-color)',
+        transition: 'all 0.2s ease'
       }}>
         {!readOnly && (
-          <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '8px', color: '#666' }}>
+          <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '12px', color: '#aaa' }}>
             <GripVertical size={16} />
           </div>
         )}
-        <div onClick={() => setIsExpanded(!isExpanded)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1 }}>
-          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        <div onClick={() => setIsExpanded(!isExpanded)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
+          <div style={{ color: 'var(--primary-color)', marginRight: '8px', display: 'flex' }}>
+            {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+          </div>
           {isEditingName && !readOnly ? (
             <input 
               autoFocus
@@ -357,28 +405,30 @@ const SortableGroup = ({
               onChange={(e) => onUpdateGroup(group.id, { name: e.target.value })}
               onBlur={() => setIsEditingName(false)}
               onKeyDown={(e) => e.key === 'Enter' && setIsEditingName(false)}
-              style={{ fontSize: '0.9rem', padding: '2px 4px', width: '100%' }}
+              className="input-field"
+              style={{ fontSize: '0.9rem', padding: '4px 8px', height: 'auto' }}
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
-            <span onDoubleClick={() => !readOnly && setIsEditingName(true)} style={{ marginLeft: '4px' }}>
-              {group.name} ({groupPins.length})
+            <span onDoubleClick={() => !readOnly && setIsEditingName(true)} style={{ fontWeight: '700', fontSize: '0.95rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {group.name} <span style={{ fontWeight: 'normal', color: '#aaa', fontSize: '0.8rem', marginLeft: '4px' }}>({groupPins.length})</span>
             </span>
           )}
         </div>
         {!readOnly && (
           <button 
             onClick={() => onRemoveGroup(group.id)}
-            style={{ background: 'transparent', border: 'none', color: '#666', cursor: 'pointer', padding: '4px' }}
+            style={{ background: 'transparent', border: 'none', color: '#ccc', cursor: 'pointer', padding: '6px', borderRadius: '50%', display: 'flex' }}
+            className="delete-group-btn"
             title="Delete Group"
           >
-            <Trash2 size={14} />
+            <Trash2 size={16} />
           </button>
         )}
       </div>
       
       {isExpanded && (
-        <div style={{ minHeight: '20px', paddingLeft: '8px', borderLeft: '2px solid #e9ecef', marginTop: '4px' }}>
+        <div style={{ paddingLeft: '1rem', borderLeft: '2px solid var(--border-color)', marginTop: '8px', marginLeft: '1.2rem' }}>
           <SortableContext items={groupPins.map(p => p.id)} strategy={verticalListSortingStrategy}>
             <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
               {groupPins.map(pin => (
@@ -394,8 +444,8 @@ const SortableGroup = ({
                 />
               ))}
               {groupPins.length === 0 && !readOnly && (
-                <li style={{ padding: '10px', color: '#999', fontSize: '0.8rem', fontStyle: 'italic', textAlign: 'center' }}>
-                  Drag pins here
+                <li style={{ padding: '1.5rem', color: '#aaa', fontSize: '0.85rem', fontStyle: 'italic', textAlign: 'center', border: '1px dashed #eee', borderRadius: 'var(--radius-sm)' }}>
+                  No pins in this group yet
                 </li>
               )}
             </ul>
@@ -479,16 +529,16 @@ const Sidebar = ({
   const defaultPins = pins.filter(p => !p.groupId);
 
   return (
-    <aside style={{ flex: 1, background: '#f8f9fa', display: 'flex', flexDirection: 'column', padding: '1.5rem', boxSizing: 'border-box', overflow: 'hidden' }}>
-      <div style={{ marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-          <label htmlFor="map-name" style={{ display: 'block', fontWeight: 'bold' }}>Map Name</label>
+    <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: '1.5rem', boxSizing: 'border-box', overflow: 'hidden', borderRight: '1px solid var(--border-color)' }}>
+      <div style={{ marginBottom: '2rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <label htmlFor="map-name" style={{ display: 'block', fontWeight: '800', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Map Configuration</label>
           {userRole === 'owner' && (
             <button 
               onClick={onShare}
-              style={{ fontSize: '0.8rem', background: '#3498db', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}
+              style={{ fontSize: '0.75rem', background: 'var(--bg-color)', color: 'var(--primary-color)', border: '1px solid var(--primary-color)', padding: '4px 12px', borderRadius: '50px', cursor: 'pointer', fontWeight: '700' }}
             >
-              Share
+              Share Access
             </button>
           )}
         </div>
@@ -500,15 +550,13 @@ const Sidebar = ({
           onBlur={() => onMapNameChange(localMapName)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
-              e.currentTarget.blur(); // Trigger blur to save
+              e.currentTarget.blur();
             }
           }}
           disabled={readOnly}
-          style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ced4da', boxSizing: 'border-box' }}
+          className="input-field"
+          style={{ fontWeight: '700', fontSize: '1.1rem' }}
         />
-        <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#666' }}>
-          Role: <span style={{ fontWeight: 'bold', textTransform: 'uppercase' }}>{userRole}</span>
-        </div>
       </div>
 
       <SearchBar 
@@ -519,19 +567,31 @@ const Sidebar = ({
         mapBounds={mapBounds}
       />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', marginTop: '1rem' }}>
-        <h3 style={{ margin: 0 }}>Pins ({pins.length})</h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', marginTop: '1rem' }}>
+        <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800', color: 'var(--text-primary)' }}>Layers</h3>
         {!readOnly && (
           <button 
             onClick={onAddGroup}
-            style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#fff', border: '1px solid #ced4da', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem' }}
+            style={{ 
+               display: 'flex', 
+               alignItems: 'center', 
+               gap: '6px', 
+               background: 'transparent', 
+               border: '1px solid var(--border-color)', 
+               padding: '6px 12px', 
+               borderRadius: 'var(--radius-sm)', 
+               cursor: 'pointer', 
+               fontSize: '0.8rem',
+               fontWeight: '600',
+               color: 'var(--text-secondary)'
+            }}
           >
-            <FolderPlus size={14} /> Add Group
+            <FolderPlus size={16} /> New Layer
           </button>
         )}
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', margin: '0 -4px' }}>
         <DndContext 
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -556,8 +616,8 @@ const Sidebar = ({
           </SortableContext>
 
           <div style={{ marginTop: groups.length > 0 ? '2rem' : '0' }}>
-            <h4 style={{ fontSize: '0.85rem', color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #eee', paddingBottom: '4px', marginBottom: '0.5rem' }}>
-              Default Pins
+            <h4 style={{ fontSize: '0.75rem', color: '#aaa', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '0.1em', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', marginBottom: '1rem' }}>
+              Default Layer
             </h4>
             <SortableContext items={defaultPins.map(p => p.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
               <ul style={{ listStyle: 'none', padding: 0 }}>
@@ -574,8 +634,11 @@ const Sidebar = ({
                   />
                 ))}
                 {defaultPins.length === 0 && groups.length === 0 && (
-                  <li style={{ padding: '2rem 1rem', color: '#999', textAlign: 'center', fontStyle: 'italic', fontSize: '0.9rem' }}>
-                    {readOnly ? 'No pins available.' : 'Click the map or search to add your first pin!'}
+                  <li style={{ padding: '3rem 1rem', color: '#bbb', textAlign: 'center', fontSize: '0.9rem' }}>
+                    <div style={{ background: 'var(--bg-color)', width: '60px', height: '60px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem auto' }}>
+                      <MapPin size={30} />
+                    </div>
+                    {readOnly ? 'No pins available.' : 'Right-click the map or use the search bar above to start adding pins!'}
                   </li>
                 )}
               </ul>
@@ -584,48 +647,48 @@ const Sidebar = ({
         </DndContext>
       </div>
 
-      <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #dee2e6' }}>
-        <div style={{ display: 'flex', gap: '8px', position: 'relative' }}>
+      <div style={{ marginTop: 'auto', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
+        <div style={{ display: 'flex', gap: '12px', position: 'relative' }}>
           <button 
             onClick={() => setIsExportOpen(!isExportOpen)}
-            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: '#fff', border: '1px solid #ced4da', padding: '8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}
+            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'white', border: '1px solid var(--border-color)', padding: '10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}
           >
-            <Download size={16} /> Export
+            <Download size={18} /> Export
           </button>
           {!readOnly && (
             <button 
               onClick={handleImportClick}
-              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: '#fff', border: '1px solid #ced4da', padding: '8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}
+              style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'white', border: '1px solid var(--border-color)', padding: '10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}
             >
-              <Upload size={16} /> Import
+              <Upload size={18} /> Import
             </button>
           )}
 
           {isExportOpen && (
-            <div style={{ position: 'absolute', bottom: '100%', left: 0, width: '100%', background: 'white', border: '1px solid #ddd', borderRadius: '4px', boxShadow: '0 -4px 12px rgba(0,0,0,0.1)', marginBottom: '8px', zIndex: 1600 }}>
+            <div style={{ position: 'absolute', bottom: '100%', left: 0, width: '100%', background: 'white', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', marginBottom: '12px', zIndex: 1600, overflow: 'hidden' }}>
               <div 
-                style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid #eee' }}
+                style={{ padding: '12px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)' }}
                 onClick={() => handleExport('json')}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
-                <FileJson size={14} color="#666" /> <span>Full JSON (.json)</span>
+                <FileJson size={16} color="var(--primary-color)" /> <span style={{ fontWeight: '600', fontSize: '0.85rem' }}>Full JSON (.json)</span>
               </div>
               <div 
-                style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid #eee' }}
+                style={{ padding: '12px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)' }}
                 onClick={() => handleExport('geojson')}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
-                <GlobeIcon size={14} color="#666" /> <span>GeoJSON (.geojson)</span>
+                <GlobeIcon size={16} color="#27ae60" /> <span style={{ fontWeight: '600', fontSize: '0.85rem' }}>GeoJSON (.geojson)</span>
               </div>
               <div 
-                style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                style={{ padding: '12px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
                 onClick={() => handleExport('kml')}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
-                <MapIcon size={14} color="#666" /> <span>KML (.kml)</span>
+                <MapIcon size={16} color="#f39c12" /> <span style={{ fontWeight: '600', fontSize: '0.85rem' }}>Google Earth (.kml)</span>
               </div>
             </div>
           )}

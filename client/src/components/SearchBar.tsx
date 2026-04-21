@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { Pin } from '@shared/interfaces';
 import Fuse from 'fuse.js';
-import { Search, MapPin, Globe, Loader2 } from 'lucide-react';
+import { Search, MapPin, Globe, Loader2, X } from 'lucide-react';
 
 interface SearchResult {
   place_id: string | number;
@@ -92,24 +92,33 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500,
   return (
     <div className="search-container" style={{ marginBottom: '1.5rem', position: 'relative' }}>
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-        <div style={{ position: 'absolute', left: '10px', color: '#999' }}>
+        <div style={{ position: 'absolute', left: '12px', color: 'var(--primary-color)', display: 'flex' }}>
           {isSearching ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}
         </div>
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search pins or places..."
+          placeholder="Find pins or new places..."
           disabled={disabled}
+          className="input-field"
           style={{ 
-            width: '100%', 
-            padding: '0.6rem 0.6rem 0.6rem 2.2rem', 
-            borderRadius: '6px', 
-            border: '1px solid #ced4da',
-            boxSizing: 'border-box',
+            paddingLeft: '40px',
+            paddingRight: query ? '40px' : '12px',
+            background: 'var(--bg-color)',
+            border: 'none',
+            fontWeight: '600',
             fontSize: '0.9rem'
           }}
         />
+        {query && (
+           <button 
+             onClick={() => setQuery('')}
+             style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', display: 'flex', padding: 0 }}
+           >
+             <X size={18} />
+           </button>
+        )}
       </div>
 
       {query.trim() !== '' && (localResults.length > 0 || globalResults.length > 0) && (
@@ -118,31 +127,34 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500,
           top: '100%',
           left: 0,
           right: 0,
-          maxHeight: '300px', 
+          maxHeight: '400px', 
           overflowY: 'auto', 
           background: 'white', 
-          border: '1px solid #dee2e6', 
-          borderRadius: '4px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+          border: '1px solid var(--border-color)', 
+          borderRadius: 'var(--radius-md)',
+          boxShadow: 'var(--shadow-lg)',
           zIndex: 1500,
-          marginTop: '4px'
+          marginTop: '8px',
+          overflow: 'hidden'
         }}>
           {/* Local Results */}
           {localResults.length > 0 && (
             <div>
-              <div style={{ background: '#f8f9fa', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 'bold', color: '#666', borderBottom: '1px solid #eee' }}>
+              <div style={{ background: 'rgba(72, 61, 139, 0.05)', padding: '8px 16px', fontSize: '0.7rem', fontWeight: '800', color: 'var(--primary-color)', letterSpacing: '0.05em' }}>
                 YOUR PINS
               </div>
               {localResults.map((result) => (
                 <div
                   key={result.place_id}
                   onClick={() => handleResultClick(result)}
-                  style={{ padding: '0.6rem 1rem', borderBottom: '1px solid #eee', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#f0f7ff'}
+                  style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #f1f1f1', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', transition: 'background 0.2s' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                   onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                 >
-                  <MapPin size={14} color="#3498db" />
-                  <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ background: 'rgba(72, 61, 139, 0.1)', padding: '6px', borderRadius: '8px' }}>
+                    <MapPin size={16} color="var(--primary-color)" />
+                  </div>
+                  <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: '600' }}>
                     {result.display_name}
                   </div>
                 </div>
@@ -153,22 +165,24 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500,
           {/* Global Results */}
           {globalResults.length > 0 && (
             <div>
-              <div style={{ background: '#f8f9fa', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 'bold', color: '#666', borderBottom: '1px solid #eee' }}>
+              <div style={{ background: 'rgba(39, 174, 96, 0.05)', padding: '8px 16px', fontSize: '0.7rem', fontWeight: '800', color: '#27ae60', letterSpacing: '0.05em' }}>
                 GLOBAL LOCATIONS
               </div>
               {globalResults.map((result) => (
                 <div
                   key={result.place_id}
-                  style={{ padding: '0.6rem 1rem', borderBottom: '1px solid #eee', fontSize: '0.85rem' }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#f0fdf4'}
+                  style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #f1f1f1', fontSize: '0.85rem', transition: 'background 0.2s' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                   onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                 >
                   <div 
-                    style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.4rem' }}
+                    style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '0.5rem' }}
                     onClick={() => handleResultClick(result)}
                   >
-                    <Globe size={14} color="#27ae60" />
-                    <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ background: 'rgba(39, 174, 96, 0.1)', padding: '6px', borderRadius: '8px' }}>
+                      <Globe size={16} color="#27ae60" />
+                    </div>
+                    <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: '600' }}>
                       {result.display_name}
                     </div>
                   </div>
@@ -178,7 +192,7 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500,
                         onAddPin(parseFloat(result.lat), parseFloat(result.lon), result.display_name.split(',')[0]);
                         setQuery('');
                       }}
-                      style={{ fontSize: '0.7rem', background: '#27ae60', color: 'white', border: 'none', borderRadius: '3px', padding: '3px 8px', cursor: 'pointer', marginLeft: '22px' }}
+                      style={{ fontSize: '0.75rem', background: '#27ae60', color: 'white', border: 'none', borderRadius: '6px', padding: '4px 12px', cursor: 'pointer', marginLeft: '40px', fontWeight: '700' }}
                     >
                       + Add to Map
                     </button>
