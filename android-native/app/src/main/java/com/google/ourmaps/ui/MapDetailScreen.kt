@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -1116,11 +1117,15 @@ fun LegendContent(
 ) {
     var expandedGroupIds by remember { mutableStateOf<Set<String?>>(visibleGroupIds) }
 
-    Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-        Text("Map Legend", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(16.dp))
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            "Map Legend", 
+            style = MaterialTheme.typography.headlineSmall, 
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(16.dp)
+        )
         
-        LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp)) {
+        LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 600.dp)) {
             // Default Group
             item {
                 LegendGroupHeader(
@@ -1133,11 +1138,14 @@ fun LegendContent(
             }
             
             val defaultPins = mapData.pins.filter { it.groupId == null }
-            if (defaultPins.isEmpty() && expandedGroupIds.contains(null)) {
-                item { Text("No pins in this layer", modifier = Modifier.padding(start = 32.dp, bottom = 8.dp), style = MaterialTheme.typography.bodySmall, color = Color.Gray) }
-            } else if (expandedGroupIds.contains(null)) {
-                items(defaultPins) { pin ->
-                    LegendPinItem(pin = pin, onClick = { onPinClick(pin) })
+            if (expandedGroupIds.contains(null)) {
+                if (defaultPins.isEmpty()) {
+                    item { Text("No pins in this layer", modifier = Modifier.padding(start = 72.dp, bottom = 16.dp, top = 8.dp), style = MaterialTheme.typography.bodySmall, color = Color.Gray) }
+                } else {
+                    items(defaultPins) { pin ->
+                        LegendPinItem(pin = pin, onClick = { onPinClick(pin) })
+                        Divider(modifier = Modifier.padding(start = 72.dp, end = 16.dp), thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.5f))
+                    }
                 }
             }
             
@@ -1154,11 +1162,14 @@ fun LegendContent(
                 }
                 
                 val groupPins = mapData.pins.filter { it.groupId == group.id }
-                if (groupPins.isEmpty() && expandedGroupIds.contains(group.id)) {
-                    item { Text("No pins in this layer", modifier = Modifier.padding(start = 32.dp, bottom = 8.dp), style = MaterialTheme.typography.bodySmall, color = Color.Gray) }
-                } else if (expandedGroupIds.contains(group.id)) {
-                    items(groupPins) { pin ->
-                        LegendPinItem(pin = pin, onClick = { onPinClick(pin) })
+                if (expandedGroupIds.contains(group.id)) {
+                    if (groupPins.isEmpty()) {
+                        item { Text("No pins in this layer", modifier = Modifier.padding(start = 72.dp, bottom = 16.dp, top = 8.dp), style = MaterialTheme.typography.bodySmall, color = Color.Gray) }
+                    } else {
+                        items(groupPins) { pin ->
+                            LegendPinItem(pin = pin, onClick = { onPinClick(pin) })
+                            Divider(modifier = Modifier.padding(start = 72.dp, end = 16.dp), thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.5f))
+                        }
                     }
                 }
             }
@@ -1169,28 +1180,71 @@ fun LegendContent(
 
 @Composable
 fun LegendGroupHeader(name: String, isExpanded: Boolean, onToggle: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically, 
-        modifier = Modifier.fillMaxWidth().clickable { onToggle() }.padding(vertical = 8.dp)
+    Surface(
+        color = if (isExpanded) DarkSlateBlue.copy(alpha = 0.05f) else Color.Transparent,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Icon(Icons.Default.Layers, contentDescription = null, modifier = Modifier.size(20.dp), tint = DarkSlateBlue)
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-        Icon(if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+        Row(
+            verticalAlignment = Alignment.CenterVertically, 
+            modifier = Modifier.fillMaxWidth().clickable { onToggle() }.padding(vertical = 12.dp, horizontal = 16.dp)
+        ) {
+            Icon(Icons.Default.Layers, contentDescription = null, modifier = Modifier.size(24.dp), tint = DarkSlateBlue)
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Icon(if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null, tint = Color.Gray)
+        }
     }
 }
 
 @Composable
 fun LegendPinItem(pin: Pin, onClick: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(start = 32.dp, top = 4.dp, bottom = 4.dp, end = 16.dp)) {
-        Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(when(pin.color) {
-            "red" -> 0xFFCB2B3E
-            "green" -> 0xFF2AAD27
-            "orange" -> 0xFFCB8427
-            "violet" -> 0xFF9C2BCB
-            else -> 0xFF2A81CB
-        }))
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(pin.label ?: "Unnamed Pin", style = MaterialTheme.typography.bodyMedium)
-    }
+    val pinColor = Color(when(pin.color) {
+        "red" -> 0xFFCB2B3E
+        "green" -> 0xFF2AAD27
+        "orange" -> 0xFFCB8427
+        "violet" -> 0xFF9C2BCB
+        else -> 0xFF2A81CB
+    })
+
+    ListItem(
+        headlineContent = { 
+            Text(
+                pin.label ?: "Unnamed Pin", 
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            ) 
+        },
+        supportingContent = if (!pin.description.isNullOrBlank()) {
+            { 
+                Text(
+                    pin.description!!, 
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                ) 
+            }
+        } else null,
+        leadingContent = {
+            Surface(
+                shape = CircleShape,
+                color = pinColor.copy(alpha = 0.1f),
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Place,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = pinColor
+                    )
+                }
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(vertical = 4.dp),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
 }
