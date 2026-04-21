@@ -52,6 +52,7 @@ import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.tileprovider.tilesource.TileSourcePolicy
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.Projection
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
@@ -866,11 +867,14 @@ fun MapDetailScreen(
                                     zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
                                     setUseDataConnection(true)
 
-                                    // Fix repetition and zoom out limits
-                                    isHorizontalMapRepetitionEnabled = false
-                                    isVerticalMapRepetitionEnabled = false
+                                    // Fix position shifting on zoom and world repetition
+                                    isTilesScaledToDpi = true
+                                    
+                                    // Enforce limits strictly
                                     minZoomLevel = 3.0
                                     maxZoomLevel = 20.0
+                                    isHorizontalMapRepetitionEnabled = false
+                                    isVerticalMapRepetitionEnabled = false
                                     
                                     // Limit pan to world bounds
                                     setScrollableAreaLimitDouble(BoundingBox(85.0, 180.0, -85.0, -180.0))
@@ -911,17 +915,23 @@ fun MapDetailScreen(
                                 val successState = uiState as? UiState.Success ?: return@AndroidView
                                 val currentMapData = successState.data
 
-                                // Re-enforce limits (important for rotation)
+                                // Re-enforce limits (critical for rotation stability)
+                                mv.isTilesScaledToDpi = true
                                 mv.minZoomLevel = 3.0
                                 mv.maxZoomLevel = 20.0
                                 mv.isHorizontalMapRepetitionEnabled = false
                                 mv.isVerticalMapRepetitionEnabled = false
                                 mv.setScrollableAreaLimitDouble(BoundingBox(85.0, 180.0, -85.0, -180.0))
 
-                                    // Remove all markers but keep location and event overlays
-                                    val markersToRemove = mv.overlays.filterIsInstance<Marker>()
-                                    markersToRemove.forEach { it.closeInfoWindow() }
-                                    mv.overlays.removeAll(markersToRemove)
+                                // Ensure current zoom isn't illegal (happens on rotation before limits apply)
+                                if (mv.zoomLevelDouble < mv.minZoomLevel) {
+                                    mv.controller.setZoom(mv.minZoomLevel)
+                                }
+
+                                // Remove all markers but keep location and event overlays
+                                val markersToRemove = mv.overlays.filterIsInstance<Marker>()
+                                markersToRemove.forEach { it.closeInfoWindow() }
+                                mv.overlays.removeAll(markersToRemove)
                                 
                                 currentMapData.pins.filter { it.groupId in visibleGroupIds }.forEach { pin ->
                                     val marker = Marker(mv).apply {
