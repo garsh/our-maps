@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -160,7 +161,7 @@ fun MapDetailScreen(
     }
     
     // Track if we've already auto-zoomed for the current map
-    var hasAutoZoomed by remember(mapId) { mutableStateOf(false) }
+    var hasAutoZoomed by rememberSaveable(mapId) { mutableStateOf(false) }
 
     // Reference to MapView
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
@@ -960,7 +961,7 @@ fun MapDetailScreen(
                                         }
                                     }
                                 } else if (!hasAutoZoomed && currentMapData.pins.isEmpty()) {
-                                    mv.controller.setZoom(2.0); mv.controller.setCenter(GeoPoint(20.0, 0.0)); hasAutoZoomed = true
+                                    mv.controller.setZoom(3.0); mv.controller.setCenter(GeoPoint(20.0, 0.0)); hasAutoZoomed = true
                                 }
                             }
                         )
