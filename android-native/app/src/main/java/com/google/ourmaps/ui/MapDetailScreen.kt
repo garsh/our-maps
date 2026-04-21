@@ -18,7 +18,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.pointerInput
@@ -125,7 +127,7 @@ fun MapDetailScreen(
     val scaffoldState = rememberBottomSheetScaffoldState()
     val density = LocalDensity.current
     var peekHeightPx by remember { mutableIntStateOf(0) }
-    val sheetPeekHeight = remember(peekHeightPx) { with(density) { (peekHeightPx).toDp() + 24.dp } }
+    val sheetPeekHeight = remember(peekHeightPx) { with(density) { (peekHeightPx).toDp() + 48.dp } } // Increased buffer
 
     BackHandler(enabled = selectedPin != null || isSearching || scaffoldState.bottomSheetState.currentValue == SheetValue.Expanded) {
         if (scaffoldState.bottomSheetState.currentValue == SheetValue.Expanded) {
@@ -587,6 +589,7 @@ fun MapDetailScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 24.dp)
+                            .padding(bottom = 16.dp) // Extra room
                             .onGloballyPositioned { layoutCoordinates ->
                                 peekHeightPx = layoutCoordinates.size.height
                             }
@@ -851,28 +854,33 @@ fun MapDetailScreen(
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = DarkSlateBlue, titleContentColor = Color.White, navigationIconContentColor = Color.White, actionIconContentColor = Color.White)
                 )
 
-                Box(modifier = Modifier.weight(1f)) {
+                Box(modifier = Modifier.weight(1f).clip(RectangleShape)) {
                     if (uiState is UiState.Success) {
                         AndroidView(
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.fillMaxSize().clip(RectangleShape),
                             factory = { ctx ->
                                 MapView(ctx).apply {
                                     setTileSource(permissiveTileSource)
                                     setMultiTouchControls(true)
                                     zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
                                     setUseDataConnection(true)
+
+                                    // Fix repetition and zoom out limits
+                                    setHorizontalMapRepetitionEnabled(false)
+                                    setVerticalMapRepetitionEnabled(false)
+                                    minZoomLevel = 3.0
+
                                     mapViewRef = this
-                                    
                                     val locOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this)
                                     locOverlay.enableMyLocation()
-                                    
+
                                     // Set custom blue dot icon
                                     ContextCompat.getDrawable(ctx, com.google.ourmaps.R.drawable.blue_dot)?.let { drawable ->
                                         val bitmap = MarkerUtils.drawableToBitmap(drawable)
                                         locOverlay.setPersonIcon(bitmap)
                                         locOverlay.setDirectionIcon(bitmap)
                                     }
-                                    
+
                                     locationOverlay = locOverlay
                                     overlays.add(locOverlay)
 
@@ -883,8 +891,7 @@ fun MapDetailScreen(
                                             overlays.forEach { if (it is Marker) it.closeInfoWindow() }
                                             return true
                                         }
-                                        override fun longPressHelper(p: GeoPoint?): Boolean {
-                                            p?.let {
+                                        override fun longPressHelper(p: GeoPoint?): Boolean {                                            p?.let {
                                                 val currentMap = (viewModel.uiState.value as? UiState.Success)?.data ?: return@let
                                                 val newPin = Pin(java.util.UUID.randomUUID().toString(), it.latitude, it.longitude, "New Pin", "", null, "blue", "default", null, currentMap.pins.size)
                                                 viewModel.updateMap(currentMap.copy(pins = currentMap.pins + newPin))
