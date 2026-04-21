@@ -883,24 +883,28 @@ fun MapDetailScreen(
                                     val locOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this)
                                     locOverlay.enableMyLocation()
 
-                                    // Set custom blue dot icon
-                                    ContextCompat.getDrawable(ctx, com.google.ourmaps.R.drawable.blue_dot)?.let { drawable ->
-                                        val bitmap = MarkerUtils.drawableToBitmap(drawable)
-                                        locOverlay.setPersonIcon(bitmap)
-                                        locOverlay.setDirectionIcon(bitmap)
-                                    }
-
-                                    locationOverlay = locOverlay
-                                    overlays.add(locOverlay)
-
-                                    val eventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
-                                        override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
-                                            selectedPin = null
-                                            coroutineScope.launch { scaffoldState.bottomSheetState.partialExpand() }
-                                            overlays.forEach { if (it is Marker) it.closeInfoWindow() }
-                                            return true
+                                        // Set custom blue dot icon
+                                        ContextCompat.getDrawable(ctx, com.google.ourmaps.R.drawable.blue_dot)?.let { drawable ->
+                                            val bitmap = MarkerUtils.drawableToBitmap(drawable)
+                                            locOverlay.setPersonIcon(bitmap)
+                                            locOverlay.setDirectionIcon(bitmap)
+                                            // Center the icon so it doesn't drift on zoom
+                                            locOverlay.setPersonAnchor(0.5f, 0.5f)
+                                            locOverlay.setDirectionAnchor(0.5f, 0.5f)
                                         }
-                                        override fun longPressHelper(p: GeoPoint?): Boolean {                                            p?.let {
+
+                                        locationOverlay = locOverlay
+                                        overlays.add(locOverlay)
+
+                                        val eventsOverlay = MapEventsOverlay(object : MapEventsReceiver {
+                                            override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
+                                                selectedPin = null
+                                                coroutineScope.launch { scaffoldState.bottomSheetState.partialExpand() }
+                                                overlays.forEach { if (it is Marker) it.closeInfoWindow() }
+                                                return true
+                                            }
+                                            override fun longPressHelper(p: GeoPoint?): Boolean {
+                                                p?.let {
                                                 val currentMap = (viewModel.uiState.value as? UiState.Success)?.data ?: return@let
                                                 val newPin = Pin(java.util.UUID.randomUUID().toString(), it.latitude, it.longitude, "New Pin", "", null, "blue", "default", null, currentMap.pins.size)
                                                 viewModel.updateMap(currentMap.copy(pins = currentMap.pins + newPin))
