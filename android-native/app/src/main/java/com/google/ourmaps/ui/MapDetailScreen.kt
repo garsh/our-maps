@@ -83,7 +83,7 @@ fun MapDetailScreen(
     val permissiveTileSource = remember {
         XYTileSource(
             "OpenStreetMap",
-            0, 19, 256, ".png", 
+            0, 19, 512, ".png", 
             arrayOf("https://tile.openstreetmap.org/"),
             "© OpenStreetMap contributors",
             TileSourcePolicy(2, TileSourcePolicy.FLAG_USER_AGENT_MEANINGFUL or TileSourcePolicy.FLAG_USER_AGENT_NORMALIZED)
@@ -868,10 +868,10 @@ fun MapDetailScreen(
                                     setUseDataConnection(true)
 
                                     // Fix position shifting on zoom and world repetition
-                                    isTilesScaledToDpi = true
+                                    isTilesScaledToDpi = false
                                     
                                     // Enforce limits strictly
-                                    minZoomLevel = 3.0
+                                    minZoomLevel = 2.0
                                     maxZoomLevel = 20.0
                                     isHorizontalMapRepetitionEnabled = false
                                     isVerticalMapRepetitionEnabled = false
@@ -916,8 +916,8 @@ fun MapDetailScreen(
                                 val currentMapData = successState.data
 
                                 // Re-enforce limits (critical for rotation stability)
-                                mv.isTilesScaledToDpi = true
-                                mv.minZoomLevel = 3.0
+                                mv.isTilesScaledToDpi = false
+                                mv.minZoomLevel = 2.0
                                 mv.maxZoomLevel = 20.0
                                 mv.isHorizontalMapRepetitionEnabled = false
                                 mv.isVerticalMapRepetitionEnabled = false
@@ -927,7 +927,6 @@ fun MapDetailScreen(
                                 if (mv.zoomLevelDouble < mv.minZoomLevel) {
                                     mv.controller.setZoom(mv.minZoomLevel)
                                 }
-
                                 // Remove all markers but keep location and event overlays
                                 val markersToRemove = mv.overlays.filterIsInstance<Marker>()
                                 markersToRemove.forEach { it.closeInfoWindow() }
