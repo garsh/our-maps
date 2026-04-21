@@ -866,9 +866,13 @@ fun MapDetailScreen(
                                     setUseDataConnection(true)
 
                                     // Fix repetition and zoom out limits
-                                    setHorizontalMapRepetitionEnabled(false)
-                                    setVerticalMapRepetitionEnabled(false)
+                                    isHorizontalMapRepetitionEnabled = false
+                                    isVerticalMapRepetitionEnabled = false
                                     minZoomLevel = 3.0
+                                    maxZoomLevel = 20.0
+                                    
+                                    // Limit pan to world bounds
+                                    setScrollableAreaLimitDouble(BoundingBox(85.0, 180.0, -85.0, -180.0))
 
                                     mapViewRef = this
                                     val locOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this)
@@ -905,11 +909,18 @@ fun MapDetailScreen(
                             update = { mv ->
                                 val successState = uiState as? UiState.Success ?: return@AndroidView
                                 val currentMapData = successState.data
-                                
-                                // Remove all markers but keep location and event overlays
-                                val markersToRemove = mv.overlays.filterIsInstance<Marker>()
-                                markersToRemove.forEach { it.closeInfoWindow() }
-                                mv.overlays.removeAll(markersToRemove)
+
+                                // Re-enforce limits (important for rotation)
+                                mv.minZoomLevel = 3.0
+                                mv.maxZoomLevel = 20.0
+                                mv.isHorizontalMapRepetitionEnabled = false
+                                mv.isVerticalMapRepetitionEnabled = false
+                                mv.setScrollableAreaLimitDouble(BoundingBox(85.0, 180.0, -85.0, -180.0))
+
+                                    // Remove all markers but keep location and event overlays
+                                    val markersToRemove = mv.overlays.filterIsInstance<Marker>()
+                                    markersToRemove.forEach { it.closeInfoWindow() }
+                                    mv.overlays.removeAll(markersToRemove)
                                 
                                 currentMapData.pins.filter { it.groupId in visibleGroupIds }.forEach { pin ->
                                     val marker = Marker(mv).apply {
