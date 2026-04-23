@@ -20,7 +20,8 @@ import {
   Upload,
   FileJson,
   Map as MapIcon,
-  Globe as GlobeIcon
+  Globe as GlobeIcon,
+  Navigation
 } from 'lucide-react';
 import {
   DndContext, 
@@ -61,6 +62,12 @@ interface SidebarProps {
   mapBounds?: string | null;
   editingPinId: string | null;
   onSetEditingPinId: (id: string | null) => void;
+  hoveredPinId?: string | null;
+  onHoverPin?: (id: string | null) => void;
+  customColors?: string[];
+  onAddCustomColor?: (color: string) => void;
+  selectedNavIds?: Set<string>;
+  onToggleNavId?: (id: string) => void;
 }
 
 const COLORS = [
@@ -89,7 +96,13 @@ const SortablePin = ({
   onUpdatePin,
   editingPinId,
   setEditingPinId,
-  readOnly
+  readOnly,
+  hoveredPinId,
+  onHoverPin,
+  onAddCustomColor,
+  isSelected,
+  onToggleSelect,
+  customColors
 }: { 
   pin: Pin, 
   onPinClick: (pin: Pin) => void,
@@ -97,7 +110,13 @@ const SortablePin = ({
   onUpdatePin: (id: string, updates: Partial<Pin>) => void,
   editingPinId: string | null,
   setEditingPinId: (id: string | null) => void,
-  readOnly: boolean
+  readOnly: boolean,
+  hoveredPinId?: string | null,
+  onHoverPin?: (id: string | null) => void,
+  onAddCustomColor?: (color: string) => void,
+  isSelected?: boolean,
+  onToggleSelect?: (id: string) => void,
+  customColors?: string[]
 }) => {
   const {
     attributes,
@@ -127,32 +146,42 @@ const SortablePin = ({
       ref={setNodeRef} 
       style={{ 
         ...style, 
-        padding: '0.75rem 1rem', 
-        marginBottom: '4px',
+        padding: '0.4rem 0.75rem', 
+        marginBottom: '2px',
         borderRadius: 'var(--radius-sm)',
-        background: editingPinId === pin.id ? 'var(--bg-color)' : 'white',
+        background: hoveredPinId === pin.id ? 'rgba(72, 61, 139, 0.1)' : (editingPinId === pin.id ? 'var(--bg-color)' : 'white'),
         border: editingPinId === pin.id ? '1px solid var(--primary-color)' : '1px solid transparent',
-        boxShadow: isDragging ? 'var(--shadow-md)' : 'none',
-        transition: 'all 0.2s ease'
+        boxShadow: isDragging ? 'var(--shadow-md)' : (hoveredPinId === pin.id ? '0 0 0 1px var(--primary-color)' : 'none'),
+        transition: 'all 0.2s ease',
+        cursor: 'default'
       }}
+      onMouseEnter={() => onHoverPin?.(pin.id)}
+      onMouseLeave={() => onHoverPin?.(null)}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
           {!readOnly && (
-            <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '12px', color: '#ccc' }}>
-              <GripVertical size={16} />
+            <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '6px', color: '#ddd' }}>
+              <GripVertical size={14} />
             </div>
           )}
+          <input 
+            type="checkbox" 
+            checked={!!isSelected} 
+            onChange={() => onToggleSelect?.(pin.id)}
+            style={{ marginRight: '10px', cursor: 'pointer', accentColor: 'var(--primary-color)' }}
+            onClick={(e) => e.stopPropagation()}
+          />
           <div 
             style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', flex: 1 }}
             onClick={() => onPinClick(pin)}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div 
                 style={{ 
-                  width: '32px', 
-                  height: '32px', 
-                  borderRadius: '10px', 
+                  width: '28px', 
+                  height: '28px', 
+                  borderRadius: '8px', 
                   background: `${currentColor}15`, 
                   display: 'flex', 
                   alignItems: 'center', 
@@ -163,19 +192,19 @@ const SortablePin = ({
                 {(() => {
                     const iconObj = ICONS.find(i => i.type === pin.icon) || ICONS[0];
                     const { Icon } = iconObj;
-                    return <Icon size={16} color={currentColor} />;
+                    return <Icon size={14} color={currentColor} />;
                 })()}
               </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: '700', fontSize: '0.9rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pin.label}</div>
+                <div style={{ fontWeight: '700', fontSize: '0.85rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pin.label}</div>
                 {pin.description && (
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pin.description}</div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pin.description}</div>
                 )}
               </div>
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px', marginLeft: '8px' }}>
+        <div style={{ display: 'flex', gap: '4px', marginLeft: '4px' }}>
           {!readOnly && (
             <button 
               onClick={() => setEditingPinId(editingPinId === pin.id ? null : pin.id)}
@@ -184,53 +213,44 @@ const SortablePin = ({
                 color: editingPinId === pin.id ? 'white' : 'var(--primary-color)', 
                 border: '1px solid var(--primary-color)', 
                 borderRadius: '6px', 
-                padding: '4px 8px', 
+                padding: '2px 8px', 
                 cursor: 'pointer', 
-                fontSize: '0.7rem',
+                fontSize: '0.65rem',
                 fontWeight: '600'
               }}
             >
               {editingPinId === pin.id ? 'Close' : 'Edit'}
             </button>
           )}
-          {!readOnly && editingPinId !== pin.id && (
-            <button 
-              onClick={() => onRemovePin(pin.id)}
-              style={{ background: 'transparent', color: '#aaa', border: 'none', padding: '4px', cursor: 'pointer' }}
-              className="delete-btn"
-            >
-              <Trash2 size={14} />
-            </button>
-          )}
         </div>
       </div>
 
       {editingPinId === pin.id && !readOnly && (
-        <div style={{ padding: '1rem 0 0 0', marginTop: '1rem', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem' }}>
-          <div style={{ marginBottom: '12px' }}>
-            <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '6px', color: 'var(--text-secondary)' }}>Name</label>
+        <div style={{ padding: '0.75rem 0 0 0', marginTop: '0.75rem', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem' }}>
+          <div style={{ marginBottom: '8px' }}>
+            <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '4px', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Name</label>
             <input 
               id={`label-${pin.id}`}
               type="text" 
               value={pin.label} 
               onChange={(e) => onUpdatePin(pin.id, { label: e.target.value })}
               className="input-field"
-              style={{ padding: '8px 12px' }}
+              style={{ padding: '6px 10px', fontSize: '0.85rem' }}
             />
           </div>
 
-          <div style={{ marginBottom: '12px' }}>
-            <label style={{ display: 'block', fontWeight: '700', marginBottom: '8px', color: 'var(--text-secondary)' }}>Color</label>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <div style={{ marginBottom: '8px' }}>
+            <label style={{ display: 'block', fontWeight: '700', marginBottom: '6px', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Color</label>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
               {COLORS.map(color => (
                 <button
                   key={color.name}
                   aria-label={`color-${color.name}`}
                   onClick={() => onUpdatePin(pin.id, { color: color.name })}
                   style={{
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '8px',
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '6px',
                     background: color.value,
                     border: pin.color === color.name || (!pin.color && color.name === 'blue') ? '2px solid var(--text-primary)' : 'none',
                     cursor: 'pointer',
@@ -239,11 +259,31 @@ const SortablePin = ({
                   }}
                 />
               ))}
-              <div style={{ position: 'relative', width: '28px', height: '28px' }}>
+              {/* Persistent Custom Colors */}
+              {(customColors || []).map(color => (
+                <button
+                  key={color}
+                  onClick={() => onUpdatePin(pin.id, { color })}
+                  style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '6px',
+                    background: color,
+                    border: pin.color === color ? '2px solid var(--text-primary)' : 'none',
+                    cursor: 'pointer',
+                    padding: 0,
+                    boxShadow: 'var(--shadow-sm)'
+                  }}
+                />
+              ))}
+              <div style={{ position: 'relative', width: '24px', height: '24px' }}>
                 <input 
                   type="color"
                   value={(!pin.color || COLORS.some(c => c.name === pin.color)) ? '#8e44ad' : pin.color}
-                  onChange={(e) => onUpdatePin(pin.id, { color: e.target.value })}
+                  onChange={(e) => {
+                    onUpdatePin(pin.id, { color: e.target.value });
+                    onAddCustomColor?.(e.target.value);
+                  }}
                   style={{
                     position: 'absolute',
                     top: 0,
@@ -257,16 +297,16 @@ const SortablePin = ({
                 />
                 <div 
                   style={{
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '8px',
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '6px',
                     background: (!pin.color || COLORS.some(c => c.name === pin.color)) ? '#f1f1f1' : pin.color,
                     border: pin.color && !COLORS.some(c => c.name === pin.color) ? '2px solid var(--text-primary)' : '1px dashed #ccc',
                     zIndex: 1,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '14px',
+                    fontSize: '12px',
                     color: pin.color && !COLORS.some(c => c.name === pin.color) ? 'white' : '#666'
                   }}
                 >
@@ -276,9 +316,9 @@ const SortablePin = ({
             </div>
           </div>
 
-          <div style={{ marginBottom: '12px' }}>
-            <label style={{ display: 'block', fontWeight: '700', marginBottom: '8px', color: 'var(--text-secondary)' }}>Icon</label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
+          <div style={{ marginBottom: '8px' }}>
+            <label style={{ display: 'block', fontWeight: '700', marginBottom: '6px', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Icon</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
               {ICONS.map(({ type, Icon }) => (
                 <button
                   key={type}
@@ -288,42 +328,46 @@ const SortablePin = ({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    height: '36px',
-                    borderRadius: '8px',
+                    height: '30px',
+                    borderRadius: '6px',
                     background: pin.icon === type || (!pin.icon && type === 'default') ? 'var(--primary-color)' : 'white',
                     border: '1px solid var(--border-color)',
                     cursor: 'pointer',
                     transition: 'all 0.2s'
                   }}
                 >
-                  <Icon size={16} color={pin.icon === type || (!pin.icon && type === 'default') ? 'white' : currentColor} />
+                  <Icon size={14} color={pin.icon === type || (!pin.icon && type === 'default') ? 'white' : currentColor} />
                 </button>
               ))}
             </div>
           </div>
 
-          <div style={{ marginBottom: '12px' }}>
-            <label htmlFor={`desc-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '6px', color: 'var(--text-secondary)' }}>Description</label>
+          <div style={{ marginBottom: '8px' }}>
+            <label htmlFor={`desc-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '4px', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Description</label>
             <textarea 
               id={`desc-${pin.id}`}
               value={pin.description || ''} 
               onChange={(e) => onUpdatePin(pin.id, { description: e.target.value })}
               className="input-field"
-              style={{ minHeight: '80px', resize: 'vertical', padding: '8px 12px' }}
+              style={{ minHeight: '60px', resize: 'vertical', padding: '6px 10px', fontSize: '0.85rem' }}
             />
           </div>
           
-          <div style={{ marginBottom: '12px' }}>
-            <label htmlFor={`img-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '6px', color: 'var(--text-secondary)' }}>Image URL</label>
-            <input 
-              id={`img-${pin.id}`}
-              type="text" 
-              value={pin.imageUrl || ''} 
-              onChange={(e) => onUpdatePin(pin.id, { imageUrl: e.target.value })}
-              className="input-field"
-              placeholder="https://example.com/image.jpg"
-              style={{ padding: '8px 12px' }}
-            />
+          <div style={{ marginBottom: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button 
+                onClick={() => onRemovePin(pin.id)}
+                style={{ background: 'transparent', color: 'var(--error-color)', border: 'none', padding: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                <Trash2 size={14} /> Delete Pin
+              </button>
+              <button 
+                onClick={() => setEditingPinId(null)} 
+                style={{ padding: '6px 16px', fontSize: '0.8rem', cursor: 'pointer', border: 'none', borderRadius: 'var(--radius-sm)', background: 'var(--primary-color)', color: 'white', fontWeight: '600' }}
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -341,7 +385,13 @@ const SortableGroup = ({
   onUpdatePin,
   editingPinId,
   onSetEditingPinId,
-  readOnly
+  readOnly,
+  hoveredPinId,
+  onHoverPin,
+  customColors,
+  onAddCustomColor,
+  selectedNavIds,
+  onToggleNavId
 }: { 
   group: PinGroup,
   groupPins: Pin[],
@@ -352,7 +402,13 @@ const SortableGroup = ({
   onUpdatePin: (id: string, updates: Partial<Pin>) => void,
   editingPinId: string | null,
   onSetEditingPinId: (id: string | null) => void,
-  readOnly: boolean
+  readOnly: boolean,
+  hoveredPinId?: string | null,
+  onHoverPin?: (id: string | null) => void,
+  customColors?: string[],
+  onAddCustomColor?: (color: string) => void,
+  selectedNavIds?: Set<string>,
+  onToggleNavId?: (id: string) => void
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -390,10 +446,30 @@ const SortableGroup = ({
         transition: 'all 0.2s ease'
       }}>
         {!readOnly && (
-          <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '12px', color: '#aaa' }}>
+          <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '6px', color: '#aaa' }}>
             <GripVertical size={16} />
           </div>
         )}
+        <input 
+          type="checkbox" 
+          checked={groupPins.length > 0 && groupPins.every(p => selectedNavIds?.has(p.id))} 
+          ref={el => {
+            if (el) {
+              const someSelected = groupPins.some(p => selectedNavIds?.has(p.id));
+              const allSelected = groupPins.every(p => selectedNavIds?.has(p.id));
+              el.indeterminate = someSelected && !allSelected;
+            }
+          }}
+          onChange={(e) => {
+            const checked = e.target.checked;
+            groupPins.forEach(p => {
+              if (checked && !selectedNavIds?.has(p.id)) onToggleNavId?.(p.id);
+              if (!checked && selectedNavIds?.has(p.id)) onToggleNavId?.(p.id);
+            });
+          }}
+          style={{ marginRight: '10px', cursor: 'pointer', accentColor: 'var(--primary-color)' }}
+          title="Select all in group for navigation"
+        />
         <div onClick={() => setIsExpanded(!isExpanded)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
           <div style={{ color: 'var(--primary-color)', marginRight: '8px', display: 'flex' }}>
             {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
@@ -441,6 +517,12 @@ const SortableGroup = ({
                   editingPinId={editingPinId}
                   setEditingPinId={onSetEditingPinId}
                   readOnly={readOnly}
+                  hoveredPinId={hoveredPinId}
+                  onHoverPin={onHoverPin}
+                  customColors={customColors}
+                  onAddCustomColor={onAddCustomColor}
+                  isSelected={selectedNavIds?.has(pin.id)}
+                  onToggleSelect={onToggleNavId}
                 />
               ))}
               {groupPins.length === 0 && !readOnly && (
@@ -475,7 +557,13 @@ const Sidebar = ({
   onImport,
   mapBounds,
   editingPinId,
-  onSetEditingPinId
+  onSetEditingPinId,
+  hoveredPinId,
+  onHoverPin,
+  customColors,
+  onAddCustomColor,
+  selectedNavIds,
+  onToggleNavId
 }: SidebarProps) => {
   const [localMapName, setLocalMapName] = useState(mapName);
   const [isExportOpen, setIsExportOpen] = useState(false);
@@ -528,19 +616,53 @@ const Sidebar = ({
 
   const defaultPins = pins.filter(p => !p.groupId);
 
+  const selectedPins = pins.filter(p => selectedNavIds?.has(p.id))
+    .sort((a, b) => {
+      // Sort by group and then by position
+      if (a.groupId === b.groupId) return a.position - b.position;
+      if (!a.groupId) return -1;
+      if (!b.groupId) return 1;
+      return a.groupId.localeCompare(b.groupId);
+    });
+
+  const handleNavigate = () => {
+    if (selectedPins.length === 0) return;
+    
+    let url = "";
+    if (selectedPins.length === 1) {
+      url = `https://www.google.com/maps/search/?api=1&query=${selectedPins[0].lat},${selectedPins[0].lng}`;
+    } else {
+      const origin = selectedPins[0];
+      const destination = selectedPins[selectedPins.length - 1];
+      const waypoints = selectedPins.slice(1, -1).map(p => `${p.lat},${p.lng}`).join('|');
+      url = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=${waypoints}&travelmode=driving`;
+    }
+    window.open(url, '_blank');
+  };
+
   return (
     <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: '1.5rem', boxSizing: 'border-box', overflow: 'hidden', borderRight: '1px solid var(--border-color)' }}>
       <div style={{ marginBottom: '2rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
           <label htmlFor="map-name" style={{ display: 'block', fontWeight: '800', fontSize: '0.8rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Map Configuration</label>
-          {userRole === 'owner' && (
-            <button 
-              onClick={onShare}
-              style={{ fontSize: '0.75rem', background: 'var(--bg-color)', color: 'var(--primary-color)', border: '1px solid var(--primary-color)', padding: '4px 12px', borderRadius: '50px', cursor: 'pointer', fontWeight: '700' }}
-            >
-              Share Access
-            </button>
-          )}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {selectedPins.length > 0 && (
+              <button 
+                onClick={handleNavigate}
+                style={{ fontSize: '0.75rem', background: 'var(--success-color)', color: 'white', border: 'none', padding: '4px 12px', borderRadius: '50px', cursor: 'pointer', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                <Navigation size={14} /> Go ({selectedPins.length})
+              </button>
+            )}
+            {userRole === 'owner' && (
+              <button 
+                onClick={onShare}
+                style={{ fontSize: '0.75rem', background: 'var(--bg-color)', color: 'var(--primary-color)', border: '1px solid var(--primary-color)', padding: '4px 12px', borderRadius: '50px', cursor: 'pointer', fontWeight: '700' }}
+              >
+                Share
+              </button>
+            )}
+          </div>
         </div>
         <input 
           id="map-name"
@@ -611,14 +733,44 @@ const Sidebar = ({
                 editingPinId={editingPinId}
                 onSetEditingPinId={onSetEditingPinId}
                 readOnly={readOnly}
+                hoveredPinId={hoveredPinId}
+                onHoverPin={onHoverPin}
+                customColors={customColors}
+                onAddCustomColor={onAddCustomColor}
+                selectedNavIds={selectedNavIds}
+                onToggleNavId={onToggleNavId}
               />
             ))}
           </SortableContext>
 
           <div style={{ marginTop: groups.length > 0 ? '2rem' : '0' }}>
-            <h4 style={{ fontSize: '0.75rem', color: '#aaa', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '0.1em', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', marginBottom: '1rem' }}>
-              Default Layer
-            </h4>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', marginBottom: '1rem' }}>
+              <h4 style={{ fontSize: '0.75rem', color: '#aaa', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '0.1em', margin: 0 }}>
+                Default Layer
+              </h4>
+              {defaultPins.length > 0 && (
+                <input 
+                  type="checkbox" 
+                  checked={defaultPins.every(p => selectedNavIds?.has(p.id))}
+                  ref={el => {
+                    if (el) {
+                      const someSelected = defaultPins.some(p => selectedNavIds?.has(p.id));
+                      const allSelected = defaultPins.every(p => selectedNavIds?.has(p.id));
+                      el.indeterminate = someSelected && !allSelected;
+                    }
+                  }}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    defaultPins.forEach(p => {
+                      if (checked && !selectedNavIds?.has(p.id)) onToggleNavId?.(p.id);
+                      if (!checked && selectedNavIds?.has(p.id)) onToggleNavId?.(p.id);
+                    });
+                  }}
+                  style={{ cursor: 'pointer', accentColor: 'var(--primary-color)' }}
+                  title="Select all in default layer for navigation"
+                />
+              )}
+            </div>
             <SortableContext items={defaultPins.map(p => p.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
               <ul style={{ listStyle: 'none', padding: 0 }}>
                 {defaultPins.map((pin) => (
@@ -631,6 +783,12 @@ const Sidebar = ({
                     editingPinId={editingPinId}
                     setEditingPinId={onSetEditingPinId}
                     readOnly={readOnly}
+                    hoveredPinId={hoveredPinId}
+                    onHoverPin={onHoverPin}
+                    customColors={customColors}
+                    onAddCustomColor={onAddCustomColor}
+                    isSelected={selectedNavIds?.has(pin.id)}
+                    onToggleSelect={onToggleNavId}
                   />
                 ))}
                 {defaultPins.length === 0 && groups.length === 0 && (

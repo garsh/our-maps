@@ -18,6 +18,8 @@ interface MapViewProps {
   targetPinId?: string | null;
   boundsToFit?: L.LatLngBounds | null;
   userRole?: 'owner' | 'edit' | 'view';
+  hoveredPinId?: string | null;
+  onHoverPin?: (id: string | null) => void;
 }
 
 const MapEvents = ({ onMapClick, onBoundsChange }: { onMapClick: (lat: number, lng: number) => void, onBoundsChange: (bounds: string) => void }) => {
@@ -42,10 +44,12 @@ const MapEvents = ({ onMapClick, onBoundsChange }: { onMapClick: (lat: number, l
 
 const MapController = ({ targetLocation, boundsToFit }: { targetLocation?: [number, number] | null, boundsToFit?: L.LatLngBounds | null }) => {
   const map = useMap();
+  const lastTarget = useRef<[number, number] | null>(null);
   
   useEffect(() => {
-    if (targetLocation) {
+    if (targetLocation && (targetLocation[0] !== lastTarget.current?.[0] || targetLocation[1] !== lastTarget.current?.[1])) {
       map.flyTo(targetLocation, 14, { duration: 1.5 });
+      lastTarget.current = targetLocation;
     }
   }, [targetLocation, map]);
 
@@ -80,7 +84,21 @@ const UserLocationMarker = () => {
   return <Marker position={position} icon={blueDotIcon} />;
 }
 
-const MapView = ({ center = [20, 0], zoom = 3, pins, onMapClick, onEditPin, onUpdatePin, onBoundsChange, targetLocation, targetPinId, boundsToFit, userRole = 'owner' }: MapViewProps) => {
+const MapView = ({ 
+  center = [20, 0], 
+  zoom = 3, 
+  pins, 
+  onMapClick, 
+  onEditPin, 
+  onUpdatePin, 
+  onBoundsChange, 
+  targetLocation, 
+  targetPinId, 
+  boundsToFit, 
+  userRole = 'owner',
+  hoveredPinId,
+  onHoverPin
+}: MapViewProps) => {
   const markerRefs = useRef<Record<string, L.Marker | null>>({});
   const [editingPopupPinId, setEditingPopupPinId] = useState<string | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -120,10 +138,13 @@ const MapView = ({ center = [20, 0], zoom = 3, pins, onMapClick, onEditPin, onUp
           <Marker 
             key={pin.id} 
             position={[pin.lat, pin.lng]} 
-            icon={getMarkerIcon(pin.color, pin.icon)}
+            icon={getMarkerIcon(pin.color, pin.icon, hoveredPinId === pin.id)}
             ref={(ref) => { markerRefs.current[pin.id] = ref; }}
-          >
-            <Popup eventHandlers={{ remove: () => setEditingPopupPinId(null) }} className="modern-popup">
+            eventHandlers={{
+              mouseover: () => onHoverPin?.(pin.id),
+              mouseout: () => onHoverPin?.(null)
+            }}
+          >            <Popup eventHandlers={{ remove: () => setEditingPopupPinId(null) }} className="modern-popup">
               <div style={{ minWidth: '220px', maxWidth: '320px' }}>
                 {editingPopupPinId === pin.id ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '0.5rem 0' }}>

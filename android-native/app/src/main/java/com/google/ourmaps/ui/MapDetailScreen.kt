@@ -1116,23 +1116,72 @@ fun LegendContent(
     onPinClick: (Pin) -> Unit
 ) {
     var expandedGroupIds by remember { mutableStateOf<Set<String?>>(visibleGroupIds) }
+    var selectedNavPinIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val context = LocalContext.current
+
+    val navigateSelected = {
+        val selectedPins = mapData.pins.filter { it.id in selectedNavPinIds }
+            .sortedWith(compareBy({ it.groupId }, { it.position }))
+        
+        if (selectedPins.size >= 2) {
+            val origin = selectedPins.first()
+            val destination = selectedPins.last()
+            val waypoints = if (selectedPins.size > 2) {
+                selectedPins.subList(1, selectedPins.size - 1).joinToString("|") { "${it.lat},${it.lng}" }
+            } else ""
+            
+            val uriString = "https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=$waypoints&travelmode=driving&dir_action=navigate"
+            val uri = Uri.parse(uriString)
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps") }
+            try { context.startActivity(intent) } catch (e: Exception) { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+        } else if (selectedPins.size == 1) {
+            val pin = selectedPins[0]
+            val uri = Uri.parse("google.navigation:q=${pin.lat},${pin.lng}")
+            context.startActivity(Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps") })
+        }
+    }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            "Map Legend", 
-            style = MaterialTheme.typography.headlineSmall, 
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(16.dp)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Map Legend", 
+                style = MaterialTheme.typography.headlineSmall, 
+                fontWeight = FontWeight.Bold
+            )
+            
+            if (selectedNavPinIds.isNotEmpty()) {
+                Button(
+                    onClick = navigateSelected,
+                    colors = ButtonDefaults.buttonColors(containerColor = DarkSlateBlue),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Icon(Icons.Default.Directions, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Go (${selectedNavPinIds.size})", fontSize = 12.sp)
+                }
+            }
+        }
         
         LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 600.dp)) {
             // Default Group
             item {
+                val defaultPins = mapData.pins.filter { it.groupId == null }
                 LegendGroupHeader(
                     name = "Default Layer",
                     isExpanded = expandedGroupIds.contains(null),
                     onToggle = { 
                         expandedGroupIds = if (expandedGroupIds.contains(null)) expandedGroupIds - null else expandedGroupIds + null
+                    },
+                    showSelectAll = defaultPins.isNotEmpty() && expandedGroupIds.contains(null),
+                    isAllSelected = defaultPins.all { it.id in selectedNavPinIds },
+                    onSelectAll = { select ->
+                        val ids = defaultPins.map { it.id }.toSet()
+                        selectedNavPinIds = if (select) selectedNavPinIds + ids else selectedNavPinIds - ids
                     }
                 )
             }
@@ -1143,7 +1192,14 @@ fun LegendContent(
                     item { Text("No pins in this layer", modifier = Modifier.padding(start = 72.dp, bottom = 16.dp, top = 8.dp), style = MaterialTheme.typography.bodySmall, color = Color.Gray) }
                 } else {
                     items(defaultPins) { pin ->
-                        LegendPinItem(pin = pin, onClick = { onPinClick(pin) })
+                        LegendPinItem(
+                            pin = pin, 
+                            onClick = { onPinClick(pin) },
+                            isSelected = pin.id in selectedNavPinIds,
+                            onToggleSelect = { selected ->
+                                selectedNavPinIds = if (selected) selectedNavPinIds + pin.id else selectedNavPinIds - pin.id
+                            }
+                        )
                         Divider(modifier = Modifier.padding(start = 72.dp, end = 16.dp), thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.5f))
                     }
                 }
@@ -1151,23 +1207,36 @@ fun LegendContent(
             
             // Other Groups
             mapData.groups.forEach { group ->
+                val groupPins = mapData.pins.filter { it.groupId == group.id }
                 item {
                     LegendGroupHeader(
                         name = group.name,
                         isExpanded = expandedGroupIds.contains(group.id),
                         onToggle = { 
                             expandedGroupIds = if (expandedGroupIds.contains(group.id)) expandedGroupIds - group.id else expandedGroupIds + group.id
+                        },
+                        showSelectAll = groupPins.isNotEmpty() && expandedGroupIds.contains(group.id),
+                        isAllSelected = groupPins.all { it.id in selectedNavPinIds },
+                        onSelectAll = { select ->
+                            val ids = groupPins.map { it.id }.toSet()
+                            selectedNavPinIds = if (select) selectedNavPinIds + ids else selectedNavPinIds - ids
                         }
                     )
                 }
                 
-                val groupPins = mapData.pins.filter { it.groupId == group.id }
                 if (expandedGroupIds.contains(group.id)) {
                     if (groupPins.isEmpty()) {
                         item { Text("No pins in this layer", modifier = Modifier.padding(start = 72.dp, bottom = 16.dp, top = 8.dp), style = MaterialTheme.typography.bodySmall, color = Color.Gray) }
                     } else {
                         items(groupPins) { pin ->
-                            LegendPinItem(pin = pin, onClick = { onPinClick(pin) })
+                            LegendPinItem(
+                                pin = pin, 
+                                onClick = { onPinClick(pin) },
+                                isSelected = pin.id in selectedNavPinIds,
+                                onToggleSelect = { selected ->
+                                    selectedNavPinIds = if (selected) selectedNavPinIds + pin.id else selectedNavPinIds - pin.id
+                                }
+                            )
                             Divider(modifier = Modifier.padding(start = 72.dp, end = 16.dp), thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.5f))
                         }
                     }
@@ -1179,7 +1248,14 @@ fun LegendContent(
 }
 
 @Composable
-fun LegendGroupHeader(name: String, isExpanded: Boolean, onToggle: () -> Unit) {
+fun LegendGroupHeader(
+    name: String, 
+    isExpanded: Boolean, 
+    onToggle: () -> Unit,
+    showSelectAll: Boolean = false,
+    isAllSelected: Boolean = false,
+    onSelectAll: (Boolean) -> Unit = {}
+) {
     Surface(
         color = if (isExpanded) DarkSlateBlue.copy(alpha = 0.05f) else Color.Transparent,
         modifier = Modifier.fillMaxWidth()
@@ -1191,13 +1267,28 @@ fun LegendGroupHeader(name: String, isExpanded: Boolean, onToggle: () -> Unit) {
             Icon(Icons.Default.Layers, contentDescription = null, modifier = Modifier.size(24.dp), tint = DarkSlateBlue)
             Spacer(modifier = Modifier.width(12.dp))
             Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            
+            if (showSelectAll) {
+                Checkbox(
+                    checked = isAllSelected, 
+                    onCheckedChange = onSelectAll,
+                    modifier = Modifier.padding(end = 8.dp).size(24.dp),
+                    colors = CheckboxDefaults.colors(checkedColor = DarkSlateBlue)
+                )
+            }
+            
             Icon(if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null, tint = Color.Gray)
         }
     }
 }
 
 @Composable
-fun LegendPinItem(pin: Pin, onClick: () -> Unit) {
+fun LegendPinItem(
+    pin: Pin, 
+    onClick: () -> Unit,
+    isSelected: Boolean,
+    onToggleSelect: (Boolean) -> Unit
+) {
     val pinColor = Color(when(pin.color) {
         "red" -> 0xFFCB2B3E
         "green" -> 0xFF2AAD27
@@ -1220,31 +1311,39 @@ fun LegendPinItem(pin: Pin, onClick: () -> Unit) {
                     pin.description!!, 
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 ) 
             }
         } else null,
         leadingContent = {
-            Surface(
-                shape = CircleShape,
-                color = pinColor.copy(alpha = 0.1f),
-                modifier = Modifier.size(40.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.Place,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = pinColor
-                    )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = isSelected, 
+                    onCheckedChange = onToggleSelect,
+                    colors = CheckboxDefaults.colors(checkedColor = DarkSlateBlue)
+                )
+                Spacer(Modifier.width(8.dp))
+                Surface(
+                    shape = CircleShape,
+                    color = pinColor.copy(alpha = 0.1f),
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Place,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = pinColor
+                        )
+                    }
                 }
             }
         },
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() }
-            .padding(vertical = 4.dp),
+            .padding(vertical = 0.dp),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }

@@ -19,7 +19,7 @@ const ICON_SVG_PATHS: Record<Exclude<PinIcon, 'default'>, string> = {
   camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
 };
 
-export function getMarkerIcon(color: PinColor = 'blue', icon: PinIcon = 'default') {
+export function getMarkerIcon(color: PinColor = 'blue', icon: PinIcon = 'default', isHovered = false) {
   const isHex = color.startsWith('#');
   const colorCode = isHex ? color : (COLOR_CODES[color] || COLOR_CODES.blue);
 
@@ -37,7 +37,12 @@ export function getMarkerIcon(color: PinColor = 'blue', icon: PinIcon = 'default
   }
 
   const html = `
-    <div style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
+    <div style="
+      filter: ${isHovered ? 'drop-shadow(0 4px 8px rgba(0,0,0,0.4))' : 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'};
+      transform: ${isHovered ? 'scale(1.2)' : 'scale(1)'};
+      transform-origin: bottom center;
+      transition: transform 0.2s ease;
+    ">
       <svg width="30" height="42" viewBox="0 0 30 42" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z" fill="${colorCode}"/>
         ${iconContent}
@@ -46,7 +51,7 @@ export function getMarkerIcon(color: PinColor = 'blue', icon: PinIcon = 'default
   `;
 
   return L.divIcon({
-    className: 'custom-pin-modern',
+    className: isHovered ? 'custom-pin-modern hovered' : 'custom-pin-modern',
     html,
     iconSize: [30, 42],
     iconAnchor: [15, 42],

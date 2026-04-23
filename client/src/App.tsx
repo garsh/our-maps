@@ -36,6 +36,23 @@ export function MapEditor() {
   const [mapBounds, setMapBounds] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(300);
   const [isResizing, setIsResizing] = useState(false);
+  const [hoveredPinId, setHoveredPinId] = useState<string | null>(null);
+  const [selectedNavIds, setSelectedNavIds] = useState<Set<string>>(new Set());
+  const [customColors, setCustomColors] = useState<string[]>(() => {
+    const saved = localStorage.getItem('customColors');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('customColors', JSON.stringify(customColors));
+  }, [customColors]);
+
+  const addCustomColor = (color: string) => {
+    if (!customColors.includes(color)) {
+      setCustomColors(prev => [color, ...prev].slice(0, 10)); // Keep last 10
+    }
+  };
+
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -68,6 +85,7 @@ export function MapEditor() {
 
   const loadMap = async (mapId: string) => {
     setIsMapLoading(true);
+    setSelectedNavIds(new Set());
     try {
       const data = await apiService.getMap(mapId);
       setMapId(data.id);
@@ -134,7 +152,6 @@ export function MapEditor() {
   };
 
   const handlePinSelect = (pin: Pin) => {
-    setTargetLocation([pin.lat, pin.lng]);
     setTargetPinId(pin.id);
     // Reset targetPinId after a short delay so it can be re-triggered
     setTimeout(() => setTargetPinId(null), 500);
@@ -372,6 +389,17 @@ export function MapEditor() {
             mapBounds={mapBounds}
             editingPinId={editingPinId}
             onSetEditingPinId={setEditingPinId}
+            hoveredPinId={hoveredPinId}
+            onHoverPin={setHoveredPinId}
+            customColors={customColors}
+            onAddCustomColor={addCustomColor}
+            selectedNavIds={selectedNavIds}
+            onToggleNavId={(id) => {
+              const newSet = new Set(selectedNavIds);
+              if (newSet.has(id)) newSet.delete(id);
+              else newSet.add(id);
+              setSelectedNavIds(newSet);
+            }}
           />
           <div 
             onMouseDown={startResize}
@@ -408,6 +436,8 @@ export function MapEditor() {
             boundsToFit={boundsToFit}
             onBoundsChange={setMapBounds}
             userRole={userRole}
+            hoveredPinId={hoveredPinId}
+            onHoverPin={setHoveredPinId}
           />
         </main>
       </div>
