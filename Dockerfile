@@ -9,9 +9,9 @@ COPY client/package.json client/package-lock.json ./client/
 COPY server/package.json server/package-lock.json ./server/
 
 # Install dependencies across all workspaces
-RUN npm ci
-RUN cd client && npm ci
-RUN cd server && npm ci
+RUN npm ci --legacy-peer-deps
+RUN cd client && npm ci --legacy-peer-deps
+RUN cd server && npm ci --legacy-peer-deps
 
 # Copy all project files (ignoring node_modules via .dockerignore)
 COPY . .
@@ -34,7 +34,7 @@ COPY package.json package-lock.json ./
 COPY server/package.json server/package-lock.json ./server/
 
 # Install production dependencies
-RUN cd server && npm ci --omit=dev
+RUN cd server && npm ci --omit=dev --legacy-peer-deps
 
 # Copy over the compiled code from the builder stages
 COPY --from=builder /app/client/dist ./client/dist
