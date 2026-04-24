@@ -395,10 +395,26 @@ export function MapEditor() {
             onAddCustomColor={addCustomColor}
             selectedNavIds={selectedNavIds}
             onToggleNavId={(id) => {
-              const newSet = new Set(selectedNavIds);
-              if (newSet.has(id)) newSet.delete(id);
-              else newSet.add(id);
-              setSelectedNavIds(newSet);
+              setSelectedNavIds(prev => {
+                const newSet = new Set(prev);
+                if (newSet.has(id)) newSet.delete(id);
+                else newSet.add(id);
+                return newSet;
+              });
+            }}
+            onToggleNavIds={(ids, force) => {
+              setSelectedNavIds(prev => {
+                const newSet = new Set(prev);
+                ids.forEach(id => {
+                  if (force === true) newSet.add(id);
+                  else if (force === false) newSet.delete(id);
+                  else {
+                    if (newSet.has(id)) newSet.delete(id);
+                    else newSet.add(id);
+                  }
+                });
+                return newSet;
+              });
             }}
           />
           <div 

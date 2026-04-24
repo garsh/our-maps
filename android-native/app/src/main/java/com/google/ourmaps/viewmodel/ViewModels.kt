@@ -49,7 +49,7 @@ class MapListViewModel(private val repository: MapRepository) : ViewModel() {
                 groups = emptyList(),
                 pins = emptyList(),
                 userRole = "owner",
-                access = null,
+                permissions = null,
                 lastAccessedAt = null
             )
             val result = repository.createMap(newMap)

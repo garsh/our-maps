@@ -532,23 +532,23 @@ fun MapDetailScreen(
                     Text("Who Has Access", style = MaterialTheme.typography.titleSmall)
                     Spacer(modifier = Modifier.height(8.dp))
                     
-                    val accessList = mapData?.access ?: emptyList()
-                    if (accessList.isEmpty()) {
+                    val permissionsList = mapData?.permissions ?: emptyList()
+                    if (permissionsList.isEmpty()) {
                         Text("Only you have access", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
                     } else {
                         LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
-                            items(accessList) { mapUser ->
+                            items(permissionsList) { permission ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(mapUser.name ?: mapUser.email, style = MaterialTheme.typography.bodyMedium)
-                                        Text(mapUser.role.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                        Text(permission.userName ?: permission.userEmail, style = MaterialTheme.typography.bodyMedium)
+                                        Text(permission.role.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                                     }
-                                    if (mapData?.userRole == "owner" && mapUser.role != "owner") {
+                                    if (mapData?.userRole == "owner") {
                                         IconButton(onClick = {
-                                            viewModel.removeShare(mapUser.id) {
+                                            viewModel.removeShare(permission.userId) {
                                                 Toast.makeText(context, "Permission removed", Toast.LENGTH_SHORT).show()
                                             }
                                         }) {
@@ -736,8 +736,6 @@ fun MapDetailScreen(
                             selectedPin = pin
                             isEditingPin = false
                             coroutineScope.launch { scaffoldState.bottomSheetState.partialExpand() }
-                            mapViewRef?.controller?.animateTo(GeoPoint(pin.lat, pin.lng))
-                            mapViewRef?.controller?.setZoom(17.0)
                         }
                     )
                 }

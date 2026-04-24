@@ -69,6 +69,7 @@ interface SidebarProps {
   onAddCustomColor?: (color: string) => void;
   selectedNavIds?: Set<string>;
   onToggleNavId?: (id: string) => void;
+  onToggleNavIds?: (ids: string[], force?: boolean) => void;
 }
 
 const COLORS = [
@@ -395,7 +396,8 @@ const SortableGroup = ({
   customColors,
   onAddCustomColor,
   selectedNavIds,
-  onToggleNavId
+  onToggleNavId,
+  onToggleNavIds
 }: { 
   group: PinGroup,
   groupPins: Pin[],
@@ -412,7 +414,8 @@ const SortableGroup = ({
   customColors?: string[],
   onAddCustomColor?: (color: string) => void,
   selectedNavIds?: Set<string>,
-  onToggleNavId?: (id: string) => void
+  onToggleNavId?: (id: string) => void,
+  onToggleNavIds?: (ids: string[], force?: boolean) => void
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -463,10 +466,7 @@ const SortableGroup = ({
           ref={el => { if (el) el.indeterminate = isSomeSelected && !isAllSelected; }}
           onChange={(e) => {
             const checked = e.target.checked;
-            groupPins.forEach(p => {
-              if (checked && !selectedNavIds?.has(p.id)) onToggleNavId?.(p.id);
-              if (!checked && selectedNavIds?.has(p.id)) onToggleNavId?.(p.id);
-            });
+            onToggleNavIds?.(groupPins.map(p => p.id), checked);
           }}
           style={{ marginRight: '10px', cursor: 'pointer', accentColor: 'var(--primary-color)' }}
           title="Select all in group for navigation"
@@ -564,7 +564,8 @@ const Sidebar = ({
   customColors,
   onAddCustomColor,
   selectedNavIds,
-  onToggleNavId
+  onToggleNavId,
+  onToggleNavIds
 }: SidebarProps) => {
   const [localMapName, setLocalMapName] = useState(mapName);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -740,13 +741,15 @@ const Sidebar = ({
         />
       </div>
 
-      <SearchBar 
-        onResultSelect={onResultSelect} 
-        onAddPin={onAddPin} 
-        pins={pins} 
-        disabled={readOnly} 
-        mapBounds={mapBounds}
-      />
+      {!readOnly && (
+        <SearchBar 
+          onResultSelect={onResultSelect} 
+          onAddPin={onAddPin} 
+          pins={pins} 
+          disabled={readOnly} 
+          mapBounds={mapBounds}
+        />
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', marginTop: '0.25rem' }}>
         <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '800', color: 'var(--text-primary)' }}>Layers</h3>
@@ -786,6 +789,7 @@ const Sidebar = ({
                 onAddCustomColor={onAddCustomColor}
                 selectedNavIds={selectedNavIds}
                 onToggleNavId={onToggleNavId}
+                onToggleNavIds={onToggleNavIds}
               />
             ))}
           </SortableContext>
@@ -802,10 +806,7 @@ const Sidebar = ({
                   ref={el => { if (el) el.indeterminate = isDefaultSomeSelected && !isDefaultAllSelected; }}
                   onChange={(e) => {
                     const checked = e.target.checked;
-                    defaultPins.forEach(p => {
-                      if (checked && !selectedNavIds?.has(p.id)) onToggleNavId?.(p.id);
-                      if (!checked && selectedNavIds?.has(p.id)) onToggleNavId?.(p.id);
-                    });
+                    onToggleNavIds?.(defaultPins.map(p => p.id), checked);
                   }}
                   style={{ cursor: 'pointer', accentColor: 'var(--primary-color)' }}
                   title="Select all in default layer for navigation"

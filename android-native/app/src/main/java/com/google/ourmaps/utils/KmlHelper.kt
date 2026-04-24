@@ -37,7 +37,7 @@ object KmlHelper {
             groups = groups,
             pins = pins,
             userRole = null,
-            access = null,
+            permissions = null,
             lastAccessedAt = null
             )
     }
