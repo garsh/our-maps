@@ -274,10 +274,21 @@ export function MapEditor() {
           const movedPins = pinsToMoveIds.map(id => prevPins.find(p => p.id === id)).filter(Boolean) as Pin[];
           const otherPins = prevPins.filter(p => !pinsToMoveIds.includes(p.id));
           
-          // Find where to insert in the new group
-          let targetIndex = otherPins.length;
+          // Determine target index
+          let targetIndex;
           if (overData?.type === 'pin') {
             targetIndex = otherPins.findIndex(p => p.id === overId);
+          } else {
+            // Drop on group header: find the visual start of that group
+            // For simplicity, find the last pin of the target group and put it after
+            const lastPinIndex = [...otherPins].reverse().findIndex(p => p.groupId === newGroupId);
+            if (lastPinIndex !== -1) {
+                targetIndex = otherPins.length - lastPinIndex;
+            } else {
+                // Group is empty, find where it should be relative to other groups
+                // Just append to end for now as a fallback
+                targetIndex = otherPins.length;
+            }
           }
 
           const updatedMovedPins = movedPins.map(p => ({ ...p, groupId: newGroupId }));
@@ -313,6 +324,9 @@ export function MapEditor() {
       }
       return;
     }
+
+    // Finalize pin positions
+    setPins(prev => prev.map((p, i) => ({ ...p, position: i })));
   };
 
   const handleImport = (data: Partial<MapData>) => {

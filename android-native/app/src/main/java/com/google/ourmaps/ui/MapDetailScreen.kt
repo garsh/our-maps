@@ -1302,6 +1302,10 @@ fun LegendPinItem(
         "green" -> 0xFF2AAD27
         "orange" -> 0xFFCB8427
         "violet" -> 0xFF9C2BCB
+        "gold", "yellow" -> 0xFFFFD700
+        "pink" -> 0xFFFF69B4
+        "teal" -> 0xFF008080
+        "brown" -> 0xFF8B4513
         else -> 0xFF2A81CB
     })
 

@@ -11,6 +11,7 @@ object NavigationUtils {
             selectedPins.subList(0, selectedPins.size - 1).joinToString("|") { "${it.lat},${it.lng}" }
         } else ""
         
-        return "https://www.google.com/maps/dir/?api=1&origin=current+location&destination=${destination.lat},${destination.lng}&waypoints=$waypoints&travelmode=driving&dir_action=navigate"
+        // destination and waypoints are enough, Google Maps will default to current location as origin if omitted
+        return "https://www.google.com/maps/dir/?api=1&destination=${destination.lat},${destination.lng}&waypoints=$waypoints&travelmode=driving"
     }
 }

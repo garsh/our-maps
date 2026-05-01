@@ -22,7 +22,7 @@ object MarkerUtils {
                     "green" -> Color.parseColor("#2AAD27")
                     "orange" -> Color.parseColor("#CB8427")
                     "violet" -> Color.parseColor("#9C2BCB")
-                    "yellow" -> Color.parseColor("#FFD700")
+                    "gold", "yellow" -> Color.parseColor("#FFD700")
                     "pink" -> Color.parseColor("#FF69B4")
                     "teal" -> Color.parseColor("#008080")
                     "brown" -> Color.parseColor("#8B4513")

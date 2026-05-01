@@ -89,7 +89,7 @@ const COLORS = [
   { name: 'green', value: '#2AAD27' },
   { name: 'orange', value: '#CB8427' },
   { name: 'violet', value: '#9C2BCB' },
-  { name: 'yellow', value: '#FFD700' },
+  { name: 'gold', value: '#FFD700' },
   { name: 'pink', value: '#FF69B4' },
   { name: 'teal', value: '#008080' },
   { name: 'brown', value: '#8B4513' }
@@ -721,15 +721,11 @@ const Sidebar = ({
 
   const handleNavigate = () => {
     if (selectedPins.length === 0) return;
-    let url = "";
-    if (selectedPins.length === 1) {
-      url = `https://www.google.com/maps/search/?api=1&query=${selectedPins[0].lat},${selectedPins[0].lng}`;
-    } else {
-      const origin = selectedPins[0];
-      const destination = selectedPins[selectedPins.length - 1];
-      const waypoints = selectedPins.slice(1, -1).map(p => `${p.lat},${p.lng}`).join('|');
-      url = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=${waypoints}&travelmode=driving`;
-    }
+    
+    const destination = selectedPins[selectedPins.length - 1];
+    const waypoints = selectedPins.slice(0, -1).map(p => `${p.lat},${p.lng}`).join('|');
+    
+    const url = `https://www.google.com/maps/dir/?api=1&origin=current+location&destination=${destination.lat},${destination.lng}&waypoints=${waypoints}&travelmode=driving&dir_action=navigate`;
     window.open(url, '_blank');
   };
 

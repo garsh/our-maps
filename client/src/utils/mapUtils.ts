@@ -7,6 +7,11 @@ const COLOR_CODES: Record<PinColor, string> = {
   green: '#2AAD27',
   orange: '#CB8427',
   violet: '#9C2BCB',
+  gold: '#FFD700',
+  yellow: '#FFD700', // Alias for older data
+  pink: '#FF69B4',
+  teal: '#008080',
+  brown: '#8B4513',
 };
 
 const ICON_SVG_PATHS: Record<Exclude<PinIcon, 'default'>, string> = {
