@@ -91,6 +91,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
     ...p,
     imageUrl: p.image_url,
     groupId: p.group_id,
+    address: p.address,
     color: p.color || 'blue',
     icon: p.icon || 'default',
     position: p.position || 0
@@ -132,9 +133,9 @@ router.post('/', async (req: AuthRequest, res) => {
     }
 
     if (pins && pins.length > 0) {
-      const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       for (const pin of pins) {
-        await stmt.run(pin.id, id, pin.groupId || null, pin.lat, pin.lng, pin.label, pin.description, pin.imageUrl, pin.color || 'blue', pin.icon || 'default', pin.position || 0);
+        await stmt.run(pin.id, id, pin.groupId || null, pin.lat, pin.lng, pin.label, pin.description, pin.address, pin.imageUrl, pin.color || 'blue', pin.icon || 'default', pin.position || 0);
       }
       await stmt.finalize();
     }
@@ -200,9 +201,9 @@ router.put('/:id', async (req: AuthRequest, res) => {
     }
 
     if (pins && pins.length > 0) {
-      const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       for (const pin of pins) {
-        await stmt.run(pin.id, mapId, pin.groupId || null, pin.lat, pin.lng, pin.label, pin.description, pin.imageUrl, pin.color || 'blue', pin.icon || 'default', pin.position || 0);
+        await stmt.run(pin.id, mapId, pin.groupId || null, pin.lat, pin.lng, pin.label, pin.description, pin.address, pin.imageUrl, pin.color || 'blue', pin.icon || 'default', pin.position || 0);
       }
       await stmt.finalize();
     }

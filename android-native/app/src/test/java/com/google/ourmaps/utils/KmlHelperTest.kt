@@ -49,6 +49,7 @@ class KmlHelperTest {
             lng = 10.0,
             label = "Pin 1",
             description = "Description 1",
+            address = null,
             imageUrl = null,
             color = "blue",
             icon = "default",
@@ -64,6 +65,7 @@ class KmlHelperTest {
             groups = emptyList(),
             pins = listOf(pin),
             userRole = "owner",
+            permissions = null,
             lastAccessedAt = null
         )
 

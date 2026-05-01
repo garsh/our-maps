@@ -1,3 +1,9 @@
+import '@testing-library/jest-dom';
+import { vi } from 'vitest';
+
+// Mock fetch
+global.fetch = vi.fn();
+
 // Mock crypto.randomUUID
 if (!window.crypto.randomUUID) {
   Object.defineProperty(window.crypto, 'randomUUID', {

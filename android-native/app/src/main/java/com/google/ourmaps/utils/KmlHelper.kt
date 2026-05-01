@@ -140,6 +140,7 @@ object KmlHelper {
             lng = lng,
             label = label ?: "Untitled Pin",
             description = description,
+            address = null,
             imageUrl = null,
             color = "blue",
             icon = "default",

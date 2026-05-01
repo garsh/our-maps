@@ -13,6 +13,7 @@ data class Pin(
     val lng: Double,
     val label: String?,
     val description: String?,
+    val address: String?,
     val imageUrl: String?,
     val color: String?,
     val icon: String?,

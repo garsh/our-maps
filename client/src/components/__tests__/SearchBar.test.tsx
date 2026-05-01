@@ -15,7 +15,7 @@ describe('SearchBar', () => {
 
   it('renders correctly', () => {
     render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={[]} />);
-    expect(screen.getByPlaceholderText(/search pins or places/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Find pins or new places/i)).toBeInTheDocument();
   });
 
   it('performs live global search after debounce', async () => {
@@ -30,7 +30,7 @@ describe('SearchBar', () => {
 
     render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={[]} debounceMs={10} />);
     
-    const input = screen.getByPlaceholderText(/search pins or places/i);
+    const input = screen.getByPlaceholderText(/Find pins or new places/i);
     fireEvent.change(input, { target: { value: 'London' } });
 
     await waitFor(() => {
@@ -45,7 +45,7 @@ describe('SearchBar', () => {
   it('performs fuzzy search on local pins', async () => {
     render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={mockPins} />);
     
-    const input = screen.getByPlaceholderText(/search pins or places/i);
+    const input = screen.getByPlaceholderText(/Find pins or new places/i);
     fireEvent.change(input, { target: { value: 'Cofee' } }); // Misspelled
 
     await waitFor(() => {
@@ -58,7 +58,7 @@ describe('SearchBar', () => {
   it('calls onResultSelect when a local result is clicked', async () => {
     render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={mockPins} />);
     
-    fireEvent.change(screen.getByPlaceholderText(/search pins or places/i), { target: { value: 'Coffee' } });
+    fireEvent.change(screen.getByPlaceholderText(/Find pins or new places/i), { target: { value: 'Coffee' } });
 
     await waitFor(() => screen.getByText('Local Coffee'));
     fireEvent.click(screen.getByText('Local Coffee'));
@@ -78,11 +78,11 @@ describe('SearchBar', () => {
 
     render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={[]} debounceMs={10} />);
     
-    fireEvent.change(screen.getByPlaceholderText(/search pins or places/i), { target: { value: 'New York' } });
+    fireEvent.change(screen.getByPlaceholderText(/Find pins or new places/i), { target: { value: 'New York' } });
 
     await waitFor(() => screen.getByText('New York, USA'));
     fireEvent.click(screen.getByText('+ Add to Map'));
 
-    expect(mockOnAddPin).toHaveBeenCalledWith(40, -74, 'New York');
+    expect(mockOnAddPin).toHaveBeenCalledWith(40, -74, 'New York', 'New York, USA');
   });
 });

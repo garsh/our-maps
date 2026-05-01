@@ -607,6 +607,10 @@ fun MapDetailScreen(
                                     IconButton(onClick = { selectedPin = null }) { Icon(Icons.Default.Close, contentDescription = "Close") }
                                 }
                                 
+                                if (!pin.address.isNullOrBlank()) {
+                                    Text(pin.address!!, style = MaterialTheme.typography.bodyMedium, color = Color.Gray, modifier = Modifier.padding(vertical = 4.dp))
+                                }
+
                                 if (!pin.description.isNullOrBlank()) {
                                     Text(pin.description!!, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 8.dp))
                                 }
@@ -649,11 +653,12 @@ fun MapDetailScreen(
                             } else {
                                 // Edit Mode
                                 var editedLabel by remember(pin.id) { mutableStateOf(pin.label ?: "") }
+                                var editedAddress by remember(pin.id) { mutableStateOf(pin.address ?: "") }
                                 var editedDescription by remember(pin.id) { mutableStateOf(pin.description ?: "") }
                                 var editedColor by remember(pin.id) { mutableStateOf(pin.color ?: "blue") }
                                 var editedIcon by remember(pin.id) { mutableStateOf(pin.icon ?: "default") }
-                                val updatePinFn = { l: String, d: String, c: String, i: String, g: String? ->
-                                    viewModel.updateMap(mapData.copy(pins = mapData.pins.map { if (it.id == pin.id) it.copy(label = l, description = d, color = c, icon = i, groupId = g) else it }))
+                                val updatePinFn = { l: String, a: String, d: String, c: String, i: String, g: String? ->
+                                    viewModel.updateMap(mapData.copy(pins = mapData.pins.map { if (it.id == pin.id) it.copy(label = l, address = a, description = d, color = c, icon = i, groupId = g) else it }))
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text("Edit Pin", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -662,9 +667,11 @@ fun MapDetailScreen(
                                         selectedPin = null 
                                     }) { Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red) }
                                 }
-                                OutlinedTextField(value = editedLabel, onValueChange = { editedLabel = it; updatePinFn(it, editedDescription, editedColor, editedIcon, pin.groupId) }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = editedLabel, onValueChange = { editedLabel = it; updatePinFn(it, editedAddress, editedDescription, editedColor, editedIcon, pin.groupId) }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
                                 Spacer(modifier = Modifier.height(8.dp))
-                                OutlinedTextField(value = editedDescription, onValueChange = { editedDescription = it; updatePinFn(editedLabel, it, editedColor, editedIcon, pin.groupId) }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+                                OutlinedTextField(value = editedAddress, onValueChange = { editedAddress = it; updatePinFn(editedLabel, it, editedDescription, editedColor, editedIcon, pin.groupId) }, label = { Text("Address") }, modifier = Modifier.fillMaxWidth())
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(value = editedDescription, onValueChange = { editedDescription = it; updatePinFn(editedLabel, editedAddress, it, editedColor, editedIcon, pin.groupId) }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
                                 Spacer(modifier = Modifier.height(8.dp))
                                 var showGroupDropdown by remember { mutableStateOf(false) }
                                 val currentGroupName = remember(pin.id, pin.groupId, mapData.groups) {
@@ -688,8 +695,8 @@ fun MapDetailScreen(
                                         trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null) }
                                     )
                                     DropdownMenu(expanded = showGroupDropdown, onDismissRequest = { showGroupDropdown = false }) {
-                                        DropdownMenuItem(text = { Text("No Group (Default)") }, onClick = { updatePinFn(editedLabel, editedDescription, editedColor, editedIcon, null); showGroupDropdown = false })
-                                        mapData.groups.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { updatePinFn(editedLabel, editedDescription, editedColor, editedIcon, g.id); showGroupDropdown = false }) }
+                                        DropdownMenuItem(text = { Text("No Group (Default)") }, onClick = { updatePinFn(editedLabel, editedAddress, editedDescription, editedColor, editedIcon, null); showGroupDropdown = false })
+                                        mapData.groups.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { updatePinFn(editedLabel, editedAddress, editedDescription, editedColor, editedIcon, g.id); showGroupDropdown = false }) }
                                         Divider()
                                         DropdownMenuItem(
                                             text = { Text("Create New Layer...") },
@@ -707,14 +714,14 @@ fun MapDetailScreen(
                                 Text("Color", style = MaterialTheme.typography.labelMedium)
                                 Row(modifier = Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     val colors = mapOf("blue" to Color(0xFF2A81CB), "red" to Color(0xFFCB2B3E), "green" to Color(0xFF2AAD27), "orange" to Color(0xFFCB8427), "violet" to Color(0xFF9C2BCB))
-                                    colors.forEach { (n, v) -> Box(modifier = Modifier.size(36.dp).background(v, CircleShape).clickable { editedColor = n; updatePinFn(editedLabel, editedDescription, n, editedIcon, pin.groupId) }.padding(4.dp)) { if (editedColor == n) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(20.dp).align(Alignment.Center)) } }
+                                    colors.forEach { (n, v) -> Box(modifier = Modifier.size(36.dp).background(v, CircleShape).clickable { editedColor = n; updatePinFn(editedLabel, editedAddress, editedDescription, n, editedIcon, pin.groupId) }.padding(4.dp)) { if (editedColor == n) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(20.dp).align(Alignment.Center)) } }
                                 }
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text("Icon", style = MaterialTheme.typography.labelMedium)
                                 Column {
                                     listOf(listOf("default", "hotel", "restaurant", "airport"), listOf("park", "museum", "shopping", "camera")).forEach { row ->
                                         Row(modifier = Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            row.forEach { t -> FilterChip(selected = editedIcon == t, onClick = { editedIcon = t; updatePinFn(editedLabel, editedDescription, editedColor, t, pin.groupId) }, label = { Text(t.replaceFirstChar { it.uppercase() }, fontSize = 10.sp) }) }
+                                            row.forEach { t -> FilterChip(selected = editedIcon == t, onClick = { editedIcon = t; updatePinFn(editedLabel, editedAddress, editedDescription, editedColor, t, pin.groupId) }, label = { Text(t.replaceFirstChar { it.uppercase() }, fontSize = 10.sp) }) }
                                         }
                                     }
                                 }
@@ -905,7 +912,19 @@ fun MapDetailScreen(
                                             override fun longPressHelper(p: GeoPoint?): Boolean {
                                                 p?.let {
                                                 val currentMap = (viewModel.uiState.value as? UiState.Success)?.data ?: return@let
-                                                val newPin = Pin(java.util.UUID.randomUUID().toString(), it.latitude, it.longitude, "New Pin", "", null, "blue", "default", null, currentMap.pins.size)
+                                                val newPin = Pin(
+                                                    id = java.util.UUID.randomUUID().toString(),
+                                                    lat = it.latitude,
+                                                    lng = it.longitude,
+                                                    label = "New Pin",
+                                                    description = "",
+                                                    address = null,
+                                                    imageUrl = null,
+                                                    color = "blue",
+                                                    icon = "default",
+                                                    groupId = null,
+                                                    position = currentMap.pins.size
+                                                )
                                                 viewModel.updateMap(currentMap.copy(pins = currentMap.pins + newPin))
                                             }
                                             return true
@@ -1080,6 +1099,7 @@ fun MapDetailScreen(
                                                 lng = result.location.longitude,
                                                 label = result.name,
                                                 description = result.description,
+                                                address = result.description, // Use search description as address
                                                 imageUrl = null,
                                                 color = "blue",
                                                 icon = "default",
@@ -1121,21 +1141,11 @@ fun LegendContent(
         val selectedPins = mapData.pins.filter { it.id in selectedNavPinIds }
             .sortedWith(compareBy({ it.groupId }, { it.position }))
         
-        if (selectedPins.size >= 2) {
-            val origin = selectedPins.first()
-            val destination = selectedPins.last()
-            val waypoints = if (selectedPins.size > 2) {
-                selectedPins.subList(1, selectedPins.size - 1).joinToString("|") { "${it.lat},${it.lng}" }
-            } else ""
-            
-            val uriString = "https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=$waypoints&travelmode=driving&dir_action=navigate"
+        if (selectedPins.isNotEmpty()) {
+            val uriString = com.google.ourmaps.utils.NavigationUtils.generateNavigationUri(selectedPins)
             val uri = Uri.parse(uriString)
             val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps") }
             try { context.startActivity(intent) } catch (e: Exception) { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
-        } else if (selectedPins.size == 1) {
-            val pin = selectedPins[0]
-            val uri = Uri.parse("google.navigation:q=${pin.lat},${pin.lng}")
-            context.startActivity(Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps") })
         }
     }
 

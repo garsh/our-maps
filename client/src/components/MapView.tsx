@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { getMarkerIcon } from '../utils/mapUtils';
 import L from 'leaflet';
 import { Locate, Navigation } from 'lucide-react';
+import { reverseGeocode } from '../utils/geocoding';
 
 interface MapViewProps {
   center?: [number, number];
@@ -20,6 +21,7 @@ interface MapViewProps {
   userRole?: 'owner' | 'edit' | 'view';
   hoveredPinId?: string | null;
   onHoverPin?: (id: string | null) => void;
+  hiddenGroupIds?: Set<string | null>;
 }
 
 const MapEvents = ({ onMapClick, onBoundsChange }: { onMapClick: (lat: number, lng: number) => void, onBoundsChange: (bounds: string) => void }) => {
@@ -84,6 +86,197 @@ const UserLocationMarker = () => {
   return <Marker position={position} icon={blueDotIcon} />;
 }
 
+const PinMarker = ({ 
+  pin, 
+  onEditPin, 
+  onUpdatePin, 
+  onHoverPin, 
+  hoveredPinId, 
+  readOnly,
+  setMarkerRef
+}: { 
+  pin: Pin, 
+  onEditPin: (id: string) => void, 
+  onUpdatePin: (id: string, updates: Partial<Pin>) => void, 
+  onHoverPin?: (id: string | null) => void, 
+  hoveredPinId?: string | null, 
+  readOnly: boolean,
+  setMarkerRef: (id: string, marker: L.Marker | null) => void
+}) => {
+  const [address, setAddress] = useState<string | null>(pin.address || null);
+  const [isEditingPopup, setIsEditingPopup] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
+
+  // Sync address if it updates in parent
+  useEffect(() => {
+    if (pin.address) setAddress(pin.address);
+  }, [pin.address]);
+
+  const fetchAddress = async () => {
+    if (address || isFetching) return;
+    setIsFetching(true);
+    try {
+      const addr = await reverseGeocode(pin.lat, pin.lng);
+      if (addr) {
+        setAddress(addr);
+        if (!pin.address) {
+            onUpdatePin(pin.id, { address: addr });
+        }
+      }
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  const handleDragEnd = async (e: L.DragEndEvent) => {
+    const marker = e.target;
+    const position = marker.getLatLng();
+    const newLat = position.lat;
+    const newLng = position.lng;
+    
+    // Optimistically update address UI
+    setIsFetching(true);
+    setAddress(null);
+
+    const newAddress = await reverseGeocode(newLat, newLng);
+    setIsFetching(false);
+    setAddress(newAddress);
+    
+    onUpdatePin(pin.id, { 
+        lat: newLat, 
+        lng: newLng, 
+        address: newAddress || undefined 
+    });
+  };
+
+  return (
+    <Marker 
+      position={[pin.lat, pin.lng]} 
+      icon={getMarkerIcon(pin.color, pin.icon, hoveredPinId === pin.id)}
+      ref={(ref) => setMarkerRef(pin.id, ref)}
+      draggable={!readOnly}
+      eventHandlers={{
+        click: () => fetchAddress(),
+        mouseover: () => onHoverPin?.(pin.id),
+        mouseout: () => onHoverPin?.(null),
+        popupopen: () => {
+          fetchAddress();
+        },
+        dragend: handleDragEnd
+      }}
+    >
+      <Popup eventHandlers={{ remove: () => setIsEditingPopup(false) }} className="modern-popup">
+        <div style={{ minWidth: '220px', maxWidth: '320px' }}>
+          {isEditingPopup ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '0.5rem 0' }}>
+              <div style={{ fontWeight: '800', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Edit Pin</div>
+              {(address || isFetching) && (
+                <div>
+                  <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>ADDRESS</label>
+                  <div style={{ padding: '4px 8px', background: 'var(--bg-color)', borderRadius: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', lineHeight: '1.3' }}>
+                    {isFetching ? 'Fetching address...' : address}
+                  </div>
+                </div>
+              )}
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>NAME</label>
+                <input 
+                  value={pin.label || ''} 
+                  onChange={(e) => onUpdatePin(pin.id, { label: e.target.value })}
+                  className="input-field"
+                  style={{ padding: '6px 10px', fontSize: '0.9rem' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>DESCRIPTION</label>
+                <textarea 
+                  value={pin.description || ''} 
+                  onChange={(e) => onUpdatePin(pin.id, { description: e.target.value })}
+                  placeholder="Add some notes about this place..."
+                  rows={3}
+                  className="input-field"
+                  style={{ padding: '6px 10px', fontSize: '0.9rem', minHeight: '60px' }}
+                />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                <button 
+                  onClick={() => onEditPin(pin.id)}
+                  style={{ background: 'none', border: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '700', textDecoration: 'none', padding: 0 }}
+                >
+                  Style & Details...
+                </button>
+                <button 
+                  onClick={() => setIsEditingPopup(false)}
+                  className="btn-primary"
+                  style={{ padding: '6px 16px', fontSize: '0.85rem' }}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding: '4px 0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px', gap: '12px' }}>
+                <div style={{ minWidth: 0 }}>
+                    <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pin.label}</h3>
+                    {(address || isFetching) && (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.2' }}>
+                          {isFetching ? 'Fetching address...' : address}
+                        </div>
+                    )}
+                </div>
+                {!readOnly && (
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsEditingPopup(true);
+                    }}
+                    style={{ background: 'var(--bg-color)', color: 'var(--primary-color)', border: '1px solid var(--primary-color)', borderRadius: '6px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }}
+                  >
+                    EDIT
+                  </button>
+                )}
+              </div>
+              
+              {pin.imageUrl && (
+                <div style={{ borderRadius: 'var(--radius-sm)', overflow: 'hidden', margin: '12px 0', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                  <img 
+                    src={pin.imageUrl} 
+                    alt={pin.label} 
+                    style={{ width: '100%', height: 'auto', display: 'block' }} 
+                    onError={(e) => (e.currentTarget.parentElement!.style.display = 'none')}
+                  />
+                </div>
+              )}
+              
+              {pin.description ? (
+                <p style={{ margin: '8px 0 16px 0', fontSize: '0.95rem', color: 'var(--text-secondary)', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
+                  {pin.description}
+                </p>
+              ) : (
+                <div style={{ fontSize: '0.85rem', color: '#aaa', margin: '8px 0 16px 0', fontStyle: 'italic' }}>No description provided.</div>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
+                  <a 
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ flex: 1, textDecoration: 'none' }}
+                  >
+                    <button className="btn-primary" style={{ width: '100%', padding: '8px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                      <Navigation size={16} /> Directions
+                    </button>
+                  </a>
+              </div>
+            </div>
+          )}
+        </div>
+      </Popup>
+    </Marker>
+  );
+}
+
 const MapView = ({ 
   center = [20, 0], 
   zoom = 3, 
@@ -97,12 +290,15 @@ const MapView = ({
   boundsToFit, 
   userRole = 'owner',
   hoveredPinId,
-  onHoverPin
+  onHoverPin,
+  hiddenGroupIds
 }: MapViewProps) => {
   const markerRefs = useRef<Record<string, L.Marker | null>>({});
-  const [editingPopupPinId, setEditingPopupPinId] = useState<string | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const readOnly = userRole === 'view';
+
+  // Filter pins based on hiddenGroupIds
+  const visiblePins = pins.filter(pin => !hiddenGroupIds?.has(pin.groupId || null));
 
   useEffect(() => {
     if (targetPinId && markerRefs.current[targetPinId]) {
@@ -134,110 +330,17 @@ const MapView = ({
         <MapEvents onMapClick={onMapClick} onBoundsChange={onBoundsChange} />
         <MapController targetLocation={targetLocation} boundsToFit={boundsToFit} />
         <UserLocationMarker />
-        {pins.map((pin) => (
-          <Marker 
+        {visiblePins.map((pin) => (
+          <PinMarker 
             key={pin.id} 
-            position={[pin.lat, pin.lng]} 
-            icon={getMarkerIcon(pin.color, pin.icon, hoveredPinId === pin.id)}
-            ref={(ref) => { markerRefs.current[pin.id] = ref; }}
-            eventHandlers={{
-              mouseover: () => onHoverPin?.(pin.id),
-              mouseout: () => onHoverPin?.(null)
-            }}
-          >            <Popup eventHandlers={{ remove: () => setEditingPopupPinId(null) }} className="modern-popup">
-              <div style={{ minWidth: '220px', maxWidth: '320px' }}>
-                {editingPopupPinId === pin.id ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '0.5rem 0' }}>
-                    <div style={{ fontWeight: '800', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Edit Pin</div>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>NAME</label>
-                      <input 
-                        value={pin.label || ''} 
-                        onChange={(e) => onUpdatePin(pin.id, { label: e.target.value })}
-                        className="input-field"
-                        style={{ padding: '6px 10px', fontSize: '0.9rem' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>DESCRIPTION</label>
-                      <textarea 
-                        value={pin.description || ''} 
-                        onChange={(e) => onUpdatePin(pin.id, { description: e.target.value })}
-                        placeholder="Add some notes about this place..."
-                        rows={3}
-                        className="input-field"
-                        style={{ padding: '6px 10px', fontSize: '0.9rem', minHeight: '60px' }}
-                      />
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-                      <button 
-                        onClick={() => onEditPin(pin.id)}
-                        style={{ background: 'none', border: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '700', textDecoration: 'none', padding: 0 }}
-                      >
-                        Style & Details...
-                      </button>
-                      <button 
-                        onClick={() => setEditingPopupPinId(null)}
-                        className="btn-primary"
-                        style={{ padding: '6px 16px', fontSize: '0.85rem' }}
-                      >
-                        Done
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ padding: '4px 0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', gap: '12px' }}>
-                      <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800', color: 'var(--text-primary)' }}>{pin.label}</h3>
-                      {!readOnly && (
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingPopupPinId(pin.id);
-                          }}
-                          style={{ background: 'var(--bg-color)', color: 'var(--primary-color)', border: '1px solid var(--primary-color)', borderRadius: '6px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}
-                        >
-                          EDIT
-                        </button>
-                      )}
-                    </div>
-                    
-                    {pin.imageUrl && (
-                      <div style={{ borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginBottom: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
-                        <img 
-                          src={pin.imageUrl} 
-                          alt={pin.label} 
-                          style={{ width: '100%', height: 'auto', display: 'block' }} 
-                          onError={(e) => (e.currentTarget.parentElement!.style.display = 'none')}
-                        />
-                      </div>
-                    )}
-                    
-                    {pin.description ? (
-                      <p style={{ margin: '0 0 16px 0', fontSize: '0.95rem', color: 'var(--text-secondary)', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
-                        {pin.description}
-                      </p>
-                    ) : (
-                      <div style={{ fontSize: '0.85rem', color: '#aaa', marginBottom: '16px', fontStyle: 'italic' }}>No description provided.</div>
-                    )}
-
-                    <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
-                        <a 
-                          href={`https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ flex: 1, textDecoration: 'none' }}
-                        >
-                          <button className="btn-primary" style={{ width: '100%', padding: '8px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                            <Navigation size={16} /> Directions
-                          </button>
-                        </a>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </Popup>
-          </Marker>
+            pin={pin}
+            onEditPin={onEditPin}
+            onUpdatePin={onUpdatePin}
+            onHoverPin={onHoverPin}
+            hoveredPinId={hoveredPinId}
+            readOnly={readOnly}
+            setMarkerRef={(id, marker) => { markerRefs.current[id] = marker; }}
+          />
         ))}
       </MapContainer>
 

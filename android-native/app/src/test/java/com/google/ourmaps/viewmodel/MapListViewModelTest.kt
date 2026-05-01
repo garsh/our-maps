@@ -41,7 +41,7 @@ class MapListViewModelTest {
     fun `fetchMaps updates uiState to Success when repository returns data`() = runTest {
         // Arrange
         val mockMaps = listOf(
-            MapData("1", "Map 1", "user1", "User One", "user1@test.com", emptyList(), emptyList(), "owner", null)
+            MapData("1", "Map 1", "user1", "User One", "user1@test.com", emptyList(), emptyList(), "owner", null, null)
         )
         `when`(repository.getMaps()).thenReturn(Result.success(mockMaps))
 

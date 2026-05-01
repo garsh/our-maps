@@ -7,6 +7,7 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import ShareDialog from './components/ShareDialog';
 import { apiService } from './services/api'
+import { reverseGeocode } from './utils/geocoding';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { Pin, PinGroup, MapPermission, MapData } from '@shared/interfaces'
 import { arrayMove } from '@dnd-kit/sortable'
@@ -38,6 +39,7 @@ export function MapEditor() {
   const [isResizing, setIsResizing] = useState(false);
   const [hoveredPinId, setHoveredPinId] = useState<string | null>(null);
   const [selectedNavIds, setSelectedNavIds] = useState<Set<string>>(new Set());
+  const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string | null>>(new Set());
   const [customColors, setCustomColors] = useState<string[]>(() => {
     const saved = localStorage.getItem('customColors');
     return saved ? JSON.parse(saved) : [];
@@ -158,7 +160,6 @@ export function MapEditor() {
   };
 
   const handleEditPin = (pin: Pin) => {
-    handlePinSelect(pin);
     setEditingPinId(pin.id);
     // Scroll sidebar to the pin
     setTimeout(() => {
@@ -169,30 +170,47 @@ export function MapEditor() {
     }, 100);
   };
 
-  const handleMapClick = useCallback((lat: number, lng: number) => {
+  const handleMapClick = useCallback(async (lat: number, lng: number) => {
     if (userRole === 'view') return;
-    setEditingPinId(null);
+    const id = crypto.randomUUID();
     const newPin: Pin = {
-      id: crypto.randomUUID(),
+      id,
       lat,
       lng,
       label: `Pin ${pins.length + 1}`,
       position: pins.length
     };
     setPins(prev => [...prev, newPin]);
+    handleEditPin(newPin);
+
+    // Geocode once on creation
+    const address = await reverseGeocode(lat, lng);
+    if (address) {
+      setPins(prev => prev.map(p => p.id === id ? { ...p, address } : p));
+    }
   }, [pins.length, userRole]);
 
-  const addPinAtLocation = (lat: number, lng: number, label: string) => {
+  const addPinAtLocation = async (lat: number, lng: number, label: string, address?: string) => {
     if (userRole === 'view') return;
+    const id = crypto.randomUUID();
     const newPin: Pin = {
-      id: crypto.randomUUID(),
+      id,
       lat,
       lng,
       label: label,
+      address: address, // Use provided address if available
       position: pins.length
     };
     setPins(prev => [...prev, newPin]);
-    handlePinSelect(newPin);
+    handleEditPin(newPin);
+
+    // Geocode only if address is missing
+    if (!address) {
+      const fetchedAddress = await reverseGeocode(lat, lng);
+      if (fetchedAddress) {
+        setPins(prev => prev.map(p => p.id === id ? { ...p, address: fetchedAddress } : p));
+      }
+    }
   };
 
   const removePin = (id: string) => {
@@ -226,9 +244,62 @@ export function MapEditor() {
     setPins(prev => prev.map(p => p.groupId === id ? { ...p, groupId: undefined } : p));
   };
 
+  const handleDragOver = (event: any) => {
+    if (userRole === 'view') return;
+    const { active, over } = event;
+    if (!over) return;
+
+    if (active.data.current?.type === 'pin') {
+      const activeId = active.id as string;
+      const overId = over.id as string;
+      const overData = over.data.current;
+
+      const activePin = pins.find(p => p.id === activeId);
+      if (!activePin) return;
+
+      let newGroupId: string | undefined = activePin.groupId;
+      if (overData?.type === 'group' || overId === 'default') {
+        newGroupId = overId === 'default' ? undefined : (overData?.group?.id || overId);
+      } else if (overData?.type === 'pin') {
+        newGroupId = overData.pin.groupId;
+      }
+
+      // If moving to a different group, or reordering within same group
+      if (newGroupId !== activePin.groupId) {
+        setPins((prevPins) => {
+          const pinsToMoveIds = selectedNavIds.has(activeId) 
+            ? Array.from(selectedNavIds) 
+            : [activeId];
+          
+          const movedPins = pinsToMoveIds.map(id => prevPins.find(p => p.id === id)).filter(Boolean) as Pin[];
+          const otherPins = prevPins.filter(p => !pinsToMoveIds.includes(p.id));
+          
+          // Find where to insert in the new group
+          let targetIndex = otherPins.length;
+          if (overData?.type === 'pin') {
+            targetIndex = otherPins.findIndex(p => p.id === overId);
+          }
+
+          const updatedMovedPins = movedPins.map(p => ({ ...p, groupId: newGroupId }));
+          const result = [...otherPins];
+          result.splice(targetIndex, 0, ...updatedMovedPins);
+          return result.map((p, i) => ({ ...p, position: i }));
+        });
+      } else if (activeId !== overId && overData?.type === 'pin') {
+        // Reordering within the SAME group
+        setPins((prevPins) => {
+          const oldIndex = prevPins.findIndex((p) => p.id === activeId);
+          const newIndex = prevPins.findIndex((p) => p.id === overId);
+          return arrayMove(prevPins, oldIndex, newIndex).map((p, i) => ({ ...p, position: i }));
+        });
+      }
+    }
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     if (userRole === 'view') return;
     const { active, over } = event;
+    
     if (!over) return;
 
     if (active.data.current?.type === 'group') {
@@ -241,38 +312,6 @@ export function MapEditor() {
         });
       }
       return;
-    }
-
-    if (active.data.current?.type === 'pin') {
-      const activePin = pins.find(p => p.id === active.id);
-      if (!activePin) return;
-
-      const overId = over.id;
-      const overData = over.data.current;
-
-      setPins((prevPins) => {
-        const activeIndex = prevPins.findIndex((p) => p.id === active.id);
-        let newPins = [...prevPins];
-        let newGroupId = activePin.groupId;
-
-        if (overData?.type === 'group') {
-          newGroupId = overId as string;
-        } else if (overData?.type === 'pin') {
-          const overPin = prevPins.find(p => p.id === overId);
-          newGroupId = overPin?.groupId;
-        }
-
-        if (newGroupId !== activePin.groupId) {
-          newPins[activeIndex] = { ...newPins[activeIndex], groupId: newGroupId };
-        }
-
-        if (active.id !== overId && overData?.type === 'pin') {
-          const overIndex = prevPins.findIndex((p) => p.id === overId);
-          newPins = arrayMove(newPins, activeIndex, overIndex);
-        }
-
-        return newPins.map((p, index) => ({ ...p, position: index }));
-      });
     }
   };
 
@@ -383,6 +422,7 @@ export function MapEditor() {
             onPinClick={handlePinSelect}
             onUpdatePin={updatePin}
             onDragEnd={handleDragEnd}
+            onDragOver={handleDragOver}
             userRole={userRole}
             onShare={() => setIsSharing(true)}
             onImport={handleImport}
@@ -413,6 +453,15 @@ export function MapEditor() {
                     else newSet.add(id);
                   }
                 });
+                return newSet;
+              });
+            }}
+            hiddenGroupIds={hiddenGroupIds}
+            onToggleGroupVisibility={(id) => {
+              setHiddenGroupIds(prev => {
+                const newSet = new Set(prev);
+                if (newSet.has(id)) newSet.delete(id);
+                else newSet.add(id);
                 return newSet;
               });
             }}
@@ -454,6 +503,7 @@ export function MapEditor() {
             userRole={userRole}
             hoveredPinId={hoveredPinId}
             onHoverPin={setHoveredPinId}
+            hiddenGroupIds={hiddenGroupIds}
           />
         </main>
       </div>

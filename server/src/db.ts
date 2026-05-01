@@ -17,6 +17,9 @@ async function migrate(db: Database) {
   if (!columnNames.includes('description')) {
     await db.exec("ALTER TABLE pins ADD COLUMN description TEXT");
   }
+  if (!columnNames.includes('address')) {
+    await db.exec("ALTER TABLE pins ADD COLUMN address TEXT");
+  }
   if (!columnNames.includes('image_url')) {
     await db.exec("ALTER TABLE pins ADD COLUMN image_url TEXT");
   }
@@ -99,6 +102,7 @@ export async function getDb() {
       lng REAL NOT NULL,
       label TEXT,
       description TEXT,
+      address TEXT,
       image_url TEXT,
       color TEXT DEFAULT 'blue',
       icon TEXT DEFAULT 'default',

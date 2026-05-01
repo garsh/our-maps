@@ -22,6 +22,10 @@ object MarkerUtils {
                     "green" -> Color.parseColor("#2AAD27")
                     "orange" -> Color.parseColor("#CB8427")
                     "violet" -> Color.parseColor("#9C2BCB")
+                    "yellow" -> Color.parseColor("#FFD700")
+                    "pink" -> Color.parseColor("#FF69B4")
+                    "teal" -> Color.parseColor("#008080")
+                    "brown" -> Color.parseColor("#8B4513")
                     else -> if (colorHex.startsWith("#")) Color.parseColor(colorHex) else defaultColor
                 }
             }
@@ -29,7 +33,7 @@ object MarkerUtils {
             defaultColor
         }
 
-        val size = 96
+        val size = 64 // Reduced from 96
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val paint = android.graphics.Paint()
@@ -41,16 +45,16 @@ object MarkerUtils {
         
         val pinPath = android.graphics.Path()
         val centerX = size / 2f
-        val topY = size / 4f
-        val radius = size / 3f
+        val topY = size / 5f // Adjusted for smaller size
+        val radius = size / 3.5f // Adjusted for smaller size
         
         pinPath.addCircle(centerX, topY + radius, radius, android.graphics.Path.Direction.CW)
         
         // Pointy bit
         val trianglePath = android.graphics.Path()
-        trianglePath.moveTo(centerX - radius * 0.8f, topY + radius * 1.5f)
-        trianglePath.lineTo(centerX + radius * 0.8f, topY + radius * 1.5f)
-        trianglePath.lineTo(centerX, size.toFloat() - 10f)
+        trianglePath.moveTo(centerX - radius * 0.9f, topY + radius * 1.4f)
+        trianglePath.lineTo(centerX + radius * 0.9f, topY + radius * 1.4f)
+        trianglePath.lineTo(centerX, size.toFloat() - 5f) // Adjusted for smaller size
         trianglePath.close()
         canvas.drawPath(trianglePath, paint)
         canvas.drawCircle(centerX, topY + radius, radius, paint)
@@ -63,103 +67,80 @@ object MarkerUtils {
         if (iconType != null && iconType != "default") {
             paint.color = color
             paint.style = android.graphics.Paint.Style.STROKE
-            paint.strokeWidth = 4f
+            paint.strokeWidth = 3f // Reduced from 4f
             paint.strokeCap = android.graphics.Paint.Cap.ROUND
             paint.strokeJoin = android.graphics.Paint.Join.ROUND
             
-            val iconRadius = radius * 0.45f
+            val iconScale = size / 96f // Scale factor relative to original design
             val icX = centerX
             val icY = topY + radius
             
             when (iconType) {
                 "hotel" -> {
                     // Bed
-                    canvas.drawLine(icX - 15f, icY + 10f, icX - 15f, icY - 10f, paint) // Left post
-                    canvas.drawLine(icX + 15f, icY + 10f, icX + 15f, icY + 2f, paint) // Right post
-                    canvas.drawLine(icX - 15f, icY + 5f, icX + 15f, icY + 5f, paint) // Mattress
-                    canvas.drawRect(icX - 12f, icY - 5f, icX - 2f, icY + 2f, paint) // Pillow
+                    canvas.drawLine(icX - 10f * iconScale, icY + 7f * iconScale, icX - 10f * iconScale, icY - 7f * iconScale, paint)
+                    canvas.drawLine(icX + 10f * iconScale, icY + 7f * iconScale, icX + 10f * iconScale, icY + 1f * iconScale, paint)
+                    canvas.drawLine(icX - 10f * iconScale, icY + 3f * iconScale, icX + 10f * iconScale, icY + 3f * iconScale, paint)
                 }
                 "restaurant" -> {
-                    // Fork and Knife
-                    // Fork
-                    canvas.drawLine(icX - 8f, icY - 12f, icX - 8f, icY + 12f, paint)
-                    canvas.drawLine(icX - 12f, icY - 12f, icX - 12f, icY - 4f, paint)
-                    canvas.drawLine(icX - 4f, icY - 12f, icX - 4f, icY - 4f, paint)
-                    canvas.drawLine(icX - 12f, icY - 4f, icX - 4f, icY - 4f, paint)
-                    // Knife
-                    canvas.drawLine(icX + 8f, icY - 12f, icX + 8f, icY + 12f, paint)
-                    canvas.drawArc(icX + 4f, icY - 12f, icX + 12f, icY, 180f, 180f, false, paint)
+                    // Simplified Fork and Knife
+                    canvas.drawLine(icX - 5f, icY - 8f, icX - 5f, icY + 8f, paint)
+                    canvas.drawLine(icX + 5f, icY - 8f, icX + 5f, icY + 8f, paint)
                 }
                 "airport" -> {
-                    // Plane
+                    // Plane (simplified)
                     val p = android.graphics.Path()
-                    p.moveTo(icX, icY - 18f) // Nose
-                    p.lineTo(icX - 3f, icY - 12f)
-                    p.lineTo(icX - 18f, icY + 2f) // Left wing tip
-                    p.lineTo(icX - 18f, icY + 5f)
-                    p.lineTo(icX - 3f, icY + 2f)
-                    p.lineTo(icX - 3f, icY + 12f)
-                    p.lineTo(icX - 8f, icY + 16f) // Left tail tip
-                    p.lineTo(icX + 8f, icY + 16f) // Right tail tip
-                    p.lineTo(icX + 3f, icY + 12f)
-                    p.lineTo(icX + 3f, icY + 2f)
-                    p.lineTo(icX + 18f, icY + 5f)
-                    p.lineTo(icX + 18f, icY + 2f) // Right wing tip
-                    p.lineTo(icX + 3f, icY - 12f)
+                    p.moveTo(icX, icY - 12f)
+                    p.lineTo(icX - 12f, icY + 2f)
+                    p.lineTo(icX + 12f, icY + 2f)
                     p.close()
                     canvas.drawPath(p, paint)
                 }
                 "park" -> {
-                    // Tree
-                    val p = android.graphics.Path()
-                    // Top triangle
-                    p.moveTo(icX, icY - 15f)
-                    p.lineTo(icX - 12f, icY - 2f)
-                    p.lineTo(icX + 12f, icY - 2f)
-                    p.close()
-                    // Middle triangle
-                    p.moveTo(icX, icY - 5f)
-                    p.lineTo(icX - 15f, icY + 8f)
-                    p.lineTo(icX + 15f, icY + 8f)
-                    p.close()
-                    canvas.drawPath(p, paint)
-                    // Trunk
-                    canvas.drawRect(icX - 3f, icY + 8f, icX + 3f, icY + 15f, paint)
+                    // Simplified Tree
+                    canvas.drawCircle(icX, icY - 2f, 8f, paint)
+                    canvas.drawLine(icX, icY + 6f, icX, icY + 12f, paint)
                 }
                 "museum" -> {
-                    // Temple/Museum
-                    canvas.drawRect(icX - 15f, icY + 8f, icX + 15f, icY + 12f, paint) // Base
-                    canvas.drawLine(icX - 12f, icY + 8f, icX - 12f, icY - 5f, paint) // Column 1
-                    canvas.drawLine(icX, icY + 8f, icX, icY - 5f, paint) // Column 2
-                    canvas.drawLine(icX + 12f, icY + 8f, icX + 12f, icY - 5f, paint) // Column 3
-                    val p = android.graphics.Path()
-                    p.moveTo(icX - 18f, icY - 5f)
-                    p.lineTo(icX, icY - 15f)
-                    p.lineTo(icX + 18f, icY - 5f)
-                    p.close()
-                    canvas.drawPath(p, paint)
+                    // Simplified Temple
+                    canvas.drawRect(icX - 10f, icY + 5f, icX + 10f, icY + 8f, paint)
+                    canvas.drawLine(icX - 8f, icY + 5f, icX - 8f, icY - 4f, paint)
+                    canvas.drawLine(icX + 8f, icY + 5f, icX + 8f, icY - 4f, paint)
                 }
                 "shopping" -> {
-                    // Bag
-                    canvas.drawRect(icX - 12f, icY - 5f, icX + 12f, icY + 12f, paint)
-                    canvas.drawArc(icX - 8f, icY - 12f, icX + 8f, icY, 180f, 180f, false, paint)
+                    // Simplified Bag
+                    canvas.drawRect(icX - 8f, icY - 4f, icX + 8f, icY + 8f, paint)
                 }
                 "camera" -> {
-                    // Camera
-                    canvas.drawRect(icX - 15f, icY - 8f, icX + 15f, icY + 10f, paint)
-                    canvas.drawCircle(icX, icY + 1f, 6f, paint)
-                    canvas.drawRect(icX - 10f, icY - 12f, icX - 2f, icY - 8f, paint)
+                    // Simplified Camera
+                    canvas.drawRect(icX - 10f, icY - 5f, icX + 10f, icY + 7f, paint)
+                    canvas.drawCircle(icX, icY + 1f, 4f, paint)
+                }
+                "gas" -> {
+                    // Simplified Gas
+                    canvas.drawRect(icX - 7f, icY - 6f, icX + 7f, icY + 8f, paint)
+                }
+                "charging" -> {
+                    // Lightning Bolt
+                    val p = android.graphics.Path()
+                    p.moveTo(icX + 1f, icY - 10f)
+                    p.lineTo(icX - 6f, icY + 1f)
+                    p.lineTo(icX + 1f, icY + 1f)
+                    p.lineTo(icX - 1f, icY + 10f)
+                    p.lineTo(icX + 6f, icY - 1f)
+                    p.lineTo(icX - 1f, icY - 1f)
+                    p.close()
+                    canvas.drawPath(p, paint)
                 }
                 else -> {
                     paint.style = android.graphics.Paint.Style.FILL
-                    canvas.drawCircle(icX, icY, 6f, paint)
+                    canvas.drawCircle(icX, icY, 4f, paint)
                 }
             }
         } else {
             // Default: just a small colored dot
             paint.color = color.let { 
-                // Lighten the color for the dot
-                Color.argb(150, Color.red(it), Color.green(it), Color.blue(it))
+                Color.argb(180, Color.red(it), Color.green(it), Color.blue(it))
             }
             paint.style = android.graphics.Paint.Style.FILL
             canvas.drawCircle(centerX, topY + radius, radius * 0.25f, paint)

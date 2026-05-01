@@ -55,7 +55,7 @@ describe('Sidebar', () => {
     const onAddGroup = vi.fn();
     render(<TestWrapper handlers={{ onAddGroup }} />);
     
-    fireEvent.click(screen.getByText(/Add Group/i));
+    fireEvent.click(screen.getByText(/New Layer/i));
     
     expect(onAddGroup).toHaveBeenCalled();
   });
@@ -106,5 +106,15 @@ describe('Sidebar', () => {
     fireEvent.click(hotelIcon);
     
     expect(onUpdatePin).toHaveBeenCalledWith('1', { icon: 'hotel' });
+  });
+
+  it('calls onPinClick when a pin is clicked', () => {
+    const onPinClick = vi.fn();
+    render(<TestWrapper handlers={{ onPinClick }} />);
+    
+    // Click the pin label
+    fireEvent.click(screen.getByText('Test Pin'));
+    
+    expect(onPinClick).toHaveBeenCalled();
   });
 });

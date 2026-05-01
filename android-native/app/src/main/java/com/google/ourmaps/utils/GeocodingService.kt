@@ -69,4 +69,27 @@ object GeocodingService {
             emptyList()
         }
     }
+
+    suspend fun reverseGeocode(
+        lat: Double,
+        lng: Double
+    ): String? = withContext(Dispatchers.IO) {
+        try {
+            val url = "https://nominatim.openstreetmap.org/reverse?lat=$lat&lon=$lng&format=json&addressdetails=1"
+
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", USER_AGENT)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: return@withContext null
+            
+            val result: NominatimResult = gson.fromJson(body, NominatimResult::class.java)
+            result.display_name
+        } catch (e: Exception) {
+            Log.e("GeocodingService", "Nominatim reverse geocode failed", e)
+            null
+        }
+    }
 }

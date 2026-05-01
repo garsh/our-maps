@@ -16,6 +16,9 @@ import org.junit.Test
 import org.mockito.Mock
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.anyString
+import org.mockito.Mockito.anyInt
+import org.mockito.Mockito.anySet
 import org.mockito.MockitoAnnotations
 
 @ExperimentalCoroutinesApi
@@ -24,14 +27,22 @@ class MapDetailViewModelTest {
     @Mock
     private lateinit var repository: MapRepository
 
+    @Mock
+    private lateinit var context: android.content.Context
+
+    @Mock
+    private lateinit var sharedPreferences: android.content.SharedPreferences
+
     private lateinit var viewModel: MapDetailViewModel
     private val testDispatcher = StandardTestDispatcher()
 
     @Before
     fun setup() {
         MockitoAnnotations.openMocks(this)
+        `when`(context.getSharedPreferences(anyString(), anyInt())).thenReturn(sharedPreferences)
+        `when`(sharedPreferences.getStringSet(anyString(), anySet())).thenReturn(emptySet())
         Dispatchers.setMain(testDispatcher)
-        viewModel = MapDetailViewModel(repository)
+        viewModel = MapDetailViewModel(repository, context)
     }
 
     @After
@@ -43,7 +54,7 @@ class MapDetailViewModelTest {
     fun `loadMap updates uiState to Success when repository returns map`() = runTest {
         // Arrange
         val mapId = "map1"
-        val mockMap = MapData(mapId, "Test Map", "user1", "User One", "user1@test.com", emptyList(), emptyList(), "owner", null)
+        val mockMap = MapData(mapId, "Test Map", "user1", "User One", "user1@test.com", emptyList(), emptyList(), "owner", null, null)
         `when`(repository.getMap(mapId)).thenReturn(Result.success(mockMap))
 
         // Act
@@ -76,7 +87,7 @@ class MapDetailViewModelTest {
     fun `updateMap updates uiState to Success with new map data`() = runTest {
         // Arrange
         val mapId = "map1"
-        val mockMap = MapData(mapId, "Updated Map", "user1", "User One", "user1@test.com", emptyList(), emptyList(), "owner", null)
+        val mockMap = MapData(mapId, "Updated Map", "user1", "User One", "user1@test.com", emptyList(), emptyList(), "owner", null, null)
         `when`(repository.updateMap(mapId, mockMap)).thenReturn(Result.success(Unit))
 
         // Act

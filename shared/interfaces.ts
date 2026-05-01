@@ -1,5 +1,5 @@
 export type PinColor = string;
-export type PinIcon = 'default' | 'hotel' | 'restaurant' | 'airport' | 'park' | 'museum' | 'shopping' | 'camera';
+export type PinIcon = 'default' | 'hotel' | 'restaurant' | 'airport' | 'park' | 'museum' | 'shopping' | 'camera' | 'gas' | 'charging';
 
 export interface User {
   id: string;
@@ -19,8 +19,9 @@ export interface Pin {
   id: string;
   lat: number;
   lng: number;
-  label?: string;
+  label: string;
   description?: string;
+  address?: string;
   imageUrl?: string;
   color?: PinColor;
   icon?: PinIcon;

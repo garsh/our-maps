@@ -14,7 +14,7 @@ interface SearchResult {
 
 interface SearchBarProps {
   onResultSelect: (lat: number, lng: number) => void;
-  onAddPin: (lat: number, lng: number, label: string) => void;
+  onAddPin: (lat: number, lng: number, label: string, address?: string) => void;
   pins: Pin[];
   disabled?: boolean;
   debounceMs?: number;
@@ -189,7 +189,7 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500,
                   {!disabled && (
                     <button
                       onClick={() => {
-                        onAddPin(parseFloat(result.lat), parseFloat(result.lon), result.display_name.split(',')[0]);
+                        onAddPin(parseFloat(result.lat), parseFloat(result.lon), result.display_name.split(',')[0], result.display_name);
                         setQuery('');
                       }}
                       style={{ fontSize: '0.75rem', background: '#27ae60', color: 'white', border: 'none', borderRadius: '6px', padding: '4px 12px', cursor: 'pointer', marginLeft: '40px', fontWeight: '700' }}
