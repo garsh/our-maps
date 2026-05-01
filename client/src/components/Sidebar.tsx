@@ -149,7 +149,8 @@ const SortablePin = ({
   isSelected,
   onToggleSelect,
   customColors,
-  allGroups
+  allGroups,
+  isAnySelectedDragging
 }: { 
   pin: Pin, 
   onPinClick: (pin: Pin) => void,
@@ -164,7 +165,8 @@ const SortablePin = ({
   isSelected?: boolean,
   onToggleSelect?: (id: string) => void,
   customColors?: string[],
-  allGroups: PinGroup[]
+  allGroups: PinGroup[],
+  isAnySelectedDragging: boolean
 }) => {
   const {
     attributes,
@@ -180,12 +182,15 @@ const SortablePin = ({
     disabled: readOnly
   });
 
+  const isItemInDraggingBundle = isAnySelectedDragging && isSelected;
+
   const style = {
     transform: transform ? CSS.Transform.toString(transform) : undefined,
     transition,
     zIndex: isDragging ? 10 : undefined,
     opacity: isDragging ? 0.3 : 1,
-    position: 'relative' as const
+    position: 'relative' as const,
+    display: isItemInDraggingBundle ? 'none' : 'block', // Disappear from list when dragging as part of a bundle
   };
 
   const currentColor = COLORS.find(c => c.name === pin.color)?.value || pin.color || '#2A81CB';
@@ -451,7 +456,8 @@ const SortableGroup = ({
   onToggleNavIds,
   allGroups,
   isHidden,
-  onToggleVisibility
+  onToggleVisibility,
+  isAnySelectedDragging
 }: { 
   group: PinGroup,
   groupPins: Pin[],
@@ -472,7 +478,8 @@ const SortableGroup = ({
   onToggleNavIds?: (ids: string[], force?: boolean) => void,
   allGroups: PinGroup[],
   isHidden: boolean,
-  onToggleVisibility: () => void
+  onToggleVisibility: () => void,
+  isAnySelectedDragging: boolean
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -575,7 +582,7 @@ const SortableGroup = ({
             {!isEditingName && (
                 <button 
                     onClick={(e) => { e.stopPropagation(); onRemoveGroup(group.id); }}
-                    style={{ background: 'transparent', border: 'none', color: '#eee', cursor: 'pointer', padding: '1px', borderRadius: '50%', display: 'flex' }}
+                    style={{ background: 'transparent', border: 'none', color: '#ccc', cursor: 'pointer', padding: '1px', borderRadius: '50%', display: 'flex' }}
                     className="delete-group-btn"
                     title="Delete Group"
                 >
@@ -607,6 +614,7 @@ const SortableGroup = ({
                   onToggleSelect={onToggleNavId}
                   customColors={customColors}
                   allGroups={allGroups}
+                  isAnySelectedDragging={isAnySelectedDragging}
                 />
               ))}
             </ul>
@@ -740,6 +748,9 @@ const Sidebar = ({
       setActiveGroup(active.data.current.group);
     }
   };
+
+  const activePinId = activePin?.id;
+  const isAnySelectedDragging = !!(activePinId && selectedNavIds?.has(activePinId));
 
   return (
     <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: '0.6rem', boxSizing: 'border-box', overflow: 'hidden', borderRight: '1px solid var(--border-color)' }}>
@@ -920,6 +931,7 @@ const Sidebar = ({
                 allGroups={groups}
                 isHidden={!!hiddenGroupIds?.has(group.id)}
                 onToggleVisibility={() => onToggleGroupVisibility?.(group.id)}
+                isAnySelectedDragging={isAnySelectedDragging}
               />
             ))}
           </SortableContext>
@@ -984,6 +996,7 @@ const Sidebar = ({
                     isSelected={selectedNavIds?.has(pin.id)}
                     onToggleSelect={onToggleNavId}
                     allGroups={groups}
+                    isAnySelectedDragging={isAnySelectedDragging}
                   />
                 ))}
                 {defaultPins.length === 0 && groups.length === 0 && (

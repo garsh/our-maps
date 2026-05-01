@@ -1135,18 +1135,43 @@ fun LegendContent(
 ) {
     var expandedGroupIds by remember { mutableStateOf<Set<String?>>(visibleGroupIds) }
     var selectedNavPinIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showNavigationDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    val navigateSelected = {
+    val performNavigation = { useCurrentLocation: Boolean ->
         val selectedPins = mapData.pins.filter { it.id in selectedNavPinIds }
             .sortedWith(compareBy({ it.groupId }, { it.position }))
         
         if (selectedPins.isNotEmpty()) {
-            val uriString = com.google.ourmaps.utils.NavigationUtils.generateNavigationUri(selectedPins)
+            val uriString = com.google.ourmaps.utils.NavigationUtils.generateNavigationUri(selectedPins, useCurrentLocation)
             val uri = Uri.parse(uriString)
             val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps") }
             try { context.startActivity(intent) } catch (e: Exception) { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
         }
+    }
+
+    if (showNavigationDialog) {
+        AlertDialog(
+            onDismissRequest = { showNavigationDialog = false },
+            title = { Text("Navigation Origin") },
+            text = { Text("Would you like to start navigation from your current location?") },
+            confirmButton = {
+                TextButton(onClick = { 
+                    showNavigationDialog = false
+                    performNavigation(true)
+                }) {
+                    Text("Current Location")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { 
+                    showNavigationDialog = false
+                    performNavigation(false)
+                }) {
+                    Text("First Pin")
+                }
+            }
+        )
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -1163,7 +1188,7 @@ fun LegendContent(
             
             if (selectedNavPinIds.isNotEmpty()) {
                 Button(
-                    onClick = navigateSelected,
+                    onClick = { showNavigationDialog = true },
                     colors = ButtonDefaults.buttonColors(containerColor = DarkSlateBlue),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                     modifier = Modifier.height(32.dp)
