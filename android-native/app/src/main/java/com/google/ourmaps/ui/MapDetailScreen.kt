@@ -99,10 +99,6 @@ fun MapDetailScreen(
 
     // Layer / Group visibility
     var visibleGroupIds by remember { mutableStateOf<Set<String?>>(emptySet()) }
-    var showLayersDialog by remember { mutableStateOf(false) }
-    // Layer editing
-    var editingGroupId by remember { mutableStateOf<String?>(null) }
-    var editingGroupName by remember { mutableStateOf("") }
 
     // Search
     var isSearching by remember { mutableStateOf(false) }
@@ -262,138 +258,6 @@ fun MapDetailScreen(
             dismissButton = {
                 TextButton(onClick = { showDownloadConfirm = false }) {
                     Text("Cancel")
-                }
-            }
-        )
-    }
-
-    if (showLayersDialog && uiState is UiState.Success) {
-        val mapData = (uiState as UiState.Success).data
-        AlertDialog(
-            onDismissRequest = { 
-                showLayersDialog = false
-                editingGroupId = null
-            },
-            title = { Text("Map Layers") },
-            text = {
-                LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                    item {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable {
-                            visibleGroupIds = if (visibleGroupIds.contains(null)) visibleGroupIds - null else visibleGroupIds + null
-                        }.padding(vertical = 8.dp)) {
-                            Checkbox(checked = visibleGroupIds.contains(null), onCheckedChange = {
-                                visibleGroupIds = if (it) visibleGroupIds + null else visibleGroupIds - null
-                            })
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Default (No Group)", modifier = Modifier.weight(1f))
-                            
-                            IconButton(onClick = {
-                                val groupPins = mapData.pins.filter { it.groupId == null }
-                                if (groupPins.size >= 2) {
-                                    val origin = groupPins.first()
-                                    val destination = groupPins.last()
-                                    val waypoints = if (groupPins.size > 2) {
-                                        groupPins.subList(1, groupPins.size - 1).joinToString("|") { "${it.lat},${it.lng}" }
-                                    } else ""
-                                    
-                                    val uriString = "https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=$waypoints&travelmode=driving&dir_action=navigate"
-                                    val uri = Uri.parse(uriString)
-                                    val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps") }
-                                    try { context.startActivity(intent) } catch (e: Exception) { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
-                                } else if (groupPins.size == 1) {
-                                    val pin = groupPins[0]
-                                    val uri = Uri.parse("google.navigation:q=${pin.lat},${pin.lng}")
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps") })
-                                } else {
-                                    Toast.makeText(context, "No pins in this layer", Toast.LENGTH_SHORT).show()
-                                }
-                            }) {
-                                Icon(Icons.Default.Route, contentDescription = "Navigate Layer", modifier = Modifier.size(16.dp), tint = DarkSlateBlue)
-                            }
-                        }
-                    }
-                    items(mapData.groups) { group ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable {
-                            visibleGroupIds = if (visibleGroupIds.contains(group.id)) visibleGroupIds - group.id else visibleGroupIds + group.id
-                        }.padding(vertical = 8.dp)) {
-                            Checkbox(checked = visibleGroupIds.contains(group.id), onCheckedChange = {
-                                visibleGroupIds = if (it) visibleGroupIds + group.id else visibleGroupIds - group.id
-                            })
-                            Spacer(modifier = Modifier.width(8.dp))
-                            
-                            if (editingGroupId == group.id) {
-                                OutlinedTextField(
-                                    value = editingGroupName,
-                                    onValueChange = { editingGroupName = it },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true,
-                                    trailingIcon = {
-                                        IconButton(onClick = {
-                                            val updatedGroups = mapData.groups.map { 
-                                                if (it.id == group.id) it.copy(name = editingGroupName) else it 
-                                            }
-                                            viewModel.updateMap(mapData.copy(groups = updatedGroups))
-                                            editingGroupId = null
-                                        }) {
-                                            Icon(Icons.Default.Check, contentDescription = "Save")
-                                        }
-                                    }
-                                )
-                            } else {
-                                Text(group.name, modifier = Modifier.weight(1f))
-                                
-                                IconButton(onClick = {
-                                    val groupPins = mapData.pins.filter { it.groupId == group.id }
-                                    if (groupPins.size >= 2) {
-                                        val origin = groupPins.first()
-                                        val destination = groupPins.last()
-                                        val waypoints = if (groupPins.size > 2) {
-                                            groupPins.subList(1, groupPins.size - 1).joinToString("|") { "${it.lat},${it.lng}" }
-                                        } else ""
-                                        
-                                        val uriString = "https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=$waypoints&travelmode=driving&dir_action=navigate"
-                                        val uri = Uri.parse(uriString)
-                                        val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps") }
-                                        try { context.startActivity(intent) } catch (e: Exception) { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
-                                    } else if (groupPins.size == 1) {
-                                        val pin = groupPins[0]
-                                        val uri = Uri.parse("google.navigation:q=${pin.lat},${pin.lng}")
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps") })
-                                    } else {
-                                        Toast.makeText(context, "No pins in this layer", Toast.LENGTH_SHORT).show()
-                                    }
-                                }) {
-                                    Icon(Icons.Default.Route, contentDescription = "Navigate Layer", modifier = Modifier.size(16.dp), tint = DarkSlateBlue)
-                                }
-
-                                IconButton(onClick = {
-                                    editingGroupId = group.id
-                                    editingGroupName = group.name
-                                }) {
-                                    Icon(Icons.Default.Edit, contentDescription = "Rename", modifier = Modifier.size(16.dp))
-                                }
-                                IconButton(onClick = {
-                                    // Move pins in this group back to default
-                                    val updatedPins = mapData.pins.map { 
-                                        if (it.groupId == group.id) it.copy(groupId = null) else it 
-                                    }
-                                    val updatedGroups = mapData.groups.filter { it.id != group.id }
-                                    visibleGroupIds = visibleGroupIds - group.id
-                                    viewModel.updateMap(mapData.copy(groups = updatedGroups, pins = updatedPins))
-                                }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Delete Layer", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { 
-                    showLayersDialog = false
-                    editingGroupId = null
-                }) {
-                    Text("Done")
                 }
             }
         )
@@ -713,7 +577,7 @@ fun MapDetailScreen(
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text("Color", style = MaterialTheme.typography.labelMedium)
                                 Row(modifier = Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    val colors = mapOf("blue" to Color(0xFF2A81CB), "red" to Color(0xFFCB2B3E), "green" to Color(0xFF2AAD27), "orange" to Color(0xFFCB8427), "violet" to Color(0xFF9C2BCB))
+                                    val colors = mapOf("blue" to Color(0xFF2A81CB), "red" to Color(0xFFCB2B3E), "green" to Color(0xFF2AAD27), "orange" to Color(0xFFCB8427), "violet" to Color(0xFF9C2BCB), "gold" to Color(0xFFFFD700), "pink" to Color(0xFFFF69B4), "teal" to Color(0xFF008080), "brown" to Color(0xFF8B4513))
                                     colors.forEach { (n, v) -> Box(modifier = Modifier.size(36.dp).background(v, CircleShape).clickable { editedColor = n; updatePinFn(editedLabel, editedAddress, editedDescription, n, editedIcon, pin.groupId) }.padding(4.dp)) { if (editedColor == n) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(20.dp).align(Alignment.Center)) } }
                                 }
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -739,11 +603,30 @@ fun MapDetailScreen(
                     LegendContent(
                         mapData = mapData,
                         visibleGroupIds = visibleGroupIds,
+                        onToggleGroupVisibility = { id ->
+                            visibleGroupIds = if (visibleGroupIds.contains(id)) visibleGroupIds - id else visibleGroupIds + id
+                        },
+                        onUpdateGroup = { id, newName ->
+                            val updatedGroups = mapData.groups.map { 
+                                if (it.id == id) it.copy(name = newName) else it 
+                            }
+                            viewModel.updateMap(mapData.copy(groups = updatedGroups))
+                        },
+                        onRemoveGroup = { id ->
+                            // Move pins in this group back to default
+                            val updatedPins = mapData.pins.map { 
+                                if (it.groupId == id) it.copy(groupId = null) else it 
+                            }
+                            val updatedGroups = mapData.groups.filter { it.id != id }
+                            visibleGroupIds = visibleGroupIds - id
+                            viewModel.updateMap(mapData.copy(groups = updatedGroups, pins = updatedPins))
+                        },
                         onPinClick = { pin ->
                             selectedPin = pin
                             isEditingPin = false
                             coroutineScope.launch { scaffoldState.bottomSheetState.partialExpand() }
-                        }
+                        },
+                        userRole = mapData.userRole
                     )
                 }
             } else {
@@ -785,7 +668,6 @@ fun MapDetailScreen(
                         IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back") }
                     },
                     actions = {
-                        IconButton(onClick = { showLayersDialog = true }) { Icon(Icons.Default.Layers, contentDescription = "Layers") }
                         IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More options") }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                             DropdownMenuItem(
@@ -1131,22 +1013,28 @@ fun MapDetailScreen(
 fun LegendContent(
     mapData: com.google.ourmaps.model.MapData,
     visibleGroupIds: Set<String?>,
-    onPinClick: (Pin) -> Unit
+    onToggleGroupVisibility: (String?) -> Unit,
+    onUpdateGroup: (String, String) -> Unit,
+    onRemoveGroup: (String) -> Unit,
+    onPinClick: (Pin) -> Unit,
+    userRole: String?
 ) {
     var expandedGroupIds by remember { mutableStateOf<Set<String?>>(visibleGroupIds) }
     var selectedNavPinIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    
+    // State for navigation origin dialog
     var showNavigationDialog by remember { mutableStateOf(false) }
+    var pinsToNavigate by remember { mutableStateOf<List<Pin>>(emptyList()) }
+    
     val context = LocalContext.current
 
     val performNavigation = { useCurrentLocation: Boolean ->
-        val selectedPins = mapData.pins.filter { it.id in selectedNavPinIds }
-            .sortedWith(compareBy({ it.groupId }, { it.position }))
-        
-        if (selectedPins.isNotEmpty()) {
-            val uriString = com.google.ourmaps.utils.NavigationUtils.generateNavigationUri(selectedPins, useCurrentLocation)
+        if (pinsToNavigate.isNotEmpty()) {
+            val uriString = com.google.ourmaps.utils.NavigationUtils.generateNavigationUri(pinsToNavigate, useCurrentLocation)
             val uri = Uri.parse(uriString)
             val intent = Intent(Intent.ACTION_VIEW, uri).apply { setPackage("com.google.android.apps.maps") }
             try { context.startActivity(intent) } catch (e: Exception) { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+            pinsToNavigate = emptyList()
         }
     }
 
@@ -1188,7 +1076,11 @@ fun LegendContent(
             
             if (selectedNavPinIds.isNotEmpty()) {
                 Button(
-                    onClick = { showNavigationDialog = true },
+                    onClick = { 
+                        pinsToNavigate = mapData.pins.filter { it.id in selectedNavPinIds }
+                            .sortedWith(compareBy({ it.groupId }, { it.position }))
+                        showNavigationDialog = true 
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = DarkSlateBlue),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                     modifier = Modifier.height(32.dp)
@@ -1205,17 +1097,30 @@ fun LegendContent(
             item {
                 val defaultPins = mapData.pins.filter { it.groupId == null }
                 LegendGroupHeader(
+                    id = null,
                     name = "Default Layer",
                     isExpanded = expandedGroupIds.contains(null),
+                    isVisible = visibleGroupIds.contains(null),
                     onToggle = { 
                         expandedGroupIds = if (expandedGroupIds.contains(null)) expandedGroupIds - null else expandedGroupIds + null
                     },
+                    onToggleVisibility = { onToggleGroupVisibility(null) },
+                    onNavigate = {
+                        val groupPins = mapData.pins.filter { it.groupId == null }
+                        if (groupPins.isNotEmpty()) {
+                            pinsToNavigate = groupPins
+                            showNavigationDialog = true
+                        } else {
+                            Toast.makeText(context, "No pins in this layer", Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     showSelectAll = defaultPins.isNotEmpty() && expandedGroupIds.contains(null),
-                    isAllSelected = defaultPins.all { it.id in selectedNavPinIds },
+                    isAllSelected = defaultPins.isNotEmpty() && defaultPins.all { it.id in selectedNavPinIds },
                     onSelectAll = { select ->
                         val ids = defaultPins.map { it.id }.toSet()
                         selectedNavPinIds = if (select) selectedNavPinIds + ids else selectedNavPinIds - ids
-                    }
+                    },
+                    userRole = userRole
                 )
             }
             
@@ -1243,17 +1148,31 @@ fun LegendContent(
                 val groupPins = mapData.pins.filter { it.groupId == group.id }
                 item {
                     LegendGroupHeader(
+                        id = group.id,
                         name = group.name,
                         isExpanded = expandedGroupIds.contains(group.id),
+                        isVisible = visibleGroupIds.contains(group.id),
                         onToggle = { 
                             expandedGroupIds = if (expandedGroupIds.contains(group.id)) expandedGroupIds - group.id else expandedGroupIds + group.id
                         },
+                        onToggleVisibility = { onToggleGroupVisibility(group.id) },
+                        onUpdateName = { onUpdateGroup(group.id, it) },
+                        onDelete = { onRemoveGroup(group.id) },
+                        onNavigate = {
+                            if (groupPins.isNotEmpty()) {
+                                pinsToNavigate = groupPins
+                                showNavigationDialog = true
+                            } else {
+                                Toast.makeText(context, "No pins in this layer", Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         showSelectAll = groupPins.isNotEmpty() && expandedGroupIds.contains(group.id),
-                        isAllSelected = groupPins.all { it.id in selectedNavPinIds },
+                        isAllSelected = groupPins.isNotEmpty() && groupPins.all { it.id in selectedNavPinIds },
                         onSelectAll = { select ->
                             val ids = groupPins.map { it.id }.toSet()
                             selectedNavPinIds = if (select) selectedNavPinIds + ids else selectedNavPinIds - ids
-                        }
+                        },
+                        userRole = userRole
                     )
                 }
                 
@@ -1282,13 +1201,24 @@ fun LegendContent(
 
 @Composable
 fun LegendGroupHeader(
+    id: String?,
     name: String, 
     isExpanded: Boolean, 
+    isVisible: Boolean,
     onToggle: () -> Unit,
+    onToggleVisibility: () -> Unit,
+    onUpdateName: (String) -> Unit = {},
+    onDelete: () -> Unit = {},
+    onNavigate: () -> Unit = {},
     showSelectAll: Boolean = false,
     isAllSelected: Boolean = false,
-    onSelectAll: (Boolean) -> Unit = {}
+    onSelectAll: (Boolean) -> Unit = {},
+    userRole: String? = "owner"
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+    var isRenaming by remember { mutableStateOf(false) }
+    var editedName by remember(name) { mutableStateOf(name) }
+
     Surface(
         color = if (isExpanded) DarkSlateBlue.copy(alpha = 0.05f) else Color.Transparent,
         modifier = Modifier.fillMaxWidth()
@@ -1297,11 +1227,81 @@ fun LegendGroupHeader(
             verticalAlignment = Alignment.CenterVertically, 
             modifier = Modifier.fillMaxWidth().clickable { onToggle() }.padding(vertical = 12.dp, horizontal = 16.dp)
         ) {
-            Icon(Icons.Default.Layers, contentDescription = null, modifier = Modifier.size(24.dp), tint = DarkSlateBlue)
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Layers, 
+                        contentDescription = "Layer Options", 
+                        modifier = Modifier.size(24.dp), 
+                        tint = if (isVisible) DarkSlateBlue else DarkSlateBlue.copy(alpha = 0.4f)
+                    )
+                }
+                
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text(if (isVisible) "Hide on Map" else "Show on Map") },
+                        onClick = {
+                            showMenu = false
+                            onToggleVisibility()
+                        },
+                        leadingIcon = { Icon(if (isVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility, null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Directions") },
+                        onClick = {
+                            showMenu = false
+                            onNavigate()
+                        },
+                        leadingIcon = { Icon(Icons.Default.Route, null) }
+                    )
+                    
+                    if (id != null && (userRole == "owner" || userRole == "edit")) {
+                        Divider()
+                        DropdownMenuItem(
+                            text = { Text("Rename Layer") },
+                            onClick = {
+                                showMenu = false
+                                isRenaming = true
+                            },
+                            leadingIcon = { Icon(Icons.Default.Edit, null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete Layer") },
+                            onClick = {
+                                showMenu = false
+                                onDelete()
+                            },
+                            leadingIcon = { Icon(Icons.Default.Delete, null, tint = Color.Red) }
+                        )
+                    }
+                }
+            }
             
-            if (showSelectAll) {
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            if (isRenaming) {
+                OutlinedTextField(
+                    value = editedName,
+                    onValueChange = { editedName = it },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            onUpdateName(editedName)
+                            isRenaming = false
+                        }) {
+                            Icon(Icons.Default.Check, contentDescription = "Save")
+                        }
+                    }
+                )
+            } else {
+                Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            }
+            
+            if (showSelectAll && !isRenaming) {
                 Checkbox(
                     checked = isAllSelected, 
                     onCheckedChange = onSelectAll,
@@ -1310,7 +1310,9 @@ fun LegendGroupHeader(
                 )
             }
             
-            Icon(if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null, tint = Color.Gray)
+            if (!isRenaming) {
+                Icon(if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null, tint = Color.Gray)
+            }
         }
     }
 }
