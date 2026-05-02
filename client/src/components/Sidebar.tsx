@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import SearchBar from './SearchBar';
 import type { Pin, PinIcon, PinGroup } from '@shared/interfaces';
 import { 
@@ -48,7 +49,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { restrictToWindowEdges } from '@dnd-kit/modifiers';
+import { restrictToWindowEdges, snapCenterToCursor } from '@dnd-kit/modifiers';
 import { exportMap, importMapFile } from '../utils/fileUtils';
 import type { MapData } from '@shared/interfaces';
 
@@ -918,7 +919,7 @@ const Sidebar = ({
           onDragStart={handleDragStart}
           onDragOver={onDragOver}
           onDragEnd={handleDragEndInternal}
-          autoScroll={{ threshold: { x: 0, y: 10 }, acceleration: 2 }}
+          autoScroll={false}
         >
           <SortableContext items={groups.map(g => g.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
             {groups.map(group => (
@@ -1024,8 +1025,9 @@ const Sidebar = ({
             </SortableContext>
           </div>
           
+        {createPortal(
           <DragOverlay 
-            modifiers={[restrictToWindowEdges]}
+            modifiers={[snapCenterToCursor, restrictToWindowEdges]}
             style={{ pointerEvents: 'none' }}
             dropAnimation={{
             sideEffects: defaultDropAnimationSideEffects({
@@ -1079,7 +1081,9 @@ const Sidebar = ({
                 <div style={{ fontWeight: '700', fontSize: '0.65rem' }}>{activeGroup.name}</div>
               </div>
             ) : null}
-          </DragOverlay>
+          </DragOverlay>,
+          document.body
+        )}
         </DndContext>
       </div>
     </aside>
