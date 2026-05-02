@@ -582,7 +582,7 @@ const SortableGroup = ({
             {!isEditingName && (
                 <button 
                     onClick={(e) => { e.stopPropagation(); onRemoveGroup(group.id); }}
-                    style={{ background: 'transparent', border: 'none', color: '#ccc', cursor: 'pointer', padding: '1px', borderRadius: '50%', display: 'flex' }}
+                    style={{ background: 'transparent', border: 'none', color: '#555', cursor: 'pointer', padding: '1px', borderRadius: '50%', display: 'flex' }}
                     className="delete-group-btn"
                     title="Delete Group"
                 >
