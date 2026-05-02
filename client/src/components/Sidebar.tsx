@@ -22,6 +22,7 @@ import {
   Map as MapIcon,
   Globe as GlobeIcon,
   Navigation,
+  Download,
   MoreVertical,
   Share2,
   Fuel,
@@ -51,7 +52,22 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { restrictToWindowEdges, snapCenterToCursor } from '@dnd-kit/modifiers';
 import { exportMap, importMapFile } from '../utils/fileUtils';
+import { 
+  countTiles, 
+  estimateSizeMB, 
+  getTilesForArea, 
+  downloadTiles, 
+  getSurgicalBoxes,
+  getPinsBoundingBox,
+  type BoundingBox 
+} from '../utils/tileUtils';
 import type { MapData } from '@shared/interfaces';
+
+interface DownloadSummary {
+  tileCount: number;
+  sizeMB: number;
+  bbox: BoundingBox;
+}
 
 interface SidebarProps {
   mapName: string;
@@ -667,9 +683,81 @@ const Sidebar = ({
   const [activePin, setActivePin] = useState<Pin | null>(null);
   const [activeGroup, setActiveGroup] = useState<PinGroup | null>(null);
 
+  // Offline Download State
+  const [showDownloadConfirm, setShowDownloadConfirm] = useState(false);
+  const [downloadSummary, setDownloadSummary] = useState<DownloadSummary | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+
   useEffect(() => {
     setLocalMapName(mapName);
   }, [mapName]);
+
+  const handleDownloadClick = () => {
+    let bbox: BoundingBox | null = getPinsBoundingBox(pins);
+    
+    if (!bbox) {
+        if (!mapBounds) {
+            alert("Please wait for map to load bounds.");
+            return;
+        }
+        const parts = mapBounds.split(',').map(Number);
+        bbox = {
+            west: parts[0],
+            north: parts[1],
+            east: parts[2],
+            south: parts[3]
+        };
+    }
+
+    // 1. Full extent for map (1-12)
+    let totalCount = countTiles(bbox, 1, 12);
+    
+    // 2. High detail for clusters (13-17)
+    const surgicalBoxes = getSurgicalBoxes(pins);
+    surgicalBoxes.forEach(box => {
+        totalCount += countTiles(box, 13, 17);
+    });
+
+    setDownloadSummary({
+        tileCount: totalCount,
+        sizeMB: estimateSizeMB(totalCount),
+        bbox
+    });
+    setShowDownloadConfirm(true);
+    setIsMenuOpen(false);
+  };
+
+  const startDownload = async () => {
+    if (!downloadSummary) return;
+    
+    setIsDownloading(true);
+    setDownloadProgress(0);
+    setShowDownloadConfirm(false);
+
+    try {
+        const allTiles = [
+            ...getTilesForArea(downloadSummary.bbox, 1, 12),
+            ...getSurgicalBoxes(pins).flatMap(box => getTilesForArea(box, 13, 17))
+        ];
+
+        // Deduplicate
+        const uniqueTiles = Array.from(new Set(allTiles.map(t => t.url)))
+            .map(url => allTiles.find(t => t.url === url)!);
+
+        await downloadTiles(uniqueTiles, (progress) => {
+            setDownloadProgress(progress);
+        });
+
+        alert(`Map tiles downloaded successfully! ${uniqueTiles.length} tiles are now available offline.`);
+    } catch (error) {
+        console.error("Download failed:", error);
+        alert("Failed to download map tiles. Please try again.");
+    } finally {
+        setIsDownloading(false);
+        setDownloadProgress(null);
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -764,163 +852,171 @@ const Sidebar = ({
 
   return (
     <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: '0.6rem', boxSizing: 'border-box', overflow: 'hidden', borderRight: '1px solid var(--border-color)' }}>
-      <div style={{ marginBottom: '0.6rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
-          <label htmlFor="map-name" style={{ display: 'block', fontWeight: '800', fontSize: '0.6rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Map Name</label>
-        </div>
-        <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
-          <input 
-            id="map-name"
-            type="text" 
-            value={localMapName} 
-            onChange={(e) => setLocalMapName(e.target.value)}
-            onBlur={() => onMapNameChange(localMapName)}
-            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-            disabled={readOnly}
-            className="input-field"
-            style={{ fontWeight: '800', fontSize: '0.9rem', padding: '3px 6px', border: 'none', background: 'transparent', flex: 1, textOverflow: 'ellipsis' }}
-          />
-          
-          <div style={{ display: 'flex', gap: '2px', alignItems: 'center', flexShrink: 0 }}>
-            {selectedPins.length > 0 && (
-              <button 
-                onClick={handleNavigate}
-                style={{ fontSize: '0.6rem', background: 'var(--success-color)', color: 'white', border: 'none', padding: '2px 7px', borderRadius: '50px', cursor: 'pointer', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '3px' }}
-              >
-                <Navigation size={9} /> Go ({selectedPins.length})
-              </button>
-            )}
+      <DndContext 
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragOver={onDragOver}
+        onDragEnd={handleDragEndInternal}
+        autoScroll={false}
+      >
+        <div style={{ marginBottom: '0.6rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
+            <label htmlFor="map-name" style={{ display: 'block', fontWeight: '800', fontSize: '0.6rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Map Name</label>
+          </div>
+          <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
+            <input 
+              id="map-name"
+              type="text" 
+              value={localMapName} 
+              onChange={(e) => setLocalMapName(e.target.value)}
+              onBlur={() => onMapNameChange(localMapName)}
+              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+              disabled={readOnly}
+              className="input-field"
+              style={{ fontWeight: '800', fontSize: '0.9rem', padding: '3px 6px', border: 'none', background: 'transparent', flex: 1, textOverflow: 'ellipsis' }}
+            />
             
-            <div style={{ position: 'relative' }} ref={menuRef}>
-              <button 
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
-                style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', display: 'flex', padding: '3px' }}
-              >
-                <MoreVertical size={16} />
-              </button>
+            <div style={{ display: 'flex', gap: '2px', alignItems: 'center', flexShrink: 0 }}>
+              {selectedPins.length > 0 && (
+                <button 
+                  onClick={handleNavigate}
+                  style={{ fontSize: '0.6rem', background: 'var(--success-color)', color: 'white', border: 'none', padding: '2px 7px', borderRadius: '50px', cursor: 'pointer', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '3px' }}
+                >
+                  <Navigation size={9} /> Go ({selectedPins.length})
+                </button>
+              )}
               
-              {isMenuOpen && (
-                <div style={{ position: 'absolute', top: '100%', right: 0, width: '180px', background: 'white', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 1600, overflow: 'hidden' }}>
-                  {userRole === 'owner' && (
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                      onClick={() => { onShare?.(); setIsMenuOpen(false); }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <Share2 size={16} color="var(--primary-color)" /> Share Map
-                    </div>
-                  )}
-                  {!readOnly && (
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                      onClick={handleImportClick}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <Upload size={16} color="#3498db" /> Import
-                    </div>
-                  )}
-                  {selectedPins.length > 0 && !readOnly && (
-                    <>
-                      <div style={{ padding: '8px 16px', fontSize: '0.65rem', fontWeight: '800', color: '#999', background: '#fcfcfc', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)' }}>MOVE SELECTED TO...</div>
+              <div style={{ position: 'relative' }} ref={menuRef}>
+                <button 
+                  onClick={() => setIsMenuOpen(!isMenuOpen)}
+                  style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', display: 'flex', padding: '3px' }}
+                >
+                  <MoreVertical size={16} />
+                </button>
+                
+                {isMenuOpen && (
+                  <div style={{ position: 'absolute', top: '100%', right: 0, width: '180px', background: 'white', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 1600, overflow: 'hidden' }}>
+                    {userRole === 'owner' && (
                       <div 
-                        style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
-                        onClick={() => {
-                          selectedPins.forEach(p => onUpdatePin(p.id, { groupId: undefined }));
-                          setIsMenuOpen(false);
-                        }}
+                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                        onClick={() => { onShare?.(); setIsMenuOpen(false); }}
                         onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       >
-                        Default Layer
+                        <Share2 size={16} color="var(--primary-color)" /> Share Map
                       </div>
-                      {groups.map(group => (
+                    )}
+                    {!readOnly && (
+                      <div 
+                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                        onClick={handleImportClick}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <Upload size={16} color="#3498db" /> Import
+                      </div>
+                    )}
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isDownloading ? '#999' : 'inherit' }}
+                      onClick={isDownloading ? undefined : handleDownloadClick}
+                      onMouseEnter={(e) => !isDownloading && (e.currentTarget.style.background = 'var(--bg-color)')}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <Download size={16} color="#27ae60" /> Download for Offline
+                    </div>
+                    {selectedPins.length > 0 && !readOnly && (
+                      <>
+                        <div style={{ padding: '8px 16px', fontSize: '0.65rem', fontWeight: '800', color: '#999', background: '#fcfcfc', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)' }}>MOVE SELECTED TO...</div>
                         <div 
-                          key={group.id}
                           style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
                           onClick={() => {
-                            selectedPins.forEach(p => onUpdatePin(p.id, { groupId: group.id }));
+                            selectedPins.forEach(p => onUpdatePin(p.id, { groupId: undefined }));
                             setIsMenuOpen(false);
                           }}
                           onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                          {group.name}
+                          Default Layer
                         </div>
-                      ))}
-                    </>
-                  )}
-                  <div style={{ padding: '8px 16px', fontSize: '0.65rem', fontWeight: '800', color: '#999', background: '#fcfcfc', borderBottom: '1px solid var(--border-color)' }}>EXPORT AS...</div>
-                  <div 
-                    style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem' }}
-                    onClick={() => handleExport('json')}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <FileJson size={16} color="var(--primary-color)" /> JSON
+                        {groups.map(group => (
+                          <div 
+                            key={group.id}
+                            style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
+                            onClick={() => {
+                              selectedPins.forEach(p => onUpdatePin(p.id, { groupId: group.id }));
+                              setIsMenuOpen(false);
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          >
+                            {group.name}
+                          </div>
+                        ))}
+                      </>
+                    )}
+                    <div style={{ padding: '8px 16px', fontSize: '0.65rem', fontWeight: '800', color: '#999', background: '#fcfcfc', borderBottom: '1px solid var(--border-color)' }}>EXPORT AS...</div>
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem' }}
+                      onClick={() => handleExport('json')}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <FileJson size={16} color="var(--primary-color)" /> JSON
+                    </div>
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem' }}
+                      onClick={() => handleExport('geojson')}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <GlobeIcon size={16} color="#27ae60" /> GeoJSON
+                    </div>
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem' }}
+                      onClick={() => handleExport('kml')}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <MapIcon size={16} color="#f39c12" /> KML
+                    </div>
                   </div>
-                  <div 
-                    style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem' }}
-                    onClick={() => handleExport('geojson')}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <GlobeIcon size={16} color="#27ae60" /> GeoJSON
-                  </div>
-                  <div 
-                    style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem' }}
-                    onClick={() => handleExport('kml')}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <MapIcon size={16} color="#f39c12" /> KML
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {!readOnly && (
-        <SearchBar 
-          onResultSelect={onResultSelect} 
-          onAddPin={onAddPin} 
-          pins={pins} 
-          disabled={readOnly} 
-          mapBounds={mapBounds}
-        />
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem', marginTop: '0.2rem' }}>
-        <h3 style={{ margin: 0, fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-primary)' }}>Layers</h3>
         {!readOnly && (
-          <button 
-            onClick={onAddGroup}
-            style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'transparent', border: '1px solid var(--border-color)', padding: '2px 5px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.6rem', fontWeight: '600', color: 'var(--text-secondary)' }}
-          >
-            <FolderPlus size={11} /> New Layer
-          </button>
+          <SearchBar 
+            onResultSelect={onResultSelect} 
+            onAddPin={onAddPin} 
+            pins={pins} 
+            disabled={readOnly} 
+            mapBounds={mapBounds}
+          />
         )}
-      </div>
 
-      <div 
-        ref={scrollContainerRef}
-        style={{ 
-          flex: 1, 
-          overflowY: 'auto', 
-          paddingRight: '4px', 
-          margin: '0 -4px'
-        }}>
-        <DndContext 
-          sensors={sensors}
-          collisionDetection={closestCorners}
-          onDragStart={handleDragStart}
-          onDragOver={onDragOver}
-          onDragEnd={handleDragEndInternal}
-          autoScroll={false}
-        >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem', marginTop: '0.2rem' }}>
+          <h3 style={{ margin: 0, fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-primary)' }}>Layers</h3>
+          {!readOnly && (
+            <button 
+              onClick={onAddGroup}
+              style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'transparent', border: '1px solid var(--border-color)', padding: '2px 5px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.6rem', fontWeight: '600', color: 'var(--text-secondary)' }}
+            >
+              <FolderPlus size={11} /> New Layer
+            </button>
+          )}
+        </div>
+
+        <div 
+          ref={scrollContainerRef}
+          style={{ 
+            flex: 1, 
+            overflowY: 'auto', 
+            paddingRight: '4px', 
+            margin: '0 -4px'
+          }}>
           <SortableContext items={groups.map(g => g.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
             {groups.map(group => (
               <SortableGroup 
@@ -1024,7 +1120,51 @@ const Sidebar = ({
               </ul>
             </SortableContext>
           </div>
-          
+        </div>
+
+        {/* Offline Download Confirmation Modal */}
+        {showDownloadConfirm && downloadSummary && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '20px' }}>
+            <div style={{ background: 'white', borderRadius: 'var(--radius-lg)', padding: '24px', maxWidth: '400px', width: '100%', boxShadow: 'var(--shadow-lg)' }}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '1.1rem', fontWeight: '800' }}>Download Map for Offline?</h3>
+              <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                This will download map tiles for the current area and high-detail tiles around each of your pins.
+              </p>
+              <div style={{ background: 'var(--bg-color)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '20px' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)' }}>Estimated Tiles: {downloadSummary.tileCount}</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)' }}>Estimated Size: {downloadSummary.sizeMB.toFixed(1)} MB</div>
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button 
+                  onClick={() => setShowDownloadConfirm(false)}
+                  style={{ flex: 1, padding: '10px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontWeight: '700', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={startDownload}
+                  style={{ flex: 1, padding: '10px', background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: 'var(--radius-md)', fontWeight: '700', cursor: 'pointer' }}
+                >
+                  Download
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Download Progress Overlay */}
+        {isDownloading && downloadProgress !== null && (
+          <div style={{ position: 'fixed', bottom: '24px', left: '24px', zIndex: 4000, background: 'white', borderRadius: 'var(--radius-md)', padding: '12px 16px', boxShadow: 'var(--shadow-lg)', border: '1px solid var(--border-color)', minWidth: '200px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--primary-color)' }}>Downloading Map Tiles...</span>
+              <span style={{ fontSize: '0.75rem', fontWeight: '800' }}>{Math.round(downloadProgress * 100)}%</span>
+            </div>
+            <div style={{ height: '6px', background: 'var(--bg-color)', borderRadius: '3px', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${downloadProgress * 100}%`, background: 'var(--primary-color)', transition: 'width 0.2s ease-out' }} />
+            </div>
+          </div>
+        )}
+
         {createPortal(
           <DragOverlay 
             modifiers={[snapCenterToCursor, restrictToWindowEdges]}
@@ -1084,8 +1224,7 @@ const Sidebar = ({
           </DragOverlay>,
           document.body
         )}
-        </DndContext>
-      </div>
+      </DndContext>
     </aside>
   );
 };

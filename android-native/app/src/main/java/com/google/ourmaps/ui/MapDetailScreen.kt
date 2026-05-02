@@ -686,22 +686,20 @@ fun MapDetailScreen(
                                         } else {
                                             mv.boundingBox
                                         }
-                                        val minSpan = 0.01
-                                        val boundingBox = if (rawBbox.latitudeSpan < minSpan || rawBbox.longitudeSpan < minSpan) {
-                                            BoundingBox(
-                                                rawBbox.centerWithDateLine.latitude + (maxOf(minSpan, rawBbox.latitudeSpan) / 2.0),
-                                                rawBbox.centerWithDateLine.longitude + (maxOf(minSpan, rawBbox.longitudeSpan) / 2.0),
-                                                rawBbox.centerWithDateLine.latitude - (maxOf(minSpan, rawBbox.latitudeSpan) / 2.0),
-                                                rawBbox.centerWithDateLine.longitude - (maxOf(minSpan, rawBbox.longitudeSpan) / 2.0)
-                                            )
-                                        } else rawBbox
-                                        
-                                        var totalTiles = TileCalculator.countTiles(boundingBox, 1, 10)
+
+                                        // Add buffer to map extent
+                                        val boundingBox = BoundingBox(
+                                            Math.min(85.0, rawBbox.latNorth + 0.05),
+                                            Math.min(180.0, rawBbox.lonEast + 0.05),
+                                            Math.max(-85.0, rawBbox.latSouth - 0.05),
+                                            Math.max(-180.0, rawBbox.lonWest - 0.05)
+                                        )
+
+                                        var totalTiles = TileCalculator.countTiles(boundingBox, 1, 12)
                                         state.data.pins.forEach { pin ->
-                                            totalTiles += TileCalculator.countTiles(BoundingBox(pin.lat + 0.005, pin.lng + 0.005, pin.lat - 0.005, pin.lng - 0.005), 11, 16)
+                                            totalTiles += TileCalculator.countTiles(BoundingBox(pin.lat + 0.01, pin.lng + 0.01, pin.lat - 0.01, pin.lng - 0.01), 13, 17)
                                         }
-                                        downloadSummary = DownloadSummary(totalTiles, TileCalculator.estimateSizeMB(totalTiles), boundingBox)
-                                        showDownloadConfirm = true
+                                        downloadSummary = DownloadSummary(totalTiles, TileCalculator.estimateSizeMB(totalTiles), boundingBox)                                        showDownloadConfirm = true
                                     }
                                 },
                                 leadingIcon = { Icon(if (isOfflineAvailable) Icons.Default.CloudSync else Icons.Default.Download, contentDescription = null) }

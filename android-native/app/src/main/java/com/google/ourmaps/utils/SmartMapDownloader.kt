@@ -33,14 +33,15 @@ class SmartMapDownloader(
         completedTasks = 0
         runningTasks = 0
 
-        // 1. Low detail for the whole area
-        queue.add(DownloadTask(mainBoundingBox, 1, 10))
+        // 1. Broad detail for the map extent (1-12)
+        queue.add(DownloadTask(mainBoundingBox, 1, 12))
 
-        // 2. Cluster pins to merge overlapping areas
+        // 2. Cluster pins for surgical high detail
         val highDetailBoxes = mutableListOf<BoundingBox>()
         pins.forEach { pin ->
             val p = GeoPoint(pin.lat, pin.lng)
-            val newBox = BoundingBox(p.latitude + 0.005, p.longitude + 0.005, p.latitude - 0.005, p.longitude - 0.005)
+            // 0.01 degree (~1km) buffer
+            val newBox = BoundingBox(p.latitude + 0.01, p.longitude + 0.01, p.latitude - 0.01, p.longitude - 0.01)
             
             var merged = false
             for (i in highDetailBoxes.indices) {
@@ -54,7 +55,7 @@ class SmartMapDownloader(
         }
 
         highDetailBoxes.forEach { box ->
-            queue.add(DownloadTask(box, 11, 16))
+            queue.add(DownloadTask(box, 13, 17))
         }
 
         totalTasks = queue.size
