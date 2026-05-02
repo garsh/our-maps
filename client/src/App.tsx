@@ -264,7 +264,8 @@ export function MapEditor() {
         newGroupId = overData.pin.groupId;
       }
 
-      // If moving to a different group, or reordering within same group
+      // ONLY update state in onDragOver if the group actually changed (moving between layers)
+      // This provides immediate visual feedback of layer changes without intra-layer jitter.
       if (newGroupId !== activePin.groupId) {
         setPins((prevPins) => {
           const pinsToMoveIds = selectedNavIds.has(activeId) 
@@ -274,34 +275,10 @@ export function MapEditor() {
           const movedPins = pinsToMoveIds.map(id => prevPins.find(p => p.id === id)).filter(Boolean) as Pin[];
           const otherPins = prevPins.filter(p => !pinsToMoveIds.includes(p.id));
           
-          // Determine target index
-          let targetIndex;
-          if (overData?.type === 'pin') {
-            targetIndex = otherPins.findIndex(p => p.id === overId);
-          } else {
-            // Drop on group header: find the visual start of that group
-            // For simplicity, find the last pin of the target group and put it after
-            const lastPinIndex = [...otherPins].reverse().findIndex(p => p.groupId === newGroupId);
-            if (lastPinIndex !== -1) {
-                targetIndex = otherPins.length - lastPinIndex;
-            } else {
-                // Group is empty, find where it should be relative to other groups
-                // Just append to end for now as a fallback
-                targetIndex = otherPins.length;
-            }
-          }
-
+          // Move the bundle to the new group (just append to end during hover for simplicity)
           const updatedMovedPins = movedPins.map(p => ({ ...p, groupId: newGroupId }));
-          const result = [...otherPins];
-          result.splice(targetIndex, 0, ...updatedMovedPins);
+          const result = [...otherPins, ...updatedMovedPins];
           return result.map((p, i) => ({ ...p, position: i }));
-        });
-      } else if (activeId !== overId && overData?.type === 'pin') {
-        // Reordering within the SAME group
-        setPins((prevPins) => {
-          const oldIndex = prevPins.findIndex((p) => p.id === activeId);
-          const newIndex = prevPins.findIndex((p) => p.id === overId);
-          return arrayMove(prevPins, oldIndex, newIndex).map((p, i) => ({ ...p, position: i }));
         });
       }
     }
@@ -325,8 +302,44 @@ export function MapEditor() {
       return;
     }
 
-    // Finalize pin positions
-    setPins(prev => prev.map((p, i) => ({ ...p, position: i })));
+    // Finalize reorder for pins on drop (including intra-group moves)
+    if (active.data.current?.type === 'pin') {
+      const activeId = active.id as string;
+      const overId = over.id as string;
+      const overData = over.data.current;
+
+      setPins((prevPins) => {
+        const pinsToMoveIds = selectedNavIds.has(activeId) 
+          ? Array.from(selectedNavIds) 
+          : [activeId];
+        
+        const movedPins = pinsToMoveIds.map(id => prevPins.find(p => p.id === id)).filter(Boolean) as Pin[];
+        const otherPins = prevPins.filter(p => !pinsToMoveIds.includes(p.id));
+        
+        let targetIndex;
+        if (overData?.type === 'pin') {
+          targetIndex = otherPins.findIndex(p => p.id === overId);
+        } else {
+          // Dropped on a group header
+          const targetGroupId = overId === 'default' ? undefined : overId;
+          const lastInGroupIndex = [...otherPins].reverse().findIndex(p => p.groupId === targetGroupId);
+          if (lastInGroupIndex !== -1) {
+            targetIndex = otherPins.length - lastInGroupIndex;
+          } else {
+            targetIndex = otherPins.length;
+          }
+        }
+
+        const updatedMovedPins = movedPins.map(p => ({ 
+            ...p, 
+            groupId: overData?.type === 'pin' ? overData.pin.groupId : (overId === 'default' ? undefined : overId) 
+        }));
+        
+        const result = [...otherPins];
+        result.splice(Math.max(0, targetIndex), 0, ...updatedMovedPins);
+        return result.map((p, i) => ({ ...p, position: i }));
+      });
+    }
   };
 
   const handleImport = (data: Partial<MapData>) => {

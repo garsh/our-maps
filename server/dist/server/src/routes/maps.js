@@ -80,6 +80,7 @@ router.get('/:id', async (req, res) => {
         ...p,
         imageUrl: p.image_url,
         groupId: p.group_id,
+        address: p.address,
         color: p.color || 'blue',
         icon: p.icon || 'default',
         position: p.position || 0
@@ -114,9 +115,9 @@ router.post('/', async (req, res) => {
             await groupStmt.finalize();
         }
         if (pins && pins.length > 0) {
-            const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             for (const pin of pins) {
-                await stmt.run(pin.id, id, pin.groupId || null, pin.lat, pin.lng, pin.label, pin.description, pin.imageUrl, pin.color || 'blue', pin.icon || 'default', pin.position || 0);
+                await stmt.run(pin.id, id, pin.groupId || null, pin.lat, pin.lng, pin.label, pin.description, pin.address, pin.imageUrl, pin.color || 'blue', pin.icon || 'default', pin.position || 0);
             }
             await stmt.finalize();
         }
@@ -174,9 +175,9 @@ router.put('/:id', async (req, res) => {
             await groupStmt.finalize();
         }
         if (pins && pins.length > 0) {
-            const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             for (const pin of pins) {
-                await stmt.run(pin.id, mapId, pin.groupId || null, pin.lat, pin.lng, pin.label, pin.description, pin.imageUrl, pin.color || 'blue', pin.icon || 'default', pin.position || 0);
+                await stmt.run(pin.id, mapId, pin.groupId || null, pin.lat, pin.lng, pin.label, pin.description, pin.address, pin.imageUrl, pin.color || 'blue', pin.icon || 'default', pin.position || 0);
             }
             await stmt.finalize();
         }
@@ -235,6 +236,24 @@ router.delete('/:id/share/:userId', async (req, res) => {
             return res.status(403).json({ error: 'Only owner can manage shares' });
         await db.run('DELETE FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, targetUserId);
         res.json({ message: 'Permission removed' });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+// DELETE delete map
+router.delete('/:id', async (req, res) => {
+    const mapId = req.params.id;
+    const userId = req.user.id;
+    const db = await (0, db_1.getDb)();
+    try {
+        const map = await db.get('SELECT owner_id FROM maps WHERE id = ?', mapId);
+        if (!map)
+            return res.status(404).json({ error: 'Map not found' });
+        if (map.owner_id !== userId)
+            return res.status(403).json({ error: 'Only owner can delete the map' });
+        await db.run('DELETE FROM maps WHERE id = ?', mapId);
+        res.json({ message: 'Map deleted' });
     }
     catch (error) {
         res.status(500).json({ error: error.message });

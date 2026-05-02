@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import {
   DndContext, 
-  rectIntersection,
+  closestCorners,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -48,6 +48,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { restrictToWindowEdges } from '@dnd-kit/modifiers';
 import { exportMap, importMapFile } from '../utils/fileUtils';
 import type { MapData } from '@shared/interfaces';
 
@@ -188,9 +189,10 @@ const SortablePin = ({
     transform: transform ? CSS.Transform.toString(transform) : undefined,
     transition,
     zIndex: isDragging ? 10 : undefined,
-    opacity: isDragging ? 0.3 : 1,
+    opacity: isDragging ? 0 : 1, // Invisible ghost for the active item
     position: 'relative' as const,
-    display: isItemInDraggingBundle ? 'none' : 'block', // Disappear from list when dragging as part of a bundle
+    pointerEvents: (isDragging || isItemInDraggingBundle) ? 'none' as const : undefined,
+    display: (isItemInDraggingBundle && !isDragging) ? 'none' : 'block', // Remove non-active bundle items from layout
   };
 
   const currentColor = COLORS.find(c => c.name === pin.color)?.value || pin.color || '#2A81CB';
@@ -659,6 +661,7 @@ const Sidebar = ({
   const [localMapName, setLocalMapName] = useState(mapName);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const readOnly = userRole === 'view';
   const [activePin, setActivePin] = useState<Pin | null>(null);
   const [activeGroup, setActiveGroup] = useState<PinGroup | null>(null);
@@ -747,6 +750,12 @@ const Sidebar = ({
     } else if (active.data.current?.type === 'group') {
       setActiveGroup(active.data.current.group);
     }
+  };
+
+  const handleDragEndInternal = (event: DragEndEvent) => {
+    setActivePin(null);
+    setActiveGroup(null);
+    onDragEnd(event);
   };
 
   const activePinId = activePin?.id;
@@ -895,17 +904,21 @@ const Sidebar = ({
         )}
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', margin: '0 -4px' }}>
+      <div 
+        ref={scrollContainerRef}
+        style={{ 
+          flex: 1, 
+          overflowY: 'auto', 
+          paddingRight: '4px', 
+          margin: '0 -4px'
+        }}>
         <DndContext 
           sensors={sensors}
-          collisionDetection={rectIntersection}
+          collisionDetection={closestCorners}
           onDragStart={handleDragStart}
           onDragOver={onDragOver}
-          onDragEnd={(e) => {
-            setActivePin(null);
-            setActiveGroup(null);
-            onDragEnd(e);
-          }}
+          onDragEnd={handleDragEndInternal}
+          autoScroll={{ threshold: { x: 0, y: 10 }, acceleration: 2 }}
         >
           <SortableContext items={groups.map(g => g.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
             {groups.map(group => (
@@ -1011,38 +1024,54 @@ const Sidebar = ({
             </SortableContext>
           </div>
           
-          <DragOverlay dropAnimation={{
+          <DragOverlay 
+            modifiers={[restrictToWindowEdges]}
+            style={{ pointerEvents: 'none' }}
+            dropAnimation={{
             sideEffects: defaultDropAnimationSideEffects({
                 styles: {
                     active: {
-                        opacity: '0.5',
+                        opacity: '0.3', 
                     },
                 },
             }),
           }}>
             {activePin ? (
-              <div style={{ width: '200px' }}>
-                <StaticPin pin={activePin} />
-                {selectedNavIds?.has(activePin.id) && selectedNavIds.size > 1 && (
-                    <div style={{ 
-                        position: 'absolute', 
-                        top: '-6px', 
-                        right: '-6px', 
-                        background: 'var(--primary-color)', 
-                        color: 'white', 
-                        borderRadius: '50%', 
-                        width: '14px', 
-                        height: '14px', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center', 
-                        fontSize: '0.55rem',
-                        fontWeight: '800',
-                        boxShadow: 'var(--shadow-sm)',
-                        zIndex: 1
-                    }}>
-                        {selectedNavIds.size}
-                    </div>
+              <div style={{ width: '200px', position: 'relative' }}>
+                {/* Bundle visual: a stack of items if multiple are selected */}
+                {isAnySelectedDragging && selectedNavIds && selectedNavIds.size > 1 ? (
+                    <>
+                        <div style={{ position: 'absolute', top: '4px', left: '4px', width: '100%', zIndex: 1, opacity: 0.4 }}>
+                            <StaticPin pin={activePin} />
+                        </div>
+                        <div style={{ position: 'absolute', top: '2px', left: '2px', width: '100%', zIndex: 2, opacity: 0.7 }}>
+                            <StaticPin pin={activePin} />
+                        </div>
+                        <div style={{ position: 'relative', zIndex: 3 }}>
+                            <StaticPin pin={activePin} />
+                            <div style={{ 
+                                position: 'absolute', 
+                                top: '-6px', 
+                                right: '-6px', 
+                                background: 'var(--primary-color)', 
+                                color: 'white', 
+                                borderRadius: '50%', 
+                                width: '14px', 
+                                height: '14px', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center', 
+                                fontSize: '0.55rem',
+                                fontWeight: '800',
+                                boxShadow: 'var(--shadow-sm)',
+                                zIndex: 4
+                            }}>
+                                {selectedNavIds.size}
+                            </div>
+                        </div>
+                    </>
+                ) : (
+                    <StaticPin pin={activePin} />
                 )}
               </div>
             ) : activeGroup ? (
