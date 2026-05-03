@@ -710,14 +710,20 @@ const Sidebar = ({
         };
     }
 
-    // 1. Full extent for map (1-12)
-    let totalCount = countTiles(bbox, 1, 12);
+    // 1. Broad detail for map extent (1-10) - Safer for large areas
+    let totalCount = countTiles(bbox, 1, 10);
     
-    // 2. High detail for clusters (13-17)
+    // 2. High detail for clusters (11-17) - Surgical around pins
     const surgicalBoxes = getSurgicalBoxes(pins);
     surgicalBoxes.forEach(box => {
-        totalCount += countTiles(box, 13, 17);
+        totalCount += countTiles(box, 11, 17);
     });
+
+    const MAX_TILES = 30000;
+    if (totalCount > MAX_TILES) {
+        alert(`The map area is too large to download (${totalCount.toLocaleString()} tiles). Please zoom in or reduce the area covered by pins. (Max ${MAX_TILES.toLocaleString()} tiles)`);
+        return;
+    }
 
     setDownloadSummary({
         tileCount: totalCount,
@@ -737,19 +743,22 @@ const Sidebar = ({
 
     try {
         const allTiles = [
-            ...getTilesForArea(downloadSummary.bbox, 1, 12),
-            ...getSurgicalBoxes(pins).flatMap(box => getTilesForArea(box, 13, 17))
+            ...getTilesForArea(downloadSummary.bbox, 1, 10),
+            ...getSurgicalBoxes(pins).flatMap(box => getTilesForArea(box, 11, 17))
         ];
 
-        // Deduplicate
-        const uniqueTiles = Array.from(new Set(allTiles.map(t => t.url)))
-            .map(url => allTiles.find(t => t.url === url)!);
+        // O(N) Deduplication using Map
+        const uniqueTilesMap = new Map();
+        allTiles.forEach(tile => {
+            uniqueTilesMap.set(tile.url, tile);
+        });
+        const uniqueTiles = Array.from(uniqueTilesMap.values());
 
         await downloadTiles(uniqueTiles, (progress) => {
             setDownloadProgress(progress);
         });
 
-        alert(`Map tiles downloaded successfully! ${uniqueTiles.length} tiles are now available offline.`);
+        alert(`Map tiles downloaded successfully! ${uniqueTiles.length.toLocaleString()} tiles are now available offline.`);
     } catch (error) {
         console.error("Download failed:", error);
         alert("Failed to download map tiles. Please try again.");

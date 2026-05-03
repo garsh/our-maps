@@ -695,11 +695,20 @@ fun MapDetailScreen(
                                             Math.max(-180.0, rawBbox.lonWest - 0.05)
                                         )
 
-                                        var totalTiles = TileCalculator.countTiles(boundingBox, 1, 12)
+                                        // Broad detail for map extent (1-10) - Safer for large areas
+                                        var totalTiles = TileCalculator.countTiles(boundingBox, 1, 10)
+                                        // High detail for clusters (11-17) - Surgical around pins
                                         state.data.pins.forEach { pin ->
-                                            totalTiles += TileCalculator.countTiles(BoundingBox(pin.lat + 0.01, pin.lng + 0.01, pin.lat - 0.01, pin.lng - 0.01), 13, 17)
+                                            totalTiles += TileCalculator.countTiles(BoundingBox(pin.lat + 0.01, pin.lng + 0.01, pin.lat - 0.01, pin.lng - 0.01), 11, 17)
                                         }
-                                        downloadSummary = DownloadSummary(totalTiles, TileCalculator.estimateSizeMB(totalTiles), boundingBox)                                        showDownloadConfirm = true
+
+                                        val maxTiles = 30000
+                                        if (totalTiles > maxTiles) {
+                                            Toast.makeText(context, "The map area is too large to download ($totalTiles tiles). Please zoom in. (Max $maxTiles tiles)", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            downloadSummary = DownloadSummary(totalTiles, TileCalculator.estimateSizeMB(totalTiles), boundingBox)
+                                            showDownloadConfirm = true
+                                        }
                                     }
                                 },
                                 leadingIcon = { Icon(if (isOfflineAvailable) Icons.Default.CloudSync else Icons.Default.Download, contentDescription = null) }

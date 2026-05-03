@@ -76,6 +76,7 @@ export async function downloadTiles(
     const cache = await caches.open('osm-tiles');
     let completed = 0;
     const total = tiles.length;
+    let lastReportedProgress = -1;
 
     // Use a small pool of concurrent fetches to avoid overloading the network/server
     const CONCURRENCY = 5;
@@ -104,7 +105,11 @@ export async function downloadTiles(
             }
 
             completed++;
-            onProgress(completed / total);
+            const currentProgress = Math.floor((completed / total) * 100);
+            if (currentProgress > lastReportedProgress) {
+                lastReportedProgress = currentProgress;
+                onProgress(completed / total);
+            }
         }
     });
 
