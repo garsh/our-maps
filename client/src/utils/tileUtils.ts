@@ -91,11 +91,7 @@ export async function downloadTiles(
                 // Check if already in cache
                 const existing = await cache.match(tile.url);
                 if (!existing) {
-                    const response = await fetch(tile.url, {
-                        headers: {
-                            'User-Agent': 'OurMaps/1.0 (Web Offline Implementation)'
-                        }
-                    });
+                    const response = await fetch(tile.url);
                     if (response.ok) {
                         await cache.put(tile.url, response);
                     }

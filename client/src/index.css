@@ -81,6 +81,15 @@ button:active {
   box-shadow: 0 0 0 2px rgba(72, 61, 139, 0.1);
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;

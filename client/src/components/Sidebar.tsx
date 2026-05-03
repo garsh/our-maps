@@ -741,6 +741,9 @@ const Sidebar = ({
     setDownloadProgress(0);
     setShowDownloadConfirm(false);
 
+    // Give browser a moment to show the overlay and spinner
+    await new Promise(r => setTimeout(r, 100));
+
     try {
         const allTiles = [
             ...getTilesForArea(downloadSummary.bbox, 1, 10),
@@ -753,6 +756,13 @@ const Sidebar = ({
             uniqueTilesMap.set(tile.url, tile);
         });
         const uniqueTiles = Array.from(uniqueTilesMap.values());
+
+        if (uniqueTiles.length === 0) {
+            alert("No tiles needed to download for this area.");
+            setIsDownloading(false);
+            setDownloadProgress(null);
+            return;
+        }
 
         await downloadTiles(uniqueTiles, (progress) => {
             setDownloadProgress(progress);
@@ -860,7 +870,7 @@ const Sidebar = ({
   const isAnySelectedDragging = !!(activePinId && selectedNavIds?.has(activePinId));
 
   return (
-    <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: '0.6rem', boxSizing: 'border-box', overflow: 'hidden', borderRight: '1px solid var(--border-color)' }}>
+    <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: '0.6rem', boxSizing: 'border-box', overflow: 'hidden', borderRight: '1px solid var(--border-color)', position: 'relative' }}>
       <DndContext 
         sensors={sensors}
         collisionDetection={closestCorners}
@@ -1140,7 +1150,7 @@ const Sidebar = ({
                 This will download map tiles for the current area and high-detail tiles around each of your pins.
               </p>
               <div style={{ background: 'var(--bg-color)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '20px' }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)' }}>Estimated Tiles: {downloadSummary.tileCount}</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)' }}>Estimated Tiles: {downloadSummary.tileCount.toLocaleString()}</div>
                 <div style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)' }}>Estimated Size: {downloadSummary.sizeMB.toFixed(1)} MB</div>
               </div>
               <div style={{ display: 'flex', gap: '12px' }}>
@@ -1162,14 +1172,35 @@ const Sidebar = ({
         )}
 
         {/* Download Progress Overlay */}
-        {isDownloading && downloadProgress !== null && (
-          <div style={{ position: 'fixed', bottom: '24px', left: '24px', zIndex: 4000, background: 'white', borderRadius: 'var(--radius-md)', padding: '12px 16px', boxShadow: 'var(--shadow-lg)', border: '1px solid var(--border-color)', minWidth: '200px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--primary-color)' }}>Downloading Map Tiles...</span>
-              <span style={{ fontSize: '0.75rem', fontWeight: '800' }}>{Math.round(downloadProgress * 100)}%</span>
-            </div>
-            <div style={{ height: '6px', background: 'var(--bg-color)', borderRadius: '3px', overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${downloadProgress * 100}%`, background: 'var(--primary-color)', transition: 'width 0.2s ease-out' }} />
+        {isDownloading && (
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'white', zIndex: 5000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', textAlign: 'center' }}>
+            <div className="animate-spin" style={{ width: '48px', height: '48px', border: '5px solid #eee', borderTopColor: 'var(--primary-color)', borderRadius: '50%', marginBottom: '1.5rem' }} />
+            <h3 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-primary)', fontWeight: '800', fontSize: '1.2rem' }}>Downloading Tiles</h3>
+            <p style={{ margin: '0 0 2rem 0', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                Preparing map for offline use.<br />Please do not close this tab.
+            </p>
+            
+            <div style={{ width: '100%', maxWidth: '240px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <span style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-primary)' }}>
+                    {downloadProgress === 0 ? 'Starting...' : 'Progress'}
+                </span>
+                <span style={{ fontSize: '0.8rem', fontWeight: '800', color: 'var(--primary-color)' }}>
+                    {Math.round((downloadProgress || 0) * 100)}%
+                </span>
+                </div>
+                <div style={{ height: '12px', background: '#eee', borderRadius: '6px', overflow: 'hidden', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.1)' }}>
+                <div style={{ 
+                    height: '100%', 
+                    width: `${Math.max(2, (downloadProgress || 0) * 100)}%`, 
+                    background: 'var(--primary-color)', 
+                    transition: 'width 0.3s ease-out',
+                    boxShadow: '0 0 10px rgba(72, 61, 139, 0.3)'
+                }} />
+                </div>
+                <div style={{ marginTop: '12px', fontSize: '0.65rem', color: '#999', fontWeight: '600' }}>
+                    {downloadProgress !== null ? `${Math.round(downloadProgress * (downloadSummary?.tileCount || 0)).toLocaleString()} / ${downloadSummary?.tileCount.toLocaleString()} tiles` : ''}
+                </div>
             </div>
           </div>
         )}
