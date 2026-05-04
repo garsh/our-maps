@@ -84,8 +84,8 @@ fun MapDetailScreen(
     val permissiveTileSource = remember {
         XYTileSource(
             "OpenStreetMap",
-            0, 19, 512, ".png", 
-            arrayOf("https://tile.openstreetmap.org/"),
+            0, 19, 256, ".png", 
+            arrayOf("https://a.tile.openstreetmap.org/", "https://b.tile.openstreetmap.org/", "https://c.tile.openstreetmap.org/"),
             "© OpenStreetMap contributors",
             TileSourcePolicy(2, TileSourcePolicy.FLAG_USER_AGENT_MEANINGFUL or TileSourcePolicy.FLAG_USER_AGENT_NORMALIZED)
         )
@@ -695,11 +695,11 @@ fun MapDetailScreen(
                                             Math.max(-180.0, rawBbox.lonWest - 0.05)
                                         )
 
-                                        // Broad detail for map extent (1-10) - Safer for large areas
-                                        var totalTiles = TileCalculator.countTiles(boundingBox, 1, 10)
-                                        // High detail for clusters (11-17) - Surgical around pins
+                                        // Broad detail for map extent (1-12)
+                                        var totalTiles = TileCalculator.countTiles(boundingBox, 1, 12)
+                                        // High detail for clusters (13-17) - Surgical around pins
                                         state.data.pins.forEach { pin ->
-                                            totalTiles += TileCalculator.countTiles(BoundingBox(pin.lat + 0.01, pin.lng + 0.01, pin.lat - 0.01, pin.lng - 0.01), 11, 17)
+                                            totalTiles += TileCalculator.countTiles(BoundingBox(pin.lat + 0.01, pin.lng + 0.01, pin.lat - 0.01, pin.lng - 0.01), 13, 17)
                                         }
 
                                         val maxTiles = 30000

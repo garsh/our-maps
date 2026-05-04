@@ -38,12 +38,14 @@ export function estimateSizeMB(tileCount: number): number {
 }
 
 function longToX(lon: number, zoom: number): number {
-    return Math.floor((lon + 180.0) / 360.0 * (1 << zoom));
+    const x = Math.floor((lon + 180.0) / 360.0 * (1 << zoom));
+    return ((x % (1 << zoom)) + (1 << zoom)) % (1 << zoom);
 }
 
 function latToY(lat: number, zoom: number): number {
     const latRad = lat * Math.PI / 180.0;
-    return Math.floor((1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0 * (1 << zoom));
+    const y = Math.floor((1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0 * (1 << zoom));
+    return Math.max(0, Math.min((1 << zoom) - 1, y));
 }
 
 export function getTilesForArea(box: BoundingBox, minZoom: number, maxZoom: number): TileInfo[] {
@@ -120,6 +122,17 @@ export function getPinsBoundingBox(pins: Pin[]): BoundingBox | null {
     let east = -180;
     let west = 180;
 
+    if (pins.length === 1) {
+        const p = pins[0];
+        // Android logic: 0.01 initial buffer + 0.05 extent buffer = 0.06
+        return {
+            north: Math.min(85, p.lat + 0.06),
+            south: Math.max(-85, p.lat - 0.06),
+            east: Math.min(180, p.lng + 0.06),
+            west: Math.max(-180, p.lng - 0.06)
+        };
+    }
+
     pins.forEach(pin => {
         if (pin.lat > north) north = pin.lat;
         if (pin.lat < south) south = pin.lat;
@@ -127,10 +140,10 @@ export function getPinsBoundingBox(pins: Pin[]): BoundingBox | null {
         if (pin.lng < west) west = pin.lng;
     });
 
-    // Add a small buffer (approx 5km)
+    // Add 0.05 buffer to the raw extent (matching Android's MapDetailScreen logic)
     return {
-        north: Math.min(90, north + 0.05),
-        south: Math.max(-90, south - 0.05),
+        north: Math.min(85, north + 0.05),
+        south: Math.max(-85, south - 0.05),
         east: Math.min(180, east + 0.05),
         west: Math.max(-180, west - 0.05)
     };
@@ -140,7 +153,7 @@ export function getSurgicalBoxes(pins: Pin[]): BoundingBox[] {
     const highDetailBoxes: BoundingBox[] = [];
     
     pins.forEach(pin => {
-        // approx 1km buffer around each pin
+        // 0.01 degree (~1km) buffer around each pin (matching Android)
         const newBox: BoundingBox = {
             north: pin.lat + 0.01,
             east: pin.lng + 0.01,

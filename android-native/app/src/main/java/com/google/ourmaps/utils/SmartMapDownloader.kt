@@ -33,8 +33,8 @@ class SmartMapDownloader(
         completedTasks = 0
         runningTasks = 0
 
-        // 1. Broad detail for the map extent (1-10)
-        queue.add(DownloadTask(mainBoundingBox, 1, 10))
+        // 1. Broad detail for the map extent (1-12)
+        queue.add(DownloadTask(mainBoundingBox, 1, 12))
 
         // 2. Cluster pins for surgical high detail
         val highDetailBoxes = mutableListOf<BoundingBox>()
@@ -55,7 +55,7 @@ class SmartMapDownloader(
         }
 
         highDetailBoxes.forEach { box ->
-            queue.add(DownloadTask(box, 11, 17))
+            queue.add(DownloadTask(box, 13, 17))
         }
 
         totalTasks = queue.size

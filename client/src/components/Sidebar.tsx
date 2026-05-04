@@ -710,13 +710,13 @@ const Sidebar = ({
         };
     }
 
-    // 1. Broad detail for map extent (1-10) - Safer for large areas
-    let totalCount = countTiles(bbox, 1, 10);
+    // 1. Broad detail for map extent (1-12)
+    let totalCount = countTiles(bbox, 1, 12);
     
-    // 2. High detail for clusters (11-17) - Surgical around pins
+    // 2. High detail for clusters (13-17) - Surgical around pins
     const surgicalBoxes = getSurgicalBoxes(pins);
     surgicalBoxes.forEach(box => {
-        totalCount += countTiles(box, 11, 17);
+        totalCount += countTiles(box, 13, 17);
     });
 
     const MAX_TILES = 30000;
@@ -741,13 +741,13 @@ const Sidebar = ({
     setDownloadProgress(0);
     setShowDownloadConfirm(false);
 
-    // Give browser a moment to show the overlay and spinner
+    // Yield to let browser render the overlay
     await new Promise(r => setTimeout(r, 100));
 
     try {
         const allTiles = [
-            ...getTilesForArea(downloadSummary.bbox, 1, 10),
-            ...getSurgicalBoxes(pins).flatMap(box => getTilesForArea(box, 11, 17))
+            ...getTilesForArea(downloadSummary.bbox, 1, 12),
+            ...getSurgicalBoxes(pins).flatMap(box => getTilesForArea(box, 13, 17))
         ];
 
         // O(N) Deduplication using Map
@@ -763,6 +763,9 @@ const Sidebar = ({
             setDownloadProgress(null);
             return;
         }
+
+        // Final yield before starting heavy download
+        await new Promise(r => setTimeout(r, 50));
 
         await downloadTiles(uniqueTiles, (progress) => {
             setDownloadProgress(progress);
@@ -1141,68 +1144,35 @@ const Sidebar = ({
           </div>
         </div>
 
-        {/* Offline Download Confirmation Modal */}
-        {showDownloadConfirm && downloadSummary && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '20px' }}>
-            <div style={{ background: 'white', borderRadius: 'var(--radius-lg)', padding: '24px', maxWidth: '400px', width: '100%', boxShadow: 'var(--shadow-lg)' }}>
-              <h3 style={{ margin: '0 0 12px 0', fontSize: '1.1rem', fontWeight: '800' }}>Download Map for Offline?</h3>
-              <p style={{ margin: '0 0 16px 0', fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+        {/* Offline Download Confirmation Modal (Portaled) */}
+        {showDownloadConfirm && downloadSummary && createPortal(
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '20px' }}>
+            <div style={{ background: 'white', borderRadius: 'var(--radius-lg)', padding: '32px', maxWidth: '440px', width: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.3rem', fontWeight: '900', color: '#1a1c1e' }}>Download Map for Offline?</h3>
+              <p style={{ margin: '0 0 24px 0', fontSize: '1rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                 This will download map tiles for the current area and high-detail tiles around each of your pins.
               </p>
-              <div style={{ background: 'var(--bg-color)', padding: '12px', borderRadius: 'var(--radius-md)', marginBottom: '20px' }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)' }}>Estimated Tiles: {downloadSummary.tileCount.toLocaleString()}</div>
-                <div style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)' }}>Estimated Size: {downloadSummary.sizeMB.toFixed(1)} MB</div>
+              <div style={{ background: 'var(--bg-color)', padding: '16px', borderRadius: 'var(--radius-md)', marginBottom: '32px', border: '1px solid var(--border-color)' }}>
+                <div style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '4px' }}>Estimated Tiles: {downloadSummary.tileCount.toLocaleString()}</div>
+                <div style={{ fontSize: '0.9rem', fontWeight: '700', color: 'var(--text-primary)' }}>Estimated Size: {downloadSummary.sizeMB.toFixed(1)} MB</div>
               </div>
-              <div style={{ display: 'flex', gap: '12px' }}>
+              <div style={{ display: 'flex', gap: '16px' }}>
                 <button 
                   onClick={() => setShowDownloadConfirm(false)}
-                  style={{ flex: 1, padding: '10px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontWeight: '700', cursor: 'pointer' }}
+                  style={{ flex: 1, padding: '12px', background: '#f5f5f5', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontWeight: '800', cursor: 'pointer', color: '#444' }}
                 >
                   Cancel
                 </button>
                 <button 
                   onClick={startDownload}
-                  style={{ flex: 1, padding: '10px', background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: 'var(--radius-md)', fontWeight: '700', cursor: 'pointer' }}
+                  style={{ flex: 1, padding: '12px', background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: 'var(--radius-md)', fontWeight: '800', cursor: 'pointer', boxShadow: '0 4px 10px rgba(72, 61, 139, 0.3)' }}
                 >
                   Download
                 </button>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Download Progress Overlay */}
-        {isDownloading && (
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'white', zIndex: 5000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1.5rem', textAlign: 'center' }}>
-            <div className="animate-spin" style={{ width: '48px', height: '48px', border: '5px solid #eee', borderTopColor: 'var(--primary-color)', borderRadius: '50%', marginBottom: '1.5rem' }} />
-            <h3 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-primary)', fontWeight: '800', fontSize: '1.2rem' }}>Downloading Tiles</h3>
-            <p style={{ margin: '0 0 2rem 0', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                Preparing map for offline use.<br />Please do not close this tab.
-            </p>
-            
-            <div style={{ width: '100%', maxWidth: '240px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-primary)' }}>
-                    {downloadProgress === 0 ? 'Starting...' : 'Progress'}
-                </span>
-                <span style={{ fontSize: '0.8rem', fontWeight: '800', color: 'var(--primary-color)' }}>
-                    {Math.round((downloadProgress || 0) * 100)}%
-                </span>
-                </div>
-                <div style={{ height: '12px', background: '#eee', borderRadius: '6px', overflow: 'hidden', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.1)' }}>
-                <div style={{ 
-                    height: '100%', 
-                    width: `${Math.max(2, (downloadProgress || 0) * 100)}%`, 
-                    background: 'var(--primary-color)', 
-                    transition: 'width 0.3s ease-out',
-                    boxShadow: '0 0 10px rgba(72, 61, 139, 0.3)'
-                }} />
-                </div>
-                <div style={{ marginTop: '12px', fontSize: '0.65rem', color: '#999', fontWeight: '600' }}>
-                    {downloadProgress !== null ? `${Math.round(downloadProgress * (downloadSummary?.tileCount || 0)).toLocaleString()} / ${downloadSummary?.tileCount.toLocaleString()} tiles` : ''}
-                </div>
-            </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         {createPortal(
@@ -1265,6 +1235,44 @@ const Sidebar = ({
           document.body
         )}
       </DndContext>
+
+      {/* Download Progress Modal (Portaled to body) */}
+      {isDownloading && createPortal(
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ background: 'white', borderRadius: '24px', padding: '40px', maxWidth: '440px', width: '100%', boxShadow: '0 30px 60px rgba(0,0,0,0.5)', textAlign: 'center', position: 'relative' }}>
+            <div className="animate-spin" style={{ width: '64px', height: '64px', border: '8px solid #f3f3f3', borderTop: '8px solid #483D8B', borderRadius: '50%', margin: '0 auto 32px auto' }} />
+            <h2 style={{ margin: '0 0 16px 0', fontSize: '1.8rem', fontWeight: '900', color: '#1a1c1e', letterSpacing: '-0.02em' }}>Downloading Map</h2>
+            <p style={{ margin: '0 0 40px 0', fontSize: '1rem', color: '#44474e', lineHeight: '1.6' }}>
+              We're preparing high-detail tiles for offline use.<br />
+              <span style={{ color: '#483D8B', fontWeight: '700' }}>Please keep this tab open until finished.</span>
+            </p>
+            
+            <div style={{ width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '14px', alignItems: 'flex-end' }}>
+                <span style={{ fontSize: '0.9rem', fontWeight: '900', color: '#1a1c1e', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  {downloadProgress === 0 ? 'Calculating...' : 'Progress'}
+                </span>
+                <span style={{ fontSize: '1.4rem', fontWeight: '1000', color: '#483D8B' }}>
+                  {Math.round((downloadProgress || 0) * 100)}%
+                </span>
+              </div>
+              <div style={{ height: '20px', background: '#f0f0f0', borderRadius: '10px', overflow: 'hidden', boxShadow: 'inset 0 2px 5px rgba(0,0,0,0.2)', border: '1px solid #e0e0e0' }}>
+                <div style={{ 
+                  height: '100%', 
+                  width: `${Math.max(3, (downloadProgress || 0) * 100)}%`, 
+                  background: 'linear-gradient(90deg, #483D8B 0%, #6A5ACD 100%)', 
+                  transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                  boxShadow: '0 0 20px rgba(72, 61, 139, 0.5)'
+                }} />
+              </div>
+              <div style={{ marginTop: '20px', fontSize: '0.85rem', color: '#666', fontWeight: '800', fontVariantNumeric: 'tabular-nums' }}>
+                  {downloadProgress !== null ? `${Math.round(downloadProgress * (downloadSummary?.tileCount || 0)).toLocaleString()} / ${downloadSummary?.tileCount.toLocaleString()} TILES` : ''}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </aside>
   );
 };
