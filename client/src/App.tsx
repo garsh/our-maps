@@ -10,10 +10,10 @@ import { apiService } from './services/api'
 import { reverseGeocode } from './utils/geocoding';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { Pin, PinGroup, MapPermission, MapData } from '@shared/interfaces'
-import { arrayMove } from '@dnd-kit/sortable'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { Loader2, Map as MapIcon } from 'lucide-react';
 import L from 'leaflet';
+import { reorderPins, reorderGroups } from './utils/reorderUtils';
 
 export function MapEditor() {
   const { id } = useParams<{ id: string }>();
@@ -265,7 +265,8 @@ export function MapEditor() {
       }
 
       // ONLY update state in onDragOver if the group actually changed (moving between layers)
-      // This provides immediate visual feedback of layer changes without intra-layer jitter.
+      // This provides immediate visual feedback of layer changes.
+      // We perform NO intra-group reordering here to prevent jitter.
       if (newGroupId !== activePin.groupId) {
         setPins((prevPins) => {
           const pinsToMoveIds = selectedNavIds.has(activeId) 
@@ -275,7 +276,7 @@ export function MapEditor() {
           const movedPins = pinsToMoveIds.map(id => prevPins.find(p => p.id === id)).filter(Boolean) as Pin[];
           const otherPins = prevPins.filter(p => !pinsToMoveIds.includes(p.id));
           
-          // Move the bundle to the new group (just append to end during hover for simplicity)
+          // Move the bundle to the new group (just append to end during hover for visual feedback)
           const updatedMovedPins = movedPins.map(p => ({ ...p, groupId: newGroupId }));
           const result = [...otherPins, ...updatedMovedPins];
           return result.map((p, i) => ({ ...p, position: i }));
@@ -291,54 +292,23 @@ export function MapEditor() {
     if (!over) return;
 
     if (active.data.current?.type === 'group') {
-      if (active.id !== over.id) {
-        setGroups((items) => {
-          const oldIndex = items.findIndex((i) => i.id === active.id);
-          const newIndex = items.findIndex((i) => i.id === over.id);
-          const newItems = arrayMove(items, oldIndex, newIndex);
-          return newItems.map((item, index) => ({ ...item, position: index }));
-        });
-      }
+      setGroups(prev => reorderGroups(prev, active.id as string, over.id as string));
       return;
     }
 
-    // Finalize reorder for pins on drop (including intra-group moves)
+    // Handle final reorder for pins
     if (active.data.current?.type === 'pin') {
-      const activeId = active.id as string;
-      const overId = over.id as string;
       const overData = over.data.current;
-
-      setPins((prevPins) => {
-        const pinsToMoveIds = selectedNavIds.has(activeId) 
-          ? Array.from(selectedNavIds) 
-          : [activeId];
-        
-        const movedPins = pinsToMoveIds.map(id => prevPins.find(p => p.id === id)).filter(Boolean) as Pin[];
-        const otherPins = prevPins.filter(p => !pinsToMoveIds.includes(p.id));
-        
-        let targetIndex;
-        if (overData?.type === 'pin') {
-          targetIndex = otherPins.findIndex(p => p.id === overId);
-        } else {
-          // Dropped on a group header
-          const targetGroupId = overId === 'default' ? undefined : overId;
-          const lastInGroupIndex = [...otherPins].reverse().findIndex(p => p.groupId === targetGroupId);
-          if (lastInGroupIndex !== -1) {
-            targetIndex = otherPins.length - lastInGroupIndex;
-          } else {
-            targetIndex = otherPins.length;
-          }
-        }
-
-        const updatedMovedPins = movedPins.map(p => ({ 
-            ...p, 
-            groupId: overData?.type === 'pin' ? overData.pin.groupId : (overId === 'default' ? undefined : overId) 
-        }));
-        
-        const result = [...otherPins];
-        result.splice(Math.max(0, targetIndex), 0, ...updatedMovedPins);
-        return result.map((p, i) => ({ ...p, position: i }));
-      });
+      const overGroupId = overData?.type === 'pin' ? overData.pin.groupId : (over.id === 'default' ? undefined : over.id as string);
+      
+      setPins(prev => reorderPins(
+        prev, 
+        active.id as string, 
+        over.id as string, 
+        overData?.type === 'pin' ? 'pin' : 'group',
+        overGroupId,
+        selectedNavIds
+      ));
     }
   };
 

@@ -8,7 +8,7 @@ describe('Sidebar', () => {
     { id: '1', lat: 10, lng: 20, label: 'Test Pin', description: '', imageUrl: '', position: 0 }
   ];
   
-  const TestWrapper = ({ pins = mockPins, handlers = {} }) => {
+  const TestWrapper = ({ pins = mockPins, handlers = {}, selectedNavIds = new Set<string>() }: { pins?: any[], handlers?: any, selectedNavIds?: Set<string> }) => {
     const [editingPinId, setEditingPinId] = useState<string | null>(null);
     const mockHandlers = {
       onMapNameChange: vi.fn(),
@@ -34,6 +34,7 @@ describe('Sidebar', () => {
         {...mockHandlers} 
         editingPinId={editingPinId} 
         onSetEditingPinId={setEditingPinId} 
+        selectedNavIds={selectedNavIds}
       />
     );
   };
@@ -116,5 +117,41 @@ describe('Sidebar', () => {
     fireEvent.click(screen.getByText('Test Pin'));
     
     expect(onPinClick).toHaveBeenCalled();
+  });
+
+  it('shows the Download for Offline option in the menu', () => {
+    render(<TestWrapper />);
+    
+    // Open the more menu
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+    
+    expect(screen.getByText(/Download for Offline/i)).toBeInTheDocument();
+  });
+
+  it('generates correct navigation URL with first pin as origin', () => {
+    const mockPins = [
+        { id: '1', lat: 35.0, lng: -97.0, label: 'Oklahoma', position: 0 },
+        { id: '2', lat: 39.0, lng: -98.0, label: 'Kansas', position: 1 }
+    ] as any;
+    
+    const openMock = vi.fn();
+    vi.stubGlobal('open', openMock);
+    
+    render(<TestWrapper pins={mockPins} selectedNavIds={new Set(['1', '2'])} />);
+    
+    const goBtn = screen.getByText(/Go \(2\)/i);
+    fireEvent.click(goBtn);
+    
+    expect(openMock).toHaveBeenCalledWith(
+        expect.stringContaining('origin=35,-97'),
+        '_blank'
+    );
+    expect(openMock).toHaveBeenCalledWith(
+        expect.stringContaining('destination=39,-98'),
+        '_blank'
+    );
+    
+    vi.unstubAllGlobals();
   });
 });

@@ -834,20 +834,25 @@ const Sidebar = ({
 
   const defaultPins = pins.filter(p => !p.groupId).sort((a, b) => a.position - b.position);
   const selectedPins = pins.filter(p => selectedNavIds?.has(p.id))
-    .sort((a, b) => {
-      if (a.groupId === b.groupId) return a.position - b.position;
-      if (!a.groupId) return -1;
-      if (!b.groupId) return 1;
-      return a.groupId.localeCompare(b.groupId);
-    });
+    .sort((a, b) => a.position - b.position);
 
   const handleNavigate = () => {
     if (selectedPins.length === 0) return;
     
-    const destination = selectedPins[selectedPins.length - 1];
-    const waypoints = selectedPins.slice(0, -1).map(p => `${p.lat},${p.lng}`).join('|');
+    let url = '';
+    if (selectedPins.length === 1) {
+        // Single pin: just navigate to it
+        const p = selectedPins[0];
+        url = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving&dir_action=navigate`;
+    } else {
+        // Multiple pins: first is origin, last is destination, others are waypoints
+        const origin = selectedPins[0];
+        const destination = selectedPins[selectedPins.length - 1];
+        const waypoints = selectedPins.slice(1, -1).map(p => `${p.lat},${p.lng}`).join('|');
+        
+        url = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=${waypoints}&travelmode=driving&dir_action=navigate`;
+    }
     
-    const url = `https://www.google.com/maps/dir/?api=1&origin=current+location&destination=${destination.lat},${destination.lng}&waypoints=${waypoints}&travelmode=driving&dir_action=navigate`;
     window.open(url, '_blank');
   };
 
@@ -912,6 +917,7 @@ const Sidebar = ({
               <div style={{ position: 'relative' }} ref={menuRef}>
                 <button 
                   onClick={() => setIsMenuOpen(!isMenuOpen)}
+                  aria-label="More options"
                   style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', display: 'flex', padding: '3px' }}
                 >
                   <MoreVertical size={16} />

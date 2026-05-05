@@ -157,6 +157,13 @@ fun MapDetailScreen(
     var isOfflineAvailable by remember(mapId) { 
         mutableStateOf(OfflineManager.isMapDownloaded(context, mapId)) 
     }
+
+    // Refresh offline status when download completes
+    LaunchedEffect(downloadProgress) {
+        if (downloadProgress >= 1.0f) {
+            isOfflineAvailable = OfflineManager.isMapDownloaded(context, mapId)
+        }
+    }
     
     // Track if we've already auto-zoomed for the current map
     var hasAutoZoomed by rememberSaveable(mapId) { mutableStateOf(false) }
@@ -885,6 +892,38 @@ fun MapDetailScreen(
                                 }
                             }
                         )
+
+                        // Offline Indicator Chip on Map
+                        if (isOfflineAvailable) {
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(12.dp),
+                                color = Color.White.copy(alpha = 0.9f),
+                                shape = RoundedCornerShape(16.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, SuccessGreen.copy(alpha = 0.5f)),
+                                shadowElevation = 2.dp
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.CloudDone, 
+                                        contentDescription = null, 
+                                        tint = SuccessGreen,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        "Offline Map Ready", 
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = DarkSlateBlue
+                                    )
+                                }
+                            }
+                        }
                     } else if (uiState is UiState.Loading) {
                         CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                     } else if (uiState is UiState.Error) {
