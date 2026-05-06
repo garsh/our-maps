@@ -21,18 +21,19 @@ app.use((0, helmet_1.default)({
     contentSecurityPolicy: {
         directives: {
             ...helmet_1.default.contentSecurityPolicy.getDefaultDirectives(),
-            "img-src": ["'self'", "data:", "https:", "http:"], // Allow images from map providers
-            "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'", "blob:", "https://accounts.google.com/gsi/client"],
-            "style-src": ["'self'", "'unsafe-inline'"],
+            "img-src": ["'self'", "data:", "https:", "http:"],
+            "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'", "blob:", "https://accounts.google.com/gsi/client", "https://www.gstatic.com"],
+            "style-src": ["'self'", "'unsafe-inline'", "https://accounts.google.com/gsi/style", "https://fonts.googleapis.com"],
+            "font-src": ["'self'", "https://fonts.gstatic.com"],
             "frame-src": ["'self'", "https://accounts.google.com/gsi/"],
             "connect-src": ["'self'", "https://*.openstreetmap.org", "https://*.tile.openstreetmap.org", "https://nominatim.openstreetmap.org", "https://accounts.google.com/gsi/"],
             "worker-src": ["'self'", "blob:"],
             "manifest-src": ["'self'"],
-            "upgrade-insecure-requests": null, // Disable auto-upgrade to support local http dev
+            "upgrade-insecure-requests": null,
         },
     },
-    crossOriginEmbedderPolicy: false, // Disable to allow cross-origin images/scripts
-    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }, // Allow Google Login popups
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
 }));
 // Rate Limiting: Prevent abuse (Brute-force and DoS protection)
 const apiLimiter = (0, express_rate_limit_1.default)({

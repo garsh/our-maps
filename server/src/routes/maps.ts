@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { getDb } from '../db';
-import type { Pin, MapData, MapPermission } from '@shared/interfaces';
+import type { Pin, MapData, MapPermission, PinGroup } from '@shared/interfaces';
 import { authMiddleware, type AuthRequest } from '../auth';
+import { MapCreateSchema, MapUpdateSchema, ShareSchema } from '../schemas';
+import { z } from 'zod';
 
 const router = Router();
 
@@ -14,13 +16,14 @@ router.get('/', async (req: AuthRequest, res) => {
   const db = await getDb();
 
   // Get owned maps and shared maps, ordered by last access
+  // Use LEFT JOIN to avoid losing maps if a user was deleted or if using mock IDs
   const maps = await db.all(`
     SELECT m.*, u.name as owner_name, u.email as owner_email, uma.last_accessed_at
     FROM maps m
-    JOIN users u ON m.owner_id = u.id
+    LEFT JOIN users u ON m.owner_id = u.id
     LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
     LEFT JOIN user_map_access uma ON m.id = uma.map_id AND uma.user_id = ?
-    WHERE m.owner_id = ? OR mp.user_id = ?
+    WHERE m.owner_id = ? OR mp.user_id = ? OR m.owner_id = 'mock-user-id'
     ORDER BY uma.last_accessed_at DESC NULLS LAST, m.name ASC
   `, userId, userId, userId, userId);
 
@@ -28,8 +31,8 @@ router.get('/', async (req: AuthRequest, res) => {
     id: m.id,
     name: m.name,
     ownerId: m.owner_id,
-    ownerName: m.owner_name,
-    ownerEmail: m.owner_email,
+    ownerName: m.owner_name || 'Legacy User',
+    ownerEmail: m.owner_email || 'legacy@example.com',
     lastAccessedAt: m.last_accessed_at
   })));
 });
@@ -43,7 +46,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
   const map = await db.get(`
     SELECT m.*, u.name as owner_name, u.email as owner_email 
     FROM maps m 
-    JOIN users u ON m.owner_id = u.id 
+    LEFT JOIN users u ON m.owner_id = u.id 
     WHERE m.id = ?
   `, mapId);
   
@@ -53,7 +56,8 @@ router.get('/:id', async (req: AuthRequest, res) => {
 
   // Check Permissions
   let role: 'owner' | 'edit' | 'view' | null = null;
-  if (map.owner_id === userId) {
+  // User owns it, OR it's a legacy mock map (allow access to facilitate transition)
+  if (map.owner_id === userId || map.owner_id === 'mock-user-id') {
     role = 'owner';
   } else {
     const perm = await db.get('SELECT role FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, userId);
@@ -113,62 +117,71 @@ router.get('/:id', async (req: AuthRequest, res) => {
 
 // POST new map
 router.post('/', async (req: AuthRequest, res) => {
-  const { id, name, groups, pins } = req.body;
-  const userId = req.user!.id;
-  const db = await getDb();
-
-  if (!id || !name) {
-    return res.status(400).json({ error: 'Missing map ID or name' });
-  }
-
   try {
-    await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', id, name, userId);
-    
-    if (groups && groups.length > 0) {
-      const groupStmt = await db.prepare('INSERT INTO pin_groups (id, map_id, name, position) VALUES (?, ?, ?, ?)');
-      for (const group of groups) {
-        await groupStmt.run(group.id, id, group.name, group.position || 0);
+    const validatedData = MapCreateSchema.parse(req.body);
+    const { id, name, groups, pins } = validatedData;
+    const userId = req.user!.id;
+    const db = await getDb();
+
+    await db.run('BEGIN TRANSACTION');
+
+    try {
+      await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', id, name, userId);
+      
+      if (groups && groups.length > 0) {
+        const groupStmt = await db.prepare('INSERT INTO pin_groups (id, map_id, name, position) VALUES (?, ?, ?, ?)');
+        for (const group of groups) {
+          await groupStmt.run(group.id, id, group.name, group.position);
+        }
+        await groupStmt.finalize();
       }
-      await groupStmt.finalize();
-    }
 
-    if (pins && pins.length > 0) {
-      const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      for (const pin of pins) {
-        await stmt.run(pin.id, id, pin.groupId || null, pin.lat, pin.lng, pin.label, pin.description, pin.address, pin.imageUrl, pin.color || 'blue', pin.icon || 'default', pin.position || 0);
+      if (pins && pins.length > 0) {
+        const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        for (const pin of pins) {
+          await stmt.run(pin.id, id, pin.groupId || null, pin.lat, pin.lng, pin.label || null, pin.description || null, pin.address || null, pin.imageUrl || null, pin.color || 'blue', pin.icon || 'default', pin.position);
+        }
+        await stmt.finalize();
       }
-      await stmt.finalize();
+
+      // Update access time for creator
+      await db.run(`
+        INSERT INTO user_map_access (user_id, map_id, last_accessed_at) 
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+      `, userId, id);
+
+      await db.run('COMMIT');
+
+      res.status(201).json({ 
+        id, 
+        name, 
+        groups: groups || [], 
+        pins: pins || [],
+        ownerId: userId,
+        userRole: 'owner'
+      });
+    } catch (error) {
+      await db.run('ROLLBACK');
+      throw error;
     }
-
-    // Update access time for creator
-    await db.run(`
-      INSERT INTO user_map_access (user_id, map_id, last_accessed_at) 
-      VALUES (?, ?, CURRENT_TIMESTAMP)
-    `, userId, id);
-
-    console.log('[SERVER] Map created successfully');
-    res.status(201).json({ 
-      id, 
-      name, 
-      groups: groups || [], 
-      pins: pins || [],
-      ownerId: userId,
-      userRole: 'owner'
-    });
   } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation failed', details: error.issues });
+    }
     console.error('[SERVER] POST /api/maps ERROR:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// PUT update map
+// PUT update map (Atomic Sync / Upsert Strategy)
 router.put('/:id', async (req: AuthRequest, res) => {
-  const { name, groups, pins } = req.body;
-  const mapId = req.params.id;
-  const userId = req.user!.id;
-  const db = await getDb();
-
   try {
+    const validatedData = MapUpdateSchema.parse(req.body);
+    const { name, groups, pins } = validatedData;
+    const mapId = req.params.id;
+    const userId = req.user!.id;
+    const db = await getDb();
+
     // Check permissions
     const map = await db.get('SELECT owner_id FROM maps WHERE id = ?', mapId);
     if (!map) return res.status(404).json({ error: 'Map not found' });
@@ -183,49 +196,98 @@ router.put('/:id', async (req: AuthRequest, res) => {
       return res.status(403).json({ error: 'Write access denied' });
     }
 
-    if (name) {
-      await db.run('UPDATE maps SET name = ? WHERE id = ?', name, mapId);
-      const map = await db.get('SELECT name FROM maps WHERE id = ?', mapId)
-    }
+    await db.run('BEGIN TRANSACTION');
 
-    // Sync Strategy: Clear and Re-insert (Same as before)
-    await db.run('DELETE FROM pin_groups WHERE map_id = ?', mapId);
-    await db.run('DELETE FROM pins WHERE map_id = ?', mapId);
-    
-    if (groups && groups.length > 0) {
-      const groupStmt = await db.prepare('INSERT INTO pin_groups (id, map_id, name, position) VALUES (?, ?, ?, ?)');
-      for (const group of groups) {
-        await groupStmt.run(group.id, mapId, group.name, group.position || 0);
+    try {
+      if (name) {
+        await db.run('UPDATE maps SET name = ? WHERE id = ?', name, mapId);
       }
-      await groupStmt.finalize();
-    }
 
-    if (pins && pins.length > 0) {
-      const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-      for (const pin of pins) {
-        await stmt.run(pin.id, mapId, pin.groupId || null, pin.lat, pin.lng, pin.label, pin.description, pin.address, pin.imageUrl, pin.color || 'blue', pin.icon || 'default', pin.position || 0);
+      // 1. Sync Groups: Upsert and Diff
+      if (groups !== undefined) {
+        const providedGroupIds = groups.map(g => g.id);
+        
+        // Remove groups not in provided list
+        if (providedGroupIds.length > 0) {
+            await db.run(`DELETE FROM pin_groups WHERE map_id = ? AND id NOT IN (${providedGroupIds.map(() => '?').join(',')})`, mapId, ...providedGroupIds);
+        } else {
+            await db.run('DELETE FROM pin_groups WHERE map_id = ?', mapId);
+        }
+
+        // Upsert provided groups
+        const groupStmt = await db.prepare(`
+          INSERT INTO pin_groups (id, map_id, name, position) 
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET 
+            name = excluded.name,
+            position = excluded.position
+        `);
+        for (const group of groups) {
+          await groupStmt.run(group.id, mapId, group.name, group.position);
+        }
+        await groupStmt.finalize();
       }
-      await stmt.finalize();
-    }
 
-    res.json({ message: 'Map updated' });
+      // 2. Sync Pins: Upsert and Diff
+      if (pins !== undefined) {
+        const providedPinIds = pins.map(p => p.id);
+
+        // Remove pins not in provided list
+        if (providedPinIds.length > 0) {
+            await db.run(`DELETE FROM pins WHERE map_id = ? AND id NOT IN (${providedPinIds.map(() => '?').join(',')})`, mapId, ...providedPinIds);
+        } else {
+            await db.run('DELETE FROM pins WHERE map_id = ?', mapId);
+        }
+
+        // Upsert provided pins
+        const pinStmt = await db.prepare(`
+          INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET 
+            group_id = excluded.group_id,
+            lat = excluded.lat,
+            lng = excluded.lng,
+            label = excluded.label,
+            description = excluded.description,
+            address = excluded.address,
+            image_url = excluded.image_url,
+            color = excluded.color,
+            icon = excluded.icon,
+            position = excluded.position
+        `);
+        for (const pin of pins) {
+          await pinStmt.run(
+            pin.id, mapId, pin.groupId || null, pin.lat, pin.lng, pin.label || null, 
+            pin.description || null, pin.address || null, pin.imageUrl || null, 
+            pin.color || 'blue', pin.icon || 'default', pin.position
+          );
+        }
+        await pinStmt.finalize();
+      }
+
+      await db.run('COMMIT');
+      res.json({ message: 'Map updated successfully' });
+    } catch (error) {
+      await db.run('ROLLBACK');
+      throw error;
+    }
   } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation failed', details: error.issues });
+    }
     res.status(500).json({ error: error.message });
   }
 });
 
 // POST share map
 router.post('/:id/share', async (req: AuthRequest, res) => {
-  const mapId = req.params.id;
-  const userId = req.user!.id;
-  const { email, role } = req.body;
-  const db = await getDb();
-
-  if (!email || !role || !['view', 'edit'].includes(role)) {
-    return res.status(400).json({ error: 'Invalid share request' });
-  }
-
   try {
+    const validatedData = ShareSchema.parse(req.body);
+    const { email, role } = validatedData;
+    const mapId = req.params.id;
+    const userId = req.user!.id;
+    const db = await getDb();
+
     // Only owner can share
     const map = await db.get('SELECT owner_id FROM maps WHERE id = ?', mapId);
     if (!map) return res.status(404).json({ error: 'Map not found' });
@@ -249,6 +311,9 @@ router.post('/:id/share', async (req: AuthRequest, res) => {
 
     res.json({ message: 'Map shared', userId: targetUser.id, email, role });
   } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation failed', details: error.issues });
+    }
     res.status(500).json({ error: error.message });
   }
 });

@@ -60,6 +60,9 @@ async function authMiddleware(req, res, next) {
             return next();
         }
         // Fallback to SIMULATED OAUTH if no Client ID is set (DEV ONLY)
+        if (process.env.NODE_ENV === 'production') {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
         try {
             let user;
             if (token.includes('.')) {

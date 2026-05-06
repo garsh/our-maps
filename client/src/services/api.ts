@@ -73,7 +73,10 @@ export const apiService = {
       headers: getHeaders(),
       body: JSON.stringify({ name, groups, pins }),
     });
-    if (!res.ok) throw new Error('Failed to update map');
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to update map');
+    }
     return res.json();
   },
 
