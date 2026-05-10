@@ -37,7 +37,9 @@ object OfflineManager {
 
     fun getAllOfflineMaps(context: Context): List<MapData> {
         val downloadedIds = getDownloadedMaps(context)
-        return downloadedIds.mapNotNull { getOfflineMap(context, it) }
+        return downloadedIds.mapNotNull { 
+            getOfflineMap(context, it)?.copy(ownerId = "offline")
+        }
     }
 
     fun removeOfflineMap(context: Context, mapId: String) {

@@ -709,11 +709,16 @@ fun MapDetailScreen(
                                             totalTiles += TileCalculator.countTiles(BoundingBox(pin.lat + 0.01, pin.lng + 0.01, pin.lat - 0.01, pin.lng - 0.01), 13, 17)
                                         }
 
-                                        val maxTiles = 30000
-                                        if (totalTiles > maxTiles) {
-                                            Toast.makeText(context, "The map area is too large to download ($totalTiles tiles). Please zoom in. (Max $maxTiles tiles)", Toast.LENGTH_LONG).show()
+                                        val estimatedSizeMB = TileCalculator.estimateSizeMB(totalTiles).toLong()
+                                        val storageStatus = StorageUtils.canFit(estimatedSizeMB)
+
+                                        if (!storageStatus.first) {
+                                            Toast.makeText(context, storageStatus.second ?: "Not enough storage", Toast.LENGTH_LONG).show()
                                         } else {
-                                            downloadSummary = DownloadSummary(totalTiles, TileCalculator.estimateSizeMB(totalTiles), boundingBox)
+                                            if (storageStatus.second != null) {
+                                                Toast.makeText(context, storageStatus.second!!, Toast.LENGTH_LONG).show()
+                                            }
+                                            downloadSummary = DownloadSummary(totalTiles, estimatedSizeMB.toDouble(), boundingBox)
                                             showDownloadConfirm = true
                                         }
                                     }

@@ -56,11 +56,11 @@ import {
   countTiles, 
   estimateSizeMB, 
   getTilesForArea, 
-  downloadTiles, 
   getSurgicalBoxes,
   getPinsBoundingBox,
   type BoundingBox 
 } from '../utils/tileUtils';
+import { canFit } from '../utils/storageUtils';
 import type { MapData } from '@shared/interfaces';
 
 interface DownloadSummary {
@@ -70,6 +70,7 @@ interface DownloadSummary {
 }
 
 interface SidebarProps {
+  mapId: string | null;
   mapName: string;
   onMapNameChange: (name: string) => void;
   groups: PinGroup[];
@@ -645,6 +646,7 @@ const SortableGroup = ({
 };
 
 const Sidebar = ({
+  mapId,
   mapName,
   onMapNameChange,
   groups,
@@ -693,7 +695,7 @@ const Sidebar = ({
     setLocalMapName(mapName);
   }, [mapName]);
 
-  const handleDownloadClick = () => {
+  const handleDownloadClick = async () => {
     let bbox: BoundingBox | null = getPinsBoundingBox(pins);
     
     if (!bbox) {
@@ -710,39 +712,36 @@ const Sidebar = ({
         };
     }
 
-    // 1. Broad detail for map extent (1-12)
-    let totalCount = countTiles(bbox, 1, 12);
-    
-    // 2. High detail for clusters (13-17) - Surgical around pins
-    const surgicalBoxes = getSurgicalBoxes(pins);
-    surgicalBoxes.forEach(box => {
-        totalCount += countTiles(box, 13, 17);
-    });
+    const totalCount = countTiles(bbox, 1, 12) + getSurgicalBoxes(pins).reduce((acc, box) => acc + countTiles(box, 13, 17), 0);
+    const estimatedSizeMB = estimateSizeMB(totalCount);
 
-    const MAX_TILES = 30000;
-    if (totalCount > MAX_TILES) {
-        alert(`The map area is too large to download (${totalCount.toLocaleString()} tiles). Please zoom in or reduce the area covered by pins. (Max ${MAX_TILES.toLocaleString()} tiles)`);
+    const storageStatus = await canFit(estimatedSizeMB);
+    if (!storageStatus.ok) {
+        alert(storageStatus.message);
         return;
     }
 
     setDownloadSummary({
         tileCount: totalCount,
-        sizeMB: estimateSizeMB(totalCount),
+        sizeMB: estimatedSizeMB,
         bbox
     });
+    
+    if (storageStatus.message) {
+        // Show warning but allow proceeding
+        console.warn(storageStatus.message);
+    }
+    
     setShowDownloadConfirm(true);
     setIsMenuOpen(false);
   };
 
   const startDownload = async () => {
-    if (!downloadSummary) return;
+    if (!downloadSummary || !mapId) return;
     
     setIsDownloading(true);
     setDownloadProgress(0);
     setShowDownloadConfirm(false);
-
-    // Yield to let browser render the overlay
-    await new Promise(r => setTimeout(r, 100));
 
     try {
         const allTiles = [
@@ -750,32 +749,40 @@ const Sidebar = ({
             ...getSurgicalBoxes(pins).flatMap(box => getTilesForArea(box, 13, 17))
         ];
 
-        // O(N) Deduplication using Map
+        // Deduplication
         const uniqueTilesMap = new Map();
-        allTiles.forEach(tile => {
-            uniqueTilesMap.set(tile.url, tile);
-        });
+        allTiles.forEach(tile => uniqueTilesMap.set(tile.url, tile));
         const uniqueTiles = Array.from(uniqueTilesMap.values());
 
-        if (uniqueTiles.length === 0) {
-            alert("No tiles needed to download for this area.");
-            setIsDownloading(false);
-            setDownloadProgress(null);
-            return;
-        }
-
-        // Final yield before starting heavy download
-        await new Promise(r => setTimeout(r, 50));
-
-        await downloadTiles(uniqueTiles, (progress) => {
-            setDownloadProgress(progress);
+        // Spawn Worker
+        const worker = new Worker(new URL('../workers/tileWorker.ts', import.meta.url), { type: 'module' });
+        
+        worker.postMessage({
+            type: 'start-download',
+            mapId,
+            tiles: uniqueTiles
         });
 
-        alert(`Map tiles downloaded successfully! ${uniqueTiles.length.toLocaleString()} tiles are now available offline.`);
+        worker.onmessage = (e) => {
+            const { type, progress, error } = e.data;
+            if (type === 'progress') {
+                setDownloadProgress(progress);
+            } else if (type === 'complete') {
+                setIsDownloading(false);
+                setDownloadProgress(null);
+                alert(`Map tiles downloaded successfully! ${uniqueTiles.length.toLocaleString()} tiles are now available offline.`);
+                worker.terminate();
+            } else if (type === 'error') {
+                console.error("Worker error:", error);
+                setIsDownloading(false);
+                setDownloadProgress(null);
+                alert("Failed to download map tiles. Please try again.");
+                worker.terminate();
+            }
+        };
+
     } catch (error) {
-        console.error("Download failed:", error);
-        alert("Failed to download map tiles. Please try again.");
-    } finally {
+        console.error("Download setup failed:", error);
         setIsDownloading(false);
         setDownloadProgress(null);
     }

@@ -40,7 +40,7 @@ class MapDownloadService : Service() {
         val tileSource = XYTileSource(
             "OpenStreetMap",
             0, 19, 256, ".png", 
-            arrayOf("https://tile.openstreetmap.org/"),
+            arrayOf("https://a.tile.openstreetmap.org/", "https://b.tile.openstreetmap.org/", "https://c.tile.openstreetmap.org/"),
             "© OpenStreetMap contributors",
             TileSourcePolicy(2, TileSourcePolicy.FLAG_USER_AGENT_MEANINGFUL or TileSourcePolicy.FLAG_USER_AGENT_NORMALIZED)
         )
@@ -48,6 +48,7 @@ class MapDownloadService : Service() {
         val downloader = SmartMapDownloader(
             context = this,
             tileSource = tileSource,
+            mapId = mapData.id,
             mapName = mapData.name,
             onProgress = { progress ->
                 DownloadProgressTracker.updateProgress(mapData.id, progress)

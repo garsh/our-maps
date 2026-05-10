@@ -406,6 +406,7 @@ export function MapEditor() {
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', background: 'var(--bg-color)' }}>
         <div style={{ width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', position: 'relative', zIndex: 10 }}>
           <Sidebar 
+            mapId={mapId}
             mapName={mapName}
             onMapNameChange={setMapName}
             groups={groups}

@@ -2,6 +2,7 @@ package com.google.ourmaps.repository
 
 import android.content.Context
 import com.google.gson.Gson
+import com.google.ourmaps.api.GeocodingApi
 import com.google.ourmaps.api.MapApi
 import com.google.ourmaps.model.MapData
 import com.google.ourmaps.utils.OfflineManager
@@ -14,9 +15,16 @@ import retrofit2.converter.gson.GsonConverterFactory
 class MapRepository(private val context: Context) {
 
     private val api: MapApi
+    private val geocodingApi: GeocodingApi
+    private var onUnauthorized: (() -> Unit)? = null
+
+    fun setOnUnauthorizedCallback(callback: () -> Unit) {
+        this.onUnauthorized = callback
+    }
 
     companion object {
         var userJson: String? = null
+        var idToken: String? = null
         
         @Volatile
         private var INSTANCE: MapRepository? = null
@@ -31,13 +39,28 @@ class MapRepository(private val context: Context) {
 
     init {
         val authInterceptor = Interceptor { chain ->
-            val json = userJson ?: "{\"id\":\"mock-user-id\",\"email\":\"mock@example.com\",\"name\":\"Mock User\"}"
-            val base64Token = android.util.Base64.encodeToString(json.toByteArray(), android.util.Base64.NO_WRAP)
+            // Use the real Google ID Token if we have one
+            val token = idToken ?: run {
+                // Fallback to base64 mock token for development
+                val json = userJson ?: "{\"id\":\"mock-user-id\",\"email\":\"mock@example.com\",\"name\":\"Mock User\"}"
+                android.util.Base64.encodeToString(json.toByteArray(), android.util.Base64.NO_WRAP)
+            }
             
             val request = chain.request().newBuilder()
-                .addHeader("Authorization", "Bearer $base64Token")
+                .addHeader("Authorization", "Bearer $token")
+                .addHeader("Accept", "application/json, image/webp, image/*;q=0.8")
                 .build()
-            chain.proceed(request)
+            
+            val response = chain.proceed(request)
+            
+            // If the server rejects our token, clear it and notify the UI
+            if (response.code == 401) {
+                idToken = null
+                userJson = null
+                onUnauthorized?.invoke()
+            }
+            
+            response
         }
 
         val loggingInterceptor = HttpLoggingInterceptor().apply {
@@ -50,26 +73,46 @@ class MapRepository(private val context: Context) {
             .build()
 
         val retrofit = Retrofit.Builder()
-            .baseUrl("http://47.144.129.56:3000/api/")
+            .baseUrl(context.getString(com.google.ourmaps.R.string.api_base_url))
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
 
         api = retrofit.create(MapApi::class.java)
+
+        val nominatimRetrofit = Retrofit.Builder()
+            .baseUrl("https://nominatim.openstreetmap.org/")
+            .client(client)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+        
+        geocodingApi = nominatimRetrofit.create(GeocodingApi::class.java)
+    }
+
+    suspend fun reverseGeocode(lat: Double, lng: Double): String? {
+        return try {
+            val response = geocodingApi.reverseGeocode(lat, lng)
+            response.display_name
+        } catch (e: Exception) {
+            null
+        }
     }
 
     suspend fun getMaps(): Result<List<MapData>> {
         return try {
             val maps = api.getMaps()
             Result.success(maps)
-        } catch (e: Exception) {
-            // Fallback to offline maps
+        } catch (e: java.io.IOException) {
+            // ONLY fallback to offline for network errors
             val offlineMaps = OfflineManager.getAllOfflineMaps(context)
             if (offlineMaps.isNotEmpty()) {
                 Result.success(offlineMaps)
             } else {
                 Result.failure(e)
             }
+        } catch (e: Exception) {
+            // Propagate auth/server errors immediately
+            Result.failure(e)
         }
     }
 
@@ -77,14 +120,17 @@ class MapRepository(private val context: Context) {
         return try {
             val map = api.getMap(id)
             Result.success(map)
-        } catch (e: Exception) {
-            // Fallback to offline map
+        } catch (e: java.io.IOException) {
+            // ONLY fallback to offline for network errors
             val offlineMap = OfflineManager.getOfflineMap(context, id)
             if (offlineMap != null) {
                 Result.success(offlineMap)
             } else {
                 Result.failure(e)
             }
+        } catch (e: Exception) {
+            // Propagate auth/server errors immediately
+            Result.failure(e)
         }
     }
 
@@ -101,7 +147,7 @@ class MapRepository(private val context: Context) {
         return try {
             val response = api.updateMap(id, mapData)
             if (response.isSuccessful) Result.success(Unit)
-            else Result.failure(Exception("Update failed"))
+            else Result.failure(Exception("Update failed: ${response.code()}"))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -111,7 +157,7 @@ class MapRepository(private val context: Context) {
         return try {
             val response = api.deleteMap(id)
             if (response.isSuccessful) Result.success(Unit)
-            else Result.failure(Exception("Delete failed"))
+            else Result.failure(Exception("Delete failed: ${response.code()}"))
         } catch (e: Exception) {
             Result.failure(e)
         }

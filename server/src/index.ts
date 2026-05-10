@@ -6,7 +6,7 @@ import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
 import http from 'http';
-import { Server } from 'socket.io';
+import { Server, Socket } from 'socket.io';
 import { getDb } from './db';
 import mapsRouter from './routes/maps';
 
@@ -78,7 +78,7 @@ app.get('/api/hello', (req, res) => {
 });
 
 // Socket.io for real-time collaboration
-io.on('connection', (socket) => {
+io.on('connection', (socket: Socket) => {
   console.log('[SOCKET] User connected:', socket.id);
 
   socket.on('join-map', (mapId: string) => {

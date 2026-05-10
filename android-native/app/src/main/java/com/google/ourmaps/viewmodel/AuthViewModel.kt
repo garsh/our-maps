@@ -48,6 +48,7 @@ class AuthViewModel : ViewModel() {
             picture = account.photoUrl?.toString()
         )
         _user.value = user
+        MapRepository.idToken = account.idToken
         MapRepository.userJson = gson.toJson(user)
     }
 
@@ -60,15 +61,18 @@ class AuthViewModel : ViewModel() {
 
     // Deprecated mock login
     fun loginMock() {
-        viewModelScope.launch {
-            val user = User(
-                id = "mock-user-id",
-                email = "mock@example.com",
-                name = "Mock User",
-                picture = null
-            )
-            _user.value = user
-            MapRepository.userJson = gson.toJson(user)
+        if (com.google.ourmaps.BuildConfig.DEBUG) {
+            viewModelScope.launch {
+                val user = User(
+                    id = "mock-user-id",
+                    email = "mock@example.com",
+                    name = "Mock User",
+                    picture = null
+                )
+                _user.value = user
+                MapRepository.idToken = null // Force fallback if needed
+                MapRepository.userJson = gson.toJson(user)
+            }
         }
     }
 }

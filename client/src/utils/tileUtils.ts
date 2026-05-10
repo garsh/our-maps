@@ -14,25 +14,143 @@ export interface TileInfo {
     url: string;
 }
 
-/**
- * Estimates the number of tiles in a bounding box for a range of zoom levels.
- */
-export function countTiles(box: BoundingBox, minZoom: number, maxZoom: number): number {
-    let total = 0;
-    for (let zoom = minZoom; zoom <= maxZoom; zoom++) {
-        const xMin = longToX(box.west, zoom);
-        const xMax = longToX(box.east, zoom);
-        const yMin = latToY(box.north, zoom);
-        const yMax = latToY(box.south, zoom);
-        
-        total += (Math.abs(xMax - xMin) + 1) * (Math.abs(yMax - yMin) + 1);
-    }
-    return total;
+export type TileStatus = 'pending' | 'completed' | 'error';
+
+export interface ManifestEntry {
+    url: string;
+    x: number;
+    y: number;
+    z: number;
+    status: TileStatus;
+    mapId: string;
+    updatedAt: number;
 }
 
 /**
- * Estimates size in MB based on tile count (avg 20KB per tile).
+ * IndexedDB Tile Store
  */
+const DB_NAME = 'MapTilesDB_v2';
+const MANIFEST_STORE = 'manifest';
+const TILE_STORE = 'tiles';
+const DB_VERSION = 1;
+
+async function openDB(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(MANIFEST_STORE)) {
+                const manifest = db.createObjectStore(MANIFEST_STORE, { keyPath: 'url' });
+                manifest.createIndex('status', 'status', { unique: false });
+                manifest.createIndex('mapId', 'mapId', { unique: false });
+            }
+            if (!db.objectStoreNames.contains(TILE_STORE)) {
+                db.createObjectStore(TILE_STORE);
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+export async function addToManifest(entries: ManifestEntry[]): Promise<void> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(MANIFEST_STORE, 'readwrite');
+        const store = transaction.objectStore(MANIFEST_STORE);
+        
+        entries.forEach(entry => {
+            store.put(entry);
+        });
+
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+    });
+}
+
+export async function getPendingFromManifest(mapId: string): Promise<ManifestEntry[]> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(MANIFEST_STORE, 'readonly');
+        const store = transaction.objectStore(MANIFEST_STORE);
+        const index = store.index('mapId');
+        const request = index.getAll(IDBKeyRange.only(mapId));
+
+        request.onsuccess = () => {
+            const all = request.result as ManifestEntry[];
+            resolve(all.filter(e => e.status === 'pending' || e.status === 'error'));
+        };
+        request.onerror = () => reject(request.error);
+    });
+}
+
+export async function getManifestStats(mapId: string): Promise<{ total: number, completed: number }> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(MANIFEST_STORE, 'readonly');
+        const store = transaction.objectStore(MANIFEST_STORE);
+        const index = store.index('mapId');
+        const request = index.getAll(IDBKeyRange.only(mapId));
+
+        request.onsuccess = () => {
+            const all = request.result as ManifestEntry[];
+            const completed = all.filter(e => e.status === 'completed').length;
+            resolve({ total: all.length, completed });
+        };
+        request.onerror = () => reject(request.error);
+    });
+}
+
+export async function saveTile(url: string, blob: Blob): Promise<void> {
+    const db = await openDB();
+    const transaction = db.transaction([TILE_STORE, MANIFEST_STORE], 'readwrite');
+    
+    const tileStore = transaction.objectStore(TILE_STORE);
+    tileStore.put(blob, url);
+
+    const manifestStore = transaction.objectStore(MANIFEST_STORE);
+    const getReq = manifestStore.get(url);
+    getReq.onsuccess = () => {
+        const entry = getReq.result as ManifestEntry;
+        if (entry) {
+            entry.status = 'completed';
+            entry.updatedAt = Date.now();
+            manifestStore.put(entry);
+        }
+    };
+
+    return new Promise((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+    });
+}
+
+export async function getTile(url: string): Promise<Blob | null> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(TILE_STORE, 'readonly');
+        const store = transaction.objectStore(TILE_STORE);
+        const request = store.get(url);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+export function countTiles(box: BoundingBox, minZoom: number, maxZoom: number): number {
+    let count = 0;
+    for (let z = minZoom; z <= maxZoom; z++) {
+        const xMin = longToX(box.west, z);
+        const xMax = longToX(box.east, z);
+        const yMin = latToY(box.north, z);
+        const yMax = latToY(box.south, z);
+        
+        const width = Math.abs(xMax - xMin) + 1;
+        const height = Math.abs(yMax - yMin) + 1;
+        count += (width * height);
+    }
+    return count;
+}
+
 export function estimateSizeMB(tileCount: number): number {
     return (tileCount * 20.0) / 1024.0;
 }
@@ -51,15 +169,20 @@ function latToY(lat: number, zoom: number): number {
 export function getTilesForArea(box: BoundingBox, minZoom: number, maxZoom: number): TileInfo[] {
     const tiles: TileInfo[] = [];
     const subdomains = ['a', 'b', 'c'];
-
+    
     for (let z = minZoom; z <= maxZoom; z++) {
         const xMin = longToX(box.west, z);
         const xMax = longToX(box.east, z);
         const yMin = latToY(box.north, z);
         const yMax = latToY(box.south, z);
 
-        for (let x = Math.min(xMin, xMax); x <= Math.max(xMin, xMax); x++) {
-            for (let y = Math.min(yMin, yMax); y <= Math.max(yMin, yMax); y++) {
+        const xStart = Math.min(xMin, xMax);
+        const xEnd = Math.max(xMin, xMax);
+        const yStart = Math.min(yMin, yMax);
+        const yEnd = Math.max(yMin, yMax);
+
+        for (let x = xStart; x <= xEnd; x++) {
+            for (let y = yStart; y <= yEnd; y++) {
                 const s = subdomains[(x + y) % subdomains.length];
                 tiles.push({
                     x, y, z,
@@ -69,49 +192,6 @@ export function getTilesForArea(box: BoundingBox, minZoom: number, maxZoom: numb
         }
     }
     return tiles;
-}
-
-export async function downloadTiles(
-    tiles: TileInfo[], 
-    onProgress: (progress: number) => void
-): Promise<void> {
-    const cache = await caches.open('osm-tiles');
-    let completed = 0;
-    const total = tiles.length;
-    let lastReportedProgress = -1;
-
-    // Use a small pool of concurrent fetches to avoid overloading the network/server
-    const CONCURRENCY = 5;
-    const queue = [...tiles];
-    
-    const workers = Array(CONCURRENCY).fill(null).map(async () => {
-        while (queue.length > 0) {
-            const tile = queue.shift();
-            if (!tile) break;
-
-            try {
-                // Check if already in cache
-                const existing = await cache.match(tile.url);
-                if (!existing) {
-                    const response = await fetch(tile.url);
-                    if (response.ok) {
-                        await cache.put(tile.url, response);
-                    }
-                }
-            } catch (error) {
-                console.error(`Failed to download tile ${tile.url}:`, error);
-            }
-
-            completed++;
-            const currentProgress = Math.floor((completed / total) * 100);
-            if (currentProgress > lastReportedProgress) {
-                lastReportedProgress = currentProgress;
-                onProgress(completed / total);
-            }
-        }
-    });
-
-    await Promise.all(workers);
 }
 
 export function getPinsBoundingBox(pins: Pin[]): BoundingBox | null {
@@ -124,7 +204,6 @@ export function getPinsBoundingBox(pins: Pin[]): BoundingBox | null {
 
     if (pins.length === 1) {
         const p = pins[0];
-        // Android logic: 0.01 initial buffer + 0.05 extent buffer = 0.06
         return {
             north: Math.min(85, p.lat + 0.06),
             south: Math.max(-85, p.lat - 0.06),
@@ -140,7 +219,6 @@ export function getPinsBoundingBox(pins: Pin[]): BoundingBox | null {
         if (pin.lng < west) west = pin.lng;
     });
 
-    // Add 0.05 buffer to the raw extent (matching Android's MapDetailScreen logic)
     return {
         north: Math.min(85, north + 0.05),
         south: Math.max(-85, south - 0.05),
@@ -153,7 +231,6 @@ export function getSurgicalBoxes(pins: Pin[]): BoundingBox[] {
     const highDetailBoxes: BoundingBox[] = [];
     
     pins.forEach(pin => {
-        // 0.01 degree (~1km) buffer around each pin (matching Android)
         const newBox: BoundingBox = {
             north: pin.lat + 0.01,
             east: pin.lng + 0.01,
@@ -176,14 +253,12 @@ export function getSurgicalBoxes(pins: Pin[]): BoundingBox[] {
 }
 
 function shouldMerge(b1: BoundingBox, b2: BoundingBox): boolean {
-    const b1LatCenter = (b1.north + b1.south) / 2.0;
-    const b1LonCenter = (b1.east + b1.west) / 2.0;
-    const b2LatCenter = (b2.north + b2.south) / 2.0;
-    const b2LonCenter = (b2.east + b2.west) / 2.0;
-    
-    const latCenterDist = Math.abs(b1LatCenter - b2LatCenter);
-    const lngCenterDist = Math.abs(b1LonCenter - b2LonCenter);
-    return latCenterDist < 0.02 && lngCenterDist < 0.02;
+    const overlap = !(b1.west > b2.east || b1.east < b2.west || b1.north < b2.south || b1.south > b2.north);
+    if (overlap) return true;
+    const center1 = { lat: (b1.north + b1.south) / 2, lng: (b1.east + b1.west) / 2 };
+    const center2 = { lat: (b2.north + b2.south) / 2, lng: (b2.east + b2.west) / 2 };
+    const dist = Math.sqrt(Math.pow(center1.lat - center2.lat, 2) + Math.pow(center1.lng - center2.lng, 2));
+    return dist < 0.05;
 }
 
 function mergeBoxes(b1: BoundingBox, b2: BoundingBox): BoundingBox {
@@ -193,4 +268,78 @@ function mergeBoxes(b1: BoundingBox, b2: BoundingBox): BoundingBox {
         south: Math.min(b1.south, b2.south),
         west: Math.min(b1.west, b2.west)
     };
+}
+
+export async function downloadTiles(
+    mapId: string,
+    tiles: TileInfo[], 
+    onProgress: (progress: number) => void
+): Promise<void> {
+    // 1. Add all to manifest if not present
+    const entries: ManifestEntry[] = tiles.map(t => ({
+        ...t,
+        status: 'pending',
+        mapId,
+        updatedAt: Date.now()
+    }));
+    await addToManifest(entries);
+
+    // 2. Get pending items (resumable)
+    const pending = await getPendingFromManifest(mapId);
+    if (pending.length === 0) {
+        onProgress(1.0);
+        return;
+    }
+
+    let completedCount = tiles.length - pending.length;
+    const total = tiles.length;
+    
+    // 3. Worker Pool
+    const CONCURRENCY = 15; // Pro-grade concurrency
+    const queue = [...pending];
+    
+    const workers = Array(CONCURRENCY).fill(null).map(async () => {
+        while (queue.length > 0) {
+            const entry = queue.shift();
+            if (!entry) break;
+
+            try {
+                const response = await fetch(entry.url);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    await saveTile(entry.url, blob);
+                } else {
+                    // Update status to error for future retry
+                    await updateManifestStatus(entry.url, 'error');
+                }
+            } catch (error) {
+                console.error(`Failed to download tile ${entry.url}:`, error);
+                await updateManifestStatus(entry.url, 'error');
+            }
+
+            completedCount++;
+            onProgress(completedCount / total);
+        }
+    });
+
+    await Promise.all(workers);
+}
+
+export async function updateManifestStatus(url: string, status: TileStatus): Promise<void> {
+    const db = await openDB();
+    return new Promise((resolve) => {
+        const transaction = db.transaction(MANIFEST_STORE, 'readwrite');
+        const store = transaction.objectStore(MANIFEST_STORE);
+        const getReq = store.get(url);
+        getReq.onsuccess = () => {
+            const entry = getReq.result as ManifestEntry;
+            if (entry) {
+                entry.status = status;
+                entry.updatedAt = Date.now();
+                store.put(entry);
+            }
+            resolve();
+        };
+        requestIdleCallback(() => resolve()); // Fallback
+    });
 }

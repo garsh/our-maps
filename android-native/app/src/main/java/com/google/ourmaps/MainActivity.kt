@@ -70,7 +70,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             OurMapsTheme {
                 Surface(color = MaterialTheme.colorScheme.background) {
-                    App(factory = factory)
+                    App(factory = factory, repository = repository)
                 }
             }
         }
@@ -78,12 +78,13 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun App(authViewModel: AuthViewModel = viewModel(), factory: OurMapsViewModelFactory) {
+fun App(authViewModel: AuthViewModel = viewModel(), factory: OurMapsViewModelFactory, repository: MapRepository) {
     val navController = rememberNavController()
     val user by authViewModel.user.collectAsState()
     val context = LocalContext.current
 
     val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+        .requestIdToken(context.getString(R.string.google_client_id))
         .requestEmail()
         .build()
     val googleSignInClient = GoogleSignIn.getClient(context, gso)
@@ -104,6 +105,10 @@ fun App(authViewModel: AuthViewModel = viewModel(), factory: OurMapsViewModelFac
     ) { }
 
     LaunchedEffect(Unit) {
+        repository.setOnUnauthorizedCallback {
+            authViewModel.logout(context, googleSignInClient)
+        }
+        
         authViewModel.checkExistingLogin(context)
         
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
@@ -279,7 +284,12 @@ fun MapListScreen(
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                         Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(24.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Our Maps", fontWeight = FontWeight.Bold)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Our Maps", fontWeight = FontWeight.Bold)
+                            if (uiState is UiState.Success && (uiState as UiState.Success).data.any { it.ownerId == "offline" }) {
+                                Text("Offline Mode", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+                            }
+                        }
                     }
                 },
                 actions = {

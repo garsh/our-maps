@@ -17,6 +17,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
     container_name: our-maps
     # Expose port 3000 publicly so the Android app can connect via plain HTTP without TLS errors
     ports:
@@ -25,8 +27,11 @@ services:
       - our_maps_data:/data
     restart: unless-stopped
     environment:
-      - NODE_ENV=production
-      - PORT=3000
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=${PORT:-3000}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - CORS_ORIGIN=${CORS_ORIGIN:-https://ourmaps.mooo.com}
+      - DB_PATH=${DB_PATH:-/data/database.sqlite}
 
 volumes:
   our_maps_data:
