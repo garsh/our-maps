@@ -117,18 +117,24 @@ class MapRepository(private val context: Context) {
     }
 
     suspend fun getMap(id: String): Result<MapData> {
+        android.util.Log.d("OURMAPS_DEBUG", "Repository: getMap($id)")
         return try {
             val map = api.getMap(id)
+            android.util.Log.d("OURMAPS_DEBUG", "Repository: getMap($id) API success")
             Result.success(map)
         } catch (e: java.io.IOException) {
+            android.util.Log.w("OURMAPS_DEBUG", "Repository: getMap($id) Network Error, falling back to offline", e)
             // ONLY fallback to offline for network errors
             val offlineMap = OfflineManager.getOfflineMap(context, id)
             if (offlineMap != null) {
+                android.util.Log.d("OURMAPS_DEBUG", "Repository: getMap($id) offline data found")
                 Result.success(offlineMap)
             } else {
+                android.util.Log.e("OURMAPS_DEBUG", "Repository: getMap($id) no offline data found")
                 Result.failure(e)
             }
         } catch (e: Exception) {
+            android.util.Log.e("OURMAPS_DEBUG", "Repository: getMap($id) general failure", e)
             // Propagate auth/server errors immediately
             Result.failure(e)
         }

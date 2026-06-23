@@ -14,7 +14,8 @@ export default function LoginPage() {
     }
   }, [isAuthenticated, navigate]);
 
-  const isMockMode = import.meta.env.VITE_MOCK_AUTH === 'true' || !import.meta.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID === 'MOCK_CLIENT_ID';
+  const hasClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID && import.meta.env.VITE_GOOGLE_CLIENT_ID !== 'MOCK_CLIENT_ID';
+  const forceMock = import.meta.env.VITE_MOCK_AUTH === 'true';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-color)' }}>
@@ -23,6 +24,12 @@ export default function LoginPage() {
         <p style={{ marginBottom: '2.5rem', color: 'var(--text-secondary)', fontSize: '1.1rem', lineHeight: '1.5' }}>
           Create, share, and manage your custom locations with ease.
         </p>
+
+        {!hasClientId && !forceMock && (
+            <div style={{ marginBottom: '1.5rem', padding: '10px', background: '#fff5f5', border: '1px solid #feb2b2', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', color: '#c53030' }}>
+                <strong>Configuration Error:</strong> VITE_GOOGLE_CLIENT_ID is missing. The app is falling back to mock mode.
+            </div>
+        )}
         
         {error && (
           <div style={{ 
@@ -39,7 +46,7 @@ export default function LoginPage() {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'center' }}>
-          {!isMockMode ? (
+          {hasClientId && !forceMock ? (
             <GoogleLogin
               onSuccess={credentialResponse => {
                 if (credentialResponse.credential) {

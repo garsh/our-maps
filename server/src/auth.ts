@@ -3,7 +3,14 @@ import { OAuth2Client } from 'google-auth-library';
 import { getDb } from './db';
 import type { User } from '@shared/interfaces';
 
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+// Helper to get clean Client ID
+const getGoogleClientId = () => {
+    const id = process.env.GOOGLE_CLIENT_ID;
+    if (!id || id === 'MOCK_CLIENT_ID') return null;
+    return id.replace(/^["'](.+)["']$/, '$1'); // Remove surrounding quotes
+};
+
+const client = new OAuth2Client(getGoogleClientId() || undefined);
 
 export interface AuthRequest extends Request {
   user?: User;
@@ -12,6 +19,7 @@ export interface AuthRequest extends Request {
 export async function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   const mockUserHeader = req.headers['x-mock-user'];
+  const googleClientId = getGoogleClientId();
   
   // SUPPORT MOCK USER FOR DEVELOPMENT
   if (process.env.NODE_ENV !== 'production' && mockUserHeader) {
@@ -36,44 +44,46 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
     if (!token.includes('.') && process.env.NODE_ENV !== 'production') {
       try {
         const decoded = Buffer.from(token, 'base64').toString();
-        console.log('[AUTH] Raw token:', token);
-        console.log('[AUTH] Decoded string:', decoded);
         const user = JSON.parse(decoded);
         req.user = user;
         await ensureUserExists(user);
         return next();
       } catch (e) {
-        // Fall through to real verification if it wasn't a valid mock token after all
+        // Fall through
       }
     }
 
     // If GOOGLE_CLIENT_ID is set, we MUST verify the token via Google
-    if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_ID !== 'MOCK_CLIENT_ID') {
-      const ticket = await client.verifyIdToken({
-        idToken: token,
-        audience: process.env.GOOGLE_CLIENT_ID,
-      });
-      
-      const payload = ticket.getPayload();
-      if (!payload || !payload.sub || !payload.email) {
-        return res.status(401).json({ error: 'Invalid token payload' });
+    if (googleClientId) {
+      try {
+        const ticket = await client.verifyIdToken({
+          idToken: token,
+          audience: googleClientId,
+        });
+        
+        const payload = ticket.getPayload();
+        if (!payload || !payload.sub || !payload.email) {
+          return res.status(401).json({ error: 'Invalid token payload' });
+        }
+
+        const user: User = {
+          id: payload.sub,
+          email: payload.email,
+          name: payload.name || payload.email,
+          picture: payload.picture
+        };
+
+        req.user = user;
+        await ensureUserExists(user);
+        return next();
+      } catch (e: any) {
+        return res.status(401).json({ error: `Authentication failed: ${e.message}` });
       }
-
-      const user: User = {
-        id: payload.sub,
-        email: payload.email,
-        name: payload.name || payload.email,
-        picture: payload.picture
-      };
-
-      req.user = user;
-      await ensureUserExists(user);
-      return next();
     }
 
     // Fallback to SIMULATED OAUTH if no Client ID is set (DEV ONLY)
     if (process.env.NODE_ENV === 'production') {
-      return res.status(401).json({ error: 'Authentication required' });
+      return res.status(401).json({ error: 'Authentication required: Server configuration error' });
     }
 
     try {
@@ -95,11 +105,9 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
       await ensureUserExists(user);
       return next();
     } catch (e) {
-      console.error('Failed to decode mock token:', e);
       res.status(401).json({ error: 'Invalid mock token or missing GOOGLE_CLIENT_ID on server' });
     }
   } catch (error) {
-    console.error('Auth error:', error);
     res.status(401).json({ error: 'Authentication failed' });
   }
 }

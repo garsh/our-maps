@@ -74,6 +74,9 @@ dependencies {
     // Google Sign-In
     implementation("com.google.android.gms:play-services-auth:21.0.0")
 
+    // Real-time Collaboration
+    implementation("io.socket:socket.io-client:2.1.1")
+
     // Maps (OSMDroid)
     implementation("org.osmdroid:osmdroid-android:6.1.18")
 

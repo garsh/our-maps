@@ -84,9 +84,16 @@ io.on('connection', (socket) => {
         console.log(`[SOCKET] User ${socket.id} joined map:${mapId}`);
     });
     socket.on('map-updated', (data) => {
+        // Sanitize and validate before broadcasting
+        const safePayload = {
+            mapId: data.mapId,
+            name: data.name || 'Unnamed Map',
+            pins: Array.isArray(data.pins) ? data.pins : [],
+            groups: Array.isArray(data.groups) ? data.groups : []
+        };
         // Broadcast update to everyone else in the map room
-        socket.to(`map:${data.mapId}`).emit('map-remote-updated', data);
-        console.log(`[SOCKET] Map ${data.mapId} updated by ${socket.id}`);
+        socket.to(`map:${data.mapId}`).emit('map-remote-updated', safePayload);
+        console.log(`[SOCKET] Map ${data.mapId} updated by ${socket.id} (Pins: ${safePayload.pins.length})`);
     });
     socket.on('disconnect', () => {
         console.log('[SOCKET] User disconnected:', socket.id);

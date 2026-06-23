@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import MapView from './components/MapView'
@@ -14,11 +14,15 @@ import type { DragEndEvent } from '@dnd-kit/core'
 import { Loader2, Map as MapIcon } from 'lucide-react';
 import L from 'leaflet';
 import { reorderPins, reorderGroups } from './utils/reorderUtils';
+import { io, Socket } from 'socket.io-client';
+
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
 
 export function MapEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const socketRef = useRef<Socket | null>(null);
   
   const [pins, setPins] = useState<Pin[]>([])
   const [groups, setGroups] = useState<PinGroup[]>([])
@@ -40,10 +44,53 @@ export function MapEditor() {
   const [hoveredPinId, setHoveredPinId] = useState<string | null>(null);
   const [selectedNavIds, setSelectedNavIds] = useState<Set<string>>(new Set());
   const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string | null>>(new Set());
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string | null>>(new Set());
+  
   const [customColors, setCustomColors] = useState<string[]>(() => {
     const saved = localStorage.getItem('customColors');
     return saved ? JSON.parse(saved) : [];
   });
+
+  // Load persistent UI state when mapId changes
+  useEffect(() => {
+    if (mapId) {
+      const savedVisibility = localStorage.getItem(`ourmaps_visibility_${mapId}`);
+      if (savedVisibility) {
+        setHiddenGroupIds(new Set(JSON.parse(savedVisibility)));
+      } else {
+        setHiddenGroupIds(new Set());
+      }
+
+      const savedExpanded = localStorage.getItem(`ourmaps_expanded_${mapId}`);
+      if (savedExpanded) {
+        setExpandedGroupIds(new Set(JSON.parse(savedExpanded)));
+      } else {
+        // Default to all expanded
+        setExpandedGroupIds(new Set([...groups.map(g => g.id), null]));
+      }
+    }
+  }, [mapId]);
+
+  // Default expansion when groups load for the first time if not saved
+  useEffect(() => {
+    if (mapId && groups.length > 0 && !localStorage.getItem(`ourmaps_expanded_${mapId}`)) {
+        setExpandedGroupIds(new Set([...groups.map(g => g.id), null]));
+    }
+  }, [groups.length, mapId]);
+
+  // Persist visibility changes
+  useEffect(() => {
+    if (mapId) {
+      localStorage.setItem(`ourmaps_visibility_${mapId}`, JSON.stringify(Array.from(hiddenGroupIds)));
+    }
+  }, [hiddenGroupIds, mapId]);
+
+  // Persist expansion changes
+  useEffect(() => {
+    if (mapId) {
+      localStorage.setItem(`ourmaps_expanded_${mapId}`, JSON.stringify(Array.from(expandedGroupIds)));
+    }
+  }, [expandedGroupIds, mapId]);
 
   useEffect(() => {
     localStorage.setItem('customColors', JSON.stringify(customColors));
@@ -57,10 +104,44 @@ export function MapEditor() {
 
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const isRemoteUpdateRef = useRef(false);
 
   useEffect(() => {
     if (id && id !== 'new') {
       loadMap(id);
+
+      // Setup Socket
+      const socket = io(SOCKET_URL, {
+        path: '/socket.io',
+        transports: ['websocket', 'polling']
+      });
+      socketRef.current = socket;
+
+      socket.emit('join-map', id);
+
+      socket.on('map-remote-updated', (data: { pins: Pin[], groups: PinGroup[], name: string }) => {
+        if (!data || !data.pins || !data.groups) {
+          console.warn('[SOCKET] Received malformed remote update');
+          return;
+        }
+        
+        console.log('[SOCKET] Received remote update for pins:', data.pins.length);
+        isRemoteUpdateRef.current = true;
+        setPins(data.pins);
+        setGroups(data.groups);
+        setMapName(data.name || '');
+
+        // Use a timeout to reset the flag to ensure all batched state updates 
+        // and subsequent useEffects see the flag as true.
+        setTimeout(() => {
+            isRemoteUpdateRef.current = false;
+        }, 1000);
+      });
+
+      return () => {
+        socket.disconnect();
+        socketRef.current = null;
+      };
     } else {
       // New map defaults
       setMapId(null);
@@ -75,6 +156,11 @@ export function MapEditor() {
   // Auto-save logic
   useEffect(() => {
     if (userRole === 'view' || isMapLoading) return;
+    
+    if (isRemoteUpdateRef.current) {
+        return;
+    }
+
     // Don't auto-save empty new maps
     if (!mapId && pins.length === 0 && mapName === 'My Map') return;
     
@@ -120,6 +206,14 @@ export function MapEditor() {
       
       if (mapId) {
         await apiService.updateMap(mapId, mapName, groups, pins);
+        
+        // Notify others via socket
+        socketRef.current?.emit('map-updated', {
+            mapId,
+            pins,
+            groups,
+            name: mapName
+        });
       } else {
         const newId = crypto.randomUUID();
         await apiService.createMap({ 
@@ -457,6 +551,15 @@ export function MapEditor() {
             hiddenGroupIds={hiddenGroupIds}
             onToggleGroupVisibility={(id) => {
               setHiddenGroupIds(prev => {
+                const newSet = new Set(prev);
+                if (newSet.has(id)) newSet.delete(id);
+                else newSet.add(id);
+                return newSet;
+              });
+            }}
+            expandedGroupIds={expandedGroupIds}
+            onToggleExpand={(id) => {
+              setExpandedGroupIds(prev => {
                 const newSet = new Set(prev);
                 if (newSet.has(id)) newSet.delete(id);
                 else newSet.add(id);

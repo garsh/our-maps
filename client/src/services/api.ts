@@ -30,21 +30,43 @@ const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 
 };
 
 export const apiService = {
+  _logoutCallback: null as (() => void) | null,
+  
+  setLogoutCallback(callback: () => void) {
+    this._logoutCallback = callback;
+  },
+
   async getHello(): Promise<{ message: string }> {
     const res = await fetchWithRetry(`${API_BASE}/hello`, { headers: getHeaders() });
+    if (res.status === 401) this._logoutCallback?.();
     if (!res.ok) throw new Error('Failed to fetch hello message');
     return res.json();
   },
 
   async getMaps(): Promise<any[]> {
     const res = await fetchWithRetry(`${API_BASE}/maps`, { headers: getHeaders() });
-    if (!res.ok) throw new Error('Failed to fetch maps');
+    if (res.status === 401) {
+        const err = await res.json().catch(() => ({}));
+        console.error('[API] Unauthorized:', err.error);
+        this._logoutCallback?.();
+        throw new Error(err.error || 'Unauthorized: Please sign in again');
+    }
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
     return res.json();
   },
 
   async getMap(id: string): Promise<MapData> {
     const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, { headers: getHeaders() });
-    if (!res.ok) throw new Error('Failed to fetch map');
+    if (res.status === 401) {
+        const err = await res.json().catch(() => ({}));
+        console.error('[API] Unauthorized:', err.error);
+        this._logoutCallback?.();
+        throw new Error(err.error || 'Unauthorized: Please sign in again');
+    }
+    if (!res.ok) {
+        if (res.status === 404) throw new Error('Map not found');
+        throw new Error(`Server error: ${res.status}`);
+    }
     return res.json();
   },
 
@@ -56,6 +78,7 @@ export const apiService = {
         body: JSON.stringify(mapData),
       });
       if (!res.ok) {
+        if (res.status === 401) this._logoutCallback?.();
         const text = await res.text();
         console.error('API createMap failed:', text);
         throw new Error('Failed to create map');
@@ -74,6 +97,7 @@ export const apiService = {
       body: JSON.stringify({ name, groups, pins }),
     });
     if (!res.ok) {
+        if (res.status === 401) this._logoutCallback?.();
         const err = await res.json();
         throw new Error(err.error || 'Failed to update map');
     }
@@ -87,6 +111,7 @@ export const apiService = {
       body: JSON.stringify({ email, role }),
     });
     if (!res.ok) {
+      if (res.status === 401) this._logoutCallback?.();
       const err = await res.json();
       throw new Error(err.error || 'Failed to share map');
     }
@@ -98,6 +123,7 @@ export const apiService = {
       method: 'DELETE',
       headers: getHeaders(),
     });
+    if (res.status === 401) this._logoutCallback?.();
     if (!res.ok) throw new Error('Failed to remove share');
     return res.json();
   },
@@ -107,6 +133,7 @@ export const apiService = {
       method: 'DELETE',
       headers: getHeaders(),
     });
+    if (res.status === 401) this._logoutCallback?.();
     if (!res.ok) throw new Error('Failed to delete map');
     return res.json();
   }

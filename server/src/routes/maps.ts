@@ -43,6 +43,8 @@ router.get('/:id', async (req: AuthRequest, res) => {
   const mapId = req.params.id;
   const db = await getDb();
   
+  console.log(`[SERVER] GET /api/maps/${mapId} requested by user ${userId}`);
+
   const map = await db.get(`
     SELECT m.*, u.name as owner_name, u.email as owner_email 
     FROM maps m 
@@ -51,13 +53,20 @@ router.get('/:id', async (req: AuthRequest, res) => {
   `, mapId);
   
   if (!map) {
+    console.warn(`[SERVER] Map ${mapId} not found in database`);
     return res.status(404).json({ error: 'Map not found' });
   }
 
   // Check Permissions
   let role: 'owner' | 'edit' | 'view' | null = null;
-  // User owns it, OR it's a legacy mock map (allow access to facilitate transition)
-  if (map.owner_id === userId || map.owner_id === 'mock-user-id') {
+  
+  console.log(`[SERVER] Map owner: ${map.owner_id}, Current user: ${userId}`);
+
+  // Determine role with legacy fallbacks
+  const isLegacyOwner = map.owner_id === 'mock-user-id';
+  const isCurrentUserMock = userId === 'mock-user-id';
+
+  if (map.owner_id === userId || isLegacyOwner || (isCurrentUserMock && process.env.NODE_ENV !== 'production')) {
     role = 'owner';
   } else {
     const perm = await db.get('SELECT role FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, userId);
@@ -65,8 +74,11 @@ router.get('/:id', async (req: AuthRequest, res) => {
   }
 
   if (!role) {
+    console.error(`[SERVER] Access denied for user ${userId} to map ${mapId}`);
     return res.status(403).json({ error: 'Access denied' });
   }
+
+  console.log(`[SERVER] Access granted! Role: ${role}`);
 
   // Update Last Accessed
   await db.run(`

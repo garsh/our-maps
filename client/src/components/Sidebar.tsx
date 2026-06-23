@@ -100,6 +100,8 @@ interface SidebarProps {
   onToggleNavIds?: (ids: string[], force?: boolean) => void;
   hiddenGroupIds?: Set<string | null>;
   onToggleGroupVisibility?: (id: string | null) => void;
+  expandedGroupIds?: Set<string | null>;
+  onToggleExpand?: (id: string | null) => void;
 }
 
 const COLORS = [
@@ -477,6 +479,8 @@ const SortableGroup = ({
   allGroups,
   isHidden,
   onToggleVisibility,
+  isExpanded,
+  onToggleExpand,
   isAnySelectedDragging
 }: { 
   group: PinGroup,
@@ -499,9 +503,10 @@ const SortableGroup = ({
   allGroups: PinGroup[],
   isHidden: boolean,
   onToggleVisibility: () => void,
+  isExpanded: boolean,
+  onToggleExpand: () => void,
   isAnySelectedDragging: boolean
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
   const [isEditingName, setIsEditingName] = useState(false);
 
   const {
@@ -569,7 +574,7 @@ const SortableGroup = ({
         >
           {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
         </button>
-        <div onClick={() => setIsExpanded(!isExpanded)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
+        <div onClick={() => onToggleExpand()} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
           <div style={{ color: 'var(--primary-color)', marginRight: '1px', display: 'flex' }}>
             {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
           </div>
@@ -675,7 +680,9 @@ const Sidebar = ({
   onToggleNavId,
   onToggleNavIds,
   hiddenGroupIds,
-  onToggleGroupVisibility
+  onToggleGroupVisibility,
+  expandedGroupIds,
+  onToggleExpand
 }: SidebarProps) => {
   const [localMapName, setLocalMapName] = useState(mapName);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -1076,6 +1083,8 @@ const Sidebar = ({
                 allGroups={groups}
                 isHidden={!!hiddenGroupIds?.has(group.id)}
                 onToggleVisibility={() => onToggleGroupVisibility?.(group.id)}
+                isExpanded={!!expandedGroupIds?.has(group.id)}
+                onToggleExpand={() => onToggleExpand?.(group.id)}
                 isAnySelectedDragging={isAnySelectedDragging}
               />
             ))}
@@ -1096,9 +1105,14 @@ const Sidebar = ({
                 alignItems: 'center', 
                 justifyContent: 'space-between'
               }}>
-              <h4 style={{ fontSize: '0.55rem', color: '#aaa', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '0.1em', margin: 0 }}>
-                Default Layer
-              </h4>
+              <div onClick={() => onToggleExpand?.(null)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
+                <div style={{ color: 'var(--primary-color)', marginRight: '1px', display: 'flex' }}>
+                    {expandedGroupIds?.has(null) ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                </div>
+                <h4 style={{ fontSize: '0.55rem', color: '#aaa', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '0.1em', margin: 0 }}>
+                    Default Layer
+                </h4>
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                 <button 
                   onClick={(e) => { e.stopPropagation(); onToggleGroupVisibility?.(null); }}
@@ -1122,38 +1136,40 @@ const Sidebar = ({
                 )}
               </div>
             </div>
-            <SortableContext items={defaultPins.map(p => p.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0, minHeight: '10px' }}>
-                {defaultPins.map((pin) => (
-                  <SortablePin 
-                    key={pin.id} 
-                    pin={pin} 
-                    onPinClick={onPinClick}
-                    onRemovePin={onRemovePin}
-                    onUpdatePin={onUpdatePin}
-                    editingPinId={editingPinId}
-                    setEditingPinId={onSetEditingPinId}
-                    readOnly={readOnly}
-                    hoveredPinId={hoveredPinId}
-                    onHoverPin={onHoverPin}
-                    customColors={customColors}
-                    onAddCustomColor={onAddCustomColor}
-                    isSelected={selectedNavIds?.has(pin.id)}
-                    onToggleSelect={onToggleNavId}
-                    allGroups={groups}
-                    isAnySelectedDragging={isAnySelectedDragging}
-                  />
-                ))}
-                {defaultPins.length === 0 && groups.length === 0 && (
-                  <li style={{ padding: '1rem 0.5rem', color: '#bbb', textAlign: 'center', fontSize: '0.65rem' }}>
-                    <div style={{ background: 'var(--bg-color)', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.5rem auto' }}>
-                      <MapPin size={16} />
-                    </div>
-                    {readOnly ? 'No pins available.' : 'Right-click the map or use the search bar above to start adding pins!'}
-                  </li>
-                )}
-              </ul>
-            </SortableContext>
+            {expandedGroupIds?.has(null) && (
+              <SortableContext items={defaultPins.map(p => p.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, minHeight: '10px' }}>
+                  {defaultPins.map((pin) => (
+                    <SortablePin 
+                      key={pin.id} 
+                      pin={pin} 
+                      onPinClick={onPinClick}
+                      onRemovePin={onRemovePin}
+                      onUpdatePin={onUpdatePin}
+                      editingPinId={editingPinId}
+                      setEditingPinId={onSetEditingPinId}
+                      readOnly={readOnly}
+                      hoveredPinId={hoveredPinId}
+                      onHoverPin={onHoverPin}
+                      customColors={customColors}
+                      onAddCustomColor={onAddCustomColor}
+                      isSelected={selectedNavIds?.has(pin.id)}
+                      onToggleSelect={onToggleNavId}
+                      allGroups={groups}
+                      isAnySelectedDragging={isAnySelectedDragging}
+                    />
+                  ))}
+                  {defaultPins.length === 0 && groups.length === 0 && (
+                    <li style={{ padding: '1rem 0.5rem', color: '#bbb', textAlign: 'center', fontSize: '0.65rem' }}>
+                      <div style={{ background: 'var(--bg-color)', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.5rem auto' }}>
+                        <MapPin size={16} />
+                      </div>
+                      {readOnly ? 'No pins available.' : 'Right-click the map or use the search bar above to start adding pins!'}
+                    </li>
+                  )}
+                </ul>
+              </SortableContext>
+            )}
           </div>
         </div>
 

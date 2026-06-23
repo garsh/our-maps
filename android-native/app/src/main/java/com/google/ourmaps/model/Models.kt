@@ -1,5 +1,7 @@
 package com.google.ourmaps.model
 
+import com.google.gson.annotations.SerializedName
+
 data class User(
     val id: String,
     val email: String,
@@ -8,23 +10,23 @@ data class User(
 )
 
 data class Pin(
-    val id: String,
-    val lat: Double,
-    val lng: Double,
-    val label: String?,
-    val description: String?,
-    val address: String?,
-    val imageUrl: String?,
-    val color: String?,
-    val icon: String?,
-    val groupId: String?,
-    val position: Int
+    @SerializedName("id") val id: String,
+    @SerializedName("lat") val lat: Double,
+    @SerializedName("lng") val lng: Double,
+    @SerializedName("label") val label: String? = null,
+    @SerializedName("description") val description: String? = null,
+    @SerializedName("address") val address: String? = null,
+    @SerializedName("imageUrl") val imageUrl: String? = null,
+    @SerializedName("color") val color: String? = "blue",
+    @SerializedName("icon") val icon: String? = "default",
+    @SerializedName("groupId") val groupId: String? = null,
+    @SerializedName("position") val position: Int = 0
 )
 
 data class PinGroup(
-    val id: String,
-    val name: String,
-    val position: Int
+    @SerializedName("id") val id: String,
+    @SerializedName("name") val name: String,
+    @SerializedName("position") val position: Int = 0
 )
 
 data class MapPermission(

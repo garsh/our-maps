@@ -139,6 +139,7 @@ fun App(authViewModel: AuthViewModel = viewModel(), factory: OurMapsViewModelFac
             }
             composable("mapDetail/{mapId}") { backStackEntry ->
                 val mapId = backStackEntry.arguments?.getString("mapId") ?: return@composable
+                android.util.Log.d("OURMAPS_DEBUG", "MainActivity: Navigating to mapDetail/$mapId")
                 val mapDetailViewModel: MapDetailViewModel = viewModel(factory = factory)
                 MapDetailScreen(
                     mapId = mapId,

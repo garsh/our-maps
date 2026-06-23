@@ -38,7 +38,7 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500,
   // Local fuzzy search results
   const localResults = useMemo((): SearchResult[] => {
     if (!query.trim()) return [];
-    return fuse.search(query).map(result => ({
+    return fuse.search(query).slice(0, 5).map(result => ({
       place_id: `local-${result.item.id}`,
       display_name: result.item.label || 'Unnamed Pin',
       lat: result.item.lat.toString(),
@@ -134,8 +134,7 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500,
           borderRadius: 'var(--radius-md)',
           boxShadow: 'var(--shadow-lg)',
           zIndex: 1500,
-          marginTop: '8px',
-          overflow: 'hidden'
+          marginTop: '8px'
         }}>
           {/* Local Results */}
           {localResults.length > 0 && (

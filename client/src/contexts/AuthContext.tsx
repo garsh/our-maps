@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { googleLogout } from '@react-oauth/google';
 import type { User } from '@shared/interfaces';
+import { apiService } from '../services/api';
 
 interface AuthContextType {
   user: User | null;
@@ -33,6 +34,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const logout = () => {
+    googleLogout();
+    setToken(null);
+    setUser(null);
+    localStorage.removeItem('token');
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    apiService.setLogoutCallback(logout);
+  }, []);
+
   const handleCredentialResponse = (credential: string) => {
     setIsLoading(true);
     setToken(credential);
@@ -50,73 +63,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(false);
   };
 
-  // Mock login for dev/test
-  const mockLogin = () => {
-    const mockUser = {
-      id: 'mock-user-id',
-      email: 'mock@example.com',
-      name: 'Mock User',
-      picture: ''
-    };
-    const json = JSON.stringify(mockUser);
-    const mockToken = btoa(unescape(encodeURIComponent(json))); 
-    setToken(mockToken);
-    localStorage.setItem('token', mockToken);
-    setUser(mockUser);
-    setIsLoading(false);
-  };
-
-  const logout = () => {
-    googleLogout();
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem('token');
-    setIsLoading(false);
-  };
   useEffect(() => {
-    if (token) {
-      // Try decoding as ID Token first (it has dots)
-      if (token.includes('.')) {
-        const payload = decodeJwt(token);
-        if (payload && payload.exp * 1000 > Date.now()) {
-          setUser({
-            id: payload.sub,
-            email: payload.email,
-            name: payload.name || payload.email,
-            picture: payload.picture,
-          });
-        } else {
-          // Token expired or invalid
-          logout();
-        }
-      } else {
-        // Fallback to mock token
-        try {
-          const decoded = decodeURIComponent(escape(atob(token)));
-          const user = JSON.parse(decoded);
-          if (user.id && user.email) {
-            setUser(user);
+    const checkToken = () => {
+      if (token) {
+        if (token.includes('.')) {
+          const payload = decodeJwt(token);
+          if (payload) {
+            const isExpired = payload.exp * 1000 < Date.now();
+            if (isExpired) {
+              console.warn('[AUTH] Token expired, logging out');
+              logout();
+              return;
+            }
+            
+            setUser({
+              id: payload.sub,
+              email: payload.email,
+              name: payload.name || payload.email,
+              picture: payload.picture,
+            });
+          } else {
+            logout();
           }
-        } catch (e) {
-          logout();
+        } else {
+          // Fallback to mock token
+          try {
+            const decoded = decodeURIComponent(escape(atob(token)));
+            const user = JSON.parse(decoded);
+            if (user.id && user.email) {
+              setUser(user);
+            }
+          } catch (e) {
+            logout();
+          }
         }
       }
       setIsLoading(false);
-    } else {
-      setIsLoading(false);
-    }
+    };
+
+    checkToken();
+    
+    // Periodically check for token expiration (every minute)
+    const interval = setInterval(checkToken, 60000);
+    return () => clearInterval(interval);
   }, [token]);
 
-  const handleLogin = () => {
-    // This is now just a fallback if GoogleLogin component isn't used
-    mockLogin();
+  const mockLogin = () => {
+    if (import.meta.env.VITE_MOCK_AUTH === 'true' || !import.meta.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID === 'MOCK_CLIENT_ID') {
+        const mockUser = {
+            id: 'mock-user-id',
+            email: 'mock@example.com',
+            name: 'Mock User',
+            picture: ''
+        };
+        const json = JSON.stringify(mockUser);
+        const mockToken = btoa(unescape(encodeURIComponent(json))); 
+        setToken(mockToken);
+        localStorage.setItem('token', mockToken);
+        setUser(mockUser);
+    }
   };
 
   return (
     <AuthContext.Provider value={{ 
       user, 
       token, 
-      login: handleLogin, 
+      login: mockLogin, 
       logout, 
       isAuthenticated: !!user, 
       isLoading,
