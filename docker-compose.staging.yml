@@ -1,0 +1,26 @@
+# Staging Environment for Our Maps
+# Run with: docker-compose -f docker-compose.staging.yml up --build -d
+
+services:
+  our-maps-staging:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+    image: our-maps:staging
+    container_name: our-maps-staging
+    ports:
+      - "3005:3000" # Runs on port 3005 to avoid conflict with production (3000)
+    volumes:
+      - our_maps_staging_data:/data
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_PATH=${STAGING_DB_PATH:-/data/database.staging.sqlite}
+      - CORS_ORIGIN=${STAGING_CORS_ORIGIN:-*} 
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+
+volumes:
+  our_maps_staging_data:
