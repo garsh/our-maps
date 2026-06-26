@@ -69,8 +69,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const payload = decodeJwt(token);
           if (payload) {
             const isExpired = payload.exp * 1000 < Date.now();
-            if (isExpired) {
-              console.warn('[AUTH] Token expired, logging out');
+            const isGoogleToken = payload.iss === 'https://accounts.google.com' || payload.iss === 'accounts.google.com';
+            if (isExpired || isGoogleToken) {
+              console.warn(isGoogleToken ? '[AUTH] Google ID token detected, logging out' : '[AUTH] Token expired, logging out');
               logout();
               return;
             }
