@@ -24,6 +24,8 @@ describe('Sidebar', () => {
       onDragEnd: vi.fn(),
       onShare: vi.fn(),
       onImport: vi.fn(),
+      expandedGroupIds: new Set<string | null>([null]),
+      onToggleExpand: vi.fn(),
       ...handlers
     };
 

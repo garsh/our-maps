@@ -1,7 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { OAuth2Client } from 'google-auth-library';
+import jwt from 'jsonwebtoken';
 import { getDb } from './db';
 import type { User } from '@shared/interfaces';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'our-maps-dev-secret-key-30-days';
 
 // Helper to get clean Client ID
 const getGoogleClientId = () => {
@@ -16,10 +19,59 @@ export interface AuthRequest extends Request {
   user?: User;
 }
 
+export async function googleLoginHandler(req: Request, res: Response) {
+  const { credential } = req.body;
+  if (!credential) {
+    return res.status(400).json({ error: 'Credential is required' });
+  }
+
+  const googleClientId = getGoogleClientId();
+  if (!googleClientId) {
+    return res.status(500).json({ error: 'Server not configured for Google Auth' });
+  }
+
+  try {
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: googleClientId,
+    });
+    
+    const payload = ticket.getPayload();
+    if (!payload || !payload.sub || !payload.email) {
+      return res.status(401).json({ error: 'Invalid token payload' });
+    }
+
+    const user: User = {
+      id: payload.sub,
+      email: payload.email,
+      name: payload.name || payload.email,
+      picture: payload.picture
+    };
+
+    await ensureUserExists(user);
+
+    // Sign a custom JWT valid for 30 days
+    const token = jwt.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        name: user.name,
+        picture: user.picture,
+      },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    return res.json({ token, user });
+  } catch (e: any) {
+    console.error('[AUTH] Google login failed:', e);
+    return res.status(401).json({ error: `Authentication failed: ${e.message}` });
+  }
+}
+
 export async function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   const mockUserHeader = req.headers['x-mock-user'];
-  const googleClientId = getGoogleClientId();
   
   // SUPPORT MOCK USER FOR DEVELOPMENT
   if (process.env.NODE_ENV !== 'production' && mockUserHeader) {
@@ -53,59 +105,47 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
       }
     }
 
-    // If GOOGLE_CLIENT_ID is set, we MUST verify the token via Google
-    if (googleClientId) {
-      try {
-        const ticket = await client.verifyIdToken({
-          idToken: token,
-          audience: googleClientId,
-        });
-        
-        const payload = ticket.getPayload();
-        if (!payload || !payload.sub || !payload.email) {
-          return res.status(401).json({ error: 'Invalid token payload' });
-        }
-
-        const user: User = {
-          id: payload.sub,
-          email: payload.email,
-          name: payload.name || payload.email,
-          picture: payload.picture
-        };
-
-        req.user = user;
-        await ensureUserExists(user);
-        return next();
-      } catch (e: any) {
-        return res.status(401).json({ error: `Authentication failed: ${e.message}` });
-      }
-    }
-
-    // Fallback to SIMULATED OAUTH if no Client ID is set (DEV ONLY)
-    if (process.env.NODE_ENV === 'production') {
-      return res.status(401).json({ error: 'Authentication required: Server configuration error' });
-    }
-
+    // Verify custom JWT
     try {
-      let user;
-      if (token.includes('.')) {
-         // It's likely a JWT. Extract the payload (2nd part).
-         const payload = token.split('.')[1];
-         const decoded = Buffer.from(payload, 'base64').toString('utf8');
-         user = JSON.parse(decoded);
-         // Map JWT sub to id if needed
-         if (!user.id && user.sub) user.id = user.sub;
-      } else {
-         // It's a simple base64 mock token
-         const decoded = Buffer.from(token, 'base64').toString('utf8');
-         user = JSON.parse(decoded);
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      if (!decoded || !decoded.sub || !decoded.email) {
+        return res.status(401).json({ error: 'Invalid token payload' });
       }
-      
+
+      const user: User = {
+        id: decoded.sub,
+        email: decoded.email,
+        name: decoded.name || decoded.email,
+        picture: decoded.picture
+      };
+
       req.user = user;
       await ensureUserExists(user);
       return next();
-    } catch (e) {
-      res.status(401).json({ error: 'Invalid mock token or missing GOOGLE_CLIENT_ID on server' });
+    } catch (jwtErr: any) {
+      // Fallback for development if signature verification failed
+      if (process.env.NODE_ENV === 'production') {
+        return res.status(401).json({ error: `Authentication failed: ${jwtErr.message}` });
+      }
+
+      try {
+        let user;
+        if (token.includes('.')) {
+           const payload = token.split('.')[1];
+           const decoded = Buffer.from(payload, 'base64').toString('utf8');
+           user = JSON.parse(decoded);
+           if (!user.id && user.sub) user.id = user.sub;
+        } else {
+           const decoded = Buffer.from(token, 'base64').toString('utf8');
+           user = JSON.parse(decoded);
+        }
+        
+        req.user = user;
+        await ensureUserExists(user);
+        return next();
+      } catch (e) {
+        return res.status(401).json({ error: 'Invalid token' });
+      }
     }
   } catch (error) {
     res.status(401).json({ error: 'Authentication failed' });

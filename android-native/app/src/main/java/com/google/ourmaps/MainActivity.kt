@@ -93,7 +93,7 @@ fun App(authViewModel: AuthViewModel = viewModel(), factory: OurMapsViewModelFac
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-        authViewModel.handleSignInResult(task)
+        authViewModel.handleSignInResult(task, repository)
     }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -109,7 +109,7 @@ fun App(authViewModel: AuthViewModel = viewModel(), factory: OurMapsViewModelFac
             authViewModel.logout(context, googleSignInClient)
         }
         
-        authViewModel.checkExistingLogin(context)
+        authViewModel.checkExistingLogin(context, repository)
         
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)

@@ -15,6 +15,7 @@ const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
 const db_1 = require("./db");
 const maps_1 = __importDefault(require("./routes/maps"));
+const auth_1 = require("./auth");
 const app = (0, express_1.default)();
 exports.app = app;
 const server = http_1.default.createServer(app);
@@ -72,6 +73,7 @@ app.use((0, cors_1.default)({
 // Data limits: allow large map JSON but prevent massive payloads
 app.use(express_1.default.json({ limit: '10mb' }));
 // API Routes
+app.post('/api/auth/google-login', auth_1.googleLoginHandler);
 app.use('/api/maps', maps_1.default);
 app.get('/api/hello', (req, res) => {
     res.json({ message: 'Hello from Our Maps Server!' });

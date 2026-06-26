@@ -36,6 +36,21 @@ export const apiService = {
     this._logoutCallback = callback;
   },
 
+  async loginWithGoogle(credential: string): Promise<{ token: string; user: any }> {
+    const res = await fetch(`${API_BASE}/auth/google-login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ credential }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Google login failed on server');
+    }
+    return res.json();
+  },
+
   async getHello(): Promise<{ message: string }> {
     const res = await fetchWithRetry(`${API_BASE}/hello`, { headers: getHeaders() });
     if (res.status === 401) this._logoutCallback?.();

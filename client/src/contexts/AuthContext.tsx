@@ -10,7 +10,7 @@ interface AuthContextType {
   logout: () => void;
   isAuthenticated: boolean;
   isLoading: boolean;
-  handleCredentialResponse: (credential: string) => void;
+  handleCredentialResponse: (credential: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -46,21 +46,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     apiService.setLogoutCallback(logout);
   }, []);
 
-  const handleCredentialResponse = (credential: string) => {
+  const handleCredentialResponse = async (credential: string) => {
     setIsLoading(true);
-    setToken(credential);
-    localStorage.setItem('token', credential);
-
-    const payload = decodeJwt(credential);
-    if (payload) {
-      setUser({
-        id: payload.sub,
-        email: payload.email,
-        name: payload.name || payload.email,
-        picture: payload.picture,
-      });
+    try {
+      const data = await apiService.loginWithGoogle(credential);
+      setToken(data.token);
+      localStorage.setItem('token', data.token);
+      setUser(data.user);
+    } catch (err) {
+      console.error('[AUTH] Login with custom JWT failed:', err);
+      logout();
+      throw err;
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   useEffect(() => {

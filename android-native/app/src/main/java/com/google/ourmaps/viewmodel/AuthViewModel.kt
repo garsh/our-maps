@@ -22,21 +22,67 @@ class AuthViewModel : ViewModel() {
     val user: StateFlow<User?> = _user.asStateFlow()
     private val gson = Gson()
 
-    fun checkExistingLogin(context: Context) {
+    fun checkExistingLogin(context: Context, repository: MapRepository) {
+        val prefs = context.getSharedPreferences("our_maps_auth", Context.MODE_PRIVATE)
+        val savedToken = prefs.getString("custom_jwt", null)
+        val savedUserJson = prefs.getString("user_json", null)
+        
+        if (savedToken != null && savedUserJson != null) {
+            try {
+                val savedUser = gson.fromJson(savedUserJson, User::class.java)
+                _user.value = savedUser
+                MapRepository.idToken = savedToken
+                MapRepository.userJson = savedUserJson
+                return
+            } catch (e: Exception) {
+                // Parse failed, fall through to Google Sign In
+            }
+        }
+        
         val account = GoogleSignIn.getLastSignedInAccount(context)
         if (account != null) {
-            updateUser(account)
+            val googleIdToken = account.idToken
+            if (googleIdToken != null) {
+                viewModelScope.launch {
+                    val result = repository.googleLogin(googleIdToken)
+                    if (result.isSuccess) {
+                        val response = result.getOrNull()
+                        if (response != null) {
+                            _user.value = response.user
+                        }
+                    } else {
+                        updateUser(account)
+                    }
+                }
+            } else {
+                updateUser(account)
+            }
         }
     }
 
-    fun handleSignInResult(task: Task<GoogleSignInAccount>) {
+    fun handleSignInResult(task: Task<GoogleSignInAccount>, repository: MapRepository) {
         try {
             val account = task.getResult(ApiException::class.java)
-            updateUser(account)
+            val googleIdToken = account.idToken
+            if (googleIdToken != null) {
+                viewModelScope.launch {
+                    val result = repository.googleLogin(googleIdToken)
+                    if (result.isSuccess) {
+                        val response = result.getOrNull()
+                        if (response != null) {
+                            _user.value = response.user
+                        }
+                    } else {
+                        updateUser(account)
+                    }
+                }
+            } else {
+                updateUser(account)
+            }
         } catch (e: ApiException) {
-            // Handle error
             _user.value = null
             MapRepository.userJson = null
+            MapRepository.idToken = null
         }
     }
 
@@ -56,6 +102,9 @@ class AuthViewModel : ViewModel() {
         client.signOut().addOnCompleteListener {
             _user.value = null
             MapRepository.userJson = null
+            MapRepository.idToken = null
+            val prefs = context.getSharedPreferences("our_maps_auth", Context.MODE_PRIVATE)
+            prefs.edit().clear().apply()
         }
     }
 

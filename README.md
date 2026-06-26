@@ -28,6 +28,12 @@ Unit tests for the ViewModels and Repositories are included. You can run them vi
 ./gradlew test
 ```
 
+## Authentication
+Our Maps uses Google OAuth on the client and exchanges the Google ID credential for a custom JSON Web Token (JWT) signed by the server. This custom token is valid for 30 days (compared to the 1-hour Google ID token expiration limit), allowing users to stay signed in for a month.
+
+To configure this:
+- **`JWT_SECRET`**: You can set this environment variable in the server's `.env` configuration file to sign the custom tokens. If not specified, a default development secret is used.
+
 ## Self-Hosting
 
 You can easily self-host Our Maps using Docker and Docker Compose. This packages both the client and server into a single container and sets up a persistent volume for your SQLite database.

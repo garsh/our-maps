@@ -188,4 +188,13 @@ class MapRepository(private val context: Context) {
             Result.failure(e)
         }
     }
+
+    suspend fun googleLogin(googleIdToken: String): Result<com.google.ourmaps.model.GoogleLoginResponse> {
+        return try {
+            val response = api.googleLogin(com.google.ourmaps.model.GoogleLoginRequest(googleIdToken))
+            Result.success(response)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

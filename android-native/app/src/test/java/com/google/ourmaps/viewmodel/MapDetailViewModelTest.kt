@@ -41,6 +41,7 @@ class MapDetailViewModelTest {
         MockitoAnnotations.openMocks(this)
         `when`(context.getSharedPreferences(anyString(), anyInt())).thenReturn(sharedPreferences)
         `when`(sharedPreferences.getStringSet(anyString(), anySet())).thenReturn(emptySet())
+        `when`(context.getString(anyInt())).thenReturn("http://localhost/api/")
         Dispatchers.setMain(testDispatcher)
         viewModel = MapDetailViewModel(repository, context)
     }

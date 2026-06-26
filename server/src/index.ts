@@ -9,6 +9,7 @@ import http from 'http';
 import { Server, Socket } from 'socket.io';
 import { getDb } from './db';
 import mapsRouter from './routes/maps';
+import { googleLoginHandler } from './auth';
 
 const app = express();
 const server = http.createServer(app);
@@ -71,6 +72,7 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 
 // API Routes
+app.post('/api/auth/google-login', googleLoginHandler);
 app.use('/api/maps', mapsRouter);
 
 app.get('/api/hello', (req, res) => {

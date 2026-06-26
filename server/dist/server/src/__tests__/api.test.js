@@ -38,6 +38,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const vitest_1 = require("vitest");
 const supertest_1 = __importDefault(require("supertest"));
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const index_1 = require("../index");
 const db_1 = require("../db");
 const fs = __importStar(require("fs"));
@@ -158,5 +159,35 @@ const testDbName = '../test-database.sqlite';
         (0, vitest_1.expect)(pins).toHaveLength(1);
         (0, vitest_1.expect)(pins[0].id).toBe('new-pin');
         (0, vitest_1.expect)(pins[0].group_id).toBe('g1');
+    });
+    (0, vitest_1.it)('POST /api/auth/google-login should return 400 if credential is missing', async () => {
+        const res = await (0, supertest_1.default)(index_1.app).post('/api/auth/google-login').send({});
+        (0, vitest_1.expect)(res.status).toBe(400);
+        (0, vitest_1.expect)(res.body.error).toBe('Credential is required');
+    });
+    (0, vitest_1.it)('Custom JWT should authorize request successfully', async () => {
+        const JWT_SECRET = process.env.JWT_SECRET || 'our-maps-dev-secret-key-30-days';
+        const testUserToken = jsonwebtoken_1.default.sign({
+            sub: 'jwt-test-user-id',
+            email: 'jwt-test@example.com',
+            name: 'JWT Test User',
+            picture: 'http://picture.com'
+        }, JWT_SECRET, { expiresIn: '30d' });
+        // Let's create a map to verify it can read/write maps
+        const mapId = 'jwt-map-id';
+        const mapData = {
+            id: mapId,
+            name: 'JWT Map',
+            groups: [],
+            pins: []
+        };
+        // Make request using Bearer token
+        const res = await (0, supertest_1.default)(index_1.app)
+            .post('/api/maps')
+            .set('Authorization', `Bearer ${testUserToken}`)
+            .send(mapData);
+        (0, vitest_1.expect)(res.status).toBe(201);
+        (0, vitest_1.expect)(res.body.id).toBe(mapId);
+        (0, vitest_1.expect)(res.body.ownerId).toBe('jwt-test-user-id');
     });
 });

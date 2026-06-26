@@ -48,3 +48,12 @@ data class MapData(
     val permissions: List<MapPermission>?, // List of all users with access
     val lastAccessedAt: String?
 )
+
+data class GoogleLoginRequest(
+    val credential: String
+)
+
+data class GoogleLoginResponse(
+    val token: String,
+    val user: User
+)

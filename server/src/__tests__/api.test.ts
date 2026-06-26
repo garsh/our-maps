@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
+import jwt from 'jsonwebtoken';
 import { app } from '../index';
 import { getDb, setDbName, closeDb } from '../db';
 import * as fs from 'fs';
@@ -145,5 +146,44 @@ describe('API Endpoints', () => {
     expect(pins).toHaveLength(1);
     expect(pins[0].id).toBe('new-pin');
     expect(pins[0].group_id).toBe('g1');
+  });
+
+  it('POST /api/auth/google-login should return 400 if credential is missing', async () => {
+    const res = await request(app).post('/api/auth/google-login').send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Credential is required');
+  });
+
+  it('Custom JWT should authorize request successfully', async () => {
+    const JWT_SECRET = process.env.JWT_SECRET || 'our-maps-dev-secret-key-30-days';
+    const testUserToken = jwt.sign(
+      {
+        sub: 'jwt-test-user-id',
+        email: 'jwt-test@example.com',
+        name: 'JWT Test User',
+        picture: 'http://picture.com'
+      },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    // Let's create a map to verify it can read/write maps
+    const mapId = 'jwt-map-id';
+    const mapData = {
+      id: mapId,
+      name: 'JWT Map',
+      groups: [],
+      pins: []
+    };
+
+    // Make request using Bearer token
+    const res = await request(app)
+      .post('/api/maps')
+      .set('Authorization', `Bearer ${testUserToken}`)
+      .send(mapData);
+
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBe(mapId);
+    expect(res.body.ownerId).toBe('jwt-test-user-id');
   });
 });

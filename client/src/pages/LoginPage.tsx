@@ -48,9 +48,13 @@ export default function LoginPage() {
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           {hasClientId && !forceMock ? (
             <GoogleLogin
-              onSuccess={credentialResponse => {
+              onSuccess={async (credentialResponse) => {
                 if (credentialResponse.credential) {
-                  handleCredentialResponse(credentialResponse.credential);
+                  try {
+                    await handleCredentialResponse(credentialResponse.credential);
+                  } catch (err: any) {
+                    setError(err.message || 'Login failed. Please try again.');
+                  }
                 }
               }}
               onError={() => {

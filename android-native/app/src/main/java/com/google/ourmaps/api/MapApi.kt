@@ -1,12 +1,14 @@
 package com.google.ourmaps.api
 
-import com.google.ourmaps.model.MapData
+import com.google.ourmaps.model.*
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
 
 interface MapApi {
+    @POST("auth/google-login")
+    suspend fun googleLogin(@Body request: GoogleLoginRequest): GoogleLoginResponse
     @GET("maps")
     suspend fun getMaps(): List<MapData>
 
