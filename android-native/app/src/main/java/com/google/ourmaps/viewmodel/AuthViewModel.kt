@@ -51,11 +51,15 @@ class AuthViewModel : ViewModel() {
                             _user.value = response.user
                         }
                     } else {
-                        updateUser(account)
+                        _user.value = null
+                        MapRepository.idToken = null
+                        MapRepository.userJson = null
                     }
                 }
             } else {
-                updateUser(account)
+                _user.value = null
+                MapRepository.idToken = null
+                MapRepository.userJson = null
             }
         }
     }
@@ -73,11 +77,15 @@ class AuthViewModel : ViewModel() {
                             _user.value = response.user
                         }
                     } else {
-                        updateUser(account)
+                        _user.value = null
+                        MapRepository.idToken = null
+                        MapRepository.userJson = null
                     }
                 }
             } else {
-                updateUser(account)
+                _user.value = null
+                MapRepository.idToken = null
+                MapRepository.userJson = null
             }
         } catch (e: ApiException) {
             _user.value = null
