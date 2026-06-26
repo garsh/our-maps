@@ -38,6 +38,15 @@ class MapRepository(private val context: Context) {
     }
 
     init {
+        // Load persisted token and user on initialization
+        val prefs = context.getSharedPreferences("our_maps_auth", Context.MODE_PRIVATE)
+        if (idToken == null) {
+            idToken = prefs.getString("custom_jwt", null)
+        }
+        if (userJson == null) {
+            userJson = prefs.getString("user_json", null)
+        }
+
         val authInterceptor = Interceptor { chain ->
             // Use the real Google ID Token if we have one
             val token = idToken ?: run {
@@ -57,6 +66,8 @@ class MapRepository(private val context: Context) {
             if (response.code == 401) {
                 idToken = null
                 userJson = null
+                val clearPrefs = context.getSharedPreferences("our_maps_auth", Context.MODE_PRIVATE)
+                clearPrefs.edit().clear().apply()
                 onUnauthorized?.invoke()
             }
             
@@ -192,6 +203,18 @@ class MapRepository(private val context: Context) {
     suspend fun googleLogin(googleIdToken: String): Result<com.google.ourmaps.model.GoogleLoginResponse> {
         return try {
             val response = api.googleLogin(com.google.ourmaps.model.GoogleLoginRequest(googleIdToken))
+            
+            // Save to shared preferences
+            val prefs = context.getSharedPreferences("our_maps_auth", Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                putString("custom_jwt", response.token)
+                putString("user_json", Gson().toJson(response.user))
+                apply()
+            }
+            
+            idToken = response.token
+            userJson = Gson().toJson(response.user)
+            
             Result.success(response)
         } catch (e: Exception) {
             Result.failure(e)
