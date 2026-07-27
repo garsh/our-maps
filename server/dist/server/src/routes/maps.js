@@ -1,6 +1,10 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
+const crypto_1 = __importDefault(require("crypto"));
 const db_1 = require("../db");
 const auth_1 = require("../auth");
 const schemas_1 = require("../schemas");
@@ -118,16 +122,46 @@ router.post('/', async (req, res) => {
         await db.run('BEGIN TRANSACTION');
         try {
             await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', id, name, userId);
+            const finalGroups = [];
+            const groupIdMap = new Map();
+            const processedGroupIds = new Set();
             if (groups && groups.length > 0) {
-                const groupStmt = await db.prepare('INSERT INTO pin_groups (id, map_id, name, position) VALUES (?, ?, ?, ?)');
                 for (const group of groups) {
+                    let groupId = group.id;
+                    const existingGroup = groupId ? await db.get('SELECT id FROM pin_groups WHERE id = ?', groupId) : null;
+                    if (!groupId || processedGroupIds.has(groupId) || existingGroup) {
+                        const newGroupId = crypto_1.default.randomUUID();
+                        if (groupId)
+                            groupIdMap.set(groupId, newGroupId);
+                        groupId = newGroupId;
+                    }
+                    processedGroupIds.add(groupId);
+                    finalGroups.push({ ...group, id: groupId });
+                }
+                const groupStmt = await db.prepare('INSERT INTO pin_groups (id, map_id, name, position) VALUES (?, ?, ?, ?)');
+                for (const group of finalGroups) {
                     await groupStmt.run(group.id, id, group.name, group.position);
                 }
                 await groupStmt.finalize();
             }
+            const finalPins = [];
             if (pins && pins.length > 0) {
-                const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                const processedPinIds = new Set();
                 for (const pin of pins) {
+                    let pinId = pin.id;
+                    const existingPin = pinId ? await db.get('SELECT id FROM pins WHERE id = ?', pinId) : null;
+                    if (!pinId || processedPinIds.has(pinId) || existingPin) {
+                        pinId = crypto_1.default.randomUUID();
+                    }
+                    processedPinIds.add(pinId);
+                    let targetGroupId = pin.groupId || null;
+                    if (targetGroupId && groupIdMap.has(targetGroupId)) {
+                        targetGroupId = groupIdMap.get(targetGroupId);
+                    }
+                    finalPins.push({ ...pin, id: pinId, groupId: targetGroupId || undefined });
+                }
+                const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                for (const pin of finalPins) {
                     await stmt.run(pin.id, id, pin.groupId || null, pin.lat, pin.lng, pin.label || null, pin.description || null, pin.address || null, pin.imageUrl || null, pin.color || 'blue', pin.icon || 'default', pin.position);
                 }
                 await stmt.finalize();
@@ -141,8 +175,8 @@ router.post('/', async (req, res) => {
             res.status(201).json({
                 id,
                 name,
-                groups: groups || [],
-                pins: pins || [],
+                groups: finalGroups,
+                pins: finalPins,
                 ownerId: userId,
                 userRole: 'owner'
             });
@@ -185,9 +219,24 @@ router.put('/:id', async (req, res) => {
             if (name) {
                 await db.run('UPDATE maps SET name = ? WHERE id = ?', name, mapId);
             }
+            const groupIdMap = new Map();
             // 1. Sync Groups: Upsert and Diff
             if (groups !== undefined) {
-                const providedGroupIds = groups.map(g => g.id);
+                const finalGroups = [];
+                const processedGroupIds = new Set();
+                for (const group of groups) {
+                    let groupId = group.id;
+                    const existingOtherGroup = groupId ? await db.get('SELECT map_id FROM pin_groups WHERE id = ? AND map_id != ?', groupId, mapId) : null;
+                    if (!groupId || processedGroupIds.has(groupId) || existingOtherGroup) {
+                        const newGroupId = crypto_1.default.randomUUID();
+                        if (groupId)
+                            groupIdMap.set(groupId, newGroupId);
+                        groupId = newGroupId;
+                    }
+                    processedGroupIds.add(groupId);
+                    finalGroups.push({ ...group, id: groupId });
+                }
+                const providedGroupIds = finalGroups.map(g => g.id);
                 // Remove groups not in provided list
                 if (providedGroupIds.length > 0) {
                     await db.run(`DELETE FROM pin_groups WHERE map_id = ? AND id NOT IN (${providedGroupIds.map(() => '?').join(',')})`, mapId, ...providedGroupIds);
@@ -200,17 +249,33 @@ router.put('/:id', async (req, res) => {
           INSERT INTO pin_groups (id, map_id, name, position) 
           VALUES (?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET 
+            map_id = excluded.map_id,
             name = excluded.name,
             position = excluded.position
         `);
-                for (const group of groups) {
+                for (const group of finalGroups) {
                     await groupStmt.run(group.id, mapId, group.name, group.position);
                 }
                 await groupStmt.finalize();
             }
             // 2. Sync Pins: Upsert and Diff
             if (pins !== undefined) {
-                const providedPinIds = pins.map(p => p.id);
+                const finalPins = [];
+                const processedPinIds = new Set();
+                for (const pin of pins) {
+                    let pinId = pin.id;
+                    const existingOtherPin = pinId ? await db.get('SELECT map_id FROM pins WHERE id = ? AND map_id != ?', pinId, mapId) : null;
+                    if (!pinId || processedPinIds.has(pinId) || existingOtherPin) {
+                        pinId = crypto_1.default.randomUUID();
+                    }
+                    processedPinIds.add(pinId);
+                    let targetGroupId = pin.groupId || null;
+                    if (targetGroupId && groupIdMap.has(targetGroupId)) {
+                        targetGroupId = groupIdMap.get(targetGroupId);
+                    }
+                    finalPins.push({ ...pin, id: pinId, groupId: targetGroupId || undefined });
+                }
+                const providedPinIds = finalPins.map(p => p.id);
                 // Remove pins not in provided list
                 if (providedPinIds.length > 0) {
                     await db.run(`DELETE FROM pins WHERE map_id = ? AND id NOT IN (${providedPinIds.map(() => '?').join(',')})`, mapId, ...providedPinIds);
@@ -223,6 +288,7 @@ router.put('/:id', async (req, res) => {
           INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) 
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET 
+            map_id = excluded.map_id,
             group_id = excluded.group_id,
             lat = excluded.lat,
             lng = excluded.lng,
@@ -234,7 +300,7 @@ router.put('/:id', async (req, res) => {
             icon = excluded.icon,
             position = excluded.position
         `);
-                for (const pin of pins) {
+                for (const pin of finalPins) {
                     await pinStmt.run(pin.id, mapId, pin.groupId || null, pin.lat, pin.lng, pin.label || null, pin.description || null, pin.address || null, pin.imageUrl || null, pin.color || 'blue', pin.icon || 'default', pin.position);
                 }
                 await pinStmt.finalize();

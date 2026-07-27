@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import { getDb } from '../db';
 import type { Pin, MapData, MapPermission, PinGroup } from '@shared/interfaces';
 import { authMiddleware, type AuthRequest } from '../auth';
@@ -140,17 +141,50 @@ router.post('/', async (req: AuthRequest, res) => {
     try {
       await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', id, name, userId);
       
+      const finalGroups: PinGroup[] = [];
+      const groupIdMap = new Map<string, string>();
+      const processedGroupIds = new Set<string>();
+
       if (groups && groups.length > 0) {
-        const groupStmt = await db.prepare('INSERT INTO pin_groups (id, map_id, name, position) VALUES (?, ?, ?, ?)');
         for (const group of groups) {
+          let groupId = group.id;
+          const existingGroup = groupId ? await db.get('SELECT id FROM pin_groups WHERE id = ?', groupId) : null;
+          if (!groupId || processedGroupIds.has(groupId) || existingGroup) {
+            const newGroupId = crypto.randomUUID();
+            if (groupId) groupIdMap.set(groupId, newGroupId);
+            groupId = newGroupId;
+          }
+          processedGroupIds.add(groupId);
+          finalGroups.push({ ...group, id: groupId });
+        }
+
+        const groupStmt = await db.prepare('INSERT INTO pin_groups (id, map_id, name, position) VALUES (?, ?, ?, ?)');
+        for (const group of finalGroups) {
           await groupStmt.run(group.id, id, group.name, group.position);
         }
         await groupStmt.finalize();
       }
 
+      const finalPins: Pin[] = [];
       if (pins && pins.length > 0) {
-        const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        const processedPinIds = new Set<string>();
         for (const pin of pins) {
+          let pinId = pin.id;
+          const existingPin = pinId ? await db.get('SELECT id FROM pins WHERE id = ?', pinId) : null;
+          if (!pinId || processedPinIds.has(pinId) || existingPin) {
+            pinId = crypto.randomUUID();
+          }
+          processedPinIds.add(pinId);
+
+          let targetGroupId = pin.groupId || null;
+          if (targetGroupId && groupIdMap.has(targetGroupId)) {
+            targetGroupId = groupIdMap.get(targetGroupId)!;
+          }
+          finalPins.push({ ...pin, id: pinId, groupId: targetGroupId || undefined } as Pin);
+        }
+
+        const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        for (const pin of finalPins) {
           await stmt.run(pin.id, id, pin.groupId || null, pin.lat, pin.lng, pin.label || null, pin.description || null, pin.address || null, pin.imageUrl || null, pin.color || 'blue', pin.icon || 'default', pin.position);
         }
         await stmt.finalize();
@@ -167,8 +201,8 @@ router.post('/', async (req: AuthRequest, res) => {
       res.status(201).json({ 
         id, 
         name, 
-        groups: groups || [], 
-        pins: pins || [],
+        groups: finalGroups, 
+        pins: finalPins,
         ownerId: userId,
         userRole: 'owner'
       });
@@ -215,9 +249,25 @@ router.put('/:id', async (req: AuthRequest, res) => {
         await db.run('UPDATE maps SET name = ? WHERE id = ?', name, mapId);
       }
 
+      const groupIdMap = new Map<string, string>();
       // 1. Sync Groups: Upsert and Diff
       if (groups !== undefined) {
-        const providedGroupIds = groups.map(g => g.id);
+        const finalGroups: PinGroup[] = [];
+        const processedGroupIds = new Set<string>();
+
+        for (const group of groups) {
+          let groupId = group.id;
+          const existingOtherGroup = groupId ? await db.get('SELECT map_id FROM pin_groups WHERE id = ? AND map_id != ?', groupId, mapId) : null;
+          if (!groupId || processedGroupIds.has(groupId) || existingOtherGroup) {
+            const newGroupId = crypto.randomUUID();
+            if (groupId) groupIdMap.set(groupId, newGroupId);
+            groupId = newGroupId;
+          }
+          processedGroupIds.add(groupId);
+          finalGroups.push({ ...group, id: groupId });
+        }
+
+        const providedGroupIds = finalGroups.map(g => g.id);
         
         // Remove groups not in provided list
         if (providedGroupIds.length > 0) {
@@ -231,10 +281,11 @@ router.put('/:id', async (req: AuthRequest, res) => {
           INSERT INTO pin_groups (id, map_id, name, position) 
           VALUES (?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET 
+            map_id = excluded.map_id,
             name = excluded.name,
             position = excluded.position
         `);
-        for (const group of groups) {
+        for (const group of finalGroups) {
           await groupStmt.run(group.id, mapId, group.name, group.position);
         }
         await groupStmt.finalize();
@@ -242,7 +293,25 @@ router.put('/:id', async (req: AuthRequest, res) => {
 
       // 2. Sync Pins: Upsert and Diff
       if (pins !== undefined) {
-        const providedPinIds = pins.map(p => p.id);
+        const finalPins: Pin[] = [];
+        const processedPinIds = new Set<string>();
+
+        for (const pin of pins) {
+          let pinId = pin.id;
+          const existingOtherPin = pinId ? await db.get('SELECT map_id FROM pins WHERE id = ? AND map_id != ?', pinId, mapId) : null;
+          if (!pinId || processedPinIds.has(pinId) || existingOtherPin) {
+            pinId = crypto.randomUUID();
+          }
+          processedPinIds.add(pinId);
+
+          let targetGroupId = pin.groupId || null;
+          if (targetGroupId && groupIdMap.has(targetGroupId)) {
+            targetGroupId = groupIdMap.get(targetGroupId)!;
+          }
+          finalPins.push({ ...pin, id: pinId, groupId: targetGroupId || undefined } as Pin);
+        }
+
+        const providedPinIds = finalPins.map(p => p.id);
 
         // Remove pins not in provided list
         if (providedPinIds.length > 0) {
@@ -256,6 +325,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
           INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) 
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET 
+            map_id = excluded.map_id,
             group_id = excluded.group_id,
             lat = excluded.lat,
             lng = excluded.lng,
@@ -267,7 +337,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
             icon = excluded.icon,
             position = excluded.position
         `);
-        for (const pin of pins) {
+        for (const pin of finalPins) {
           await pinStmt.run(
             pin.id, mapId, pin.groupId || null, pin.lat, pin.lng, pin.label || null, 
             pin.description || null, pin.address || null, pin.imageUrl || null, 

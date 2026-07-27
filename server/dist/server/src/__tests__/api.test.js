@@ -121,6 +121,29 @@ const testDbName = '../test-database.sqlite';
         (0, vitest_1.expect)(res.status).toBe(404);
         (0, vitest_1.expect)(res.body.error).toBe('Map not found');
     });
+    (0, vitest_1.it)('POST /api/maps should create a new map with groups and pins', async () => {
+        const mapId = 'create-map-with-groups-id';
+        const postData = {
+            id: mapId,
+            name: 'Map with Groups',
+            groups: [
+                { id: 'group-uuid-1', name: 'Group 1', position: 0 }
+            ],
+            pins: [
+                { id: 'pin-uuid-1', groupId: 'group-uuid-1', lat: 10, lng: 20, label: 'Pin 1', position: 0 }
+            ]
+        };
+        const res = await (0, supertest_1.default)(index_1.app)
+            .post('/api/maps')
+            .set(authHeader)
+            .send(postData);
+        (0, vitest_1.expect)(res.status).toBe(201);
+        (0, vitest_1.expect)(res.body.id).toBe(mapId);
+        const db = await (0, db_1.getDb)();
+        const groups = await db.all('SELECT * FROM pin_groups WHERE map_id = ?', mapId);
+        (0, vitest_1.expect)(groups).toHaveLength(1);
+        (0, vitest_1.expect)(groups[0].id).toBe('group-uuid-1');
+    });
     (0, vitest_1.it)('GET /api/maps/:id should return map data', async () => {
         const mapId = 'test-map-id';
         const db = await (0, db_1.getDb)();
