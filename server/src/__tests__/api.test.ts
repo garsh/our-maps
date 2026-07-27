@@ -99,6 +99,33 @@ describe('API Endpoints', () => {
     expect(res.body.error).toBe('Map not found');
   });
 
+  it('POST /api/maps should create a new map with groups and pins', async () => {
+    const mapId = 'create-map-with-groups-id';
+    const postData = {
+      id: mapId,
+      name: 'Map with Groups',
+      groups: [
+        { id: 'group-uuid-1', name: 'Group 1', position: 0 }
+      ],
+      pins: [
+        { id: 'pin-uuid-1', groupId: 'group-uuid-1', lat: 10, lng: 20, label: 'Pin 1', position: 0 }
+      ]
+    };
+
+    const res = await request(app)
+      .post('/api/maps')
+      .set(authHeader)
+      .send(postData);
+
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBe(mapId);
+
+    const db = await getDb();
+    const groups = await db.all('SELECT * FROM pin_groups WHERE map_id = ?', mapId);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].id).toBe('group-uuid-1');
+  });
+
   it('GET /api/maps/:id should return map data', async () => {
     const mapId = 'test-map-id';
     const db = await getDb();

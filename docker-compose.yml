@@ -20,6 +20,8 @@ services:
       args:
         - VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
     container_name: our-maps
+    env_file:
+      - .env
     # Expose port 3000 publicly so the Android app can connect via plain HTTP without TLS errors
     ports:
       - "3000:3000"
@@ -30,6 +32,7 @@ services:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=${PORT:-3000}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
       - CORS_ORIGIN=${CORS_ORIGIN:-https://ourmaps.mooo.com}
       - DB_PATH=${DB_PATH:-/data/database.sqlite}
 

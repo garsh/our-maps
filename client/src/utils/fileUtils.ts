@@ -175,7 +175,32 @@ export const importMapFile = async (file: File): Promise<Partial<MapData>> => {
     if (extension === 'json') {
       const data = JSON.parse(content);
       if (Array.isArray(data.pins)) {
-        return data;
+        const groupIdMap = new Map<string, string>();
+        const groups: PinGroup[] = Array.isArray(data.groups)
+          ? data.groups.map((g: PinGroup) => {
+              const newId = generateId();
+              if (g.id) {
+                groupIdMap.set(g.id, newId);
+              }
+              return {
+                ...g,
+                id: newId
+              };
+            })
+          : [];
+
+        const pins: Pin[] = data.pins.map((p: Pin) => ({
+          ...p,
+          id: generateId(),
+          groupId: p.groupId ? (groupIdMap.get(p.groupId) || p.groupId) : undefined
+        }));
+
+        const { id: _ignoreId, ...rest } = data;
+        return {
+          ...rest,
+          groups,
+          pins
+        };
       }
     } else if (extension === 'geojson' || extension === 'kml') {
       let pins: Pin[] = [];

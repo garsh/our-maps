@@ -213,4 +213,32 @@ describe('fileUtils', () => {
     const orphan = result.pins!.find(p => p.label === 'Orphan Pin');
     expect(orphan!.groupId).toBeUndefined();
   });
+
+  it('remaps group and pin IDs when importing a JSON map file', async () => {
+    const jsonContent = JSON.stringify({
+      id: 'existing-map-id',
+      name: 'Imported JSON Map',
+      groups: [
+        { id: 'old-group-1', name: 'Favorites', position: 0 }
+      ],
+      pins: [
+        { id: 'old-pin-1', groupId: 'old-group-1', lat: 37.77, lng: -122.41, label: 'SF Landmark', position: 0 }
+      ]
+    });
+
+    const file = new File([jsonContent], 'map.json', { type: 'application/json' });
+    const { importMapFile } = await import('../fileUtils');
+
+    const result = await importMapFile(file);
+
+    expect(result.id).toBeUndefined();
+    expect(result.name).toBe('Imported JSON Map');
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups![0].id).not.toBe('old-group-1');
+    expect(result.groups![0].name).toBe('Favorites');
+
+    expect(result.pins).toHaveLength(1);
+    expect(result.pins![0].id).not.toBe('old-pin-1');
+    expect(result.pins![0].groupId).toBe(result.groups![0].id);
+  });
 });

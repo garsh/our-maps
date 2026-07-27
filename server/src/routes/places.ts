@@ -15,10 +15,10 @@ router.get('/search', async (req: AuthRequest, res) => {
     return res.status(400).json({ error: 'Query is required' });
   }
 
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY?.trim();
 
   if (!apiKey) {
-    console.warn('[Places API] GOOGLE_MAPS_API_KEY not set. Falling back to Nominatim.');
+    console.warn('[Places API] GOOGLE_MAPS_API_KEY is not set or empty. Falling back to Nominatim.');
     try {
       let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=10`;
       if (bounds) {
