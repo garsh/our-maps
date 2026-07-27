@@ -38,7 +38,8 @@ describe('SearchBar', () => {
     });
 
     expect(window.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('q=London')
+      expect.stringContaining('q=London'),
+      expect.any(Object)
     );
   });
 

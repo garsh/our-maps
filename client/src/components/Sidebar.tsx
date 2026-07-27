@@ -797,6 +797,9 @@ const Sidebar = ({
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      if (!document.body.contains(event.target as Node)) {
+        return;
+      }
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
       }

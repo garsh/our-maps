@@ -151,5 +151,24 @@ export const apiService = {
     if (res.status === 401) this._logoutCallback?.();
     if (!res.ok) throw new Error('Failed to delete map');
     return res.json();
+  },
+
+  async search(query: string, bounds?: string | null): Promise<any[]> {
+    let url = `${API_BASE}/places/search?q=${encodeURIComponent(query)}`;
+    if (bounds) {
+      url += `&bounds=${encodeURIComponent(bounds)}`;
+    }
+    const res = await fetchWithRetry(url, { headers: getHeaders() });
+    if (res.status === 401) this._logoutCallback?.();
+    if (!res.ok) throw new Error('Search failed');
+    return res.json();
+  },
+
+  async reverseGeocode(lat: number, lng: number): Promise<string | null> {
+    const res = await fetchWithRetry(`${API_BASE}/places/reverse-geocode?lat=${lat}&lng=${lng}`, { headers: getHeaders() });
+    if (res.status === 401) this._logoutCallback?.();
+    if (!res.ok) throw new Error('Reverse geocode failed');
+    const data = await res.json();
+    return data.address || null;
   }
 };

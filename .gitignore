@@ -98,3 +98,6 @@ android-native/app/src/main/res/values/secrets.xml
 android-native/app/build/*
 android-native/.gradle/*
 android-native/.kotlin/*
+
+# database
+server/database.sqlite

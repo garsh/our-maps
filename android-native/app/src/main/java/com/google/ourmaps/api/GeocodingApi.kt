@@ -1,19 +1,16 @@
 package com.google.ourmaps.api
 
 import retrofit2.http.GET
-import retrofit2.http.Headers
 import retrofit2.http.Query
 
 interface GeocodingApi {
-    @Headers("User-Agent: OurMaps/1.0 (Android Native)")
-    @GET("reverse")
+    @GET("places/reverse-geocode")
     suspend fun reverseGeocode(
         @Query("lat") lat: Double,
-        @Query("lon") lon: Double,
-        @Query("format") format: String = "jsonv2"
-    ): NominatimResponse
+        @Query("lng") lng: Double
+    ): GeocodeResponse
 }
 
-data class NominatimResponse(
-    val display_name: String?
+data class GeocodeResponse(
+    val address: String?
 )

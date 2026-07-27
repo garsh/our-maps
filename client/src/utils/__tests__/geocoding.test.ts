@@ -17,13 +17,13 @@ describe('reverseGeocode', () => {
     const fetchMock = global.fetch as any;
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ display_name: 'Direct Address' })
+      json: async () => ({ address: 'Direct Address' })
     });
 
     const result = await reverseGeocode(1, 1);
     
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('nominatim.openstreetmap.org/reverse'),
+      expect.stringContaining('/api/places/reverse-geocode'),
       expect.any(Object)
     );
     expect(result).toBe('Direct Address');
@@ -33,7 +33,7 @@ describe('reverseGeocode', () => {
     const fetchMock = global.fetch as any;
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({ display_name: 'Test' })
+      json: async () => ({ address: 'Test' })
     });
 
     const p1 = reverseGeocode(1, 1);

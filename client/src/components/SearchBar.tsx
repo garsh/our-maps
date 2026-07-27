@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import type { Pin } from '@shared/interfaces';
 import Fuse from 'fuse.js';
 import { Search, MapPin, Globe, Loader2, X } from 'lucide-react';
+import { apiService } from '../services/api';
 
 interface SearchResult {
   place_id: string | number;
@@ -59,19 +60,7 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500,
     const handler = setTimeout(async () => {
       setIsSearching(true);
       try {
-        let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`;
-        if (mapBounds) {
-          url += `&viewbox=${mapBounds}`;
-        }
-        const response = await fetch(url);
-        const data = await response.json();
-        const formatted: SearchResult[] = data.map((item: any) => ({
-          place_id: item.place_id,
-          display_name: item.display_name,
-          lat: item.lat,
-          lon: item.lon,
-          type: 'global'
-        }));
+        const formatted = await apiService.search(query, mapBounds);
         setResults(formatted);
       } catch (error) {
         console.error('Search failed:', error);

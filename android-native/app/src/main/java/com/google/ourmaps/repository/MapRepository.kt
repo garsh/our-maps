@@ -90,20 +90,13 @@ class MapRepository(private val context: Context) {
             .build()
 
         api = retrofit.create(MapApi::class.java)
-
-        val nominatimRetrofit = Retrofit.Builder()
-            .baseUrl("https://nominatim.openstreetmap.org/")
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-        
-        geocodingApi = nominatimRetrofit.create(GeocodingApi::class.java)
+        geocodingApi = retrofit.create(GeocodingApi::class.java)
     }
 
     suspend fun reverseGeocode(lat: Double, lng: Double): String? {
         return try {
             val response = geocodingApi.reverseGeocode(lat, lng)
-            response.display_name
+            response.address
         } catch (e: Exception) {
             null
         }

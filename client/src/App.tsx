@@ -26,8 +26,8 @@ export function MapEditor() {
   
   const [pins, setPins] = useState<Pin[]>([])
   const [groups, setGroups] = useState<PinGroup[]>([])
-  const [mapId, setMapId] = useState<string | null>(id || null);
-  const [mapName, setMapName] = useState('');
+  const [mapId, setMapId] = useState<string | null>(id && id !== 'new' ? id : null);
+  const [mapName, setMapName] = useState(id === 'new' ? 'My Map' : '');
   const [isMapLoading, setIsMapLoading] = useState(!!id && id !== 'new');
   const [userRole, setUserRole] = useState<'owner' | 'edit' | 'view'>('owner');
   const [permissions, setPermissions] = useState<MapPermission[]>([]);
@@ -43,8 +43,26 @@ export function MapEditor() {
   const [isResizing, setIsResizing] = useState(false);
   const [hoveredPinId, setHoveredPinId] = useState<string | null>(null);
   const [selectedNavIds, setSelectedNavIds] = useState<Set<string>>(new Set());
-  const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string | null>>(new Set());
-  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string | null>>(new Set());
+  const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string | null>>(() => {
+    const mapIdVal = id || null;
+    if (mapIdVal) {
+      const savedVisibility = localStorage.getItem(`ourmaps_visibility_${mapIdVal}`);
+      if (savedVisibility) {
+        return new Set(JSON.parse(savedVisibility));
+      }
+    }
+    return new Set();
+  });
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string | null>>(() => {
+    const mapIdVal = id || null;
+    if (mapIdVal) {
+      const savedExpanded = localStorage.getItem(`ourmaps_expanded_${mapIdVal}`);
+      if (savedExpanded) {
+        return new Set(JSON.parse(savedExpanded));
+      }
+    }
+    return new Set([null]);
+  });
   
   const [customColors, setCustomColors] = useState<string[]>(() => {
     const saved = localStorage.getItem('customColors');
@@ -105,10 +123,13 @@ export function MapEditor() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const isRemoteUpdateRef = useRef(false);
+  const hasLoadedRef = useRef(false);
 
   useEffect(() => {
     if (id && id !== 'new') {
-      loadMap(id);
+      if (mapId !== id || !hasLoadedRef.current) {
+        loadMap(id);
+      }
 
       // Setup Socket
       const socket = io(SOCKET_URL, {
@@ -143,6 +164,7 @@ export function MapEditor() {
         socketRef.current = null;
       };
     } else {
+      hasLoadedRef.current = false;
       // New map defaults
       setMapId(null);
       setMapName('My Map');
@@ -173,6 +195,7 @@ export function MapEditor() {
 
   const loadMap = async (mapId: string) => {
     setIsMapLoading(true);
+    hasLoadedRef.current = true;
     setSelectedNavIds(new Set());
     try {
       const data = await apiService.getMap(mapId);
@@ -216,6 +239,7 @@ export function MapEditor() {
         });
       } else {
         const newId = crypto.randomUUID();
+        hasLoadedRef.current = true;
         await apiService.createMap({ 
           id: newId, 
           name: mapName, 

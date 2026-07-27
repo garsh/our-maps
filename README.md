@@ -34,6 +34,19 @@ Our Maps uses Google OAuth on the client and exchanges the Google ID credential 
 To configure this:
 - **`JWT_SECRET`**: You can set this environment variable in the server's `.env` configuration file to sign the custom tokens. If not specified, a default development secret is used.
 
+## Google Maps Search & Geocoding
+Our Maps uses Google Maps APIs to search for locations and perform reverse geocoding:
+- **[Places API (New)](https://developers.google.com/maps/documentation/places/web-service/text-search)** — Text Search for finding places by name or address
+- **[Geocoding API](https://developers.google.com/maps/documentation/geocoding)** — Reverse geocoding for looking up addresses from coordinates
+
+To configure this:
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Enable **Places API (New)** and **Geocoding API** for your project
+3. Create an API key (or reuse an existing one) and restrict it to those APIs
+4. Set `GOOGLE_MAPS_API_KEY` in the server's `.env` file
+
+If `GOOGLE_MAPS_API_KEY` is not set, the server falls back to OpenStreetMap (Nominatim API), which has a significantly smaller places database and may not find user-contributed Google Maps places.
+
 ## Self-Hosting
 
 You can easily self-host Our Maps using Docker and Docker Compose. This packages both the client and server into a single container and sets up a persistent volume for your SQLite database.

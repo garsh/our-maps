@@ -9,6 +9,7 @@ import http from 'http';
 import { Server, Socket } from 'socket.io';
 import { getDb } from './db';
 import mapsRouter from './routes/maps';
+import placesRouter from './routes/places';
 import { googleLoginHandler } from './auth';
 
 const app = express();
@@ -74,6 +75,7 @@ app.use(express.json({ limit: '10mb' }));
 // API Routes
 app.post('/api/auth/google-login', googleLoginHandler);
 app.use('/api/maps', mapsRouter);
+app.use('/api/places', placesRouter);
 
 app.get('/api/hello', (req, res) => {
   res.json({ message: 'Hello from Our Maps Server!' });

@@ -14,9 +14,9 @@ async function login(page: any) {
 }
 
 test('sidebar items are interactible', async ({ page }) => {
-  // Mock Nominatim reverse geocode EARLY
-  await page.route('**/nominatim.openstreetmap.org/reverse*', route => route.fulfill({ 
-    json: { display_name: '123 Test St, Interactivity City, IC 12345' } 
+  // Mock places reverse geocode
+  await page.route('**/places/reverse-geocode*', route => route.fulfill({ 
+    json: { address: '123 Test St, Interactivity City, IC 12345' } 
   }));
 
   await login(page);
