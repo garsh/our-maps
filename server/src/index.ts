@@ -21,7 +21,7 @@ const io = new Server(server, {
   }
 });
 
-const port = process.env.PORT || 3001;
+const port = process.env.PORT || 3002;
 
 // Security: Use helmet for secure headers
 app.use(helmet({

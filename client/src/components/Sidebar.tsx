@@ -509,6 +509,12 @@ const SortableGroup = ({
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
 
+  useEffect(() => {
+    if (editingPinId && groupPins.some(p => p.id === editingPinId)) {
+      setIsExpanded(true);
+    }
+  }, [editingPinId, groupPins]);
+
   const {
     attributes,
     listeners,

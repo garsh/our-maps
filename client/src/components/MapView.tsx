@@ -104,14 +104,8 @@ const PinMarker = ({
   setMarkerRef: (id: string, marker: L.Marker | null) => void
 }) => {
   const [address, setAddress] = useState<string | null>(pin.address || null);
-  const [isEditingPopup, setIsEditingPopup] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
-
-  // Sync address if it updates in parent
-  useEffect(() => {
-    if (pin.address) setAddress(pin.address);
-  }, [pin.address]);
-
+  const map = useMap();
   const fetchAddress = async () => {
     if (address || isFetching) return;
     setIsFetching(true);
@@ -165,112 +159,64 @@ const PinMarker = ({
         dragend: handleDragEnd
       }}
     >
-      <Popup eventHandlers={{ remove: () => setIsEditingPopup(false) }} className="modern-popup">
+      <Popup className="modern-popup">
         <div style={{ minWidth: '220px', maxWidth: '320px' }}>
-          {isEditingPopup ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '0.5rem 0' }}>
-              <div style={{ fontWeight: '800', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Edit Pin</div>
-              {(address || isFetching) && (
-                <div>
-                  <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>ADDRESS</label>
-                  <div style={{ padding: '4px 8px', background: 'var(--bg-color)', borderRadius: '4px', fontSize: '0.75rem', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', lineHeight: '1.3' }}>
-                    {isFetching ? 'Fetching address...' : address}
-                  </div>
-                </div>
+          <div style={{ padding: '4px 0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px', gap: '12px' }}>
+              <div style={{ minWidth: 0 }}>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pin.label}</h3>
+                  {(address || isFetching) && (
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.2' }}>
+                        {isFetching ? 'Fetching address...' : address}
+                      </div>
+                  )}
+              </div>
+              {!readOnly && (
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    map.closePopup();
+                    onEditPin(pin.id);
+                  }}
+                  style={{ background: 'var(--bg-color)', color: 'var(--primary-color)', border: '1px solid var(--primary-color)', borderRadius: '6px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }}
+                >
+                  EDIT
+                </button>
               )}
-              <div>
-                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>NAME</label>
-                <input 
-                  value={pin.label || ''} 
-                  onChange={(e) => onUpdatePin(pin.id, { label: e.target.value })}
-                  className="input-field"
-                  style={{ padding: '6px 10px', fontSize: '0.9rem' }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>DESCRIPTION</label>
-                <textarea 
-                  value={pin.description || ''} 
-                  onChange={(e) => onUpdatePin(pin.id, { description: e.target.value })}
-                  placeholder="Add some notes about this place..."
-                  rows={3}
-                  className="input-field"
-                  style={{ padding: '6px 10px', fontSize: '0.9rem', minHeight: '60px' }}
-                />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-                <button 
-                  onClick={() => onEditPin(pin.id)}
-                  style={{ background: 'none', border: 'none', color: 'var(--primary-color)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '700', textDecoration: 'none', padding: 0 }}
-                >
-                  Style & Details...
-                </button>
-                <button 
-                  onClick={() => setIsEditingPopup(false)}
-                  className="btn-primary"
-                  style={{ padding: '6px 16px', fontSize: '0.85rem' }}
-                >
-                  Done
-                </button>
-              </div>
             </div>
-          ) : (
-            <div style={{ padding: '4px 0' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px', gap: '12px' }}>
-                <div style={{ minWidth: 0 }}>
-                    <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pin.label}</h3>
-                    {(address || isFetching) && (
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.2' }}>
-                          {isFetching ? 'Fetching address...' : address}
-                        </div>
-                    )}
-                </div>
-                {!readOnly && (
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsEditingPopup(true);
-                    }}
-                    style={{ background: 'var(--bg-color)', color: 'var(--primary-color)', border: '1px solid var(--primary-color)', borderRadius: '6px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }}
-                  >
-                    EDIT
-                  </button>
-                )}
+            
+            {pin.imageUrl && (
+              <div style={{ borderRadius: 'var(--radius-sm)', overflow: 'hidden', margin: '12px 0', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                <img 
+                  src={pin.imageUrl} 
+                  alt={pin.label} 
+                  style={{ width: '100%', height: 'auto', display: 'block' }} 
+                  onError={(e) => (e.currentTarget.parentElement!.style.display = 'none')}
+                />
               </div>
-              
-              {pin.imageUrl && (
-                <div style={{ borderRadius: 'var(--radius-sm)', overflow: 'hidden', margin: '12px 0', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
-                  <img 
-                    src={pin.imageUrl} 
-                    alt={pin.label} 
-                    style={{ width: '100%', height: 'auto', display: 'block' }} 
-                    onError={(e) => (e.currentTarget.parentElement!.style.display = 'none')}
-                  />
-                </div>
-              )}
-              
-              {pin.description ? (
-                <p style={{ margin: '8px 0 16px 0', fontSize: '0.95rem', color: 'var(--text-secondary)', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
-                  {pin.description}
-                </p>
-              ) : (
-                <div style={{ fontSize: '0.85rem', color: '#aaa', margin: '8px 0 16px 0', fontStyle: 'italic' }}>No description provided.</div>
-              )}
+            )}
+            
+            {pin.description ? (
+              <p style={{ margin: '8px 0 16px 0', fontSize: '0.95rem', color: 'var(--text-secondary)', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
+                {pin.description}
+              </p>
+            ) : (
+              <div style={{ fontSize: '0.85rem', color: '#aaa', margin: '8px 0 16px 0', fontStyle: 'italic' }}>No description provided.</div>
+            )}
 
-              <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
-                  <a 
-                    href={`https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ flex: 1, textDecoration: 'none' }}
-                  >
-                    <button className="btn-primary" style={{ width: '100%', padding: '8px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                      <Navigation size={16} /> Directions
-                    </button>
-                  </a>
-              </div>
+            <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid #eee', paddingTop: '12px' }}>
+                <a 
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ flex: 1, textDecoration: 'none' }}
+                >
+                  <button className="btn-primary" style={{ width: '100%', padding: '8px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                    <Navigation size={16} /> Directions
+                  </button>
+                </a>
             </div>
-          )}
+          </div>
         </div>
       </Popup>
     </Marker>
