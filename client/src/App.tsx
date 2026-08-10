@@ -39,6 +39,7 @@ export function MapEditor() {
   const [boundsToFit, setBoundsToFit] = useState<L.LatLngBounds | null>(null);
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
   const [mapBounds, setMapBounds] = useState<string | null>(null);
+  const [previewLocation, setPreviewLocation] = useState<{lat: number, lng: number} | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(300);
   const [isResizing, setIsResizing] = useState(false);
   const [hoveredPinId, setHoveredPinId] = useState<string | null>(null);
@@ -316,7 +317,7 @@ export function MapEditor() {
       lat,
       lng,
       label: label,
-      address: address, // Use provided address if available
+      address, // Use provided address if available
       position: pins.length
     };
     setPins(prev => [...prev, newPin]);
@@ -590,6 +591,9 @@ export function MapEditor() {
                 return newSet;
               });
             }}
+            onHoverSearchResult={(lat, lng) => {
+              setPreviewLocation(lat !== null && lng !== null ? { lat, lng } : null);
+            }}
           />
           <div 
             onMouseDown={startResize}
@@ -629,6 +633,7 @@ export function MapEditor() {
             hoveredPinId={hoveredPinId}
             onHoverPin={setHoveredPinId}
             hiddenGroupIds={hiddenGroupIds}
+            previewLocation={previewLocation}
           />
         </main>
       </div>

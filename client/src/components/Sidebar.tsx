@@ -100,6 +100,7 @@ interface SidebarProps {
   onToggleGroupVisibility?: (id: string | null) => void;
   expandedGroupIds?: Set<string | null>;
   onToggleExpand?: (id: string | null) => void;
+  onHoverSearchResult?: (lat: number | null, lng: number | null) => void;
 }
 
 const COLORS = [
@@ -778,7 +779,8 @@ const Sidebar = ({
   hiddenGroupIds,
   onToggleGroupVisibility,
   expandedGroupIds,
-  onToggleExpand
+  onToggleExpand,
+  onHoverSearchResult
 }: SidebarProps) => {
   const [localMapName, setLocalMapName] = useState(mapName);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -1135,6 +1137,8 @@ const Sidebar = ({
             pins={pins} 
             disabled={readOnly} 
             mapBounds={mapBounds}
+            onHoverSearchResult={onHoverSearchResult}
+            onHoverPin={onHoverPin}
           />
         )}
 

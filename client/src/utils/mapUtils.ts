@@ -94,3 +94,48 @@ export function getMarkerIcon(color: PinColor = 'blue', icon: PinIcon = 'default
     popupAnchor: [0, -height],
   });
 }
+
+export function getPreviewMarkerIcon(color: string = '#ef4444') {
+  const width = 20;
+  const height = 28;
+  const scale = width / 30;
+
+  return L.divIcon({
+    className: 'custom-pin-modern hovered',
+    html: `
+      <div style="
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: ${width}px;
+        height: ${height}px;
+      ">
+        <div style="
+          position: absolute;
+          width: ${width * 3}px;
+          height: ${width * 3}px;
+          background: ${color}44;
+          border: 3px solid ${color};
+          border-radius: 50%;
+          z-index: -1;
+          animation: pulse 1.2s infinite;
+          box-shadow: 0 0 15px ${color}66;
+        "></div>
+        <div style="
+          filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
+          transform: scale(${scale});
+          transform-origin: center bottom;
+        ">
+          <svg width="30" height="42" viewBox="0 0 30 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z" fill="${color}"/>
+            <path d="M15 10v10M10 15h10" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+      </div>
+    `,
+    iconSize: [width, height],
+    iconAnchor: [width / 2, height],
+    popupAnchor: [0, -height]
+  });
+}

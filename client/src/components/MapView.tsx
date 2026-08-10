@@ -1,8 +1,8 @@
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { Pin } from '@shared/interfaces';
+import type { Pin, PinGroup } from '@shared/interfaces';
 import { useEffect, useRef, useState } from 'react';
-import { getMarkerIcon } from '../utils/mapUtils';
+import { getMarkerIcon, getPreviewMarkerIcon } from '../utils/mapUtils';
 import L from 'leaflet';
 import { Locate, Navigation } from 'lucide-react';
 import { reverseGeocode } from '../utils/geocoding';
@@ -22,6 +22,7 @@ interface MapViewProps {
   hoveredPinId?: string | null;
   onHoverPin?: (id: string | null) => void;
   hiddenGroupIds?: Set<string | null>;
+  previewLocation?: {lat: number, lng: number} | null;
 }
 
 const MapEvents = ({ onMapClick, onBoundsChange }: { onMapClick: (lat: number, lng: number) => void, onBoundsChange: (bounds: string) => void }) => {
@@ -147,6 +148,7 @@ const PinMarker = ({
     <Marker 
       position={[pin.lat, pin.lng]} 
       icon={getMarkerIcon(pin.color, pin.icon, hoveredPinId === pin.id)}
+      zIndexOffset={hoveredPinId === pin.id ? 1000 : 0}
       ref={(ref) => setMarkerRef(pin.id, ref)}
       draggable={!readOnly}
       eventHandlers={{
@@ -237,7 +239,8 @@ const MapView = ({
   userRole = 'owner',
   hoveredPinId,
   onHoverPin,
-  hiddenGroupIds
+  hiddenGroupIds,
+  previewLocation
 }: MapViewProps) => {
   const markerRefs = useRef<Record<string, L.Marker | null>>({});
   const mapRef = useRef<L.Map | null>(null);
@@ -288,6 +291,14 @@ const MapView = ({
             setMarkerRef={(id, marker) => { markerRefs.current[id] = marker; }}
           />
         ))}
+        {previewLocation && (
+          <Marker 
+            position={[previewLocation.lat, previewLocation.lng]} 
+            icon={getPreviewMarkerIcon('#ef4444')}
+            interactive={false}
+            zIndexOffset={1000}
+          />
+        )}
       </MapContainer>
 
       <button 
