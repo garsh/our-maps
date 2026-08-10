@@ -21,7 +21,8 @@ data class SearchResult(
 
 data class ServerSearchResult(
     val place_id: String,
-    val display_name: String,
+    val title: String,
+    val address: String,
     val lat: String,
     val lon: String
 )
@@ -71,8 +72,8 @@ object GeocodingService {
 
             results.map { res ->
                 SearchResult(
-                    name = res.display_name.split(",")[0],
-                    description = res.display_name,
+                    name = res.title,
+                    description = res.address,
                     location = GeoPoint(res.lat.toDouble(), res.lon.toDouble())
                 )
             }
