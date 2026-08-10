@@ -7,9 +7,7 @@ import {
   Utensils, 
   Plane, 
   Trees, 
-  Landmark, 
   ShoppingBag, 
-  Camera, 
   MapPin,
   type LucideIcon,
   GripVertical,
@@ -113,21 +111,97 @@ const COLORS = [
   { name: 'gold', value: '#FFD700' },
   { name: 'pink', value: '#FF69B4' },
   { name: 'teal', value: '#008080' },
-  { name: 'brown', value: '#8B4513' }
+  { name: 'brown', value: '#8B4513' },
+  { name: 'black', value: '#000000' }
 ];
 
-const ICONS: { type: PinIcon; Icon: LucideIcon }[] = [
+const CustomBoatIcon = ({ size, color }: any) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M 4 18 h 16 c 1.5 0 2 -1.5 2 -4 c 0 -1.5 -0.5 -2 -2 -2 h -16 c -1.5 0 -2 0.5 -2 2 c 0 2.5 0.5 4 2 4 Z M 12 12 V 2 c 0 -1.5 -1 -1.5 -2 -0.5 l -6 9 c -0.5 1 0 1.5 1 1.5 h 7"/>
+  </svg>
+);
+
+const CustomTrainIcon = ({ size, color }: any) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} color={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M 20 16 h 1 c 1 0 2 -0.5 2 -2 v -3 c 0 -1.5 -0.5 -2 -2 -2 h -1 v -3 c 0 -1 -1 -2 -2 -2 h -2 c -1 0 -2 1 -2 2 v 3 h -4 v -4 c 0 -1.5 -1 -3 -3 -3 h -2 c -1.5 0 -3 1.5 -3 3 v 9 c 0 1.5 1 2 2 2 h 2 M 10 16 h 4"/>
+    <circle cx="7" cy="16" r="3"/>
+    <circle cx="17" cy="16" r="3"/>
+  </svg>
+);
+
+const CustomCarIcon = ({ size, color }: any) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} color={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M 22 16 v -5.5 a 2.5 2.5 0 0 0 -2.5 -2.5 h -4.5 l -3 -5 h -6 l -4 8 v 4 a 1 1 0 0 0 1 1 h 1 M 10 16 h 4 M 20 16 h 2"/>
+    <circle cx="7" cy="16" r="3"/>
+    <circle cx="17" cy="16" r="3"/>
+  </svg>
+);
+
+const ICONS: { type: PinIcon; Icon: LucideIcon | any }[] = [
   { type: 'default', Icon: MapPin },
   { type: 'hotel', Icon: Bed },
   { type: 'restaurant', Icon: Utensils },
   { type: 'airport', Icon: Plane },
-  { type: 'park', Icon: Trees },
-  { type: 'museum', Icon: Landmark },
-  { type: 'shopping', Icon: ShoppingBag },
-  { type: 'camera', Icon: Camera },
+  { type: 'car', Icon: CustomCarIcon },
+  { type: 'boat', Icon: CustomBoatIcon },
+  { type: 'train', Icon: CustomTrainIcon },
   { type: 'gas', Icon: Fuel },
   { type: 'charging', Icon: Zap },
+  { type: 'park', Icon: Trees },
+  { type: 'shopping', Icon: ShoppingBag },
 ];
+
+const IconButton = ({ type, Icon, isSelected, onClick }: { type: PinIcon, Icon: any, isSelected: boolean, onClick: () => void }) => {
+  return (
+    <button
+      title={type !== 'default' ? type.charAt(0).toUpperCase() + type.slice(1) : undefined}
+      aria-label={`icon-${type}`}
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '20px',
+        flex: 1,
+        minWidth: 0,
+        padding: 0,
+        borderRadius: '4px',
+        background: isSelected ? 'var(--primary-color)' : '#eee',
+        border: '1px solid var(--border-color)',
+        cursor: 'pointer'
+      }}
+    >
+      <Icon size={12} color={isSelected ? 'white' : '#333'} />
+    </button>
+  );
+};
+
+const TruncatedTooltip = ({ text, style }: { text: string, style?: React.CSSProperties }) => {
+  const [isTruncated, setIsTruncated] = useState(false);
+  const textRef = useRef<HTMLDivElement>(null);
+
+  const checkTruncation = () => {
+    if (textRef.current) {
+      setIsTruncated(textRef.current.scrollWidth > textRef.current.clientWidth);
+    }
+  };
+
+  return (
+    <div 
+      ref={textRef}
+      onMouseEnter={checkTruncation}
+      title={isTruncated ? text : undefined}
+      style={{
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        ...style
+      }}
+    >
+      {text}
+    </div>
+  );
+};
 
 const StaticPin = ({ pin }: { pin: Pin }) => {
   const currentColor = COLORS.find(c => c.name === pin.color)?.value || pin.color || '#2A81CB';
@@ -286,20 +360,45 @@ const SortablePin = ({
                 })()}
               </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: '600', fontSize: '0.65rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '1.1' }}>{pin.label}</div>
+                <TruncatedTooltip 
+                  text={pin.label}
+                  style={{ fontWeight: '600', fontSize: '0.65rem', color: 'var(--text-primary)', lineHeight: '1.1' }}
+                />
                 {pin.description && (
                   <div style={{ fontSize: '0.5rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '-1px', lineHeight: '1' }}>{pin.description}</div>
                 )}
               </div>            </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '2px', marginLeft: '4px' }}>
+        <div style={{ display: 'flex', gap: '4px', marginLeft: '4px', alignItems: 'center' }}>
+          {!readOnly && editingPinId === pin.id && (
+            <button 
+              title="Delete Pin"
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                if (window.confirm('Are you sure you want to delete this pin?')) {
+                  onRemovePin(pin.id); 
+                }
+              }}
+              style={{ 
+                background: 'transparent', 
+                color: 'var(--error-color)', 
+                border: 'none',
+                padding: '0px 3px', 
+                cursor: 'pointer', 
+                display: 'flex', 
+                alignItems: 'center'
+              }}
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
           {!readOnly && (
             <button 
-              onClick={() => setEditingPinId(editingPinId === pin.id ? null : pin.id)}
+              onClick={(e) => { e.stopPropagation(); setEditingPinId(editingPinId === pin.id ? null : pin.id); }}
               style={{ 
-                background: editingPinId === pin.id ? 'var(--primary-color)' : 'transparent', 
-                color: editingPinId === pin.id ? 'white' : 'var(--primary-color)', 
+                background: editingPinId === pin.id ? 'var(--bg-color)' : 'var(--primary-color)', 
+                color: editingPinId === pin.id ? 'var(--text-primary)' : 'white', 
                 border: 'none',
                 borderRadius: '4px', 
                 padding: '0px 3px', 
@@ -408,41 +507,19 @@ const SortablePin = ({
 
           <div style={{ marginBottom: '5px' }}>
             <label style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>ICON</label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '2px' }}>
+            <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '1px', justifyContent: 'space-between' }}>
               {ICONS.map(({ type, Icon }) => (
-                <button
+                <IconButton 
                   key={type}
-                  aria-label={`icon-${type}`}
+                  type={type}
+                  Icon={Icon}
+                  isSelected={pin.icon === type || (!pin.icon && type === 'default')}
                   onClick={() => onUpdatePin(pin.id, { icon: type })}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: '20px',
-                    borderRadius: '4px',
-                    background: pin.icon === type || (!pin.icon && type === 'default') ? 'var(--primary-color)' : '#eee',
-                    border: '1px solid var(--border-color)',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <Icon size={9} color={pin.icon === type || (!pin.icon && type === 'default') ? 'white' : '#333'} />
-                </button>
+                />
               ))}
             </div>
           </div>
 
-          <div style={{ marginBottom: '5px' }}>
-            <label htmlFor={`image-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>IMAGE URL</label>
-            <input 
-              id={`image-${pin.id}`}
-              type="text" 
-              value={pin.imageUrl || ''} 
-              onChange={(e) => onUpdatePin(pin.id, { imageUrl: e.target.value })}
-              placeholder="https://example.com/image.jpg"
-              className="input-field"
-              style={{ padding: '2px 4px', fontSize: '0.7rem' }}
-            />
-          </div>
 
           <div style={{ marginBottom: '5px' }}>
             <label htmlFor={`desc-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>DESCRIPTION</label>
@@ -453,15 +530,6 @@ const SortablePin = ({
               className="input-field"
               style={{ minHeight: '25px', resize: 'vertical', padding: '2px 4px', fontSize: '0.7rem' }}
             />
-          </div>
-          
-          <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginTop: '6px' }}>
-            <button 
-              onClick={() => onRemovePin(pin.id)}
-              style={{ background: 'transparent', color: 'var(--error-color)', border: 'none', padding: '2px', cursor: 'pointer', fontSize: '0.6rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '2px' }}
-            >
-              <Trash2 size={10} /> Delete
-            </button>
           </div>
         </div>
       )}
@@ -625,7 +693,16 @@ const SortableGroup = ({
             </button>
             {!isEditingName && (
                 <button 
-                    onClick={(e) => { e.stopPropagation(); onRemoveGroup(group.id); }}
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      let msg = 'Are you sure you want to delete this layer?';
+                      if (groupPins.length > 0) {
+                        msg += ` The ${groupPins.length} pin${groupPins.length === 1 ? '' : 's'} inside it will be moved to the default layer.`;
+                      }
+                      if (window.confirm(msg)) {
+                        onRemoveGroup(group.id); 
+                      }
+                    }}
                     style={{ background: 'transparent', border: 'none', color: '#555', cursor: 'pointer', padding: '1px', borderRadius: '50%', display: 'flex' }}
                     className="delete-group-btn"
                     title="Delete Group"
