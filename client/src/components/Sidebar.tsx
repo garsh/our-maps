@@ -205,6 +205,17 @@ const SortablePin = ({
 
   const isItemInDraggingBundle = isAnySelectedDragging && isSelected;
 
+  useEffect(() => {
+    if (editingPinId === pin.id) {
+      setTimeout(() => {
+        const el = document.getElementById(`pin-${pin.id}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 50);
+    }
+  }, [editingPinId, pin.id]);
+
   const style = {
     transform: transform ? CSS.Transform.toString(transform) : undefined,
     transition,
@@ -511,9 +522,11 @@ const SortableGroup = ({
 
   useEffect(() => {
     if (editingPinId && groupPins.some(p => p.id === editingPinId)) {
-      setIsExpanded(true);
+      if (!isExpanded) {
+        onToggleExpand();
+      }
     }
-  }, [editingPinId, groupPins]);
+  }, [editingPinId, groupPins, isExpanded, onToggleExpand]);
 
   const {
     attributes,
