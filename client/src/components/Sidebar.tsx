@@ -13,6 +13,8 @@ import {
   GripVertical,
   Trash2,
   FolderPlus,
+  Pencil,
+  X,
   ChevronDown,
   ChevronRight,
   Upload,
@@ -398,17 +400,16 @@ const SortablePin = ({
             <button 
               onClick={(e) => { e.stopPropagation(); setEditingPinId(editingPinId === pin.id ? null : pin.id); }}
               style={{ 
-                background: editingPinId === pin.id ? 'var(--bg-color)' : 'var(--primary-color)', 
-                color: editingPinId === pin.id ? 'var(--text-primary)' : 'white', 
+                background: 'transparent', 
+                color: editingPinId === pin.id ? 'var(--text-primary)' : 'var(--primary-color)', 
                 border: 'none',
-                borderRadius: '4px', 
                 padding: '0px 3px', 
                 cursor: 'pointer', 
-                fontSize: '0.45rem',
-                fontWeight: '700'
+                display: 'flex',
+                alignItems: 'center'
               }}
             >
-              {editingPinId === pin.id ? 'Close' : 'Edit'}
+              {editingPinId === pin.id ? <X size={12} /> : <Pencil size={12} />}
             </button>
           )}
         </div>
@@ -624,93 +625,99 @@ const SortableGroup = ({
 
   return (
     <div ref={setNodeRef} style={style}>
-      <div style={{ 
+      <div style={{
         position: 'sticky',
         top: '-1px',
         zIndex: 5,
-        display: 'flex', 
-        alignItems: 'center', 
-        background: 'white',
-        padding: '0.1rem 0.2rem', 
+        background: isEditingName ? 'var(--bg-color)' : 'white',
         borderRadius: 'var(--radius-sm)',
-        borderBottom: '1px solid var(--border-color)',
-        borderTop: isOver && !isDragging ? '2px solid var(--primary-color)' : '1px solid transparent',
-        transition: 'all 0.1s ease',
+        border: isEditingName ? '1px solid var(--primary-color)' : '1px solid transparent',
         boxShadow: isExpanded ? 'none' : 'var(--shadow-sm)'
       }}>
-        {!readOnly && (
-          <div {...attributes} {...listeners} style={{ cursor: 'grab', color: '#555', padding: '1px 3px', display: 'flex', alignItems: 'center' }}>
-            <GripVertical size={11} />
-          </div>
-        )}
-        <input 
-          type="checkbox" 
-          checked={isAllSelected} 
-          ref={el => { if (el) el.indeterminate = isSomeSelected && !isAllSelected; }}
-          onChange={(e) => {
-            const checked = e.target.checked;
-            onToggleNavIds?.(groupPins.map(p => p.id), checked);
-          }}
-          style={{ marginRight: '3px', cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
-          onClick={(e) => e.stopPropagation()}
-          title="Select all in group for navigation"
-        />
-        <button 
-          onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}
-          style={{ background: 'none', border: 'none', color: isHidden ? '#bbb' : 'var(--primary-color)', cursor: 'pointer', display: 'flex', padding: '2px', marginRight: '0px' }}
-          title={isHidden ? "Show group" : "Hide group"}
-        >
-          {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
-        </button>
-        <div onClick={() => onToggleExpand()} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
-          <div style={{ color: 'var(--primary-color)', marginRight: '1px', display: 'flex' }}>
-            {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-          </div>
-          {isEditingName && !readOnly ? (
-            <input 
-              autoFocus
-              value={group.name}
-              onChange={(e) => onUpdateGroup(group.id, { name: e.target.value })}
-              onFocus={(e) => e.target.select()}
-              onBlur={() => setIsEditingName(false)}
-              onKeyDown={(e) => e.key === 'Enter' && setIsEditingName(false)}
-              className="input-field"
-              style={{ fontSize: '0.65rem', padding: '1px 3px', height: 'auto' }}
-              onClick={(e) => e.stopPropagation()}
-            />
-          ) : (
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          padding: '0.1rem 0.2rem', 
+          borderBottom: !isEditingName ? '1px solid var(--border-color)' : 'none',
+          borderTop: isOver && !isDragging ? '2px solid var(--primary-color)' : '1px solid transparent',
+          transition: 'all 0.1s ease'
+        }}>
+          {!readOnly && (
+            <div {...attributes} {...listeners} style={{ cursor: 'grab', color: '#555', padding: '1px 3px', display: 'flex', alignItems: 'center' }}>
+              <GripVertical size={11} />
+            </div>
+          )}
+          <input 
+            type="checkbox" 
+            checked={isAllSelected} 
+            ref={el => { if (el) el.indeterminate = isSomeSelected && !isAllSelected; }}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              onToggleNavIds?.(groupPins.map(p => p.id), checked);
+            }}
+            style={{ marginRight: '3px', cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
+            onClick={(e) => e.stopPropagation()}
+            title="Select all in group for navigation"
+          />
+          <button 
+            onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}
+            style={{ background: 'transparent', border: 'none', color: isHidden ? '#ccc' : '#555', cursor: 'pointer', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
+            title={isHidden ? "Show group on map" : "Hide group on map"}
+          >
+            {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
+          </button>
+          <div onClick={() => onToggleExpand()} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
+            <div style={{ color: 'var(--primary-color)', marginRight: '1px', display: 'flex' }}>
+              {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+            </div>
             <span onDoubleClick={() => !readOnly && setIsEditingName(true)} style={{ fontWeight: '700', fontSize: '0.65rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {group.name} <span style={{ fontWeight: 'normal', color: '#aaa', fontSize: '0.55rem', marginLeft: '2px' }}>({groupPins.length})</span>
             </span>
+          </div>
+          {!readOnly && (
+            <div style={{ display: 'flex', gap: '1px' }}>
+              {isEditingName && (
+                <button 
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    let msg = 'Are you sure you want to delete this layer?';
+                    if (groupPins.length > 0) {
+                      msg += ` The ${groupPins.length} pin${groupPins.length === 1 ? '' : 's'} inside it will be moved to the default layer.`;
+                    }
+                    if (window.confirm(msg)) {
+                      onRemoveGroup(group.id); 
+                    }
+                  }}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--error-color)', cursor: 'pointer', padding: '0px 3px', display: 'flex', alignItems: 'center' }}
+                  className="delete-group-btn"
+                  title="Delete Group"
+                >
+                  <Trash2 size={12} />
+                </button>
+              )}
+              <button 
+                  onClick={(e) => { e.stopPropagation(); setIsEditingName(!isEditingName); }}
+                  style={{ background: 'transparent', color: isEditingName ? 'var(--text-primary)' : 'var(--primary-color)', border: 'none', padding: '0px 3px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              >
+                {isEditingName ? <X size={12} /> : <Pencil size={12} />}
+              </button>
+            </div>
           )}
         </div>
-        {!readOnly && (
-          <div style={{ display: 'flex', gap: '1px' }}>
-            <button 
-                onClick={(e) => { e.stopPropagation(); setIsEditingName(!isEditingName); }}
-                style={{ background: isEditingName ? 'var(--primary-color)' : 'transparent', color: isEditingName ? 'white' : 'var(--primary-color)', border: 'none', borderRadius: '4px', padding: '0px 2px', cursor: 'pointer', fontSize: '0.4rem', fontWeight: '700' }}
-            >
-                {isEditingName ? 'DONE' : 'RENAME'}
-            </button>
-            {!isEditingName && (
-                <button 
-                    onClick={(e) => { 
-                      e.stopPropagation(); 
-                      let msg = 'Are you sure you want to delete this layer?';
-                      if (groupPins.length > 0) {
-                        msg += ` The ${groupPins.length} pin${groupPins.length === 1 ? '' : 's'} inside it will be moved to the default layer.`;
-                      }
-                      if (window.confirm(msg)) {
-                        onRemoveGroup(group.id); 
-                      }
-                    }}
-                    style={{ background: 'transparent', border: 'none', color: '#555', cursor: 'pointer', padding: '1px', borderRadius: '50%', display: 'flex' }}
-                    className="delete-group-btn"
-                    title="Delete Group"
-                >
-                    <Trash2 size={9} />
-                </button>
-            )}
+        
+        {isEditingName && !readOnly && (
+          <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '0', borderTop: '1px solid var(--border-color)', fontSize: '0.7rem' }}>
+            <div style={{ marginBottom: '5px' }}>
+              <label htmlFor={`label-${group.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>NAME</label>
+              <input 
+                id={`label-${group.id}`}
+                type="text" 
+                value={group.name} 
+                onChange={(e) => onUpdateGroup(group.id, { name: e.target.value })}
+                className="input-field"
+                style={{ padding: '2px 4px', fontSize: '0.7rem' }}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -1003,9 +1010,7 @@ const Sidebar = ({
         autoScroll={false}
       >
         <div style={{ marginBottom: '0.6rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
-            <label htmlFor="map-name" style={{ display: 'block', fontWeight: '800', fontSize: '0.6rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Map Name</label>
-          </div>
+
           <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
             <input 
               id="map-name"
@@ -1105,7 +1110,7 @@ const Sidebar = ({
                       onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
-                      <FileJson size={16} color="var(--primary-color)" /> JSON
+                      <FileJson size={16} color="var(--primary-color)" /> OurMaps JSON
                     </div>
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem' }}

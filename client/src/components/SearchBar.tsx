@@ -123,25 +123,27 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500,
   };
 
   return (
-    <div className="search-container" style={{ marginBottom: '1.5rem', position: 'relative' }}>
+    <div className="search-container" style={{ marginBottom: '0.8rem', position: 'relative' }}>
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
         <div style={{ position: 'absolute', left: '12px', color: 'var(--primary-color)', display: 'flex' }}>
-          {isSearching ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}
+          {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
         </div>
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Find pins or new places..."
+          placeholder="Search..."
           disabled={disabled}
           className="input-field"
           style={{ 
-            paddingLeft: '40px',
-            paddingRight: query ? '40px' : '12px',
+            paddingTop: '6px',
+            paddingBottom: '6px',
+            paddingLeft: '32px',
+            paddingRight: query ? '32px' : '12px',
             background: 'var(--bg-color)',
             border: 'none',
             fontWeight: '600',
-            fontSize: '0.9rem'
+            fontSize: '0.8rem'
           }}
         />
         {query && (
@@ -149,7 +151,7 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500,
              onClick={() => setQuery('')}
              style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', display: 'flex', padding: 0 }}
            >
-             <X size={18} />
+             <X size={14} />
            </button>
         )}
       </div>

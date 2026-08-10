@@ -198,12 +198,10 @@ const PinMarker = ({
               </div>
             )}
             
-            {pin.description ? (
+            {pin.description && (
               <p style={{ margin: '8px 0 16px 0', fontSize: '0.95rem', color: 'var(--text-secondary)', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
                 {pin.description}
               </p>
-            ) : (
-              <div style={{ fontSize: '0.85rem', color: '#aaa', margin: '8px 0 16px 0', fontStyle: 'italic' }}>No description provided.</div>
             )}
 
             <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid #eee', paddingTop: '12px' }}>

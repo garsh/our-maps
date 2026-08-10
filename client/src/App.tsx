@@ -253,7 +253,7 @@ export function MapEditor() {
       }
     } catch (err) {
       console.error('Failed to save map', err);
-      setError('Failed to save map');
+      setError('Changes NOT synced');
     } finally {
       setIsSaving(false);
     }
@@ -475,149 +475,144 @@ export function MapEditor() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: 'inherit', userSelect: isResizing ? 'none' : 'auto' }}>
-      <header style={{ 
-        padding: '0.75rem 1.5rem', 
-        background: 'var(--primary-color)', 
-        color: 'white', 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        boxShadow: 'var(--shadow-md)', 
-        zIndex: 1000 
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', cursor: 'pointer' }} onClick={() => navigate('/')}>
-          <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px', borderRadius: '12px', display: 'flex' }}>
-            <MapIcon size={24} />
-          </div>
-          <div>
-            <h1 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800', lineHeight: 1.1 }}>Our Maps</h1>
-            <small style={{ color: error ? '#ffbdad' : (successMessage ? '#b8ffd1' : 'rgba(255,255,255,0.7)'), fontWeight: '600', fontSize: '0.75rem' }}>
-              {error || successMessage || (isSaving ? 'Syncing...' : 'All changes saved')}
-            </small>
-          </div>
-        </div>
-        
-        <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-          {userRole !== 'view' && (
-            <div style={{ 
-              fontSize: '0.75rem', 
-              background: 'rgba(255,255,255,0.1)', 
-              padding: '4px 12px', 
-              borderRadius: '50px',
-              border: '1px solid rgba(255,255,255,0.2)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}>
-              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: isSaving ? '#ffcc00' : '#4ade80' }} />
-              {isSaving ? 'Saving changes...' : 'Cloud Sync Enabled'}
-            </div>
-          )}
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>{user?.name}</span>
-            {user?.picture && <img src={user.picture} alt={user.name} style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.2)' }} />}
-          </div>
-        </div>
-      </header>
+    <div style={{ display: 'flex', height: '100vh', fontFamily: 'inherit', userSelect: isResizing ? 'none' : 'auto' }}>
       
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', background: 'var(--bg-color)' }}>
-        <div style={{ width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', position: 'relative', zIndex: 10 }}>
-          <Sidebar 
-            mapId={mapId}
-            mapName={mapName}
-            onMapNameChange={setMapName}
-            groups={groups}
-            onAddGroup={addGroup}
-            onUpdateGroup={updateGroup}
-            onRemoveGroup={removeGroup}
-            pins={pins}
-            onResultSelect={(lat, lng) => setTargetLocation([lat, lng])}
-            onAddPin={addPinAtLocation}
-            onRemovePin={removePin}
-            onPinClick={handlePinSelect}
-            onUpdatePin={updatePin}
-            onDragEnd={handleDragEnd}
-            onDragOver={handleDragOver}
-            userRole={userRole}
-            onShare={() => setIsSharing(true)}
-            onImport={handleImport}
-            mapBounds={mapBounds}
-            editingPinId={editingPinId}
-            onSetEditingPinId={setEditingPinId}
-            hoveredPinId={hoveredPinId}
-            onHoverPin={setHoveredPinId}
-            customColors={customColors}
-            onAddCustomColor={addCustomColor}
-            selectedNavIds={selectedNavIds}
-            onToggleNavId={(id) => {
-              setSelectedNavIds(prev => {
-                const newSet = new Set(prev);
-                if (newSet.has(id)) newSet.delete(id);
-                else newSet.add(id);
-                return newSet;
-              });
-            }}
-            onToggleNavIds={(ids, force) => {
-              setSelectedNavIds(prev => {
-                const newSet = new Set(prev);
-                ids.forEach(id => {
-                  if (force === true) newSet.add(id);
-                  else if (force === false) newSet.delete(id);
-                  else {
-                    if (newSet.has(id)) newSet.delete(id);
-                    else newSet.add(id);
-                  }
-                });
-                return newSet;
-              });
-            }}
-            hiddenGroupIds={hiddenGroupIds}
-            onToggleGroupVisibility={(id) => {
-              setHiddenGroupIds(prev => {
-                const newSet = new Set(prev);
-                if (newSet.has(id)) newSet.delete(id);
-                else newSet.add(id);
-                return newSet;
-              });
-            }}
-            expandedGroupIds={expandedGroupIds}
-            onToggleExpand={(id) => {
-              setExpandedGroupIds(prev => {
-                const newSet = new Set(prev);
-                if (newSet.has(id)) newSet.delete(id);
-                else newSet.add(id);
-                return newSet;
-              });
-            }}
-            onHoverSearchResult={(lat, lng) => {
-              setPreviewLocation(lat !== null && lng !== null ? { lat, lng } : null);
-            }}
-          />
-          <div 
-            onMouseDown={startResize}
-            style={{ 
-              width: '1px', 
-              cursor: 'col-resize', 
-              background: 'var(--border-color)', 
-              position: 'relative',
-              zIndex: 100
-            }}
-          >
-            <div style={{
-               position: 'absolute',
-               left: '-2px',
-               width: '5px',
-               height: '100%',
-               background: isResizing ? 'var(--primary-color)' : 'transparent',
-               transition: 'background 0.2s'
-            }} />
+      <div style={{ width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 10, background: 'var(--bg-color)' }}>
+        <header style={{ 
+          padding: '0.4rem 1.5rem', 
+          background: 'var(--primary-color)', 
+          color: 'white', 
+          display: 'flex', 
+          alignItems: 'center', 
+          boxShadow: 'var(--shadow-md)', 
+          zIndex: 1000 
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }} onClick={() => navigate('/')}>
+            <div style={{ background: 'rgba(255,255,255,0.2)', padding: '6px', borderRadius: '10px', display: 'flex' }}>
+              <MapIcon size={18} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1 }}>Our Maps</h1>
+              {userRole !== 'view' && (
+                <div style={{ 
+                  fontSize: '0.65rem', 
+                  background: 'rgba(255,255,255,0.1)', 
+                  padding: '3px 10px', 
+                  borderRadius: '50px',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  color: error ? '#ffbdad' : (successMessage ? '#b8ffd1' : 'white'),
+                  fontWeight: '600'
+                }}>
+                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: error ? '#ff4d4f' : (isSaving ? '#ffcc00' : '#4ade80') }} />
+                  {error || successMessage || (isSaving ? 'Saving changes...' : 'Map Synced')}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </header>
 
-        <main style={{ flex: 1, position: 'relative' }}>
-          <MapView 
+        <Sidebar 
+          mapId={mapId}
+          mapName={mapName}
+          onMapNameChange={setMapName}
+          groups={groups}
+          onAddGroup={addGroup}
+          onUpdateGroup={updateGroup}
+          onRemoveGroup={removeGroup}
+          pins={pins}
+          onResultSelect={(lat, lng) => setTargetLocation([lat, lng])}
+          onAddPin={addPinAtLocation}
+          onRemovePin={removePin}
+          onPinClick={handlePinSelect}
+          onUpdatePin={updatePin}
+          onDragEnd={handleDragEnd}
+          onDragOver={handleDragOver}
+          userRole={userRole}
+          onShare={() => setIsSharing(true)}
+          onImport={handleImport}
+          mapBounds={mapBounds}
+          editingPinId={editingPinId}
+          onSetEditingPinId={setEditingPinId}
+          hoveredPinId={hoveredPinId}
+          onHoverPin={setHoveredPinId}
+          customColors={customColors}
+          onAddCustomColor={addCustomColor}
+          selectedNavIds={selectedNavIds}
+          onToggleNavId={(id) => {
+            setSelectedNavIds(prev => {
+              const newSet = new Set(prev);
+              if (newSet.has(id)) newSet.delete(id);
+              else newSet.add(id);
+              return newSet;
+            });
+          }}
+          onToggleNavIds={(ids, force) => {
+            setSelectedNavIds(prev => {
+              const newSet = new Set(prev);
+              ids.forEach(id => {
+                if (force === true) newSet.add(id);
+                else if (force === false) newSet.delete(id);
+                else {
+                  if (newSet.has(id)) newSet.delete(id);
+                  else newSet.add(id);
+                }
+              });
+              return newSet;
+            });
+          }}
+          hiddenGroupIds={hiddenGroupIds}
+          onToggleGroupVisibility={(id) => {
+            setHiddenGroupIds(prev => {
+              const newSet = new Set(prev);
+              if (newSet.has(id)) newSet.delete(id);
+              else newSet.add(id);
+              return newSet;
+            });
+          }}
+          expandedGroupIds={expandedGroupIds}
+          onToggleExpand={(id) => {
+            setExpandedGroupIds(prev => {
+              const newSet = new Set(prev);
+              if (newSet.has(id)) newSet.delete(id);
+              else newSet.add(id);
+              return newSet;
+            });
+          }}
+          onHoverSearchResult={(lat, lng) => {
+            setPreviewLocation(lat !== null && lng !== null ? { lat, lng } : null);
+          }}
+        />
+      </div>
+
+      <div 
+        onMouseDown={startResize}
+        style={{ 
+          width: '1px', 
+          cursor: 'col-resize', 
+          background: 'var(--border-color)', 
+          position: 'relative',
+          zIndex: 100
+        }}
+      >
+        <div style={{
+           position: 'absolute',
+           left: '-2px',
+           width: '5px',
+           height: '100%',
+           background: isResizing ? 'var(--primary-color)' : 'transparent',
+           transition: 'background 0.2s'
+        }} />
+      </div>
+
+      <main style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '10px', background: 'white', padding: '6px 12px', borderRadius: '50px', boxShadow: 'var(--shadow-sm)' }}>
+          <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)' }}>{user?.name}</span>
+          {user?.picture && <img src={user.picture} alt={user.name} style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid rgba(0,0,0,0.05)' }} />}
+        </div>
+        <MapView 
             pins={pins} 
             onMapClick={handleMapClick} 
             onEditPin={(id) => {
@@ -636,7 +631,6 @@ export function MapEditor() {
             previewLocation={previewLocation}
           />
         </main>
-      </div>
 
       <ShareDialog 
         isOpen={isSharing}
