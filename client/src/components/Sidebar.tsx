@@ -6,25 +6,18 @@ import {
   Bed, 
   Utensils, 
   Plane, 
-  Trees, 
-  ShoppingBag, 
+  Bus, 
+  Handbag, 
   MapPin,
   type LucideIcon,
   GripVertical,
   Trash2,
-  FolderPlus,
   Pencil,
   X,
   ChevronDown,
   ChevronRight,
-  Upload,
-  FileJson,
-  Map as MapIcon,
-  Globe as GlobeIcon,
   Navigation,
-  Download,
   MoreVertical,
-  Share2,
   Fuel,
   Zap,
   Eye,
@@ -126,7 +119,7 @@ const CustomBoatIcon = ({ size, color }: any) => (
 
 const CustomTrainIcon = ({ size, color }: any) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} color={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M 20 16 h 1 c 1 0 2 -0.5 2 -2 v -3 c 0 -1.5 -0.5 -2 -2 -2 h -1 v -3 c 0 -1 -1 -2 -2 -2 h -2 c -1 0 -2 1 -2 2 v 3 h -4 v -4 c 0 -1.5 -1 -3 -3 -3 h -2 c -1.5 0 -3 1.5 -3 3 v 9 c 0 1.5 1 2 2 2 h 2 M 10 16 h 4"/>
+    <path d="M 20 16 h 1 c 1 0 2 -0.5 2 -2 v -3 c 0 -1.5 -0.5 -2 -2 -2 h -1 v -3 c 0 -1 -1 -2 -2 -2 h -2 c -1 0 -2 1 -2 2 v 3 h -4 v -4 c 0 -1.5 -1 -3 -3 -3 h -2 c -1.5 0 -3 1.5 -3 3 v 9 c 0 1.5 1 2 2 2 M 10 16 h 4"/>
     <circle cx="7" cy="16" r="3"/>
     <circle cx="17" cy="16" r="3"/>
   </svg>
@@ -146,12 +139,12 @@ const ICONS: { type: PinIcon; Icon: LucideIcon | any }[] = [
   { type: 'restaurant', Icon: Utensils },
   { type: 'airport', Icon: Plane },
   { type: 'car', Icon: CustomCarIcon },
+  { type: 'bus', Icon: Bus },
   { type: 'boat', Icon: CustomBoatIcon },
   { type: 'train', Icon: CustomTrainIcon },
   { type: 'gas', Icon: Fuel },
   { type: 'charging', Icon: Zap },
-  { type: 'park', Icon: Trees },
-  { type: 'shopping', Icon: ShoppingBag },
+  { type: 'shopping', Icon: Handbag },
 ];
 
 const IconButton = ({ type, Icon, isSelected, onClick }: { type: PinIcon, Icon: any, isSelected: boolean, onClick: () => void }) => {
@@ -210,7 +203,7 @@ const StaticPin = ({ pin, isSelected }: { pin: Pin, isSelected?: boolean }) => {
   const currentColor = COLORS.find(c => c.name === pin.color)?.value || pin.color || '#2A81CB';
   return (
     <div style={{ 
-      padding: '0.05rem 0.15rem', 
+      padding: '0 0.15rem', 
       borderRadius: 'var(--radius-sm)',
       background: 'white',
       border: '1px solid var(--primary-color)',
@@ -325,7 +318,7 @@ const SortablePin = ({
       ref={setNodeRef} 
       style={{ 
         ...style, 
-        padding: '0.05rem 0.15rem', 
+        padding: '0 0.15rem', 
         marginBottom: '0px',
         borderRadius: 'var(--radius-sm)',
         background: (hoveredPinId === pin.id && !isDragActive) ? 'rgba(72, 61, 139, 0.05)' : (editingPinId === pin.id ? 'var(--bg-color)' : 'transparent'),
@@ -427,36 +420,36 @@ const SortablePin = ({
       {editingPinId === pin.id && !readOnly && (
         <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '0.3rem', borderTop: '1px solid var(--border-color)', fontSize: '0.7rem' }}>
           <div style={{ marginBottom: '5px' }}>
-            <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>NAME</label>
+            <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Name</label>
             <input 
               id={`label-${pin.id}`}
               type="text" 
               value={pin.label || ''} 
               onChange={(e) => onUpdatePin(pin.id, { label: e.target.value })}
               className="input-field"
-              style={{ padding: '2px 4px', fontSize: '0.7rem' }}
+              style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit' }}
             />
           </div>
 
           <div style={{ marginBottom: '5px' }}>
-            <label htmlFor={`address-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>ADDRESS</label>
+            <label htmlFor={`address-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Address</label>
             <textarea 
               id={`address-${pin.id}`}
               value={pin.address || ''} 
               onChange={(e) => onUpdatePin(pin.id, { address: e.target.value })}
               className="input-field"
-              style={{ padding: '2px 4px', fontSize: '0.7rem', minHeight: '30px', resize: 'vertical' }}
+              style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit', minHeight: '30px', resize: 'vertical' }}
               placeholder="Fetch address from map or type here..."
             />
           </div>
 
           <div style={{ marginBottom: '5px' }}>
-            <label style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>LAYER</label>
+            <label style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Layer</label>
             <select 
                 value={pin.groupId || ''} 
                 onChange={(e) => onUpdatePin(pin.id, { groupId: e.target.value || undefined })}
                 className="input-field"
-                style={{ padding: '2px 4px', fontSize: '0.7rem', background: 'white' }}
+                style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit', background: 'white' }}
             >
                 <option value="">Default Layer</option>
                 {allGroups.map(g => (
@@ -466,7 +459,7 @@ const SortablePin = ({
           </div>
 
           <div style={{ marginBottom: '5px' }}>
-            <label style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>COLOR</label>
+            <label style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Color</label>
             <div style={{ display: 'flex', gap: '2px', flexWrap: 'wrap' }}>
               {COLORS.map(color => (
                 <button
@@ -517,7 +510,7 @@ const SortablePin = ({
           </div>
 
           <div style={{ marginBottom: '5px' }}>
-            <label style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>ICON</label>
+            <label style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Icon</label>
             <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '1px', justifyContent: 'space-between' }}>
               {ICONS.map(({ type, Icon }) => (
                 <IconButton 
@@ -533,13 +526,13 @@ const SortablePin = ({
 
 
           <div style={{ marginBottom: '5px' }}>
-            <label htmlFor={`desc-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>DESCRIPTION</label>
+            <label htmlFor={`desc-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Description</label>
             <textarea 
               id={`desc-${pin.id}`}
               value={pin.description || ''} 
               onChange={(e) => onUpdatePin(pin.id, { description: e.target.value })}
               className="input-field"
-              style={{ minHeight: '25px', resize: 'vertical', padding: '2px 4px', fontSize: '0.7rem' }}
+              style={{ minHeight: '25px', resize: 'vertical', padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit' }}
             />
           </div>
         </div>
@@ -640,19 +633,19 @@ const SortableGroup = ({
     <div ref={setNodeRef} style={style}>
       <div style={{
         position: 'sticky',
-        top: '-1px',
+        top: '4px',
         zIndex: 5,
         background: (isOver && !isDragging && !isGroupDragging) ? 'rgba(72, 61, 139, 0.05)' : (isEditingName ? 'var(--bg-color)' : 'white'),
         borderRadius: 'var(--radius-sm)',
         border: (isOver && !isDragging && !isGroupDragging) ? '1px solid var(--primary-color)' : (isEditingName ? '1px solid var(--primary-color)' : '1px solid transparent'),
-        boxShadow: (isOver && !isDragging && !isGroupDragging) ? '0 0 0 1px var(--primary-color)' : (isExpanded ? 'none' : 'var(--shadow-sm)'),
+        boxShadow: (isOver && !isDragging && !isGroupDragging) ? '0 0 0 1px var(--primary-color)' : 'var(--shadow-sm)',
         transition: 'all 0.1s ease'
       }}>
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
-          padding: '0.1rem 0.15rem', 
-          borderBottom: !isEditingName ? '1px solid var(--border-color)' : 'none',
+          padding: '0 0.15rem', 
+          borderBottom: 'none',
           transition: 'all 0.1s ease'
         }}>
           {!readOnly && (
@@ -819,6 +812,11 @@ const Sidebar = ({
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
+  // Export Modal State
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportFileName, setExportFileName] = useState('');
+  const [exportFormat, setExportFormat] = useState<'json' | 'geojson' | 'kml'>('json');
+
   useEffect(() => {
     setLocalMapName(mapName);
   }, [mapName]);
@@ -929,15 +927,22 @@ const Sidebar = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleExport = (format: 'json' | 'geojson' | 'kml') => {
+  const handleExportClick = () => {
+    setExportFileName(`${mapName.replace(/\s+/g, '_')}_export.json`);
+    setExportFormat('json');
+    setShowExportModal(true);
+    setIsMenuOpen(false);
+  };
+
+  const confirmExport = () => {
     exportMap({ 
       id: '', 
       name: mapName, 
       pins, 
       groups,
       ownerId: '' 
-    }, format);
-    setIsMenuOpen(false);
+    }, exportFormat, exportFileName);
+    setShowExportModal(false);
   };
 
   const handleImportClick = () => {
@@ -1110,7 +1115,7 @@ const Sidebar = ({
                         onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       >
-                        <Share2 size={16} color="var(--primary-color)" /> Share Map
+                        Share
                       </div>
                     )}
                     {!readOnly && (
@@ -1120,16 +1125,24 @@ const Sidebar = ({
                         onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       >
-                        <Upload size={16} color="#3498db" /> Import
+                        Import
                       </div>
                     )}
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={handleExportClick}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                        Export
+                    </div>
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isDownloading ? '#999' : 'inherit' }}
                       onClick={isDownloading ? undefined : handleDownloadClick}
                       onMouseEnter={(e) => !isDownloading && (e.currentTarget.style.background = 'var(--bg-color)')}
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
-                      <Download size={16} color="#27ae60" /> Download for Offline
+                      Download for Offline
                     </div>
                     {selectedPins.length > 0 && !readOnly && (
                       <>
@@ -1161,31 +1174,19 @@ const Sidebar = ({
                         ))}
                       </>
                     )}
-                    <div style={{ padding: '8px 16px', fontSize: '0.65rem', fontWeight: '800', color: '#999', background: '#fcfcfc', borderBottom: '1px solid var(--border-color)' }}>EXPORT AS...</div>
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem' }}
-                      onClick={() => handleExport('json')}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <FileJson size={16} color="var(--primary-color)" /> OurMaps JSON
-                    </div>
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem' }}
-                      onClick={() => handleExport('geojson')}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <GlobeIcon size={16} color="#27ae60" /> GeoJSON
-                    </div>
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem' }}
-                      onClick={() => handleExport('kml')}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <MapIcon size={16} color="#f39c12" /> KML
-                    </div>
+                    {!readOnly && (
+                      <div 
+                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                        onClick={() => {
+                          onAddGroup();
+                          setIsMenuOpen(false);
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        New Layer
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1205,17 +1206,7 @@ const Sidebar = ({
           />
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem', marginTop: '0.2rem' }}>
-          <h3 style={{ margin: 0, fontSize: '0.75rem', fontWeight: '800', color: 'var(--text-primary)' }}>Layers</h3>
-          {!readOnly && (
-            <button 
-              onClick={onAddGroup}
-              style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'transparent', border: '1px solid var(--border-color)', padding: '2px 5px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.6rem', fontWeight: '600', color: 'var(--text-secondary)' }}
-            >
-              <FolderPlus size={11} /> New Layer
-            </button>
-          )}
-        </div>
+
 
         <div 
           ref={scrollContainerRef}
@@ -1225,6 +1216,7 @@ const Sidebar = ({
             paddingRight: '4px', 
             margin: '0 -4px'
           }}>
+          <div style={{ position: 'sticky', top: 0, height: '4px', background: 'white', zIndex: 4, margin: '0 -4px' }} />
           <SortableContext items={groups.map(g => g.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
             {groups.map(group => (
               <SortableGroup 
@@ -1263,14 +1255,16 @@ const Sidebar = ({
               id="default"
               style={{ 
                 position: 'sticky', 
-                top: '-1px', 
+                top: '4px', 
                 zIndex: 5, 
                 background: 'white',
                 borderTop: '1px solid transparent',
                 borderLeft: '1px solid transparent',
                 borderRight: '1px solid transparent',
-                borderBottom: '1px solid var(--border-color)',
-                padding: '0.1rem 0.15rem',
+                borderBottom: 'none',
+                borderRadius: 'var(--radius-sm)',
+                boxShadow: 'var(--shadow-sm)',
+                padding: '0 0.15rem',
                 marginBottom: '0.2rem',
                 display: 'flex', 
                 alignItems: 'center', 
@@ -1376,6 +1370,61 @@ const Sidebar = ({
                   style={{ flex: 1, padding: '12px', background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: 'var(--radius-md)', fontWeight: '800', cursor: 'pointer', boxShadow: '0 4px 10px rgba(72, 61, 139, 0.3)' }}
                 >
                   Download
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {/* Export Modal (Portaled) */}
+        {showExportModal && createPortal(
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '20px' }}>
+            <div style={{ background: 'white', borderRadius: 'var(--radius-lg)', padding: '32px', maxWidth: '440px', width: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.3rem', fontWeight: '900', color: '#1a1c1e' }}>Export Map</h3>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', fontWeight: '700' }}>File Name</label>
+                <input 
+                  type="text" 
+                  value={exportFileName} 
+                  onChange={(e) => setExportFileName(e.target.value)} 
+                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                />
+              </div>
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', fontWeight: '700' }}>Format</label>
+                <select 
+                  value={exportFormat} 
+                  onChange={(e) => {
+                    const newFormat = e.target.value as 'json' | 'geojson' | 'kml';
+                    setExportFormat(newFormat);
+                    let name = exportFileName;
+                    if (/\.(json|geojson|kml)$/.test(name)) {
+                        name = name.replace(/\.(json|geojson|kml)$/, `.${newFormat}`);
+                    } else {
+                        name = `${name}.${newFormat}`;
+                    }
+                    setExportFileName(name);
+                  }}
+                  style={{ width: '100%', padding: '10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                >
+                  <option value="json">OurMaps JSON</option>
+                  <option value="geojson">GeoJSON</option>
+                  <option value="kml">KML</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: '16px' }}>
+                <button 
+                  onClick={() => setShowExportModal(false)}
+                  style={{ flex: 1, padding: '12px', background: '#f5f5f5', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontWeight: '800', cursor: 'pointer', color: '#444' }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={confirmExport}
+                  style={{ flex: 1, padding: '12px', background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: 'var(--radius-md)', fontWeight: '800', cursor: 'pointer', boxShadow: '0 4px 10px rgba(72, 61, 139, 0.3)' }}
+                >
+                  Export
                 </button>
               </div>
             </div>

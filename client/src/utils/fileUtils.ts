@@ -98,7 +98,7 @@ export const geoJSONToData = (geojson: any): { pins: Pin[], groups: PinGroup[] }
         }
       }
 
-      const validIcons: PinIcon[] = ['default', 'hotel', 'restaurant', 'airport', 'park', 'shopping', 'car', 'boat', 'train', 'gas', 'charging'];
+      const validIcons: PinIcon[] = ['default', 'hotel', 'restaurant', 'airport', 'car', 'bus', 'boat', 'train', 'gas', 'charging', 'shopping'];
 
       // Lenient color validation to support hex codes
       const color = (props.color && (props.color.startsWith('#') || ['blue', 'red', 'green', 'orange', 'violet'].includes(props.color))) 
@@ -146,21 +146,24 @@ export const downloadFile = (content: string, fileName: string, contentType: str
 /**
  * Exports map data to various formats
  */
-export const exportMap = (mapData: MapData, format: 'json' | 'geojson' | 'kml') => {
-  const fileName = `${mapData.name.replace(/\s+/g, '_')}_export`;
+export const exportMap = (mapData: MapData, format: 'json' | 'geojson' | 'kml', customFileName?: string) => {
+  const fileName = customFileName || `${mapData.name.replace(/\s+/g, '_')}_export`;
 
   switch (format) {
-    case 'json':
+    case 'json': {
       downloadFile(JSON.stringify(mapData, null, 2), `${fileName}.json`, 'application/json');
       break;
-    case 'geojson':
+    }
+    case 'geojson': {
       const geojson = mapDataToGeoJSON(mapData);
       downloadFile(JSON.stringify(geojson, null, 2), `${fileName}.geojson`, 'application/geo+json');
       break;
-    case 'kml':
+    }
+    case 'kml': {
       const kmlStr = tokml(mapDataToGeoJSON(mapData));
       downloadFile(kmlStr, `${fileName}.kml`, 'application/vnd.google-earth.kml+xml');
       break;
+    }
   }
 };
 
