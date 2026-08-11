@@ -195,6 +195,7 @@ export const importMapFile = async (file: File): Promise<Partial<MapData>> => {
           groupId: p.groupId ? (groupIdMap.get(p.groupId) || p.groupId) : undefined
         }));
 
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { id: _ignoreId, ...rest } = data;
         return {
           ...rest,

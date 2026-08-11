@@ -25,8 +25,9 @@ interface SearchBarProps {
   onHoverPin?: (id: string | null) => void;
 }
 
-const renderAddressParts = (title: string, address: string) => {
-  const addressParts = address.split(',').map(s => s.trim()).filter(Boolean);
+const renderAddressParts = (title: string, address: string = '') => {
+  if (!address && !title) return null;
+  const addressParts = address ? address.split(',').map(s => s.trim()).filter(Boolean) : [];
   const street = addressParts.length > 0 ? addressParts[0] : null;
   const rest = addressParts.length > 1 ? addressParts.slice(1).join(', ') : null;
   

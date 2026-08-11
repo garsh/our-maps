@@ -406,6 +406,7 @@ const SortablePin = ({
           )}
           {!readOnly && (
             <button 
+              aria-label={editingPinId === pin.id ? "Close edit" : "Edit"}
               onClick={(e) => { e.stopPropagation(); setEditingPinId(editingPinId === pin.id ? null : pin.id); }}
               style={{ 
                 background: 'transparent', 
@@ -1068,6 +1069,7 @@ const Sidebar = ({
           <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
             <input 
               id="map-name"
+              aria-label="map name"
               type="text" 
               value={localMapName} 
               onChange={(e) => setLocalMapName(e.target.value)}
