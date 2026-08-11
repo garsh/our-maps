@@ -617,7 +617,15 @@ fun LegendContent(
             Text("Map Legend", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = DarkSlateBlue)
             if (selectedNavPinIds.isNotEmpty()) {
                 Button(onClick = { 
-                    pinsToNavigate = mapData.pins.filter { it.id in selectedNavPinIds }.sortedBy { it.position }
+                    pinsToNavigate = mapData.pins.filter { it.id in selectedNavPinIds }.sortedWith(
+                        compareBy<com.google.ourmaps.data.Pin> { pin ->
+                            if (pin.groupId == null) Int.MAX_VALUE
+                            else {
+                                val idx = mapData.groups.indexOfFirst { g -> g.id == pin.groupId }
+                                if (idx != -1) idx else Int.MAX_VALUE
+                            }
+                        }.thenBy { it.position }
+                    )
                     showNavigationDialog = true 
                 }, colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), modifier = Modifier.height(32.dp)) { 
                     Icon(Icons.Default.Directions, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Go (${selectedNavPinIds.size})", fontSize = 12.sp) 

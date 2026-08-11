@@ -950,8 +950,25 @@ const Sidebar = ({
   );
 
   const defaultPins = pins.filter(p => !p.groupId).sort((a, b) => a.position - b.position);
+
+  const getVisualOrder = (pin: Pin) => {
+    if (!pin.groupId) return { groupIndex: Number.MAX_SAFE_INTEGER, pinPosition: pin.position };
+    const groupIndex = groups.findIndex(g => g.id === pin.groupId);
+    return { 
+      groupIndex: groupIndex !== -1 ? groupIndex : Number.MAX_SAFE_INTEGER, 
+      pinPosition: pin.position 
+    };
+  };
+
   const selectedPins = pins.filter(p => selectedNavIds?.has(p.id))
-    .sort((a, b) => a.position - b.position);
+    .sort((a, b) => {
+      const orderA = getVisualOrder(a);
+      const orderB = getVisualOrder(b);
+      if (orderA.groupIndex !== orderB.groupIndex) {
+        return orderA.groupIndex - orderB.groupIndex;
+      }
+      return orderA.pinPosition - orderB.pinPosition;
+    });
 
   const handleNavigate = () => {
     if (selectedPins.length === 0) return;
