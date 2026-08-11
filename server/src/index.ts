@@ -21,7 +21,7 @@ const io = new Server(server, {
   }
 });
 
-const port = process.env.PORT || 3001;
+const port = process.env.PORT || 3002;
 
 // Security: Use helmet for secure headers
 app.use(helmet({
@@ -133,14 +133,7 @@ app.get('*', (req, res) => {
   }
 });
 
-// Initialize DB
-getDb().then(() => {
-  if (process.env.NODE_ENV !== 'test') {
-    console.log('Database initialized');
-  }
-}).catch(err => {
-  console.error('Failed to initialize database:', err);
-});
+// DB is initialized on demand
 
 export { app };
 

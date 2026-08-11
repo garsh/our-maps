@@ -7,14 +7,14 @@ import {
   Utensils, 
   Plane, 
   Trees, 
-  Landmark, 
   ShoppingBag, 
-  Camera, 
   MapPin,
   type LucideIcon,
   GripVertical,
   Trash2,
   FolderPlus,
+  Pencil,
+  X,
   ChevronDown,
   ChevronRight,
   Upload,
@@ -50,7 +50,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { restrictToWindowEdges, snapCenterToCursor } from '@dnd-kit/modifiers';
+import { restrictToWindowEdges, restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { exportMap, importMapFile } from '../utils/fileUtils';
 import { 
   countTiles, 
@@ -102,6 +102,7 @@ interface SidebarProps {
   onToggleGroupVisibility?: (id: string | null) => void;
   expandedGroupIds?: Set<string | null>;
   onToggleExpand?: (id: string | null) => void;
+  onHoverSearchResult?: (lat: number | null, lng: number | null) => void;
 }
 
 const COLORS = [
@@ -113,23 +114,99 @@ const COLORS = [
   { name: 'gold', value: '#FFD700' },
   { name: 'pink', value: '#FF69B4' },
   { name: 'teal', value: '#008080' },
-  { name: 'brown', value: '#8B4513' }
+  { name: 'brown', value: '#8B4513' },
+  { name: 'black', value: '#000000' }
 ];
 
-const ICONS: { type: PinIcon; Icon: LucideIcon }[] = [
+const CustomBoatIcon = ({ size, color }: any) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M 4 18 h 16 c 1.5 0 2 -1.5 2 -4 c 0 -1.5 -0.5 -2 -2 -2 h -16 c -1.5 0 -2 0.5 -2 2 c 0 2.5 0.5 4 2 4 Z M 12 12 V 2 c 0 -1.5 -1 -1.5 -2 -0.5 l -6 9 c -0.5 1 0 1.5 1 1.5 h 7"/>
+  </svg>
+);
+
+const CustomTrainIcon = ({ size, color }: any) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} color={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M 20 16 h 1 c 1 0 2 -0.5 2 -2 v -3 c 0 -1.5 -0.5 -2 -2 -2 h -1 v -3 c 0 -1 -1 -2 -2 -2 h -2 c -1 0 -2 1 -2 2 v 3 h -4 v -4 c 0 -1.5 -1 -3 -3 -3 h -2 c -1.5 0 -3 1.5 -3 3 v 9 c 0 1.5 1 2 2 2 h 2 M 10 16 h 4"/>
+    <circle cx="7" cy="16" r="3"/>
+    <circle cx="17" cy="16" r="3"/>
+  </svg>
+);
+
+const CustomCarIcon = ({ size, color }: any) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} color={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M 22 16 v -5.5 a 2.5 2.5 0 0 0 -2.5 -2.5 h -4.5 l -3 -5 h -6 l -4 8 v 4 a 1 1 0 0 0 1 1 h 1 M 10 16 h 4 M 20 16 h 2"/>
+    <circle cx="7" cy="16" r="3"/>
+    <circle cx="17" cy="16" r="3"/>
+  </svg>
+);
+
+const ICONS: { type: PinIcon; Icon: LucideIcon | any }[] = [
   { type: 'default', Icon: MapPin },
   { type: 'hotel', Icon: Bed },
   { type: 'restaurant', Icon: Utensils },
   { type: 'airport', Icon: Plane },
-  { type: 'park', Icon: Trees },
-  { type: 'museum', Icon: Landmark },
-  { type: 'shopping', Icon: ShoppingBag },
-  { type: 'camera', Icon: Camera },
+  { type: 'car', Icon: CustomCarIcon },
+  { type: 'boat', Icon: CustomBoatIcon },
+  { type: 'train', Icon: CustomTrainIcon },
   { type: 'gas', Icon: Fuel },
   { type: 'charging', Icon: Zap },
+  { type: 'park', Icon: Trees },
+  { type: 'shopping', Icon: ShoppingBag },
 ];
 
-const StaticPin = ({ pin }: { pin: Pin }) => {
+const IconButton = ({ type, Icon, isSelected, onClick }: { type: PinIcon, Icon: any, isSelected: boolean, onClick: () => void }) => {
+  return (
+    <button
+      title={type !== 'default' ? type.charAt(0).toUpperCase() + type.slice(1) : undefined}
+      aria-label={`icon-${type}`}
+      onClick={onClick}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '20px',
+        flex: 1,
+        minWidth: 0,
+        padding: 0,
+        borderRadius: '4px',
+        background: isSelected ? 'var(--primary-color)' : '#eee',
+        border: '1px solid var(--border-color)',
+        cursor: 'pointer'
+      }}
+    >
+      <Icon size={12} color={isSelected ? 'white' : '#333'} />
+    </button>
+  );
+};
+
+const TruncatedTooltip = ({ text, style }: { text: string, style?: React.CSSProperties }) => {
+  const [isTruncated, setIsTruncated] = useState(false);
+  const textRef = useRef<HTMLDivElement>(null);
+
+  const checkTruncation = () => {
+    if (textRef.current) {
+      setIsTruncated(textRef.current.scrollWidth > textRef.current.clientWidth);
+    }
+  };
+
+  return (
+    <div 
+      ref={textRef}
+      onMouseEnter={checkTruncation}
+      title={isTruncated ? text : undefined}
+      style={{
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        ...style
+      }}
+    >
+      {text}
+    </div>
+  );
+};
+
+const StaticPin = ({ pin, isSelected }: { pin: Pin, isSelected?: boolean }) => {
   const currentColor = COLORS.find(c => c.name === pin.color)?.value || pin.color || '#2A81CB';
   return (
     <div style={{ 
@@ -140,18 +217,31 @@ const StaticPin = ({ pin }: { pin: Pin }) => {
       boxShadow: 'var(--shadow-md)',
       display: 'flex', 
       alignItems: 'center',
-      gap: '4px',
       opacity: 0.9
     }}>
-      <div style={{ width: '8px', padding: '1px 2px', color: '#555' }}><GripVertical size={8} /></div>
-      <div style={{ width: '12px', height: '12px', borderRadius: '2px', background: currentColor, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-         {(() => {
-            const iconObj = ICONS.find(i => i.type === pin.icon) || ICONS[0];
-            const { Icon } = iconObj;
-            return <Icon size={7} color="white" />;
-        })()}
+      <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
+        <div style={{ marginRight: '0px', color: '#bbb', padding: '1px 1px', marginLeft: '-2px' }}>
+          <GripVertical size={10} />
+        </div>
+        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, padding: '0px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+               {(() => {
+                  const iconObj = ICONS.find(i => i.type === pin.icon) || ICONS[0];
+                  const { Icon } = iconObj;
+                  return <Icon size={14} color={currentColor} />;
+              })()}
+            </div>
+            <div style={{ fontWeight: '600', fontSize: '0.65rem', color: 'var(--text-primary)' }}>{pin.label}</div>
+          </div>
+        </div>
+        <input 
+          type="checkbox" 
+          checked={!!isSelected}
+          readOnly
+          style={{ marginLeft: '4px', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
+        />
       </div>
-      <div style={{ fontWeight: '600', fontSize: '0.65rem', color: 'var(--text-primary)' }}>{pin.label}</div>
     </div>
   );
 };
@@ -171,7 +261,8 @@ const SortablePin = ({
   onToggleSelect,
   customColors,
   allGroups,
-  isAnySelectedDragging
+  isAnySelectedDragging,
+  isDragActive
 }: { 
   pin: Pin, 
   onPinClick: (pin: Pin) => void,
@@ -187,7 +278,8 @@ const SortablePin = ({
   onToggleSelect?: (id: string) => void,
   customColors?: string[],
   allGroups: PinGroup[],
-  isAnySelectedDragging: boolean
+  isAnySelectedDragging: boolean,
+  isDragActive: boolean
 }) => {
   const {
     attributes,
@@ -195,8 +287,7 @@ const SortablePin = ({
     setNodeRef,
     transform,
     transition,
-    isDragging,
-    isOver
+    isDragging
   } = useSortable({ 
     id: pin.id,
     data: { type: 'pin', pin },
@@ -204,6 +295,17 @@ const SortablePin = ({
   });
 
   const isItemInDraggingBundle = isAnySelectedDragging && isSelected;
+
+  useEffect(() => {
+    if (editingPinId === pin.id) {
+      setTimeout(() => {
+        const el = document.getElementById(`pin-${pin.id}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 50);
+    }
+  }, [editingPinId, pin.id]);
 
   const style = {
     transform: transform ? CSS.Transform.toString(transform) : undefined,
@@ -226,10 +328,9 @@ const SortablePin = ({
         padding: '0.05rem 0.15rem', 
         marginBottom: '0px',
         borderRadius: 'var(--radius-sm)',
-        background: hoveredPinId === pin.id ? 'rgba(72, 61, 139, 0.05)' : (editingPinId === pin.id ? 'var(--bg-color)' : 'transparent'),
+        background: (hoveredPinId === pin.id && !isDragActive) ? 'rgba(72, 61, 139, 0.05)' : (editingPinId === pin.id ? 'var(--bg-color)' : 'transparent'),
         border: editingPinId === pin.id ? '1px solid var(--primary-color)' : '1px solid transparent',
-        borderTop: isOver && !isDragging ? '2px solid var(--primary-color)' : '1px solid transparent',
-        boxShadow: hoveredPinId === pin.id ? '0 0 0 1px var(--primary-color)' : 'none',
+        boxShadow: (hoveredPinId === pin.id && !isDragActive) ? '0 0 0 1px var(--primary-color)' : 'none',
         transition: 'all 0.1s ease',
         cursor: 'default'
       }}
@@ -239,17 +340,10 @@ const SortablePin = ({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
           {!readOnly && (
-            <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '0px', color: '#555', padding: '1px 2px' }}>
+            <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '0px', color: '#bbb', padding: '1px 1px', marginLeft: '-2px' }}>
               <GripVertical size={10} />
             </div>
           )}
-          <input 
-            type="checkbox" 
-            checked={!!isSelected} 
-            onChange={(e) => { e.stopPropagation(); onToggleSelect?.(pin.id); }}
-            style={{ marginRight: '3px', cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
-            onClick={(e) => e.stopPropagation()}
-          />
           <div 
             style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', flex: 1, padding: '0px' }}
             onClick={() => onPinClick(pin)}
@@ -257,11 +351,6 @@ const SortablePin = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <div 
                 style={{ 
-                  width: '12px', 
-                  height: '12px', 
-                  borderRadius: '2px', 
-                  background: currentColor,
-                  boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.15)',
                   display: 'flex', 
                   alignItems: 'center', 
                   justifyContent: 'center', 
@@ -271,33 +360,65 @@ const SortablePin = ({
                 {(() => {
                     const iconObj = ICONS.find(i => i.type === pin.icon) || ICONS[0];
                     const { Icon } = iconObj;
-                    return <Icon size={7} color="white" />;
+                    return <Icon size={14} color={currentColor} />;
                 })()}
               </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: '600', fontSize: '0.65rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '1.1' }}>{pin.label}</div>
+                <TruncatedTooltip 
+                  text={pin.label}
+                  style={{ fontWeight: '600', fontSize: '0.65rem', color: 'var(--text-primary)', lineHeight: '1.1' }}
+                />
                 {pin.description && (
                   <div style={{ fontSize: '0.5rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '-1px', lineHeight: '1' }}>{pin.description}</div>
                 )}
               </div>            </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '2px', marginLeft: '4px' }}>
-          {!readOnly && (
+        <div style={{ display: 'flex', gap: '2px', marginLeft: '4px', alignItems: 'center' }}>
+          <input 
+            type="checkbox" 
+            checked={!!isSelected} 
+            onChange={(e) => { e.stopPropagation(); onToggleSelect?.(pin.id); }}
+            style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
+            onClick={(e) => e.stopPropagation()}
+          />
+          {!readOnly && editingPinId === pin.id && (
             <button 
-              onClick={() => setEditingPinId(editingPinId === pin.id ? null : pin.id)}
+              title="Delete Pin"
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                if (window.confirm('Are you sure you want to delete this pin?')) {
+                  onRemovePin(pin.id); 
+                }
+              }}
               style={{ 
-                background: editingPinId === pin.id ? 'var(--primary-color)' : 'transparent', 
-                color: editingPinId === pin.id ? 'white' : 'var(--primary-color)', 
+                background: 'transparent', 
+                color: 'var(--error-color)', 
                 border: 'none',
-                borderRadius: '4px', 
                 padding: '0px 3px', 
                 cursor: 'pointer', 
-                fontSize: '0.45rem',
-                fontWeight: '700'
+                display: 'flex', 
+                alignItems: 'center'
               }}
             >
-              {editingPinId === pin.id ? 'Close' : 'Edit'}
+              <Trash2 size={12} />
+            </button>
+          )}
+          {!readOnly && (
+            <button 
+              aria-label={editingPinId === pin.id ? "Close edit" : "Edit"}
+              onClick={(e) => { e.stopPropagation(); setEditingPinId(editingPinId === pin.id ? null : pin.id); }}
+              style={{ 
+                background: 'transparent', 
+                color: editingPinId === pin.id ? 'var(--text-primary)' : 'var(--primary-color)', 
+                border: 'none',
+                padding: '0px 3px', 
+                cursor: 'pointer', 
+                display: 'flex',
+                alignItems: 'center'
+              }}
+            >
+              {editingPinId === pin.id ? <X size={12} /> : <Pencil size={12} />}
             </button>
           )}
         </div>
@@ -397,41 +518,19 @@ const SortablePin = ({
 
           <div style={{ marginBottom: '5px' }}>
             <label style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>ICON</label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '2px' }}>
+            <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '1px', justifyContent: 'space-between' }}>
               {ICONS.map(({ type, Icon }) => (
-                <button
+                <IconButton 
                   key={type}
-                  aria-label={`icon-${type}`}
+                  type={type}
+                  Icon={Icon}
+                  isSelected={pin.icon === type || (!pin.icon && type === 'default')}
                   onClick={() => onUpdatePin(pin.id, { icon: type })}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: '20px',
-                    borderRadius: '4px',
-                    background: pin.icon === type || (!pin.icon && type === 'default') ? 'var(--primary-color)' : '#eee',
-                    border: '1px solid var(--border-color)',
-                    cursor: 'pointer'
-                  }}
-                >
-                  <Icon size={9} color={pin.icon === type || (!pin.icon && type === 'default') ? 'white' : '#333'} />
-                </button>
+                />
               ))}
             </div>
           </div>
 
-          <div style={{ marginBottom: '5px' }}>
-            <label htmlFor={`image-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>IMAGE URL</label>
-            <input 
-              id={`image-${pin.id}`}
-              type="text" 
-              value={pin.imageUrl || ''} 
-              onChange={(e) => onUpdatePin(pin.id, { imageUrl: e.target.value })}
-              placeholder="https://example.com/image.jpg"
-              className="input-field"
-              style={{ padding: '2px 4px', fontSize: '0.7rem' }}
-            />
-          </div>
 
           <div style={{ marginBottom: '5px' }}>
             <label htmlFor={`desc-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>DESCRIPTION</label>
@@ -442,15 +541,6 @@ const SortablePin = ({
               className="input-field"
               style={{ minHeight: '25px', resize: 'vertical', padding: '2px 4px', fontSize: '0.7rem' }}
             />
-          </div>
-          
-          <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginTop: '6px' }}>
-            <button 
-              onClick={() => onRemovePin(pin.id)}
-              style={{ background: 'transparent', color: 'var(--error-color)', border: 'none', padding: '2px', cursor: 'pointer', fontSize: '0.6rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '2px' }}
-            >
-              <Trash2 size={10} /> Delete
-            </button>
           </div>
         </div>
       )}
@@ -481,7 +571,9 @@ const SortableGroup = ({
   onToggleVisibility,
   isExpanded,
   onToggleExpand,
-  isAnySelectedDragging
+  isAnySelectedDragging,
+  isGroupDragging,
+  isDragActive
 }: { 
   group: PinGroup,
   groupPins: Pin[],
@@ -505,9 +597,19 @@ const SortableGroup = ({
   onToggleVisibility: () => void,
   isExpanded: boolean,
   onToggleExpand: () => void,
-  isAnySelectedDragging: boolean
+  isAnySelectedDragging: boolean,
+  isGroupDragging: boolean,
+  isDragActive: boolean
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
+
+  useEffect(() => {
+    if (editingPinId && groupPins.some(p => p.id === editingPinId)) {
+      if (!isExpanded) {
+        onToggleExpand();
+      }
+    }
+  }, [editingPinId, groupPins, isExpanded, onToggleExpand]);
 
   const {
     attributes,
@@ -536,84 +638,101 @@ const SortableGroup = ({
 
   return (
     <div ref={setNodeRef} style={style}>
-      <div style={{ 
+      <div style={{
         position: 'sticky',
         top: '-1px',
         zIndex: 5,
-        display: 'flex', 
-        alignItems: 'center', 
-        background: 'white',
-        padding: '0.1rem 0.2rem', 
+        background: (isOver && !isDragging && !isGroupDragging) ? 'rgba(72, 61, 139, 0.05)' : (isEditingName ? 'var(--bg-color)' : 'white'),
         borderRadius: 'var(--radius-sm)',
-        borderBottom: '1px solid var(--border-color)',
-        borderTop: isOver && !isDragging ? '2px solid var(--primary-color)' : '1px solid transparent',
-        transition: 'all 0.1s ease',
-        boxShadow: isExpanded ? 'none' : 'var(--shadow-sm)'
+        border: (isOver && !isDragging && !isGroupDragging) ? '1px solid var(--primary-color)' : (isEditingName ? '1px solid var(--primary-color)' : '1px solid transparent'),
+        boxShadow: (isOver && !isDragging && !isGroupDragging) ? '0 0 0 1px var(--primary-color)' : (isExpanded ? 'none' : 'var(--shadow-sm)'),
+        transition: 'all 0.1s ease'
       }}>
-        {!readOnly && (
-          <div {...attributes} {...listeners} style={{ cursor: 'grab', color: '#555', padding: '1px 3px', display: 'flex', alignItems: 'center' }}>
-            <GripVertical size={11} />
-          </div>
-        )}
-        <input 
-          type="checkbox" 
-          checked={isAllSelected} 
-          ref={el => { if (el) el.indeterminate = isSomeSelected && !isAllSelected; }}
-          onChange={(e) => {
-            const checked = e.target.checked;
-            onToggleNavIds?.(groupPins.map(p => p.id), checked);
-          }}
-          style={{ marginRight: '3px', cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
-          onClick={(e) => e.stopPropagation()}
-          title="Select all in group for navigation"
-        />
-        <button 
-          onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}
-          style={{ background: 'none', border: 'none', color: isHidden ? '#bbb' : 'var(--primary-color)', cursor: 'pointer', display: 'flex', padding: '2px', marginRight: '0px' }}
-          title={isHidden ? "Show group" : "Hide group"}
-        >
-          {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
-        </button>
-        <div onClick={() => onToggleExpand()} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
-          <div style={{ color: 'var(--primary-color)', marginRight: '1px', display: 'flex' }}>
-            {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-          </div>
-          {isEditingName && !readOnly ? (
-            <input 
-              autoFocus
-              value={group.name}
-              onChange={(e) => onUpdateGroup(group.id, { name: e.target.value })}
-              onFocus={(e) => e.target.select()}
-              onBlur={() => setIsEditingName(false)}
-              onKeyDown={(e) => e.key === 'Enter' && setIsEditingName(false)}
-              className="input-field"
-              style={{ fontSize: '0.65rem', padding: '1px 3px', height: 'auto' }}
-              onClick={(e) => e.stopPropagation()}
-            />
-          ) : (
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          padding: '0.1rem 0.15rem', 
+          borderBottom: !isEditingName ? '1px solid var(--border-color)' : 'none',
+          transition: 'all 0.1s ease'
+        }}>
+          {!readOnly && (
+            <div {...attributes} {...listeners} style={{ cursor: 'grab', color: '#bbb', padding: '1px 1px', marginLeft: '-2px', display: 'flex', alignItems: 'center' }}>
+              <GripVertical size={11} />
+            </div>
+          )}
+          <div onClick={() => onToggleExpand()} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
+            <div style={{ color: 'var(--primary-color)', marginRight: '1px', display: 'flex' }}>
+              {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+            </div>
             <span onDoubleClick={() => !readOnly && setIsEditingName(true)} style={{ fontWeight: '700', fontSize: '0.65rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {group.name} <span style={{ fontWeight: 'normal', color: '#aaa', fontSize: '0.55rem', marginLeft: '2px' }}>({groupPins.length})</span>
             </span>
-          )}
-        </div>
-        {!readOnly && (
-          <div style={{ display: 'flex', gap: '1px' }}>
+          </div>
+          <div style={{ display: 'flex', gap: '2px', marginLeft: '4px', alignItems: 'center' }}>
             <button 
-                onClick={(e) => { e.stopPropagation(); setIsEditingName(!isEditingName); }}
-                style={{ background: isEditingName ? 'var(--primary-color)' : 'transparent', color: isEditingName ? 'white' : 'var(--primary-color)', border: 'none', borderRadius: '4px', padding: '0px 2px', cursor: 'pointer', fontSize: '0.4rem', fontWeight: '700' }}
+              onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}
+              style={{ background: 'transparent', border: 'none', color: isHidden ? '#ccc' : '#555', cursor: 'pointer', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
+              title={isHidden ? "Show group on map" : "Hide group on map"}
             >
-                {isEditingName ? 'DONE' : 'RENAME'}
+              {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
             </button>
-            {!isEditingName && (
+            <input 
+              type="checkbox" 
+              checked={isAllSelected} 
+              ref={el => { if (el) el.indeterminate = isSomeSelected && !isAllSelected; }}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                onToggleNavIds?.(groupPins.map(p => p.id), checked);
+              }}
+              style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
+              onClick={(e) => e.stopPropagation()}
+              title="Select all in group for navigation"
+            />
+            {!readOnly && (
+              <div style={{ display: 'flex', gap: '2px' }}>
+              {isEditingName && (
                 <button 
-                    onClick={(e) => { e.stopPropagation(); onRemoveGroup(group.id); }}
-                    style={{ background: 'transparent', border: 'none', color: '#555', cursor: 'pointer', padding: '1px', borderRadius: '50%', display: 'flex' }}
-                    className="delete-group-btn"
-                    title="Delete Group"
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    let msg = 'Are you sure you want to delete this layer?';
+                    if (groupPins.length > 0) {
+                      msg += ` The ${groupPins.length} pin${groupPins.length === 1 ? '' : 's'} inside it will be moved to the default layer.`;
+                    }
+                    if (window.confirm(msg)) {
+                      onRemoveGroup(group.id); 
+                    }
+                  }}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--error-color)', cursor: 'pointer', padding: '0px 3px', display: 'flex', alignItems: 'center' }}
+                  className="delete-group-btn"
+                  title="Delete Group"
                 >
-                    <Trash2 size={9} />
+                  <Trash2 size={12} />
                 </button>
-            )}
+              )}
+              <button 
+                  onClick={(e) => { e.stopPropagation(); setIsEditingName(!isEditingName); }}
+                  style={{ background: 'transparent', color: isEditingName ? 'var(--text-primary)' : 'var(--primary-color)', border: 'none', padding: '0px 3px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              >
+                {isEditingName ? <X size={12} /> : <Pencil size={12} />}
+              </button>
+            </div>
+          )}
+          </div>
+        </div>
+        
+        {isEditingName && !readOnly && (
+          <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '0', borderTop: '1px solid var(--border-color)', fontSize: '0.7rem' }}>
+            <div style={{ marginBottom: '5px' }}>
+              <label htmlFor={`label-${group.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>NAME</label>
+              <input 
+                id={`label-${group.id}`}
+                type="text" 
+                value={group.name} 
+                onChange={(e) => onUpdateGroup(group.id, { name: e.target.value })}
+                className="input-field"
+                style={{ padding: '2px 4px', fontSize: '0.7rem' }}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -640,6 +759,7 @@ const SortableGroup = ({
                   customColors={customColors}
                   allGroups={allGroups}
                   isAnySelectedDragging={isAnySelectedDragging}
+                  isDragActive={isDragActive}
                 />
               ))}
             </ul>
@@ -682,7 +802,8 @@ const Sidebar = ({
   hiddenGroupIds,
   onToggleGroupVisibility,
   expandedGroupIds,
-  onToggleExpand
+  onToggleExpand,
+  onHoverSearchResult
 }: SidebarProps) => {
   const [localMapName, setLocalMapName] = useState(mapName);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -850,8 +971,25 @@ const Sidebar = ({
   );
 
   const defaultPins = pins.filter(p => !p.groupId).sort((a, b) => a.position - b.position);
+
+  const getVisualOrder = (pin: Pin) => {
+    if (!pin.groupId) return { groupIndex: Number.MAX_SAFE_INTEGER, pinPosition: pin.position };
+    const groupIndex = groups.findIndex(g => g.id === pin.groupId);
+    return { 
+      groupIndex: groupIndex !== -1 ? groupIndex : Number.MAX_SAFE_INTEGER, 
+      pinPosition: pin.position 
+    };
+  };
+
   const selectedPins = pins.filter(p => selectedNavIds?.has(p.id))
-    .sort((a, b) => a.position - b.position);
+    .sort((a, b) => {
+      const orderA = getVisualOrder(a);
+      const orderB = getVisualOrder(b);
+      if (orderA.groupIndex !== orderB.groupIndex) {
+        return orderA.groupIndex - orderB.groupIndex;
+      }
+      return orderA.pinPosition - orderB.pinPosition;
+    });
 
   const handleNavigate = () => {
     if (selectedPins.length === 0) return;
@@ -893,24 +1031,47 @@ const Sidebar = ({
 
   const activePinId = activePin?.id;
   const isAnySelectedDragging = !!(activePinId && selectedNavIds?.has(activePinId));
+  const isDragActive = !!(activePinId || activeGroup);
+
+  const customCollisionDetection = (args: any) => {
+    const pointerCollisions = closestCorners(args);
+    if (args.active.data.current?.type === 'group' && pointerCollisions.length > 0) {
+      const firstCollision = pointerCollisions[0];
+      const container = args.droppableContainers.find((c: any) => c.id === firstCollision.id);
+      
+      if (container?.data.current?.type === 'pin') {
+        const pinGroupId = container.data.current.pin.groupId;
+        if (pinGroupId) {
+          const groupContainer = args.droppableContainers.find((c: any) => c.id === pinGroupId);
+          if (groupContainer) {
+            return [{
+              id: pinGroupId,
+              data: { droppableContainer: groupContainer }
+            }];
+          }
+        }
+        return [];
+      }
+    }
+    return pointerCollisions;
+  };
 
   return (
     <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: '0.6rem', boxSizing: 'border-box', overflow: 'hidden', borderRight: '1px solid var(--border-color)', position: 'relative' }}>
       <DndContext 
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={customCollisionDetection}
         onDragStart={handleDragStart}
         onDragOver={onDragOver}
         onDragEnd={handleDragEndInternal}
         autoScroll={false}
       >
         <div style={{ marginBottom: '0.6rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
-            <label htmlFor="map-name" style={{ display: 'block', fontWeight: '800', fontSize: '0.6rem', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Map Name</label>
-          </div>
+
           <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
             <input 
               id="map-name"
+              aria-label="map name"
               type="text" 
               value={localMapName} 
               onChange={(e) => setLocalMapName(e.target.value)}
@@ -1007,7 +1168,7 @@ const Sidebar = ({
                       onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
-                      <FileJson size={16} color="var(--primary-color)" /> JSON
+                      <FileJson size={16} color="var(--primary-color)" /> OurMaps JSON
                     </div>
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem' }}
@@ -1039,6 +1200,8 @@ const Sidebar = ({
             pins={pins} 
             disabled={readOnly} 
             mapBounds={mapBounds}
+            onHoverSearchResult={onHoverSearchResult}
+            onHoverPin={onHoverPin}
           />
         )}
 
@@ -1089,6 +1252,8 @@ const Sidebar = ({
                 isExpanded={!!expandedGroupIds?.has(group.id)}
                 onToggleExpand={() => onToggleExpand?.(group.id)}
                 isAnySelectedDragging={isAnySelectedDragging}
+                isGroupDragging={!!activeGroup}
+                isDragActive={isDragActive}
               />
             ))}
           </SortableContext>
@@ -1101,8 +1266,11 @@ const Sidebar = ({
                 top: '-1px', 
                 zIndex: 5, 
                 background: 'white',
+                borderTop: '1px solid transparent',
+                borderLeft: '1px solid transparent',
+                borderRight: '1px solid transparent',
                 borderBottom: '1px solid var(--border-color)',
-                padding: '0.1rem 0.2rem',
+                padding: '0.1rem 0.15rem',
                 marginBottom: '0.2rem',
                 display: 'flex', 
                 alignItems: 'center', 
@@ -1116,15 +1284,15 @@ const Sidebar = ({
                     Default Layer
                 </h4>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '4px' }}>
                 <button 
                   onClick={(e) => { e.stopPropagation(); onToggleGroupVisibility?.(null); }}
-                  style={{ background: 'none', border: 'none', color: hiddenGroupIds?.has(null) ? '#bbb' : 'var(--primary-color)', cursor: 'pointer', display: 'flex', padding: '2px' }}
+                  style={{ background: 'transparent', border: 'none', color: hiddenGroupIds?.has(null) ? '#bbb' : 'var(--primary-color)', cursor: 'pointer', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
                   title={hiddenGroupIds?.has(null) ? "Show group" : "Hide group"}
                 >
                   {hiddenGroupIds?.has(null) ? <EyeOff size={11} /> : <Eye size={11} />}
                 </button>
-                {defaultPins.length > 0 && (
+                {defaultPins.length > 0 ? (
                   <input 
                     type="checkbox" 
                     checked={isDefaultAllSelected}
@@ -1136,42 +1304,50 @@ const Sidebar = ({
                     style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
                     title="Select all in default layer for navigation"
                   />
+                ) : (
+                  <div style={{ width: '9px', height: '9px' }} />
+                )}
+                {!readOnly && (
+                  <div style={{ width: '18px' }} />
                 )}
               </div>
             </div>
             {expandedGroupIds?.has(null) && (
-              <SortableContext items={defaultPins.map(p => p.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, minHeight: '10px' }}>
-                  {defaultPins.map((pin) => (
-                    <SortablePin 
-                      key={pin.id} 
-                      pin={pin} 
-                      onPinClick={onPinClick}
-                      onRemovePin={onRemovePin}
-                      onUpdatePin={onUpdatePin}
-                      editingPinId={editingPinId}
-                      setEditingPinId={onSetEditingPinId}
-                      readOnly={readOnly}
-                      hoveredPinId={hoveredPinId}
-                      onHoverPin={onHoverPin}
-                      customColors={customColors}
-                      onAddCustomColor={onAddCustomColor}
-                      isSelected={selectedNavIds?.has(pin.id)}
-                      onToggleSelect={onToggleNavId}
-                      allGroups={groups}
-                      isAnySelectedDragging={isAnySelectedDragging}
-                    />
-                  ))}
-                  {defaultPins.length === 0 && groups.length === 0 && (
-                    <li style={{ padding: '1rem 0.5rem', color: '#bbb', textAlign: 'center', fontSize: '0.65rem' }}>
-                      <div style={{ background: 'var(--bg-color)', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.5rem auto' }}>
-                        <MapPin size={16} />
-                      </div>
-                      {readOnly ? 'No pins available.' : 'Right-click the map or use the search bar above to start adding pins!'}
-                    </li>
-                  )}
-                </ul>
-              </SortableContext>
+              <div style={{ paddingLeft: '0.2rem', borderLeft: '1px solid var(--border-color)', marginTop: '0px', marginLeft: '0.4rem' }}>
+                <SortableContext items={defaultPins.map(p => p.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, minHeight: '10px' }}>
+                    {defaultPins.map((pin) => (
+                      <SortablePin 
+                        key={pin.id} 
+                        pin={pin} 
+                        onPinClick={onPinClick}
+                        onRemovePin={onRemovePin}
+                        onUpdatePin={onUpdatePin}
+                        editingPinId={editingPinId}
+                        setEditingPinId={onSetEditingPinId}
+                        readOnly={readOnly}
+                        hoveredPinId={hoveredPinId}
+                        onHoverPin={onHoverPin}
+                        customColors={customColors}
+                        onAddCustomColor={onAddCustomColor}
+                        isSelected={selectedNavIds?.has(pin.id)}
+                        onToggleSelect={onToggleNavId}
+                        allGroups={groups}
+                        isAnySelectedDragging={isAnySelectedDragging}
+                        isDragActive={isDragActive}
+                      />
+                    ))}
+                    {defaultPins.length === 0 && groups.length === 0 && (
+                      <li style={{ padding: '1rem 0.5rem', color: '#bbb', textAlign: 'center', fontSize: '0.65rem' }}>
+                        <div style={{ background: 'var(--bg-color)', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.5rem auto' }}>
+                          <MapPin size={16} />
+                        </div>
+                        {readOnly ? 'No pins available.' : 'Right-click the map or use the search bar above to start adding pins!'}
+                      </li>
+                    )}
+                  </ul>
+                </SortableContext>
+              </div>
             )}
           </div>
         </div>
@@ -1209,7 +1385,7 @@ const Sidebar = ({
 
         {createPortal(
           <DragOverlay 
-            modifiers={[snapCenterToCursor, restrictToWindowEdges]}
+            modifiers={[restrictToVerticalAxis, restrictToWindowEdges]}
             style={{ pointerEvents: 'none' }}
             dropAnimation={{
             sideEffects: defaultDropAnimationSideEffects({
@@ -1220,19 +1396,20 @@ const Sidebar = ({
                 },
             }),
           }}>
+            <div>
             {activePin ? (
               <div style={{ width: '200px', position: 'relative' }}>
                 {/* Bundle visual: a stack of items if multiple are selected */}
                 {isAnySelectedDragging && selectedNavIds && selectedNavIds.size > 1 ? (
                     <>
                         <div style={{ position: 'absolute', top: '4px', left: '4px', width: '100%', zIndex: 1, opacity: 0.4 }}>
-                            <StaticPin pin={activePin} />
+                            <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
                         </div>
                         <div style={{ position: 'absolute', top: '2px', left: '2px', width: '100%', zIndex: 2, opacity: 0.7 }}>
-                            <StaticPin pin={activePin} />
+                            <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
                         </div>
                         <div style={{ position: 'relative', zIndex: 3 }}>
-                            <StaticPin pin={activePin} />
+                            <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
                             <div style={{ 
                                 position: 'absolute', 
                                 top: '-6px', 
@@ -1255,14 +1432,15 @@ const Sidebar = ({
                         </div>
                     </>
                 ) : (
-                    <StaticPin pin={activePin} />
+                    <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
                 )}
               </div>
             ) : activeGroup ? (
-              <div style={{ width: '240px', background: 'white', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.9, boxShadow: 'var(--shadow-md)' }}>
+              <div style={{ width: '240px', background: 'white', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.9, boxShadow: 'var(--shadow-md)', marginLeft: '12px' }}>
                 <div style={{ fontWeight: '700', fontSize: '0.65rem' }}>{activeGroup.name}</div>
               </div>
             ) : null}
+            </div>
           </DragOverlay>,
           document.body
         )}
@@ -1310,3 +1488,4 @@ const Sidebar = ({
 };
 
 export default Sidebar;
+// Force Vite HMR reload

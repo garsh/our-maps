@@ -87,7 +87,7 @@ describe('App Components Error Handling', () => {
 
     // Wait for map to load
     await waitFor(() => {
-      expect(screen.getByText(/All changes saved/i)).toBeInTheDocument();
+      expect(screen.getByText(/Map Synced/i)).toBeInTheDocument();
     });
 
 
@@ -101,7 +101,7 @@ describe('App Components Error Handling', () => {
 
     // Wait for the debounced save to fail
     await waitFor(() => {
-      expect(screen.getByText(/Failed to save map/i)).toBeInTheDocument();
+      expect(screen.getByText(/Changes NOT synced/i)).toBeInTheDocument();
     }, { timeout: 5000 });
 
   });

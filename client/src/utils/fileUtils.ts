@@ -98,7 +98,7 @@ export const geoJSONToData = (geojson: any): { pins: Pin[], groups: PinGroup[] }
         }
       }
 
-      const validIcons: PinIcon[] = ['default', 'hotel', 'restaurant', 'airport', 'park', 'museum', 'shopping', 'camera'];
+      const validIcons: PinIcon[] = ['default', 'hotel', 'restaurant', 'airport', 'park', 'shopping', 'car', 'boat', 'train', 'gas', 'charging'];
 
       // Lenient color validation to support hex codes
       const color = (props.color && (props.color.startsWith('#') || ['blue', 'red', 'green', 'orange', 'violet'].includes(props.color))) 
@@ -195,6 +195,7 @@ export const importMapFile = async (file: File): Promise<Partial<MapData>> => {
           groupId: p.groupId ? (groupIdMap.get(p.groupId) || p.groupId) : undefined
         }));
 
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { id: _ignoreId, ...rest } = data;
         return {
           ...rest,

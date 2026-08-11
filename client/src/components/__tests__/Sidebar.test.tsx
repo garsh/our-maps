@@ -48,7 +48,7 @@ describe('Sidebar', () => {
     expect(screen.queryByText(/description/i)).not.toBeInTheDocument();
     
     // Click Edit
-    fireEvent.click(screen.getByText('Edit'));
+    fireEvent.click(screen.getByLabelText('Edit'));
     
     // Edit fields should now be visible
     expect(screen.getByText(/description/i)).toBeInTheDocument();
@@ -67,7 +67,7 @@ describe('Sidebar', () => {
     const onUpdatePin = vi.fn();
     render(<TestWrapper handlers={{ onUpdatePin }} />);
     
-    fireEvent.click(screen.getByText('Edit'));
+    fireEvent.click(screen.getByLabelText('Edit'));
     const textarea = screen.getByLabelText(/description/i);
     
     fireEvent.change(textarea, { target: { value: 'New description' } });
@@ -75,23 +75,11 @@ describe('Sidebar', () => {
     expect(onUpdatePin).toHaveBeenCalledWith('1', { description: 'New description' });
   });
 
-  it('calls onUpdatePin when image URL is changed', () => {
-    const onUpdatePin = vi.fn();
-    render(<TestWrapper handlers={{ onUpdatePin }} />);
-    
-    fireEvent.click(screen.getByText('Edit'));
-    const input = screen.getByLabelText(/image url/i);
-    
-    fireEvent.change(input, { target: { value: 'http://image.png' } });
-    
-    expect(onUpdatePin).toHaveBeenCalledWith('1', { imageUrl: 'http://image.png' });
-  });
-
   it('calls onUpdatePin when a color is selected', () => {
     const onUpdatePin = vi.fn();
     render(<TestWrapper handlers={{ onUpdatePin }} />);
     
-    fireEvent.click(screen.getByText('Edit'));
+    fireEvent.click(screen.getByLabelText('Edit'));
     const greenButton = screen.getByLabelText('color-green');
     
     fireEvent.click(greenButton);
@@ -103,7 +91,7 @@ describe('Sidebar', () => {
     const onUpdatePin = vi.fn();
     render(<TestWrapper handlers={{ onUpdatePin }} />);
     
-    fireEvent.click(screen.getByText('Edit'));
+    fireEvent.click(screen.getByLabelText('Edit'));
     const hotelIcon = screen.getByLabelText('icon-hotel');
     
     fireEvent.click(hotelIcon);

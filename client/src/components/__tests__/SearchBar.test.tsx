@@ -15,12 +15,12 @@ describe('SearchBar', () => {
 
   it('renders correctly', () => {
     render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={[]} />);
-    expect(screen.getByPlaceholderText(/Find pins or new places/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Search.../i)).toBeInTheDocument();
   });
 
   it('performs live global search after debounce', async () => {
     const mockResults = [
-      { place_id: 1, display_name: 'London, UK', lat: '51.5', lon: '-0.1' }
+      { place_id: 1, address: 'London, UK', title: '', lat: '51.5', lon: '-0.1' }
     ];
     
     (window.fetch as any).mockResolvedValue({
@@ -30,11 +30,11 @@ describe('SearchBar', () => {
 
     render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={[]} debounceMs={10} />);
     
-    const input = screen.getByPlaceholderText(/Find pins or new places/i);
+    const input = screen.getByPlaceholderText(/Search.../i);
     fireEvent.change(input, { target: { value: 'London' } });
 
     await waitFor(() => {
-      expect(screen.getByText('London, UK')).toBeInTheDocument();
+      expect(screen.getByText('London')).toBeInTheDocument();
     });
 
     expect(window.fetch).toHaveBeenCalledWith(
@@ -46,20 +46,18 @@ describe('SearchBar', () => {
   it('performs fuzzy search on local pins', async () => {
     render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={mockPins} />);
     
-    const input = screen.getByPlaceholderText(/Find pins or new places/i);
+    const input = screen.getByPlaceholderText(/Search.../i);
     fireEvent.change(input, { target: { value: 'Cofee' } }); // Misspelled
 
     await waitFor(() => {
       expect(screen.getByText('Local Coffee')).toBeInTheDocument();
     });
-    
-    expect(screen.getByText('YOUR PINS')).toBeInTheDocument();
   });
 
   it('calls onResultSelect when a local result is clicked', async () => {
     render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={mockPins} />);
     
-    fireEvent.change(screen.getByPlaceholderText(/Find pins or new places/i), { target: { value: 'Coffee' } });
+    fireEvent.change(screen.getByPlaceholderText(/Search.../i), { target: { value: 'Coffee' } });
 
     await waitFor(() => screen.getByText('Local Coffee'));
     fireEvent.click(screen.getByText('Local Coffee'));
@@ -69,7 +67,7 @@ describe('SearchBar', () => {
 
   it('calls onAddPin when + Add to Map is clicked', async () => {
     const mockResults = [
-      { place_id: 1, display_name: 'New York, USA', lat: '40', lon: '-74' }
+      { place_id: 1, address: 'New York, USA', title: '', lat: '40', lon: '-74' }
     ];
     
     (window.fetch as any).mockResolvedValue({
@@ -79,10 +77,10 @@ describe('SearchBar', () => {
 
     render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={[]} debounceMs={10} />);
     
-    fireEvent.change(screen.getByPlaceholderText(/Find pins or new places/i), { target: { value: 'New York' } });
+    fireEvent.change(screen.getByPlaceholderText(/Search.../i), { target: { value: 'New York' } });
 
-    await waitFor(() => screen.getByText('New York, USA'));
-    fireEvent.click(screen.getByText('+ Add to Map'));
+    await waitFor(() => screen.getByText('New York'));
+    fireEvent.click(screen.getByTitle('Add to Map'));
 
     expect(mockOnAddPin).toHaveBeenCalledWith(40, -74, 'New York', 'New York, USA');
   });

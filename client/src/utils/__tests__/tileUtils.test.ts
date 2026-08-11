@@ -1,14 +1,14 @@
-import { describe, it, expect, vi } from 'vitest';
-import { countTiles, getTilesForArea, getPinsBoundingBox, getSurgicalBoxes } from '../tileUtils';
+import { describe, it, expect } from 'vitest';
+import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('tileUtils', () => {
-    const mockBox = {
-        north: 45.1,
-        south: 44.9,
-        east: -73.9,
-        west: -74.1
-    };
+    // const mockBox = {
+    //     north: 45.1,
+    //     south: 44.9,
+    //     east: -73.9,
+    //     west: -74.1
+    // };
 
     it('should correctly wrap longitude for tile coordinates', () => {
         // Test wrapping around 180/-180
