@@ -385,8 +385,8 @@ export function MapEditor() {
 
       // ONLY update state in onDragOver if the group actually changed (moving between layers)
       // This provides immediate visual feedback of layer changes.
-      // We perform NO intra-group reordering here to prevent jitter.
-      if (newGroupId !== activePin.groupId) {
+      // We prevent moving into collapsed groups during drag to avoid unmounting the active item.
+      if (newGroupId !== activePin.groupId && expandedGroupIds.has(newGroupId || null)) {
         setPins((prevPins) => {
           const pinsToMoveIds = selectedNavIds.has(activeId) 
             ? Array.from(selectedNavIds) 
@@ -411,7 +411,18 @@ export function MapEditor() {
     if (!over) return;
 
     if (active.data.current?.type === 'group') {
-      setGroups(prev => reorderGroups(prev, active.id as string, over.id as string));
+      const overData = over.data.current;
+      let targetGroupId = over.id as string;
+      
+      if (overData?.type === 'pin') {
+        if (overData.pin.groupId) {
+          targetGroupId = overData.pin.groupId;
+        } else {
+          return;
+        }
+      }
+      
+      setGroups(prev => reorderGroups(prev, active.id as string, targetGroupId));
       return;
     }
 
@@ -479,35 +490,44 @@ export function MapEditor() {
       
       <div style={{ width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 10, background: 'var(--bg-color)' }}>
         <header style={{ 
-          padding: '0.4rem 1.5rem', 
+          padding: '0.4rem 1rem', 
           background: 'var(--primary-color)', 
           color: 'white', 
           display: 'flex', 
           alignItems: 'center', 
           boxShadow: 'var(--shadow-md)', 
-          zIndex: 1000 
+          zIndex: 1000,
+          overflow: 'hidden'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }} onClick={() => navigate('/')}>
-            <div style={{ background: 'rgba(255,255,255,0.2)', padding: '6px', borderRadius: '10px', display: 'flex' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', width: '100%' }} onClick={() => navigate('/')}>
+            <div style={{ background: 'rgba(255,255,255,0.2)', padding: '6px', borderRadius: '10px', display: 'flex', flexShrink: 0 }}>
               <MapIcon size={18} />
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1 }}>Our Maps</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: 0 }}>
+              <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1, whiteSpace: 'nowrap', flexShrink: 0 }}>Our Maps</h1>
               {userRole !== 'view' && (
                 <div style={{ 
                   fontSize: '0.65rem', 
                   background: 'rgba(255,255,255,0.1)', 
-                  padding: '3px 10px', 
+                  padding: '3px 8px', 
                   borderRadius: '50px',
                   border: '1px solid rgba(255,255,255,0.2)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
                   color: error ? '#ffbdad' : (successMessage ? '#b8ffd1' : 'white'),
-                  fontWeight: '600'
+                  fontWeight: '600',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  flexShrink: 1,
+                  minWidth: 0,
+                  marginLeft: 'auto'
                 }}>
-                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: error ? '#ff4d4f' : (isSaving ? '#ffcc00' : '#4ade80') }} />
-                  {error || successMessage || (isSaving ? 'Saving changes...' : 'Map Synced')}
+                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: error ? '#ff4d4f' : (isSaving ? '#ffcc00' : '#4ade80'), flexShrink: 0 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {error || successMessage || (isSaving ? 'Saving changes...' : 'Map Synced')}
+                  </span>
                 </div>
               )}
             </div>

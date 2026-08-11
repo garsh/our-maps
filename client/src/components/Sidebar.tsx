@@ -50,7 +50,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { restrictToWindowEdges, snapCenterToCursor } from '@dnd-kit/modifiers';
+import { restrictToWindowEdges, restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { exportMap, importMapFile } from '../utils/fileUtils';
 import { 
   countTiles, 
@@ -206,7 +206,7 @@ const TruncatedTooltip = ({ text, style }: { text: string, style?: React.CSSProp
   );
 };
 
-const StaticPin = ({ pin }: { pin: Pin }) => {
+const StaticPin = ({ pin, isSelected }: { pin: Pin, isSelected?: boolean }) => {
   const currentColor = COLORS.find(c => c.name === pin.color)?.value || pin.color || '#2A81CB';
   return (
     <div style={{ 
@@ -217,18 +217,31 @@ const StaticPin = ({ pin }: { pin: Pin }) => {
       boxShadow: 'var(--shadow-md)',
       display: 'flex', 
       alignItems: 'center',
-      gap: '4px',
       opacity: 0.9
     }}>
-      <div style={{ width: '8px', padding: '1px 2px', color: '#555' }}><GripVertical size={8} /></div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-         {(() => {
-            const iconObj = ICONS.find(i => i.type === pin.icon) || ICONS[0];
-            const { Icon } = iconObj;
-            return <Icon size={14} color={currentColor} />;
-        })()}
+      <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
+        <div style={{ marginRight: '0px', color: '#555', padding: '1px 2px' }}>
+          <GripVertical size={10} />
+        </div>
+        <input 
+          type="checkbox" 
+          checked={!!isSelected}
+          readOnly
+          style={{ marginRight: '3px', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
+        />
+        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, padding: '0px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+               {(() => {
+                  const iconObj = ICONS.find(i => i.type === pin.icon) || ICONS[0];
+                  const { Icon } = iconObj;
+                  return <Icon size={14} color={currentColor} />;
+              })()}
+            </div>
+            <div style={{ fontWeight: '600', fontSize: '0.65rem', color: 'var(--text-primary)' }}>{pin.label}</div>
+          </div>
+        </div>
       </div>
-      <div style={{ fontWeight: '600', fontSize: '0.65rem', color: 'var(--text-primary)' }}>{pin.label}</div>
     </div>
   );
 };
@@ -248,7 +261,8 @@ const SortablePin = ({
   onToggleSelect,
   customColors,
   allGroups,
-  isAnySelectedDragging
+  isAnySelectedDragging,
+  isDragActive
 }: { 
   pin: Pin, 
   onPinClick: (pin: Pin) => void,
@@ -264,7 +278,8 @@ const SortablePin = ({
   onToggleSelect?: (id: string) => void,
   customColors?: string[],
   allGroups: PinGroup[],
-  isAnySelectedDragging: boolean
+  isAnySelectedDragging: boolean,
+  isDragActive: boolean
 }) => {
   const {
     attributes,
@@ -272,8 +287,7 @@ const SortablePin = ({
     setNodeRef,
     transform,
     transition,
-    isDragging,
-    isOver
+    isDragging
   } = useSortable({ 
     id: pin.id,
     data: { type: 'pin', pin },
@@ -314,10 +328,9 @@ const SortablePin = ({
         padding: '0.05rem 0.15rem', 
         marginBottom: '0px',
         borderRadius: 'var(--radius-sm)',
-        background: hoveredPinId === pin.id ? 'rgba(72, 61, 139, 0.05)' : (editingPinId === pin.id ? 'var(--bg-color)' : 'transparent'),
+        background: (hoveredPinId === pin.id && !isDragActive) ? 'rgba(72, 61, 139, 0.05)' : (editingPinId === pin.id ? 'var(--bg-color)' : 'transparent'),
         border: editingPinId === pin.id ? '1px solid var(--primary-color)' : '1px solid transparent',
-        borderTop: isOver && !isDragging ? '2px solid var(--primary-color)' : '1px solid transparent',
-        boxShadow: hoveredPinId === pin.id ? '0 0 0 1px var(--primary-color)' : 'none',
+        boxShadow: (hoveredPinId === pin.id && !isDragActive) ? '0 0 0 1px var(--primary-color)' : 'none',
         transition: 'all 0.1s ease',
         cursor: 'default'
       }}
@@ -557,7 +570,9 @@ const SortableGroup = ({
   onToggleVisibility,
   isExpanded,
   onToggleExpand,
-  isAnySelectedDragging
+  isAnySelectedDragging,
+  isGroupDragging,
+  isDragActive
 }: { 
   group: PinGroup,
   groupPins: Pin[],
@@ -581,7 +596,9 @@ const SortableGroup = ({
   onToggleVisibility: () => void,
   isExpanded: boolean,
   onToggleExpand: () => void,
-  isAnySelectedDragging: boolean
+  isAnySelectedDragging: boolean,
+  isGroupDragging: boolean,
+  isDragActive: boolean
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
 
@@ -624,17 +641,17 @@ const SortableGroup = ({
         position: 'sticky',
         top: '-1px',
         zIndex: 5,
-        background: isEditingName ? 'var(--bg-color)' : 'white',
+        background: (isOver && !isDragging && !isGroupDragging) ? 'rgba(72, 61, 139, 0.05)' : (isEditingName ? 'var(--bg-color)' : 'white'),
         borderRadius: 'var(--radius-sm)',
-        border: isEditingName ? '1px solid var(--primary-color)' : '1px solid transparent',
-        boxShadow: isExpanded ? 'none' : 'var(--shadow-sm)'
+        border: (isOver && !isDragging && !isGroupDragging) ? '1px solid var(--primary-color)' : (isEditingName ? '1px solid var(--primary-color)' : '1px solid transparent'),
+        boxShadow: (isOver && !isDragging && !isGroupDragging) ? '0 0 0 1px var(--primary-color)' : (isExpanded ? 'none' : 'var(--shadow-sm)'),
+        transition: 'all 0.1s ease'
       }}>
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
           padding: '0.1rem 0.2rem', 
           borderBottom: !isEditingName ? '1px solid var(--border-color)' : 'none',
-          borderTop: isOver && !isDragging ? '2px solid var(--primary-color)' : '1px solid transparent',
           transition: 'all 0.1s ease'
         }}>
           {!readOnly && (
@@ -739,6 +756,7 @@ const SortableGroup = ({
                   customColors={customColors}
                   allGroups={allGroups}
                   isAnySelectedDragging={isAnySelectedDragging}
+                  isDragActive={isDragActive}
                 />
               ))}
             </ul>
@@ -1010,12 +1028,36 @@ const Sidebar = ({
 
   const activePinId = activePin?.id;
   const isAnySelectedDragging = !!(activePinId && selectedNavIds?.has(activePinId));
+  const isDragActive = !!(activePinId || activeGroup);
+
+  const customCollisionDetection = (args: any) => {
+    const pointerCollisions = closestCorners(args);
+    if (args.active.data.current?.type === 'group' && pointerCollisions.length > 0) {
+      const firstCollision = pointerCollisions[0];
+      const container = args.droppableContainers.find((c: any) => c.id === firstCollision.id);
+      
+      if (container?.data.current?.type === 'pin') {
+        const pinGroupId = container.data.current.pin.groupId;
+        if (pinGroupId) {
+          const groupContainer = args.droppableContainers.find((c: any) => c.id === pinGroupId);
+          if (groupContainer) {
+            return [{
+              id: pinGroupId,
+              data: { droppableContainer: groupContainer }
+            }];
+          }
+        }
+        return [];
+      }
+    }
+    return pointerCollisions;
+  };
 
   return (
     <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: '0.6rem', boxSizing: 'border-box', overflow: 'hidden', borderRight: '1px solid var(--border-color)', position: 'relative' }}>
       <DndContext 
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={customCollisionDetection}
         onDragStart={handleDragStart}
         onDragOver={onDragOver}
         onDragEnd={handleDragEndInternal}
@@ -1206,6 +1248,8 @@ const Sidebar = ({
                 isExpanded={!!expandedGroupIds?.has(group.id)}
                 onToggleExpand={() => onToggleExpand?.(group.id)}
                 isAnySelectedDragging={isAnySelectedDragging}
+                isGroupDragging={!!activeGroup}
+                isDragActive={isDragActive}
               />
             ))}
           </SortableContext>
@@ -1277,6 +1321,7 @@ const Sidebar = ({
                       onToggleSelect={onToggleNavId}
                       allGroups={groups}
                       isAnySelectedDragging={isAnySelectedDragging}
+                      isDragActive={isDragActive}
                     />
                   ))}
                   {defaultPins.length === 0 && groups.length === 0 && (
@@ -1326,7 +1371,7 @@ const Sidebar = ({
 
         {createPortal(
           <DragOverlay 
-            modifiers={[snapCenterToCursor, restrictToWindowEdges]}
+            modifiers={[restrictToVerticalAxis, restrictToWindowEdges]}
             style={{ pointerEvents: 'none' }}
             dropAnimation={{
             sideEffects: defaultDropAnimationSideEffects({
@@ -1337,19 +1382,20 @@ const Sidebar = ({
                 },
             }),
           }}>
+            <div>
             {activePin ? (
               <div style={{ width: '200px', position: 'relative' }}>
                 {/* Bundle visual: a stack of items if multiple are selected */}
                 {isAnySelectedDragging && selectedNavIds && selectedNavIds.size > 1 ? (
                     <>
                         <div style={{ position: 'absolute', top: '4px', left: '4px', width: '100%', zIndex: 1, opacity: 0.4 }}>
-                            <StaticPin pin={activePin} />
+                            <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
                         </div>
                         <div style={{ position: 'absolute', top: '2px', left: '2px', width: '100%', zIndex: 2, opacity: 0.7 }}>
-                            <StaticPin pin={activePin} />
+                            <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
                         </div>
                         <div style={{ position: 'relative', zIndex: 3 }}>
-                            <StaticPin pin={activePin} />
+                            <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
                             <div style={{ 
                                 position: 'absolute', 
                                 top: '-6px', 
@@ -1372,14 +1418,15 @@ const Sidebar = ({
                         </div>
                     </>
                 ) : (
-                    <StaticPin pin={activePin} />
+                    <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
                 )}
               </div>
             ) : activeGroup ? (
-              <div style={{ width: '240px', background: 'white', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.9, boxShadow: 'var(--shadow-md)' }}>
+              <div style={{ width: '240px', background: 'white', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.9, boxShadow: 'var(--shadow-md)', marginLeft: '12px' }}>
                 <div style={{ fontWeight: '700', fontSize: '0.65rem' }}>{activeGroup.name}</div>
               </div>
             ) : null}
+            </div>
           </DragOverlay>,
           document.body
         )}

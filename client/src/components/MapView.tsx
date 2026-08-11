@@ -1,6 +1,6 @@
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { Pin, PinGroup } from '@shared/interfaces';
+import type { Pin } from '@shared/interfaces';
 import { useEffect, useRef, useState } from 'react';
 import { getMarkerIcon, getPreviewMarkerIcon } from '../utils/mapUtils';
 import L from 'leaflet';
