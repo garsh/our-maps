@@ -36,14 +36,13 @@ export function getMarkerIcon(color: PinColor = 'blue', icon: PinIcon = 'default
   if (icon !== 'default') {
     const svgPath = ICON_SVG_PATHS[icon as Exclude<PinIcon, 'default'>];
     iconContent = `
-      <circle cx="15" cy="15" r="11" fill="white"/>
-      <g transform="translate(6, 6) scale(0.75)" stroke="${colorCode}" color="${colorCode}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <g transform="translate(4.5, 4.5) scale(0.85)" stroke="white" color="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
         ${svgPath}
       </g>
     `;
   } else {
     // A smaller dot for default icon when pin itself is smaller
-    iconContent = `<circle cx="15" cy="15" r="5" fill="white" fill-opacity="0.8"/>`;
+    iconContent = `<circle cx="15" cy="15" r="6" fill="white" fill-opacity="0.9"/>`;
   }
 
   // Smaller base size (half was 30x42, let's try 20x28 which is roughly half area-wise)

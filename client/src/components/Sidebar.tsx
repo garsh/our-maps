@@ -221,11 +221,11 @@ const StaticPin = ({ pin }: { pin: Pin }) => {
       opacity: 0.9
     }}>
       <div style={{ width: '8px', padding: '1px 2px', color: '#555' }}><GripVertical size={8} /></div>
-      <div style={{ width: '12px', height: '12px', borderRadius: '2px', background: currentColor, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
          {(() => {
             const iconObj = ICONS.find(i => i.type === pin.icon) || ICONS[0];
             const { Icon } = iconObj;
-            return <Icon size={7} color="white" />;
+            return <Icon size={14} color={currentColor} />;
         })()}
       </div>
       <div style={{ fontWeight: '600', fontSize: '0.65rem', color: 'var(--text-primary)' }}>{pin.label}</div>
@@ -345,11 +345,6 @@ const SortablePin = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <div 
                 style={{ 
-                  width: '12px', 
-                  height: '12px', 
-                  borderRadius: '2px', 
-                  background: currentColor,
-                  boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.15)',
                   display: 'flex', 
                   alignItems: 'center', 
                   justifyContent: 'center', 
@@ -359,7 +354,7 @@ const SortablePin = ({
                 {(() => {
                     const iconObj = ICONS.find(i => i.type === pin.icon) || ICONS[0];
                     const { Icon } = iconObj;
-                    return <Icon size={7} color="white" />;
+                    return <Icon size={14} color={currentColor} />;
                 })()}
               </div>
               <div style={{ minWidth: 0 }}>
