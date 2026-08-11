@@ -220,15 +220,9 @@ const StaticPin = ({ pin, isSelected }: { pin: Pin, isSelected?: boolean }) => {
       opacity: 0.9
     }}>
       <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
-        <div style={{ marginRight: '0px', color: '#555', padding: '1px 2px' }}>
+        <div style={{ marginRight: '0px', color: '#bbb', padding: '1px 1px', marginLeft: '-2px' }}>
           <GripVertical size={10} />
         </div>
-        <input 
-          type="checkbox" 
-          checked={!!isSelected}
-          readOnly
-          style={{ marginRight: '3px', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
-        />
         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, padding: '0px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -241,6 +235,12 @@ const StaticPin = ({ pin, isSelected }: { pin: Pin, isSelected?: boolean }) => {
             <div style={{ fontWeight: '600', fontSize: '0.65rem', color: 'var(--text-primary)' }}>{pin.label}</div>
           </div>
         </div>
+        <input 
+          type="checkbox" 
+          checked={!!isSelected}
+          readOnly
+          style={{ marginLeft: '4px', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
+        />
       </div>
     </div>
   );
@@ -340,17 +340,10 @@ const SortablePin = ({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
           {!readOnly && (
-            <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '0px', color: '#555', padding: '1px 2px' }}>
+            <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '0px', color: '#bbb', padding: '1px 1px', marginLeft: '-2px' }}>
               <GripVertical size={10} />
             </div>
           )}
-          <input 
-            type="checkbox" 
-            checked={!!isSelected} 
-            onChange={(e) => { e.stopPropagation(); onToggleSelect?.(pin.id); }}
-            style={{ marginRight: '3px', cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
-            onClick={(e) => e.stopPropagation()}
-          />
           <div 
             style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', flex: 1, padding: '0px' }}
             onClick={() => onPinClick(pin)}
@@ -381,7 +374,14 @@ const SortablePin = ({
               </div>            </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '4px', marginLeft: '4px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '2px', marginLeft: '4px', alignItems: 'center' }}>
+          <input 
+            type="checkbox" 
+            checked={!!isSelected} 
+            onChange={(e) => { e.stopPropagation(); onToggleSelect?.(pin.id); }}
+            style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
+            onClick={(e) => e.stopPropagation()}
+          />
           {!readOnly && editingPinId === pin.id && (
             <button 
               title="Delete Pin"
@@ -651,34 +651,15 @@ const SortableGroup = ({
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
-          padding: '0.1rem 0.2rem', 
+          padding: '0.1rem 0.15rem', 
           borderBottom: !isEditingName ? '1px solid var(--border-color)' : 'none',
           transition: 'all 0.1s ease'
         }}>
           {!readOnly && (
-            <div {...attributes} {...listeners} style={{ cursor: 'grab', color: '#555', padding: '1px 3px', display: 'flex', alignItems: 'center' }}>
+            <div {...attributes} {...listeners} style={{ cursor: 'grab', color: '#bbb', padding: '1px 1px', marginLeft: '-2px', display: 'flex', alignItems: 'center' }}>
               <GripVertical size={11} />
             </div>
           )}
-          <input 
-            type="checkbox" 
-            checked={isAllSelected} 
-            ref={el => { if (el) el.indeterminate = isSomeSelected && !isAllSelected; }}
-            onChange={(e) => {
-              const checked = e.target.checked;
-              onToggleNavIds?.(groupPins.map(p => p.id), checked);
-            }}
-            style={{ marginRight: '3px', cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
-            onClick={(e) => e.stopPropagation()}
-            title="Select all in group for navigation"
-          />
-          <button 
-            onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}
-            style={{ background: 'transparent', border: 'none', color: isHidden ? '#ccc' : '#555', cursor: 'pointer', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
-            title={isHidden ? "Show group on map" : "Hide group on map"}
-          >
-            {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
-          </button>
           <div onClick={() => onToggleExpand()} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
             <div style={{ color: 'var(--primary-color)', marginRight: '1px', display: 'flex' }}>
               {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
@@ -687,8 +668,28 @@ const SortableGroup = ({
               {group.name} <span style={{ fontWeight: 'normal', color: '#aaa', fontSize: '0.55rem', marginLeft: '2px' }}>({groupPins.length})</span>
             </span>
           </div>
-          {!readOnly && (
-            <div style={{ display: 'flex', gap: '1px' }}>
+          <div style={{ display: 'flex', gap: '2px', marginLeft: '4px', alignItems: 'center' }}>
+            <button 
+              onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}
+              style={{ background: 'transparent', border: 'none', color: isHidden ? '#ccc' : '#555', cursor: 'pointer', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
+              title={isHidden ? "Show group on map" : "Hide group on map"}
+            >
+              {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
+            </button>
+            <input 
+              type="checkbox" 
+              checked={isAllSelected} 
+              ref={el => { if (el) el.indeterminate = isSomeSelected && !isAllSelected; }}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                onToggleNavIds?.(groupPins.map(p => p.id), checked);
+              }}
+              style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
+              onClick={(e) => e.stopPropagation()}
+              title="Select all in group for navigation"
+            />
+            {!readOnly && (
+              <div style={{ display: 'flex', gap: '2px' }}>
               {isEditingName && (
                 <button 
                   onClick={(e) => { 
@@ -716,6 +717,7 @@ const SortableGroup = ({
               </button>
             </div>
           )}
+          </div>
         </div>
         
         {isEditingName && !readOnly && (
@@ -1264,8 +1266,11 @@ const Sidebar = ({
                 top: '-1px', 
                 zIndex: 5, 
                 background: 'white',
+                borderTop: '1px solid transparent',
+                borderLeft: '1px solid transparent',
+                borderRight: '1px solid transparent',
                 borderBottom: '1px solid var(--border-color)',
-                padding: '0.1rem 0.2rem',
+                padding: '0.1rem 0.15rem',
                 marginBottom: '0.2rem',
                 display: 'flex', 
                 alignItems: 'center', 
@@ -1279,15 +1284,15 @@ const Sidebar = ({
                     Default Layer
                 </h4>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '4px' }}>
                 <button 
                   onClick={(e) => { e.stopPropagation(); onToggleGroupVisibility?.(null); }}
-                  style={{ background: 'none', border: 'none', color: hiddenGroupIds?.has(null) ? '#bbb' : 'var(--primary-color)', cursor: 'pointer', display: 'flex', padding: '2px' }}
+                  style={{ background: 'transparent', border: 'none', color: hiddenGroupIds?.has(null) ? '#bbb' : 'var(--primary-color)', cursor: 'pointer', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
                   title={hiddenGroupIds?.has(null) ? "Show group" : "Hide group"}
                 >
                   {hiddenGroupIds?.has(null) ? <EyeOff size={11} /> : <Eye size={11} />}
                 </button>
-                {defaultPins.length > 0 && (
+                {defaultPins.length > 0 ? (
                   <input 
                     type="checkbox" 
                     checked={isDefaultAllSelected}
@@ -1299,43 +1304,50 @@ const Sidebar = ({
                     style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
                     title="Select all in default layer for navigation"
                   />
+                ) : (
+                  <div style={{ width: '9px', height: '9px' }} />
+                )}
+                {!readOnly && (
+                  <div style={{ width: '18px' }} />
                 )}
               </div>
             </div>
             {expandedGroupIds?.has(null) && (
-              <SortableContext items={defaultPins.map(p => p.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, minHeight: '10px' }}>
-                  {defaultPins.map((pin) => (
-                    <SortablePin 
-                      key={pin.id} 
-                      pin={pin} 
-                      onPinClick={onPinClick}
-                      onRemovePin={onRemovePin}
-                      onUpdatePin={onUpdatePin}
-                      editingPinId={editingPinId}
-                      setEditingPinId={onSetEditingPinId}
-                      readOnly={readOnly}
-                      hoveredPinId={hoveredPinId}
-                      onHoverPin={onHoverPin}
-                      customColors={customColors}
-                      onAddCustomColor={onAddCustomColor}
-                      isSelected={selectedNavIds?.has(pin.id)}
-                      onToggleSelect={onToggleNavId}
-                      allGroups={groups}
-                      isAnySelectedDragging={isAnySelectedDragging}
-                      isDragActive={isDragActive}
-                    />
-                  ))}
-                  {defaultPins.length === 0 && groups.length === 0 && (
-                    <li style={{ padding: '1rem 0.5rem', color: '#bbb', textAlign: 'center', fontSize: '0.65rem' }}>
-                      <div style={{ background: 'var(--bg-color)', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.5rem auto' }}>
-                        <MapPin size={16} />
-                      </div>
-                      {readOnly ? 'No pins available.' : 'Right-click the map or use the search bar above to start adding pins!'}
-                    </li>
-                  )}
-                </ul>
-              </SortableContext>
+              <div style={{ paddingLeft: '0.2rem', borderLeft: '1px solid var(--border-color)', marginTop: '0px', marginLeft: '0.4rem' }}>
+                <SortableContext items={defaultPins.map(p => p.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, minHeight: '10px' }}>
+                    {defaultPins.map((pin) => (
+                      <SortablePin 
+                        key={pin.id} 
+                        pin={pin} 
+                        onPinClick={onPinClick}
+                        onRemovePin={onRemovePin}
+                        onUpdatePin={onUpdatePin}
+                        editingPinId={editingPinId}
+                        setEditingPinId={onSetEditingPinId}
+                        readOnly={readOnly}
+                        hoveredPinId={hoveredPinId}
+                        onHoverPin={onHoverPin}
+                        customColors={customColors}
+                        onAddCustomColor={onAddCustomColor}
+                        isSelected={selectedNavIds?.has(pin.id)}
+                        onToggleSelect={onToggleNavId}
+                        allGroups={groups}
+                        isAnySelectedDragging={isAnySelectedDragging}
+                        isDragActive={isDragActive}
+                      />
+                    ))}
+                    {defaultPins.length === 0 && groups.length === 0 && (
+                      <li style={{ padding: '1rem 0.5rem', color: '#bbb', textAlign: 'center', fontSize: '0.65rem' }}>
+                        <div style={{ background: 'var(--bg-color)', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.5rem auto' }}>
+                          <MapPin size={16} />
+                        </div>
+                        {readOnly ? 'No pins available.' : 'Right-click the map or use the search bar above to start adding pins!'}
+                      </li>
+                    )}
+                  </ul>
+                </SortableContext>
+              </div>
             )}
           </div>
         </div>
@@ -1476,3 +1488,4 @@ const Sidebar = ({
 };
 
 export default Sidebar;
+// Force Vite HMR reload
