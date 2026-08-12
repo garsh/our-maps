@@ -96,6 +96,7 @@ interface SidebarProps {
   expandedGroupIds?: Set<string | null>;
   onToggleExpand?: (id: string | null) => void;
   onHoverSearchResult?: (lat: number | null, lng: number | null) => void;
+  isMobile?: boolean;
 }
 
 const COLORS = [
@@ -796,7 +797,8 @@ const Sidebar = ({
   onToggleGroupVisibility,
   expandedGroupIds,
   onToggleExpand,
-  onHoverSearchResult
+  onHoverSearchResult,
+  isMobile
 }: SidebarProps) => {
   const [localMapName, setLocalMapName] = useState(mapName);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -805,6 +807,27 @@ const Sidebar = ({
   const readOnly = userRole === 'view';
   const [activePin, setActivePin] = useState<Pin | null>(null);
   const [activeGroup, setActiveGroup] = useState<PinGroup | null>(null);
+  // PWA Install State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    }
+  };
 
   // Offline Download State
   const [showDownloadConfirm, setShowDownloadConfirm] = useState(false);
@@ -1062,7 +1085,7 @@ const Sidebar = ({
   };
 
   return (
-    <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: '0.6rem', boxSizing: 'border-box', overflow: 'hidden', borderRight: '1px solid var(--border-color)', position: 'relative' }}>
+    <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: isMobile ? '0.2rem 0.6rem 0.6rem 0.6rem' : '0.6rem', boxSizing: 'border-box', overflow: 'hidden', borderRight: '1px solid var(--border-color)', position: 'relative' }}>
       <DndContext 
         sensors={sensors}
         collisionDetection={customCollisionDetection}
@@ -1071,7 +1094,7 @@ const Sidebar = ({
         onDragEnd={handleDragEndInternal}
         autoScroll={false}
       >
-        <div style={{ marginBottom: '0.6rem' }}>
+        <div style={{ marginBottom: isMobile ? '0.2rem' : '0.6rem', display: isMobile && readOnly ? 'none' : 'block' }}>
 
           <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
             <input 
@@ -1083,7 +1106,7 @@ const Sidebar = ({
               onBlur={() => onMapNameChange(localMapName)}
               onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
               disabled={readOnly}
-              className="input-field"
+              className="input-field map-name-input"
               style={{ fontWeight: '800', fontSize: '0.9rem', padding: '3px 6px', border: 'none', background: 'transparent', flex: 1, textOverflow: 'ellipsis' }}
             />
             
@@ -1097,99 +1120,120 @@ const Sidebar = ({
                 </button>
               )}
               
-              <div style={{ position: 'relative' }} ref={menuRef}>
-                <button 
-                  onClick={() => setIsMenuOpen(!isMenuOpen)}
-                  aria-label="More options"
-                  style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', display: 'flex', padding: '3px' }}
-                >
-                  <MoreVertical size={16} />
-                </button>
-                
-                {isMenuOpen && (
-                  <div style={{ position: 'absolute', top: '100%', right: 0, width: '180px', background: 'white', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 1600, overflow: 'hidden' }}>
-                    {userRole === 'owner' && (
-                      <div 
-                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                        onClick={() => { onShare?.(); setIsMenuOpen(false); }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        Share
-                      </div>
-                    )}
-                    {!readOnly && (
-                      <div 
-                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                        onClick={handleImportClick}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        Import
-                      </div>
-                    )}
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                      onClick={handleExportClick}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              {(() => {
+                const menuContent = (
+                  <div style={{ position: 'relative' }} ref={menuRef}>
+                    <button 
+                      onClick={() => setIsMenuOpen(!isMenuOpen)}
+                      aria-label="More options"
+                      style={{ background: 'none', border: 'none', color: isMobile ? 'white' : '#888', cursor: 'pointer', display: 'flex', padding: '3px' }}
                     >
-                        Export
-                    </div>
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isDownloading ? '#999' : 'inherit' }}
-                      onClick={isDownloading ? undefined : handleDownloadClick}
-                      onMouseEnter={(e) => !isDownloading && (e.currentTarget.style.background = 'var(--bg-color)')}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      Download for Offline
-                    </div>
-                    {selectedPins.length > 0 && !readOnly && (
-                      <>
-                        <div style={{ padding: '8px 16px', fontSize: '0.65rem', fontWeight: '800', color: '#999', background: '#fcfcfc', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)' }}>MOVE SELECTED TO...</div>
+                      <MoreVertical size={isMobile ? 20 : 16} />
+                    </button>
+                    
+                    {isMenuOpen && (
+                      <div style={{ position: 'absolute', top: '100%', right: 0, width: '180px', background: 'white', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 1600, overflow: 'hidden' }}>
+                        {userRole === 'owner' && (
+                          <div 
+                            style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                            onClick={() => { onShare?.(); setIsMenuOpen(false); }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          >
+                            Share
+                          </div>
+                        )}
+                        {!readOnly && (
+                          <div 
+                            style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                            onClick={handleImportClick}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          >
+                            Import
+                          </div>
+                        )}
                         <div 
-                          style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
-                          onClick={() => {
-                            selectedPins.forEach(p => onUpdatePin(p.id, { groupId: undefined }));
-                            setIsMenuOpen(false);
-                          }}
+                          style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                          onClick={handleExportClick}
                           onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                          Default Layer
+                            Export
                         </div>
-                        {groups.map(group => (
+                        {deferredPrompt && (
                           <div 
-                            key={group.id}
-                            style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
+                            style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
                             onClick={() => {
-                              selectedPins.forEach(p => onUpdatePin(p.id, { groupId: group.id }));
+                              handleInstallClick();
                               setIsMenuOpen(false);
                             }}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                           >
-                            {group.name}
+                            Install App
                           </div>
-                        ))}
-                      </>
-                    )}
-                    {!readOnly && (
-                      <div 
-                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                        onClick={() => {
-                          onAddGroup();
-                          setIsMenuOpen(false);
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        New Layer
+                        )}
+                        <div 
+                          style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isDownloading ? '#999' : 'inherit' }}
+                          onClick={isDownloading ? undefined : handleDownloadClick}
+                          onMouseEnter={(e) => !isDownloading && (e.currentTarget.style.background = 'var(--bg-color)')}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          Download for Offline
+                        </div>
+                        {selectedPins.length > 0 && !readOnly && (
+                          <>
+                            <div style={{ padding: '8px 16px', fontSize: '0.65rem', fontWeight: '800', color: '#999', background: '#fcfcfc', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)' }}>MOVE SELECTED TO...</div>
+                            <div 
+                              style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
+                              onClick={() => {
+                                selectedPins.forEach(p => onUpdatePin(p.id, { groupId: undefined }));
+                                setIsMenuOpen(false);
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                            >
+                              Default Layer
+                            </div>
+                            {groups.map(group => (
+                              <div 
+                                key={group.id}
+                                style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
+                                onClick={() => {
+                                  selectedPins.forEach(p => onUpdatePin(p.id, { groupId: group.id }));
+                                  setIsMenuOpen(false);
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                              >
+                                {group.name}
+                              </div>
+                            ))}
+                          </>
+                        )}
+                        {!readOnly && (
+                          <div 
+                            style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                            onClick={() => {
+                              onAddGroup();
+                              setIsMenuOpen(false);
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          >
+                            New Layer
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                )}
-              </div>
+                );
+
+                return isMobile && document.getElementById('mobile-header-actions')
+                  ? createPortal(menuContent, document.getElementById('mobile-header-actions')!)
+                  : menuContent;
+              })()}
             </div>
           </div>
         </div>

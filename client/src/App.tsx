@@ -40,8 +40,40 @@ export function MapEditor() {
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
   const [mapBounds, setMapBounds] = useState<string | null>(null);
   const [previewLocation, setPreviewLocation] = useState<{lat: number, lng: number} | null>(null);
-  const [sidebarWidth, setSidebarWidth] = useState(300);
+  const [sidebarWidth, setSidebarWidth] = useState(320);
   const [isResizing, setIsResizing] = useState(false);
+
+  // Mobile layout states
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const [sheetHeight, setSheetHeight] = useState(300);
+  const [isDraggingSheet, setIsDraggingSheet] = useState(false);
+  const sheetDragStart = useRef({ y: 0, height: 0 });
+
+  const startSheetDrag = (e: React.PointerEvent) => {
+    setIsDraggingSheet(true);
+    sheetDragStart.current = { y: e.clientY, height: sheetHeight };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  
+  const onSheetDrag = (e: React.PointerEvent) => {
+    if (!isDraggingSheet) return;
+    const deltaY = sheetDragStart.current.y - e.clientY;
+    setSheetHeight(Math.max(0, Math.min(window.innerHeight - 55, sheetDragStart.current.height + deltaY)));
+  };
+  
+  const endSheetDrag = (e: React.PointerEvent) => {
+    setIsDraggingSheet(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+
+
   const [hoveredPinId, setHoveredPinId] = useState<string | null>(null);
   const [selectedNavIds, setSelectedNavIds] = useState<Set<string>>(new Set());
   const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string | null>>(() => {
@@ -485,126 +517,168 @@ export function MapEditor() {
     );
   }
 
-  return (
-    <div style={{ display: 'flex', height: '100vh', fontFamily: 'inherit', userSelect: isResizing ? 'none' : 'auto' }}>
+  const appHeader = (
+    <header style={{ 
+      padding: '0.4rem 1rem', 
+      background: 'var(--primary-color)', 
+      color: 'white', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'space-between',
+      boxShadow: 'var(--shadow-md)', 
+      zIndex: 1000,
+      flexShrink: 0
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', minWidth: 0, flexShrink: 1 }} onClick={() => navigate('/')}>
+        <div style={{ background: 'rgba(255,255,255,0.2)', padding: '6px', borderRadius: '10px', display: 'flex', flexShrink: 0 }}>
+          <MapIcon size={18} />
+        </div>
+        <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1 }}>{isMobile ? mapName || 'Untitled Map' : 'Our Maps'}</h1>
+      </div>
       
-      <div style={{ width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 10, background: 'var(--bg-color)' }}>
-        <header style={{ 
-          padding: '0.4rem 1rem', 
-          background: 'var(--primary-color)', 
-          color: 'white', 
-          display: 'flex', 
-          alignItems: 'center', 
-          boxShadow: 'var(--shadow-md)', 
-          zIndex: 1000,
-          overflow: 'hidden'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', width: '100%' }} onClick={() => navigate('/')}>
-            <div style={{ background: 'rgba(255,255,255,0.2)', padding: '6px', borderRadius: '10px', display: 'flex', flexShrink: 0 }}>
-              <MapIcon size={18} />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: 0 }}>
-              <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1, whiteSpace: 'nowrap', flexShrink: 0 }}>Our Maps</h1>
-              {userRole !== 'view' && (
-                <div style={{ 
-                  fontSize: '0.65rem', 
-                  background: 'rgba(255,255,255,0.1)', 
-                  padding: '3px 8px', 
-                  borderRadius: '50px',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  color: error ? '#ffbdad' : (successMessage ? '#b8ffd1' : 'white'),
-                  fontWeight: '600',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  flexShrink: 1,
-                  minWidth: 0,
-                  marginLeft: 'auto'
-                }}>
-                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: error ? '#ff4d4f' : (isSaving ? '#ffcc00' : '#4ade80'), flexShrink: 0 }} />
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {error || successMessage || (isSaving ? 'Saving changes...' : 'Map Synced')}
-                  </span>
-                </div>
-              )}
-            </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
+        {userRole !== 'view' && (
+          <div style={{ 
+            fontSize: '0.65rem', 
+            background: 'rgba(255,255,255,0.1)', 
+            padding: '3px 8px', 
+            borderRadius: '50px',
+            border: '1px solid rgba(255,255,255,0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            color: error ? '#ffbdad' : (successMessage ? '#b8ffd1' : 'white'),
+            fontWeight: '600',
+            whiteSpace: 'nowrap'
+          }}>
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: error ? '#ff4d4f' : (isSaving ? '#ffcc00' : '#4ade80'), flexShrink: 0 }} />
+            <span>
+              {error || successMessage || (isSaving ? 'Saving changes...' : 'Map Synced')}
+            </span>
           </div>
-        </header>
+        )}
+        <div id="mobile-header-actions" style={{ display: 'flex', alignItems: 'center' }}></div>
+      </div>
+    </header>
+  );
 
-        <Sidebar 
-          mapId={mapId}
-          mapName={mapName}
-          onMapNameChange={setMapName}
-          groups={groups}
-          onAddGroup={addGroup}
-          onUpdateGroup={updateGroup}
-          onRemoveGroup={removeGroup}
-          pins={pins}
-          onResultSelect={(lat, lng) => setTargetLocation([lat, lng])}
-          onAddPin={addPinAtLocation}
-          onRemovePin={removePin}
-          onPinClick={handlePinSelect}
-          onUpdatePin={updatePin}
-          onDragEnd={handleDragEnd}
-          onDragOver={handleDragOver}
-          userRole={userRole}
-          onShare={() => setIsSharing(true)}
-          onImport={handleImport}
-          mapBounds={mapBounds}
-          editingPinId={editingPinId}
-          onSetEditingPinId={setEditingPinId}
-          hoveredPinId={hoveredPinId}
-          onHoverPin={setHoveredPinId}
-          customColors={customColors}
-          onAddCustomColor={addCustomColor}
-          selectedNavIds={selectedNavIds}
-          onToggleNavId={(id) => {
-            setSelectedNavIds(prev => {
-              const newSet = new Set(prev);
-              if (newSet.has(id)) newSet.delete(id);
-              else newSet.add(id);
-              return newSet;
-            });
-          }}
-          onToggleNavIds={(ids, force) => {
-            setSelectedNavIds(prev => {
-              const newSet = new Set(prev);
-              ids.forEach(id => {
-                if (force === true) newSet.add(id);
-                else if (force === false) newSet.delete(id);
-                else {
-                  if (newSet.has(id)) newSet.delete(id);
-                  else newSet.add(id);
-                }
+  return (
+    <div style={{ display: 'flex', height: '100vh', fontFamily: 'inherit', userSelect: isResizing ? 'none' : 'auto' }} className="app-container">
+      {isMobile && appHeader}
+
+      <div 
+        className={isMobile ? `mobile-bottom-sheet ${isDraggingSheet ? 'dragging' : ''}` : ''}
+        style={isMobile ? { 
+          height: `${sheetHeight}px`,
+          background: 'var(--bg-color)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'visible'
+        } : { width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 10, background: 'var(--bg-color)' }}
+      >
+        {isMobile && (
+          <div 
+            className="bottom-sheet-drag-handle" 
+            onPointerDown={startSheetDrag}
+            onPointerMove={onSheetDrag}
+            onPointerUp={endSheetDrag}
+            onPointerCancel={endSheetDrag}
+            style={{ zIndex: 10 }}
+          >
+            <div className="drag-pill" />
+          </div>
+        )}
+
+        {!isMobile && appHeader}
+
+        <div style={isMobile ? { 
+          transform: 'scale(1.5)', 
+          transformOrigin: 'top left', 
+          width: '66.6666%', 
+          height: `66.6666%`,
+          flex: 'none',
+          display: 'flex',
+          flexDirection: 'column'
+        } : { display: 'flex', flex: 1, overflow: 'hidden' }}>
+          <Sidebar 
+            isMobile={isMobile}
+            mapId={mapId}
+            mapName={mapName}
+            onMapNameChange={setMapName}
+            groups={groups}
+            onAddGroup={addGroup}
+            onUpdateGroup={updateGroup}
+            onRemoveGroup={removeGroup}
+            pins={pins}
+            onResultSelect={(lat, lng) => {
+              setTargetLocation([lat, lng]);
+              if (isMobile) setSheetHeight(40);
+            }}
+            onAddPin={addPinAtLocation}
+            onRemovePin={removePin}
+            onPinClick={(pinId) => {
+              handlePinSelect(pinId);
+              if (isMobile) setSheetHeight(40);
+            }}
+            onUpdatePin={updatePin}
+            onDragEnd={handleDragEnd}
+            onDragOver={handleDragOver}
+            userRole={userRole}
+            onShare={() => setIsSharing(true)}
+            onImport={handleImport}
+            mapBounds={mapBounds}
+            editingPinId={editingPinId}
+            onSetEditingPinId={setEditingPinId}
+            hoveredPinId={hoveredPinId}
+            onHoverPin={setHoveredPinId}
+            customColors={customColors}
+            onAddCustomColor={addCustomColor}
+            selectedNavIds={selectedNavIds}
+            onToggleNavId={(id) => {
+              setSelectedNavIds(prev => {
+                const newSet = new Set(prev);
+                if (newSet.has(id)) newSet.delete(id);
+                else newSet.add(id);
+                return newSet;
               });
-              return newSet;
-            });
-          }}
-          hiddenGroupIds={hiddenGroupIds}
-          onToggleGroupVisibility={(id) => {
-            setHiddenGroupIds(prev => {
-              const newSet = new Set(prev);
-              if (newSet.has(id)) newSet.delete(id);
-              else newSet.add(id);
-              return newSet;
-            });
-          }}
-          expandedGroupIds={expandedGroupIds}
-          onToggleExpand={(id) => {
-            setExpandedGroupIds(prev => {
-              const newSet = new Set(prev);
-              if (newSet.has(id)) newSet.delete(id);
-              else newSet.add(id);
-              return newSet;
-            });
-          }}
-          onHoverSearchResult={(lat, lng) => {
-            setPreviewLocation(lat !== null && lng !== null ? { lat, lng } : null);
-          }}
-        />
+            }}
+            onToggleNavIds={(ids, force) => {
+              setSelectedNavIds(prev => {
+                const newSet = new Set(prev);
+                ids.forEach(id => {
+                  if (force === true) newSet.add(id);
+                  else if (force === false) newSet.delete(id);
+                  else {
+                    if (newSet.has(id)) newSet.delete(id);
+                    else newSet.add(id);
+                  }
+                });
+                return newSet;
+              });
+            }}
+            hiddenGroupIds={hiddenGroupIds}
+            onToggleGroupVisibility={(id) => {
+              setHiddenGroupIds(prev => {
+                const newSet = new Set(prev);
+                if (newSet.has(id)) newSet.delete(id);
+                else newSet.add(id);
+                return newSet;
+              });
+            }}
+            expandedGroupIds={expandedGroupIds}
+            onToggleExpand={(id) => {
+              setExpandedGroupIds(prev => {
+                const newSet = new Set(prev);
+                if (newSet.has(id)) newSet.delete(id);
+                else newSet.add(id);
+                return newSet;
+              });
+            }}
+            onHoverSearchResult={(lat, lng) => {
+              setPreviewLocation(lat !== null && lng !== null ? { lat, lng } : null);
+            }}
+          />
+        </div>
       </div>
 
       <div 
@@ -628,10 +702,12 @@ export function MapEditor() {
       </div>
 
       <main style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '10px', background: 'white', padding: '6px 12px', borderRadius: '50px', boxShadow: 'var(--shadow-sm)' }}>
-          <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)' }}>{user?.name}</span>
-          {user?.picture && <img src={user.picture} alt={user.name} style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid rgba(0,0,0,0.05)' }} />}
-        </div>
+        {!isMobile && (
+          <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '10px', background: 'white', padding: '6px 12px', borderRadius: '50px', boxShadow: 'var(--shadow-sm)' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)' }}>{user?.name}</span>
+            {user?.picture && <img src={user.picture} alt={user.name} style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid rgba(0,0,0,0.05)' }} />}
+          </div>
+        )}
         <MapView 
             pins={pins} 
             onMapClick={handleMapClick} 

@@ -104,3 +104,81 @@ button:active {
 ::-webkit-scrollbar-thumb:hover {
   background: #bbb;
 }
+
+/* Mobile Bottom Sheet */
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column !important;
+  }
+  
+  .mobile-bottom-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    z-index: 2000 !important;
+    border-radius: 16px 16px 0 0;
+    border-top: 1px solid var(--border-color);
+    border-right: none !important;
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.15) !important;
+    touch-action: none;
+  }
+
+  .mobile-bottom-sheet:not(.dragging) {
+    transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .resizer-handle {
+    display: none !important;
+  }
+
+  .map-name-input {
+    display: none !important;
+  }
+
+  .leaflet-control-zoom {
+    display: none !important;
+  }
+
+  /* Make sure map takes full space on mobile */
+  .map-container-main {
+    flex: 1;
+    height: 100dvh;
+    width: 100vw;
+  }
+}
+
+.bottom-sheet-drag-handle {
+  width: 80px;
+  margin: 0 auto;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  background: var(--bg-color);
+  border-radius: 12px 12px 0 0;
+  border-top: 1px solid var(--border-color);
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.08);
+  position: absolute;
+  top: -24px;
+  left: 0;
+  right: 0;
+  touch-action: none;
+}
+
+.bottom-sheet-drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-pill {
+  width: 24px;
+  height: 4px;
+  background: var(--border-color);
+  border-radius: 4px;
+}
