@@ -4,6 +4,8 @@ services:
     container_name: caddy-proxy
     ports:
       - "443:443"
+    env_file:
+      - .env
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -23,9 +25,9 @@ services:
     container_name: our-maps
     env_file:
       - .env
-    # Expose port 3000 publicly so the Android app can connect via plain HTTP without TLS errors
+    # Expose the configured PORT publicly so the Android app can connect via plain HTTP without TLS errors
     ports:
-      - "3001:3001"
+      - "${PORT:-3001}:${PORT:-3001}"
     volumes:
       - our_maps_data:/data
     restart: unless-stopped

@@ -9,27 +9,18 @@
 }
 
 ourmaps.mooo.com {
-	reverse_proxy our-maps:3001
-}
-
-garsh.bot.nu {
-	reverse_proxy https://host.docker.internal:943 {
-		header_up Host {upstream_hostport}
-		transport http {
-			tls_insecure_skip_verify
-		}
-	}
+	reverse_proxy our-maps:{$PORT}
 }
 
 # Replace "192.168.4.146" with your actual local IP address or a custom local domain.
 # If you have a real domain, place it here and Caddy will fetch a real Let's Encrypt cert!
 192.168.253.3 {
 	tls internal
-	reverse_proxy our-maps:3001
+	reverse_proxy our-maps:{$PORT}
 }
 
 # Also allow access via localhost if you are testing on the same machine
 localhost {
 	tls internal
-	reverse_proxy our-maps:3001
+	reverse_proxy our-maps:{$PORT}
 }
