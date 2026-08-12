@@ -159,3 +159,21 @@ async function ensureUserExists(user: User) {
     user.id, user.email, user.name, user.picture
   );
 }
+
+export async function filterContactsHandler(req: AuthRequest, res: Response) {
+  try {
+    const { emails } = req.body;
+    if (!Array.isArray(emails)) return res.status(400).json({ error: 'emails array required' });
+    if (emails.length === 0) return res.json({ existingEmails: [] });
+    
+    const db = await getDb();
+    const placeholders = emails.map(() => '?').join(',');
+    const rows = await db.all(`SELECT email FROM users WHERE email IN (${placeholders})`, ...emails);
+    
+    const existingEmails = rows.map(r => r.email.toLowerCase());
+    return res.json({ existingEmails });
+  } catch (err: any) {
+    console.error('Failed to filter contacts', err);
+    res.status(500).json({ error: 'Failed to filter contacts' });
+  }
+}

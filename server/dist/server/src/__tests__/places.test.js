@@ -94,7 +94,8 @@ const testDbName = '../test-database-places.sqlite';
         (0, vitest_1.expect)(res.body).toEqual([
             {
                 place_id: 12345,
-                display_name: 'Mock Nominatim Place, Country',
+                title: '',
+                address: 'Mock Nominatim Place, Country',
                 lat: '12.34',
                 lon: '56.78',
                 type: 'global'
@@ -139,9 +140,10 @@ const testDbName = '../test-database-places.sqlite';
         (0, vitest_1.expect)(res.body).toEqual([
             {
                 place_id: 'google-place-id-1',
-                display_name: 'Google Starbucks, 123 Coffee Lane',
                 lat: '44.5',
                 lon: '-80.2',
+                title: 'Google Starbucks',
+                address: '123 Coffee Lane',
                 type: 'global'
             }
         ]);

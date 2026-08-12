@@ -20,7 +20,7 @@ export default function LoginPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-color)' }}>
       <div style={{ background: 'var(--surface-color)', padding: '3rem', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)', textAlign: 'center', maxWidth: '450px', width: '90%' }}>
-        <h1 style={{ marginBottom: '1rem', color: 'var(--primary-color)', fontSize: '2.5rem', fontWeight: '800' }}>Our Maps</h1>
+        <h1 style={{ marginBottom: '1rem', color: 'var(--primary-color)', fontSize: '2.5rem', fontWeight: '800' }}>OurMaps</h1>
         <p style={{ marginBottom: '2.5rem', color: 'var(--text-secondary)', fontSize: '1.1rem', lineHeight: '1.5' }}>
           Create, share, and manage your custom locations with ease.
         </p>

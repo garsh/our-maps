@@ -10,7 +10,7 @@ import { Server, Socket } from 'socket.io';
 import { getDb } from './db';
 import mapsRouter from './routes/maps';
 import placesRouter from './routes/places';
-import { googleLoginHandler } from './auth';
+import { googleLoginHandler, filterContactsHandler, authMiddleware } from './auth';
 
 const app = express();
 const server = http.createServer(app);
@@ -74,6 +74,7 @@ app.use(express.json({ limit: '10mb' }));
 
 // API Routes
 app.post('/api/auth/google-login', googleLoginHandler);
+app.post('/api/auth/filter-contacts', authMiddleware, filterContactsHandler);
 app.use('/api/maps', mapsRouter);
 app.use('/api/places', placesRouter);
 

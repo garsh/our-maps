@@ -133,6 +133,20 @@ export const apiService = {
     return res.json();
   },
 
+  async filterContacts(emails: string[]): Promise<{ existingEmails: string[] }> {
+    const res = await fetchWithRetry(`${API_BASE}/auth/filter-contacts`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ emails }),
+    });
+    if (!res.ok) {
+      if (res.status === 401) this._logoutCallback?.();
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to filter contacts');
+    }
+    return res.json();
+  },
+
   async removeShare(id: string, userId: string): Promise<any> {
     const res = await fetchWithRetry(`${API_BASE}/maps/${id}/share/${userId}`, {
       method: 'DELETE',

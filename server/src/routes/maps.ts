@@ -47,7 +47,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
   console.log(`[SERVER] GET /api/maps/${mapId} requested by user ${userId}`);
 
   const map = await db.get(`
-    SELECT m.*, u.name as owner_name, u.email as owner_email 
+    SELECT m.*, u.name as owner_name, u.email as owner_email, u.picture as owner_picture 
     FROM maps m 
     LEFT JOIN users u ON m.owner_id = u.id 
     WHERE m.id = ?
@@ -91,17 +91,15 @@ router.get('/:id', async (req: AuthRequest, res) => {
   const groups = await db.all('SELECT * FROM pin_groups WHERE map_id = ? ORDER BY position', mapId);
   const pins = await db.all('SELECT * FROM pins WHERE map_id = ? ORDER BY position', mapId);
   
-  // Get permissions if owner
+  // Get permissions for all users who have access
   let permissions: MapPermission[] = [];
-  if (role === 'owner') {
-    const perms = await db.all(`
-      SELECT mp.role, u.id as user_id, u.email, u.name 
-      FROM map_permissions mp 
-      JOIN users u ON mp.user_id = u.id 
-      WHERE mp.map_id = ?
-    `, mapId);
-    permissions = perms.map(p => ({ userId: p.user_id, userEmail: p.email, userName: p.name, role: p.role }));
-  }
+  const perms = await db.all(`
+    SELECT mp.user_id, mp.role, u.email, u.name, u.picture
+    FROM map_permissions mp
+    JOIN users u ON mp.user_id = u.id 
+    WHERE mp.map_id = ?
+  `, mapId);
+  permissions = perms.map(p => ({ userId: p.user_id, userEmail: p.email, userName: p.name, userPicture: p.picture, role: p.role }));
 
   // Map fields for frontend consistency
   const formattedPins = pins.map(p => ({
@@ -119,6 +117,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
     ownerId: map.owner_id,
     ownerName: map.owner_name,
     ownerEmail: map.owner_email,
+    ownerPicture: map.owner_picture,
     groups: groups || [],
     pins: formattedPins,
     userRole: role,

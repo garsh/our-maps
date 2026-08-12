@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import SearchBar from './SearchBar';
+import { reverseGeocode } from '../utils/geocoding';
 import type { Pin, PinIcon, PinGroup } from '@shared/interfaces';
 import { 
   Bed, 
@@ -85,6 +86,7 @@ interface SidebarProps {
   editingPinId: string | null;
   onSetEditingPinId: (id: string | null) => void;
   hoveredPinId?: string | null;
+  targetPinId?: string | null;
   onHoverPin?: (id: string | null) => void;
   customColors?: string[];
   onAddCustomColor?: (color: string) => void;
@@ -248,6 +250,7 @@ const SortablePin = ({
   editingPinId,
   setEditingPinId,
   readOnly,
+  targetPinId,
   hoveredPinId,
   onHoverPin,
   onAddCustomColor,
@@ -265,6 +268,7 @@ const SortablePin = ({
   editingPinId: string | null,
   setEditingPinId: (id: string | null) => void,
   readOnly: boolean,
+  targetPinId?: string | null,
   hoveredPinId?: string | null,
   onHoverPin?: (id: string | null) => void,
   onAddCustomColor?: (color: string) => void,
@@ -288,18 +292,54 @@ const SortablePin = ({
     disabled: readOnly
   });
 
+  const [isFetchingAddress, setIsFetchingAddress] = useState(false);
+
+  useEffect(() => {
+    if (targetPinId === pin.id && !pin.address && !isFetchingAddress) {
+      setIsFetchingAddress(true);
+      reverseGeocode(pin.lat, pin.lng).then(addr => {
+        if (addr) {
+          onUpdatePin(pin.id, { address: addr });
+        }
+      }).finally(() => {
+        setIsFetchingAddress(false);
+      });
+    }
+  }, [targetPinId, pin.id, pin.address, pin.lat, pin.lng, isFetchingAddress, onUpdatePin]);
+
   const isItemInDraggingBundle = isAnySelectedDragging && isSelected;
 
   useEffect(() => {
-    if (editingPinId === pin.id) {
+    if (editingPinId === pin.id || targetPinId === pin.id) {
       setTimeout(() => {
         const el = document.getElementById(`pin-${pin.id}`);
         if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          let container: HTMLElement | null = el.parentElement;
+          while (container && container !== document.body) {
+            const style = window.getComputedStyle(container);
+            if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+              break;
+            }
+            container = container.parentElement;
+          }
+
+          if (container && container !== document.body) {
+            const containerRect = container.getBoundingClientRect();
+            const rect = el.getBoundingClientRect();
+            const stickyHeaderHeight = 24;
+            
+            if (rect.top < containerRect.top + stickyHeaderHeight || el.offsetHeight >= container.clientHeight - stickyHeaderHeight) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else if (rect.bottom > containerRect.bottom) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          } else {
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
         }
-      }, 50);
+      }, 150); // wait for expand transition
     }
-  }, [editingPinId, pin.id]);
+  }, [editingPinId, targetPinId, pin.id]);
 
   const style = {
     transform: transform ? CSS.Transform.toString(transform) : undefined,
@@ -321,6 +361,7 @@ const SortablePin = ({
         ...style, 
         padding: '0 0.15rem', 
         marginBottom: '0px',
+        scrollMarginTop: '24px',
         borderRadius: 'var(--radius-sm)',
         background: (hoveredPinId === pin.id && !isDragActive) ? 'rgba(72, 61, 139, 0.05)' : (editingPinId === pin.id ? 'var(--bg-color)' : 'transparent'),
         border: editingPinId === pin.id ? '1px solid var(--primary-color)' : '1px solid transparent',
@@ -328,8 +369,12 @@ const SortablePin = ({
         transition: 'all 0.1s ease',
         cursor: 'default'
       }}
-      onMouseEnter={() => onHoverPin?.(pin.id)}
-      onMouseLeave={() => onHoverPin?.(null)}
+      onPointerEnter={(e) => {
+        if (e.pointerType === 'mouse') onHoverPin?.(pin.id);
+      }}
+      onPointerLeave={(e) => {
+        if (e.pointerType === 'mouse') onHoverPin?.(null);
+      }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
@@ -417,6 +462,35 @@ const SortablePin = ({
           )}
         </div>
       </div>
+
+      {targetPinId === pin.id && editingPinId !== pin.id && (
+        <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '0.3rem', borderTop: '1px solid var(--border-color)' }}>
+          {pin.address && (
+            <div style={{ marginBottom: '8px', fontSize: '0.65rem', color: 'var(--text-secondary)', lineHeight: '1.2' }}>
+              <strong style={{ color: 'var(--text-primary)' }}>Address:</strong><br/>
+              {pin.address}
+            </div>
+          )}
+          {pin.description && (
+            <div style={{ marginBottom: '8px', fontSize: '0.65rem', color: 'var(--text-secondary)', lineHeight: '1.2', whiteSpace: 'pre-wrap' }}>
+              <strong style={{ color: 'var(--text-primary)' }}>Description:</strong><br/>
+              {pin.description}
+            </div>
+          )}
+          <div style={{ marginTop: '8px' }}>
+            <a 
+              href={`https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ textDecoration: 'none', display: 'block' }}
+            >
+              <button className="btn-primary" style={{ width: '100%', padding: '6px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                <Navigation size={12} /> Navigate to Pin
+              </button>
+            </a>
+          </div>
+        </div>
+      )}
 
       {editingPinId === pin.id && !readOnly && (
         <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '0.3rem', borderTop: '1px solid var(--border-color)', fontSize: '0.7rem' }}>
@@ -527,13 +601,13 @@ const SortablePin = ({
 
 
           <div style={{ marginBottom: '5px' }}>
-            <label htmlFor={`desc-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Description</label>
+            <label htmlFor={`desc-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Description</label>
             <textarea 
               id={`desc-${pin.id}`}
               value={pin.description || ''} 
               onChange={(e) => onUpdatePin(pin.id, { description: e.target.value })}
               className="input-field"
-              style={{ minHeight: '25px', resize: 'vertical', padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit' }}
+              style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit', minHeight: '30px', resize: 'vertical' }}
             />
           </div>
         </div>
@@ -553,6 +627,7 @@ const SortableGroup = ({
   editingPinId,
   onSetEditingPinId,
   readOnly,
+  targetPinId,
   hoveredPinId,
   onHoverPin,
   customColors,
@@ -579,6 +654,7 @@ const SortableGroup = ({
   editingPinId: string | null,
   onSetEditingPinId: (id: string | null) => void,
   readOnly: boolean,
+  targetPinId?: string | null,
   hoveredPinId?: string | null,
   onHoverPin?: (id: string | null) => void,
   customColors?: string[],
@@ -745,6 +821,7 @@ const SortableGroup = ({
                   editingPinId={editingPinId}
                   setEditingPinId={onSetEditingPinId}
                   readOnly={readOnly}
+                  targetPinId={targetPinId}
                   hoveredPinId={hoveredPinId}
                   onHoverPin={onHoverPin}
                   onAddCustomColor={onAddCustomColor}
@@ -786,6 +863,7 @@ const Sidebar = ({
   mapBounds,
   editingPinId,
   onSetEditingPinId,
+  targetPinId,
   hoveredPinId,
   onHoverPin,
   customColors,
@@ -1133,7 +1211,6 @@ const Sidebar = ({
                     
                     {isMenuOpen && (
                       <div style={{ position: 'absolute', top: '100%', right: 0, width: '180px', background: 'white', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 1600, overflow: 'hidden' }}>
-                        {userRole === 'owner' && (
                           <div 
                             style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
                             onClick={() => { onShare?.(); setIsMenuOpen(false); }}
@@ -1142,7 +1219,6 @@ const Sidebar = ({
                           >
                             Share
                           </div>
-                        )}
                         {!readOnly && (
                           <div 
                             style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
@@ -1275,6 +1351,7 @@ const Sidebar = ({
                 editingPinId={editingPinId}
                 onSetEditingPinId={onSetEditingPinId}
                 readOnly={readOnly}
+                targetPinId={targetPinId}
                 hoveredPinId={hoveredPinId}
                 onHoverPin={onHoverPin}
                 customColors={customColors}
@@ -1364,6 +1441,7 @@ const Sidebar = ({
                         editingPinId={editingPinId}
                         setEditingPinId={onSetEditingPinId}
                         readOnly={readOnly}
+                        targetPinId={targetPinId}
                         hoveredPinId={hoveredPinId}
                         onHoverPin={onHoverPin}
                         customColors={customColors}

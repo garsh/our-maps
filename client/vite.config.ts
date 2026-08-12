@@ -9,9 +9,9 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icons.svg', 'hero.png'],
+      includeAssets: ['favicon.svg', 'pwa-icon.svg', 'icons.svg', 'hero.png'],
       manifest: {
-        name: 'Our Maps',
+        name: 'OurMaps',
         short_name: 'OurMaps',
         description: 'Create and share custom map pins',
         theme_color: '#483D8B',
@@ -19,7 +19,7 @@ export default defineConfig({
         display: 'standalone',
         icons: [
           {
-            src: 'favicon.svg',
+            src: 'pwa-icon.svg',
             sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'any maskable'

@@ -227,12 +227,13 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500,
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', width: '100%' }}>
                     {!disabled && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onAddPin(parseFloat(result.lat), parseFloat(result.lon), result.title || result.address.split(',')[0], result.address || undefined);
-                          setQuery('');
-                        }}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onAddPin(parseFloat(result.lat), parseFloat(result.lon), result.title || result.address.split(',')[0], result.address || undefined);
+                            onHoverSearchResult?.(null, null);
+                            setQuery('');
+                          }}
                         style={{ 
                           background: '#27ae60', 
                           color: 'white', 
