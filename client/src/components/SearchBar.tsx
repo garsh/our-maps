@@ -124,7 +124,7 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500,
   };
 
   return (
-    <div className="search-container" style={{ marginBottom: '0.8rem', position: 'relative' }}>
+    <div className="search-container" style={{ marginBottom: '0.4rem', position: 'relative' }}>
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
         <div style={{ position: 'absolute', left: '12px', color: 'var(--primary-color)', display: 'flex' }}>
           {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
