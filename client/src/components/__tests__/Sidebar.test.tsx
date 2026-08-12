@@ -58,6 +58,7 @@ describe('Sidebar', () => {
     const onAddGroup = vi.fn();
     render(<TestWrapper handlers={{ onAddGroup }} />);
     
+    fireEvent.click(screen.getByLabelText(/more options/i));
     fireEvent.click(screen.getByText(/New Layer/i));
     
     expect(onAddGroup).toHaveBeenCalled();
