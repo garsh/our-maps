@@ -2,6 +2,19 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const auth_1 = require("../auth");
+const STATE_ABBREVIATIONS = {
+    'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR', 'California': 'CA',
+    'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE', 'Florida': 'FL', 'Georgia': 'GA',
+    'Hawaii': 'HI', 'Idaho': 'ID', 'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA',
+    'Kansas': 'KS', 'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+    'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS', 'Missouri': 'MO',
+    'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV', 'New Hampshire': 'NH', 'New Jersey': 'NJ',
+    'New Mexico': 'NM', 'New York': 'NY', 'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH',
+    'Oklahoma': 'OK', 'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+    'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT', 'Vermont': 'VT',
+    'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV', 'Wisconsin': 'WI', 'Wyoming': 'WY',
+    'District of Columbia': 'DC', 'Puerto Rico': 'PR'
+};
 const router = (0, express_1.Router)();
 // Apply auth middleware to require login for proxy requests
 router.use(auth_1.authMiddleware);
@@ -16,22 +29,74 @@ router.get('/search', async (req, res) => {
     if (!apiKey) {
         console.warn('[Places API] GOOGLE_MAPS_API_KEY is not set or empty. Falling back to Nominatim.');
         try {
-            let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=10`;
+            let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=30&addressdetails=1`;
+            let centerLat = null;
+            let centerLng = null;
             if (bounds) {
-                url += `&viewbox=${encodeURIComponent(bounds)}`;
+                const parts = bounds.split(',').map(Number);
+                if (parts.length === 4 && parts.every(n => !isNaN(n))) {
+                    const [west, north, east, south] = parts;
+                    centerLat = (north + south) / 2;
+                    centerLng = (west + east) / 2;
+                    const width = Math.abs(east - west);
+                    const height = Math.abs(north - south);
+                    // Expand by 50% on each side
+                    const expWest = west - (width * 0.5);
+                    const expEast = east + (width * 0.5);
+                    const expNorth = north + (height * 0.5);
+                    const expSouth = south - (height * 0.5);
+                    const expandedBounds = `${expWest},${expNorth},${expEast},${expSouth}`;
+                    url += `&viewbox=${encodeURIComponent(expandedBounds)}&bounded=1`;
+                }
+                else {
+                    url += `&viewbox=${encodeURIComponent(bounds)}&bounded=1`;
+                }
             }
             const response = await fetch(url, {
                 headers: { 'User-Agent': 'OurMaps-App/1.0' }
             });
             const data = await response.json();
-            const formatted = data.map((item) => ({
-                place_id: item.place_id,
-                display_name: item.display_name,
-                lat: item.lat,
-                lon: item.lon,
-                type: 'global'
-            }));
-            return res.json(formatted);
+            let formatted = data.map((item) => {
+                let title = '';
+                let address = item.display_name;
+                if (item.address) {
+                    const firstPart = item.display_name.split(',')[0].trim();
+                    let road = item.address.road || '';
+                    if (item.address.house_number && road)
+                        road = `${item.address.house_number} ${road}`;
+                    const parts = [];
+                    if (firstPart !== item.address.house_number && !road.startsWith(firstPart)) {
+                        title = firstPart;
+                    }
+                    if (road)
+                        parts.push(road);
+                    const city = item.address.city || item.address.town || item.address.village || item.address.suburb;
+                    let state = item.address.state;
+                    if (state && STATE_ABBREVIATIONS[state]) {
+                        state = STATE_ABBREVIATIONS[state];
+                    }
+                    const postcode = item.address.postcode;
+                    parts.push(city, state, postcode);
+                    const validParts = parts.filter(Boolean).map(s => String(s).trim());
+                    address = Array.from(new Set(validParts)).join(', ');
+                }
+                return {
+                    place_id: item.place_id,
+                    title,
+                    address,
+                    lat: item.lat,
+                    lon: item.lon,
+                    type: 'global'
+                };
+            });
+            if (centerLat !== null && centerLng !== null) {
+                formatted.sort((a, b) => {
+                    const distA = Math.pow(parseFloat(a.lat) - centerLat, 2) + Math.pow(parseFloat(a.lon) - centerLng, 2);
+                    const distB = Math.pow(parseFloat(b.lat) - centerLat, 2) + Math.pow(parseFloat(b.lon) - centerLng, 2);
+                    return distA - distB;
+                });
+            }
+            return res.json(formatted.slice(0, 10));
         }
         catch (err) {
             console.error('[Places API] Nominatim fallback failed:', err);
@@ -77,13 +142,18 @@ router.get('/search', async (req, res) => {
             return res.status(502).json({ error: `Google API error: ${data.error.message}` });
         }
         const results = data.places || [];
-        const formatted = results.map((item) => ({
-            place_id: item.id || '',
-            display_name: (item.displayName?.text || '') + (item.formattedAddress ? `, ${item.formattedAddress}` : ''),
-            lat: item.location?.latitude?.toString() || '0',
-            lon: item.location?.longitude?.toString() || '0',
-            type: 'global'
-        }));
+        const formatted = results.map((item) => {
+            let formattedAddress = item.formattedAddress || '';
+            formattedAddress = formattedAddress.replace(/,\s*(USA|United States|United States of America)$/i, '');
+            return {
+                place_id: item.id || '',
+                title: item.displayName?.text || '',
+                address: formattedAddress,
+                lat: item.location?.latitude?.toString() || '0',
+                lon: item.location?.longitude?.toString() || '0',
+                type: 'global'
+            };
+        });
         return res.json(formatted);
     }
     catch (err) {
@@ -107,7 +177,29 @@ router.get('/reverse-geocode', async (req, res) => {
                 headers: { 'User-Agent': 'OurMaps-App/1.0' }
             });
             const data = await response.json();
-            return res.json({ address: data.display_name || null });
+            let cleanAddress = data.display_name || null;
+            if (data.address) {
+                const firstPart = (data.display_name || '').split(',')[0].trim();
+                let road = data.address.road || '';
+                if (data.address.house_number && road)
+                    road = `${data.address.house_number} ${road}`;
+                const parts = [];
+                if (firstPart !== data.address.house_number && !road.startsWith(firstPart)) {
+                    parts.push(firstPart);
+                }
+                if (road)
+                    parts.push(road);
+                const city = data.address.city || data.address.town || data.address.village || data.address.suburb;
+                let state = data.address.state;
+                if (state && STATE_ABBREVIATIONS[state]) {
+                    state = STATE_ABBREVIATIONS[state];
+                }
+                const postcode = data.address.postcode;
+                parts.push(city, state, postcode);
+                const validParts = parts.filter(Boolean).map(s => String(s).trim());
+                cleanAddress = Array.from(new Set(validParts)).join(', ');
+            }
+            return res.json({ address: cleanAddress });
         }
         catch (err) {
             console.error('[Places API] Nominatim fallback reverse geocode failed:', err);
@@ -122,7 +214,10 @@ router.get('/reverse-geocode', async (req, res) => {
             console.error('[Places API] Google reverse geocode returned status:', data.status, data.error_message);
             return res.status(502).json({ error: `Google API error: ${data.status}` });
         }
-        const address = data.results?.[0]?.formatted_address || null;
+        let address = data.results?.[0]?.formatted_address || null;
+        if (address) {
+            address = address.replace(/,\s*(USA|United States|United States of America)$/i, '');
+        }
         return res.json({ address });
     }
     catch (err) {

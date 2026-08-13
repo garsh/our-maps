@@ -3,8 +3,11 @@ services:
     image: caddy:2-alpine
     container_name: caddy-proxy
     ports:
-      - "80:80"
       - "443:443"
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
@@ -22,15 +25,15 @@ services:
     container_name: our-maps
     env_file:
       - .env
-    # Expose port 3000 publicly so the Android app can connect via plain HTTP without TLS errors
+    # Expose the configured PORT publicly so the Android app can connect via plain HTTP without TLS errors
     ports:
-      - "3000:3000"
+      - "${PORT:-3001}:${PORT:-3001}"
     volumes:
       - our_maps_data:/data
     restart: unless-stopped
     environment:
       - NODE_ENV=${NODE_ENV:-production}
-      - PORT=${PORT:-3000}
+      - PORT=${PORT:-3001}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
       - CORS_ORIGIN=${CORS_ORIGIN:-https://ourmaps.mooo.com}

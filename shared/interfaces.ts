@@ -12,6 +12,7 @@ export interface MapPermission {
   userId: string;
   userEmail: string;
   userName: string;
+  userPicture?: string;
   role: 'view' | 'edit';
 }
 
@@ -41,6 +42,7 @@ export interface MapData {
   ownerId: string;
   ownerName?: string;
   ownerEmail?: string;
+  ownerPicture?: string;
   groups: PinGroup[];
   pins: Pin[];
   permissions?: MapPermission[];

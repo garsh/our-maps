@@ -11,7 +11,7 @@ import { reverseGeocode } from './utils/geocoding';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { Pin, PinGroup, MapPermission, MapData } from '@shared/interfaces'
 import type { DragEndEvent } from '@dnd-kit/core'
-import { Loader2, Map as MapIcon } from 'lucide-react';
+import { Loader2, Map as MapIcon, LogOut } from 'lucide-react';
 import L from 'leaflet';
 import { reorderPins, reorderGroups } from './utils/reorderUtils';
 import { io, Socket } from 'socket.io-client';
@@ -21,19 +21,21 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
 export function MapEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const socketRef = useRef<Socket | null>(null);
   
   const [pins, setPins] = useState<Pin[]>([])
   const [groups, setGroups] = useState<PinGroup[]>([])
   const [mapId, setMapId] = useState<string | null>(id && id !== 'new' ? id : null);
   const [mapName, setMapName] = useState(id === 'new' ? 'My Map' : '');
+  const [owner, setOwner] = useState<{ id: string, name?: string, email?: string, picture?: string } | null>(null);
   const [isMapLoading, setIsMapLoading] = useState(!!id && id !== 'new');
   const [userRole, setUserRole] = useState<'owner' | 'edit' | 'view'>('owner');
   const [permissions, setPermissions] = useState<MapPermission[]>([]);
   
   const [isSaving, setIsSaving] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [showSignOutDialog, setShowSignOutDialog] = useState(false);
   const [targetLocation, setTargetLocation] = useState<[number, number] | null>(null);
   const [targetPinId, setTargetPinId] = useState<string | null>(null);
   const [boundsToFit, setBoundsToFit] = useState<L.LatLngBounds | null>(null);
@@ -234,6 +236,7 @@ export function MapEditor() {
       const data = await apiService.getMap(mapId);
       setMapId(data.id);
       setMapName(data.name || 'My Map');
+      setOwner({ id: data.ownerId, name: data.ownerName, email: data.ownerEmail, picture: data.ownerPicture });
       setGroups(data.groups || []);
       setPins(data.pins);
       if (data.pins && data.pins.length > 0) {
@@ -304,21 +307,19 @@ export function MapEditor() {
     setPermissions(prev => prev.filter(p => p.userId !== userId));
   };
 
-  const handlePinSelect = (pin: Pin) => {
-    setTargetPinId(pin.id);
-    // Reset targetPinId after a short delay so it can be re-triggered
-    setTimeout(() => setTargetPinId(null), 500);
+  const handlePinSelect = (pinId: string) => {
+    setTargetPinId(prev => prev === pinId ? null : pinId);
+  };
+
+  const handleSetEditingPinId = (id: string | null) => {
+    setEditingPinId(id);
+    if (id !== null) {
+      setTargetPinId(null);
+    }
   };
 
   const handleEditPin = (pin: Pin) => {
-    setEditingPinId(pin.id);
-    // Scroll sidebar to the pin
-    setTimeout(() => {
-      const element = document.getElementById(`pin-${pin.id}`);
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 100);
+    handleSetEditingPinId(pin.id);
   };
 
   const handleMapClick = useCallback(async (lat: number, lng: number) => {
@@ -510,7 +511,7 @@ export function MapEditor() {
 
   if (isMapLoading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-color)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-color)', userSelect: 'none', WebkitUserSelect: 'none' }}>
         <Loader2 size={64} className="animate-spin" style={{ color: 'var(--primary-color)', marginBottom: '1.5rem' }} />
         <h2 style={{ color: 'var(--primary-color)', fontWeight: '700' }}>Loading your map...</h2>
       </div>
@@ -529,17 +530,22 @@ export function MapEditor() {
       zIndex: 1000,
       flexShrink: 0
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', minWidth: 0, flexShrink: 1 }} onClick={() => navigate('/')}>
-        <div style={{ background: 'rgba(255,255,255,0.2)', padding: '6px', borderRadius: '10px', display: 'flex', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', minWidth: 0, flexShrink: 1, userSelect: 'none' }} onClick={() => navigate('/')}>
+        <div style={{ display: 'flex', flexShrink: 0 }}>
           <MapIcon size={18} />
         </div>
-        <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1 }}>{isMobile ? mapName || 'Untitled Map' : 'Our Maps'}</h1>
+        <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1 }}>{isMobile ? mapName || 'Untitled Map' : 'OurMaps'}</h1>
       </div>
       
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
         {userRole !== 'view' && (
-          <div style={{ 
-            fontSize: '0.65rem', 
+          <button 
+            onClick={() => {
+              if (error) {
+                handleSave();
+              }
+            }}
+            style={{ 
             background: 'rgba(255,255,255,0.1)', 
             padding: '3px 8px', 
             borderRadius: '50px',
@@ -549,13 +555,17 @@ export function MapEditor() {
             gap: '6px',
             color: error ? '#ffbdad' : (successMessage ? '#b8ffd1' : 'white'),
             fontWeight: '600',
-            whiteSpace: 'nowrap'
+            whiteSpace: 'nowrap',
+            cursor: error ? 'pointer' : 'default',
+            outline: 'none',
+            fontFamily: 'inherit',
+            fontSize: '0.65rem'
           }}>
             <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: error ? '#ff4d4f' : (isSaving ? '#ffcc00' : '#4ade80'), flexShrink: 0 }} />
             <span>
               {error || successMessage || (isSaving ? 'Saving changes...' : 'Map Synced')}
             </span>
-          </div>
+          </button>
         )}
         <div id="mobile-header-actions" style={{ display: 'flex', alignItems: 'center' }}></div>
       </div>
@@ -616,9 +626,8 @@ export function MapEditor() {
             }}
             onAddPin={addPinAtLocation}
             onRemovePin={removePin}
-            onPinClick={(pinId) => {
-              handlePinSelect(pinId);
-              if (isMobile) setSheetHeight(40);
+            onPinClick={(pin) => {
+              handlePinSelect(pin.id);
             }}
             onUpdatePin={updatePin}
             onDragEnd={handleDragEnd}
@@ -628,9 +637,10 @@ export function MapEditor() {
             onImport={handleImport}
             mapBounds={mapBounds}
             editingPinId={editingPinId}
-            onSetEditingPinId={setEditingPinId}
+            onSetEditingPinId={handleSetEditingPinId}
             hoveredPinId={hoveredPinId}
             onHoverPin={setHoveredPinId}
+            targetPinId={targetPinId}
             customColors={customColors}
             onAddCustomColor={addCustomColor}
             selectedNavIds={selectedNavIds}
@@ -703,7 +713,10 @@ export function MapEditor() {
 
       <main style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {!isMobile && (
-          <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '10px', background: 'white', padding: '6px 12px', borderRadius: '50px', boxShadow: 'var(--shadow-sm)' }}>
+          <div 
+            onClick={() => setShowSignOutDialog(true)}
+            style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '10px', background: 'white', padding: '6px 12px', borderRadius: '50px', boxShadow: 'var(--shadow-sm)', cursor: 'pointer' }}
+          >
             <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)' }}>{user?.name}</span>
             {user?.picture && <img src={user.picture} alt={user.name} style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid rgba(0,0,0,0.05)' }} />}
           </div>
@@ -711,10 +724,7 @@ export function MapEditor() {
         <MapView 
             pins={pins} 
             onMapClick={handleMapClick} 
-            onEditPin={(id) => {
-              const pin = pins.find(p => p.id === id);
-              if (pin) handleEditPin(pin);
-            }}
+            onPinClick={(pin) => handlePinSelect(pin.id)}
             onUpdatePin={updatePin}
             targetLocation={targetLocation} 
             targetPinId={targetPinId}
@@ -725,6 +735,7 @@ export function MapEditor() {
             onHoverPin={setHoveredPinId}
             hiddenGroupIds={hiddenGroupIds}
             previewLocation={previewLocation}
+            bottomPadding={isMobile ? sheetHeight : 0}
           />
         </main>
 
@@ -734,9 +745,27 @@ export function MapEditor() {
         onShare={handleShare}
         onRemoveShare={handleRemoveShare}
         permissions={permissions}
-        ownerId={user?.id || ''}
+        owner={owner}
         currentUserId={user?.id || ''}
       />
+
+      {showSignOutDialog && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(4px)' }} onClick={() => setShowSignOutDialog(false)}>
+          <div style={{ background: 'white', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '400px', width: '90%', boxShadow: 'var(--shadow-lg)', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+            <div style={{ background: 'var(--bg-color)', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
+              <LogOut size={32} color="var(--primary-color)" />
+            </div>
+            <h3 style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>Sign Out</h3>
+            <p style={{ color: 'var(--text-secondary)', lineHeight: '1.5', margin: '1rem 0 2rem 0' }}>
+              Are you sure you want to sign out of OurMaps?
+            </p>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button onClick={() => setShowSignOutDialog(false)} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)' }}>Cancel</button>
+              <button onClick={() => { setShowSignOutDialog(false); logout(); }} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--primary-color)', color: 'white', fontWeight: '600' }}>Sign Out</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

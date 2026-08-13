@@ -13,7 +13,6 @@ const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
-const db_1 = require("./db");
 const maps_1 = __importDefault(require("./routes/maps"));
 const places_1 = __importDefault(require("./routes/places"));
 const auth_1 = require("./auth");
@@ -26,7 +25,7 @@ const io = new socket_io_1.Server(server, {
         methods: ['GET', 'POST']
     }
 });
-const port = process.env.PORT || 3001;
+const port = process.env.PORT || 3002;
 // Security: Use helmet for secure headers
 app.use((0, helmet_1.default)({
     contentSecurityPolicy: {
@@ -75,6 +74,7 @@ app.use((0, cors_1.default)({
 app.use(express_1.default.json({ limit: '10mb' }));
 // API Routes
 app.post('/api/auth/google-login', auth_1.googleLoginHandler);
+app.post('/api/auth/filter-contacts', auth_1.authMiddleware, auth_1.filterContactsHandler);
 app.use('/api/maps', maps_1.default);
 app.use('/api/places', places_1.default);
 app.get('/api/hello', (req, res) => {
@@ -125,14 +125,6 @@ app.get('*', (req, res) => {
     else {
         res.status(404).json({ error: 'Not Found' });
     }
-});
-// Initialize DB
-(0, db_1.getDb)().then(() => {
-    if (process.env.NODE_ENV !== 'test') {
-        console.log('Database initialized');
-    }
-}).catch(err => {
-    console.error('Failed to initialize database:', err);
 });
 if (process.env.NODE_ENV !== 'test') {
     server.listen(port, '0.0.0.0', () => {

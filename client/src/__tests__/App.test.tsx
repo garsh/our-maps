@@ -5,6 +5,7 @@ import { MapEditor } from '../App';
 import LandingPage from '../pages/LandingPage';
 import { apiService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 
 // Mock the dependencies
 vi.mock('../services/api');
@@ -55,11 +56,13 @@ describe('App Components Error Handling', () => {
     (apiService.getMap as any).mockRejectedValue(new Error('Not Found'));
 
     render(
-      <MemoryRouter initialEntries={['/map/invalid-id']}>
-        <Routes>
-          <Route path="/map/:id" element={<MapEditor />} />
-        </Routes>
-      </MemoryRouter>
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/invalid-id']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
     );
 
     await waitFor(() => {
@@ -78,11 +81,13 @@ describe('App Components Error Handling', () => {
     (apiService.updateMap as any).mockRejectedValue(new Error('Save Failed'));
 
     render(
-      <MemoryRouter initialEntries={['/map/map-1']}>
-        <Routes>
-          <Route path="/map/:id" element={<MapEditor />} />
-        </Routes>
-      </MemoryRouter>
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
     );
 
     // Wait for map to load

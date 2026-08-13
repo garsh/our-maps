@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.googleLoginHandler = googleLoginHandler;
 exports.authMiddleware = authMiddleware;
+exports.filterContactsHandler = filterContactsHandler;
 const google_auth_library_1 = require("google-auth-library");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const db_1 = require("./db");
@@ -139,4 +140,22 @@ async function authMiddleware(req, res, next) {
 async function ensureUserExists(user) {
     const db = await (0, db_1.getDb)();
     await db.run('INSERT INTO users (id, email, name, picture) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, picture=excluded.picture', user.id, user.email, user.name, user.picture);
+}
+async function filterContactsHandler(req, res) {
+    try {
+        const { emails } = req.body;
+        if (!Array.isArray(emails))
+            return res.status(400).json({ error: 'emails array required' });
+        if (emails.length === 0)
+            return res.json({ existingEmails: [] });
+        const db = await (0, db_1.getDb)();
+        const placeholders = emails.map(() => '?').join(',');
+        const rows = await db.all(`SELECT email FROM users WHERE email IN (${placeholders})`, ...emails);
+        const existingEmails = rows.map(r => r.email.toLowerCase());
+        return res.json({ existingEmails });
+    }
+    catch (err) {
+        console.error('Failed to filter contacts', err);
+        res.status(500).json({ error: 'Failed to filter contacts' });
+    }
 }
