@@ -27,3 +27,4 @@ The application is deployed using Docker Compose, which builds both the frontend
 
 ## Agent Development Rules
 - **Build Verification**: Always run `npm run build` and confirm that the build succeeds after every change.
+- **Database Backup**: Always create a backup of the SQLite database before making any changes to the database schema.
