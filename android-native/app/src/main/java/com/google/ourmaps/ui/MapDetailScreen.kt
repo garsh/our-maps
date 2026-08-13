@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.google.gson.Gson
 import com.google.ourmaps.model.Pin
-import com.google.ourmaps.model.PinGroup
+import com.google.ourmaps.model.PinLayer
 import com.google.ourmaps.services.MapDownloadService
 import com.google.ourmaps.ui.theme.DarkSlateBlue
 import com.google.ourmaps.ui.theme.LightGray
@@ -91,15 +91,15 @@ fun MapDetailScreen(
     val isDownloading = activeDownloads.contains(mapId)
     val downloadProgress = progressMap[mapId] ?: 0f
 
-    // Layer / Group visibility (Sticky via SharedPreferences)
+    // Layer / Layer visibility (Sticky via SharedPreferences)
     val prefs = remember { context.getSharedPreferences("map_prefs_$mapId", android.content.Context.MODE_PRIVATE) }
     
-    var visibleGroupIds by remember { 
+    var visibleLayerIds by remember { 
         val saved = prefs.getStringSet("visible_layers", null)
         mutableStateOf(saved?.map { it as String? }?.toSet() ?: emptySet<String?>())
     }
 
-    var expandedGroupIds by remember { 
+    var expandedLayerIds by remember { 
         val saved = prefs.getStringSet("expanded_layers", null)
         mutableStateOf(saved?.map { it as String? }?.toSet() ?: emptySet<String?>())
     }
@@ -108,24 +108,24 @@ fun MapDetailScreen(
     LaunchedEffect(uiState) {
         val state = uiState
         Log.d("OURMAPS_DEBUG", "LaunchedEffect(uiState): state changed to ${state.javaClass.simpleName}")
-        if (state is UiState.Success && visibleGroupIds.isEmpty() && !prefs.contains("visible_layers")) {
+        if (state is UiState.Success && visibleLayerIds.isEmpty() && !prefs.contains("visible_layers")) {
             Log.d("OURMAPS_DEBUG", "Initializing default visibility from Success state")
-            val allGroups = state.data.groups.map { it.id }.toSet() + (null as String?)
-            visibleGroupIds = allGroups
+            val allGroups = state.data.layers.map { it.id }.toSet() + (null as String?)
+            visibleLayerIds = allGroups
             prefs.edit().putStringSet("visible_layers", allGroups.filterNotNull().toSet()).apply()
         }
     }
 
-    val onToggleGroupVisibility: (String?) -> Unit = { id ->
+    val onToggleLayerVisibility: (String?) -> Unit = { id ->
         Log.d("OURMAPS_DEBUG", "toggleGroupVisibility($id)")
-        visibleGroupIds = if (visibleGroupIds.contains(id)) visibleGroupIds - id else visibleGroupIds + id
-        prefs.edit().putStringSet("visible_layers", visibleGroupIds.filterNotNull().toSet()).apply()
+        visibleLayerIds = if (visibleLayerIds.contains(id)) visibleLayerIds - id else visibleLayerIds + id
+        prefs.edit().putStringSet("visible_layers", visibleLayerIds.filterNotNull().toSet()).apply()
     }
 
     val onToggleExpand: (String?) -> Unit = { id ->
         Log.d("OURMAPS_DEBUG", "toggleExpand($id)")
-        expandedGroupIds = if (expandedGroupIds.contains(id)) expandedGroupIds - id else expandedGroupIds + id
-        prefs.edit().putStringSet("expanded_layers", expandedGroupIds.filterNotNull().toSet()).apply()
+        expandedLayerIds = if (expandedLayerIds.contains(id)) expandedLayerIds - id else expandedLayerIds + id
+        prefs.edit().putStringSet("expanded_layers", expandedLayerIds.filterNotNull().toSet()).apply()
     }
 
     // Search
@@ -278,9 +278,9 @@ fun MapDetailScreen(
                 if (newLayerName.isNotBlank()) {
                     Log.d("OURMAPS_DEBUG", "Creating new layer: $newLayerName")
                     val nid = java.util.UUID.randomUUID().toString()
-                    onToggleGroupVisibility(nid)
-                    val updatedPins = if (pendingPinForNewLayer != null) mapData.pins.map { if (it.id == pendingPinForNewLayer?.id) it.copy(groupId = nid) else it } else mapData.pins
-                    viewModel.updateMap(mapData.copy(groups = mapData.groups + PinGroup(nid, newLayerName, mapData.groups.size), pins = updatedPins))
+                    onToggleLayerVisibility(nid)
+                    val updatedPins = if (pendingPinForNewLayer != null) mapData.pins.map { if (it.id == pendingPinForNewLayer?.id) it.copy(layerId = nid) else it } else mapData.pins
+                    viewModel.updateMap(mapData.copy(layers = mapData.layers + PinLayer(nid, newLayerName, mapData.layers.size), pins = updatedPins))
                     showCreateLayerDialog = false; newLayerName = ""; pendingPinForNewLayer = null
                 }
             }) { Text("Create") } }
@@ -326,7 +326,7 @@ fun MapDetailScreen(
                                 }
                                 if (!pin.address.isNullOrBlank()) Text(pin.address!!, style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
                                 if (!pin.description.isNullOrBlank()) Text(pin.description!!, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 8.dp))
-                                AssistChip(onClick = { }, label = { Text(mapData.groups.find { it.id == pin.groupId }?.name ?: "Default Layer") }, leadingIcon = { Icon(Icons.Default.Layers, null, modifier = Modifier.size(16.dp)) })
+                                AssistChip(onClick = { }, label = { Text(mapData.layers.find { it.id == pin.layerId }?.name ?: "Default Layer") }, leadingIcon = { Icon(Icons.Default.Layers, null, modifier = Modifier.size(16.dp)) })
                                 Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Button(onClick = { 
                                         val uri = Uri.parse("google.navigation:q=${pin.lat},${pin.lng}")
@@ -342,25 +342,25 @@ fun MapDetailScreen(
                                 var editedColor by remember(pin.id) { mutableStateOf(pin.color ?: "blue") }
                                 var editedIcon by remember(pin.id) { mutableStateOf(pin.icon ?: "default") }
                                 val updatePinFn = { l: String, a: String, d: String, c: String, i: String, g: String? ->
-                                    viewModel.updateMap(mapData.copy(pins = mapData.pins.map { if (it.id == pin.id) it.copy(label = l, address = a, description = d, color = c, icon = i, groupId = g) else it }))
+                                    viewModel.updateMap(mapData.copy(pins = mapData.pins.map { if (it.id == pin.id) it.copy(label = l, address = a, description = d, color = c, icon = i, layerId = g) else it }))
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text("Edit Pin", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                                     IconButton(onClick = { viewModel.updateMap(mapData.copy(pins = mapData.pins.filter { it.id != pin.id })); selectedPin = null }) { Icon(Icons.Default.Delete, null, tint = Color.Red) }
                                 }
-                                OutlinedTextField(value = editedLabel, onValueChange = { editedLabel = it; updatePinFn(it, editedAddress, editedDescription, editedColor, editedIcon, pin.groupId) }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = editedLabel, onValueChange = { editedLabel = it; updatePinFn(it, editedAddress, editedDescription, editedColor, editedIcon, pin.layerId) }, label = { Text("Name") }, modifier = Modifier.fillMaxWidth())
                                 Spacer(modifier = Modifier.height(8.dp))
-                                OutlinedTextField(value = editedAddress, onValueChange = { editedAddress = it; updatePinFn(editedLabel, it, editedDescription, editedColor, editedIcon, pin.groupId) }, label = { Text("Address") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = editedAddress, onValueChange = { editedAddress = it; updatePinFn(editedLabel, it, editedDescription, editedColor, editedIcon, pin.layerId) }, label = { Text("Address") }, modifier = Modifier.fillMaxWidth())
                                 Spacer(modifier = Modifier.height(8.dp))
-                                OutlinedTextField(value = editedDescription, onValueChange = { editedDescription = it; updatePinFn(editedLabel, editedAddress, it, editedColor, editedIcon, pin.groupId) }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+                                OutlinedTextField(value = editedDescription, onValueChange = { editedDescription = it; updatePinFn(editedLabel, editedAddress, it, editedColor, editedIcon, pin.layerId) }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
                                 Spacer(modifier = Modifier.height(8.dp))
                                 
                                 var showGroupDropdown by remember { mutableStateOf(false) }
                                 Box(modifier = Modifier.fillMaxWidth().clickable { showGroupDropdown = true }) {
-                                    OutlinedTextField(value = mapData.groups.find { it.id == pin.groupId }?.name ?: "Default Layer", onValueChange = { }, readOnly = true, label = { Text("Layer") }, modifier = Modifier.fillMaxWidth(), enabled = false, trailingIcon = { Icon(Icons.Default.ArrowDropDown, null) }, colors = OutlinedTextFieldDefaults.colors(disabledTextColor = MaterialTheme.colorScheme.onSurface, disabledBorderColor = MaterialTheme.colorScheme.outline, disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant, disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant))
+                                    OutlinedTextField(value = mapData.layers.find { it.id == pin.layerId }?.name ?: "Default Layer", onValueChange = { }, readOnly = true, label = { Text("Layer") }, modifier = Modifier.fillMaxWidth(), enabled = false, trailingIcon = { Icon(Icons.Default.ArrowDropDown, null) }, colors = OutlinedTextFieldDefaults.colors(disabledTextColor = MaterialTheme.colorScheme.onSurface, disabledBorderColor = MaterialTheme.colorScheme.outline, disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant, disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant))
                                     DropdownMenu(expanded = showGroupDropdown, onDismissRequest = { showGroupDropdown = false }) {
                                         DropdownMenuItem(text = { Text("Default Layer") }, onClick = { updatePinFn(editedLabel, editedAddress, editedDescription, editedColor, editedIcon, null); showGroupDropdown = false })
-                                        mapData.groups.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { updatePinFn(editedLabel, editedAddress, editedDescription, editedColor, editedIcon, g.id); showGroupDropdown = false }) }
+                                        mapData.layers.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { updatePinFn(editedLabel, editedAddress, editedDescription, editedColor, editedIcon, g.id); showGroupDropdown = false }) }
                                     }
                                 }
 
@@ -371,7 +371,7 @@ fun MapDetailScreen(
                                     colors.forEach { (n, v) -> 
                                         Box(modifier = Modifier.size(38.dp).background(v, CircleShape).clickable { 
                                             editedColor = n
-                                            updatePinFn(editedLabel, editedAddress, editedDescription, n, editedIcon, pin.groupId) 
+                                            updatePinFn(editedLabel, editedAddress, editedDescription, n, editedIcon, pin.layerId) 
                                         }.padding(4.dp)) { 
                                             if (editedColor == n) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(22.dp).align(Alignment.Center)) 
                                         } 
@@ -424,7 +424,7 @@ fun MapDetailScreen(
                                                 Button(onClick = { 
                                                     if (hexValue.matches(Regex("^#[0-9A-Fa-f]{6}$"))) {
                                                         editedColor = hexValue
-                                                        updatePinFn(editedLabel, editedAddress, editedDescription, hexValue, editedIcon, pin.groupId)
+                                                        updatePinFn(editedLabel, editedAddress, editedDescription, hexValue, editedIcon, pin.layerId)
                                                         showHexDialog = false
                                                     } else {
                                                         Toast.makeText(context, "Invalid hex code", Toast.LENGTH_SHORT).show()
@@ -441,7 +441,7 @@ fun MapDetailScreen(
                                 val iconOptions = listOf(Triple("default", Icons.Default.Place, "Default"), Triple("hotel", Icons.Default.Bed, "Hotel"), Triple("restaurant", Icons.Default.Restaurant, "Food"), Triple("airport", Icons.Default.LocalAirport, "Travel"), Triple("park", Icons.Default.Forest, "Park"), Triple("museum", Icons.Default.Museum, "Arts"), Triple("shopping", Icons.Default.ShoppingBag, "Shop"), Triple("camera", Icons.Default.PhotoCamera, "Photo"), Triple("gas", Icons.Default.LocalGasStation, "Gas"), Triple("charging", Icons.Default.Bolt, "EV"))
                                 iconOptions.chunked(5).forEach { row ->
                                     Row(modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        row.forEach { (t, icon, label) -> FilterChip(selected = editedIcon == t, onClick = { editedIcon = t; updatePinFn(editedLabel, editedAddress, editedDescription, editedColor, t, pin.groupId) }, label = { Icon(icon, null, modifier = Modifier.size(20.dp)) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = DarkSlateBlue, selectedLabelColor = Color.White)) }
+                                        row.forEach { (t, icon, label) -> FilterChip(selected = editedIcon == t, onClick = { editedIcon = t; updatePinFn(editedLabel, editedAddress, editedDescription, editedColor, t, pin.layerId) }, label = { Icon(icon, null, modifier = Modifier.size(20.dp)) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = DarkSlateBlue, selectedLabelColor = Color.White)) }
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(16.dp))
@@ -453,13 +453,13 @@ fun MapDetailScreen(
                         }
                     }
                     Divider(modifier = Modifier.padding(vertical = 16.dp))
-                    LegendContent(mapData, visibleGroupIds, onToggleGroupVisibility, { id, n -> viewModel.updateMap(mapData.copy(groups = mapData.groups.map { if (it.id == id) it.copy(name = n) else it })) }, { id -> viewModel.updateMap(mapData.copy(groups = mapData.groups.filter { it.id != id }, pins = mapData.pins.map { if (it.groupId == id) it.copy(groupId = null) else it })) }, { pin -> 
+                    LegendContent(mapData, visibleLayerIds, onToggleLayerVisibility, { id, n -> viewModel.updateMap(mapData.copy(layers = mapData.layers.map { if (it.id == id) it.copy(name = n) else it })) }, { id -> viewModel.updateMap(mapData.copy(layers = mapData.layers.filter { it.id != id }, pins = mapData.pins.map { if (it.layerId == id) it.copy(layerId = null) else it })) }, { pin -> 
                         selectedPin = pin; 
                         isEditingPin = false; 
                         coroutineScope.launch { 
                             scaffoldState.bottomSheetState.partialExpand()
                         }
-                    }, viewModel, mapData.userRole, expandedGroupIds, onToggleExpand)
+                    }, viewModel, mapData.userRole, expandedLayerIds, onToggleExpand)
                 }
             } else Box(modifier = Modifier.fillMaxWidth().height(100.dp))
         }
@@ -534,7 +534,7 @@ fun MapDetailScreen(
                             Log.d("OURMAPS_DEBUG", "AndroidView: Update called")
                             mv.overlays.filterIsInstance<Marker>().forEach { it.closeInfoWindow() }
                             mv.overlays.removeAll(mv.overlays.filterIsInstance<Marker>())
-                            mapData.pins.filter { it.groupId in visibleGroupIds }.forEach { pin ->
+                            mapData.pins.filter { it.layerId in visibleLayerIds }.forEach { pin ->
                                 mv.overlays.add(Marker(mv).apply { 
                                     id = pin.id // Set unique ID for robust lookup
                                     position = GeoPoint(pin.lat, pin.lng)
@@ -590,14 +590,14 @@ fun MapDetailScreen(
 @Composable
 fun LegendContent(
     mapData: com.google.ourmaps.model.MapData, 
-    visibleGroupIds: Set<String?>, 
-    onToggleGroupVisibility: (String?) -> Unit, 
-    onUpdateGroup: (String, String) -> Unit, 
-    onRemoveGroup: (String) -> Unit, 
+    visibleLayerIds: Set<String?>, 
+    onToggleLayerVisibility: (String?) -> Unit, 
+    onUpdateLayer: (String, String) -> Unit, 
+    onRemoveLayer: (String) -> Unit, 
     onPinClick: (Pin) -> Unit, 
     viewModel: MapDetailViewModel, 
     userRole: String?, 
-    expandedGroupIds: Set<String?>, 
+    expandedLayerIds: Set<String?>, 
     onToggleExpand: (String?) -> Unit
 ) {
     var selectedNavPinIds by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -619,9 +619,9 @@ fun LegendContent(
                 Button(onClick = { 
                     pinsToNavigate = mapData.pins.filter { it.id in selectedNavPinIds }.sortedWith(
                         compareBy<com.google.ourmaps.data.Pin> { pin ->
-                            if (pin.groupId == null) Int.MAX_VALUE
+                            if (pin.layerId == null) Int.MAX_VALUE
                             else {
-                                val idx = mapData.groups.indexOfFirst { g -> g.id == pin.groupId }
+                                val idx = mapData.layers.indexOfFirst { g -> g.id == pin.layerId }
                                 if (idx != -1) idx else Int.MAX_VALUE
                             }
                         }.thenBy { it.position }
@@ -635,18 +635,18 @@ fun LegendContent(
         
         LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 600.dp)) {
             item {
-                val pins = mapData.pins.filter { it.groupId == null }
-                LegendGroupHeader(id = null, name = "Default Layer", isExpanded = expandedGroupIds.contains(null), isVisible = visibleGroupIds.contains(null), onToggle = { onToggleExpand(null) }, onToggleVisibility = { onToggleGroupVisibility(null) }, onNavigate = { if (pins.isNotEmpty()) { pinsToNavigate = pins; showNavigationDialog = true } else Toast.makeText(context, "No pins in this layer", Toast.LENGTH_SHORT).show() }, showSelectAll = pins.isNotEmpty() && expandedGroupIds.contains(null), isAllSelected = pins.isNotEmpty() && pins.all { it.id in selectedNavPinIds }, onSelectAll = { s -> val ids = pins.map { it.id }.toSet(); selectedNavPinIds = if (s) selectedNavPinIds + ids else selectedNavPinIds - ids }, userRole = userRole)
+                val pins = mapData.pins.filter { it.layerId == null }
+                LegendLayerHeader(id = null, name = "Default Layer", isExpanded = expandedLayerIds.contains(null), isVisible = visibleLayerIds.contains(null), onToggle = { onToggleExpand(null) }, onToggleVisibility = { onToggleLayerVisibility(null) }, onNavigate = { if (pins.isNotEmpty()) { pinsToNavigate = pins; showNavigationDialog = true } else Toast.makeText(context, "No pins in this layer", Toast.LENGTH_SHORT).show() }, showSelectAll = pins.isNotEmpty() && expandedLayerIds.contains(null), isAllSelected = pins.isNotEmpty() && pins.all { it.id in selectedNavPinIds }, onSelectAll = { s -> val ids = pins.map { it.id }.toSet(); selectedNavPinIds = if (s) selectedNavPinIds + ids else selectedNavPinIds - ids }, userRole = userRole)
             }
-            if (expandedGroupIds.contains(null)) {
-                items(mapData.pins.filter { it.groupId == null }) { pin ->
+            if (expandedLayerIds.contains(null)) {
+                items(mapData.pins.filter { it.layerId == null }) { pin ->
                     LegendPinItem(pin, { onPinClick(pin) }, pin.id in selectedNavPinIds, { s -> selectedNavPinIds = if (s) selectedNavPinIds + pin.id else selectedNavPinIds - pin.id }, { val idx = mapData.pins.indexOfFirst { it.id == pin.id }; if (idx > 0) viewModel.movePin(idx, idx - 1) }, { val idx = mapData.pins.indexOfFirst { it.id == pin.id }; if (idx < mapData.pins.size - 1) viewModel.movePin(idx, idx + 1) }, userRole)
                 }
             }
-            mapData.groups.forEach { group ->
-                val pins = mapData.pins.filter { it.groupId == group.id }
-                item { LegendGroupHeader(group.id, group.name, expandedGroupIds.contains(group.id), visibleGroupIds.contains(group.id), onToggle = { onToggleExpand(group.id) }, onToggleVisibility = { onToggleGroupVisibility(group.id) }, onUpdateName = { onUpdateGroup(group.id, it) }, onDelete = { onRemoveGroup(group.id) }, onNavigate = { if (pins.isNotEmpty()) { pinsToNavigate = pins; showNavigationDialog = true } else Toast.makeText(context, "No pins in this layer", Toast.LENGTH_SHORT).show() }, showSelectAll = pins.isNotEmpty() && expandedGroupIds.contains(group.id), isAllSelected = pins.isNotEmpty() && pins.all { it.id in selectedNavPinIds }, onSelectAll = { s -> val ids = pins.map { it.id }.toSet(); selectedNavPinIds = if (s) selectedNavPinIds + ids else selectedNavPinIds - ids }, onMoveUp = { val idx = mapData.groups.indexOfFirst { it.id == group.id }; if (idx > 0) viewModel.moveGroup(idx, idx - 1) }, onMoveDown = { val idx = mapData.groups.indexOfFirst { it.id == group.id }; if (idx < mapData.groups.size - 1) viewModel.moveGroup(idx, idx + 1) }, userRole = userRole) }
-                if (expandedGroupIds.contains(group.id)) {
+            mapData.layers.forEach { layer ->
+                val pins = mapData.pins.filter { it.layerId == layer.id }
+                item { LegendLayerHeader(layer.id, layer.name, expandedLayerIds.contains(layer.id), visibleLayerIds.contains(layer.id), onToggle = { onToggleExpand(layer.id) }, onToggleVisibility = { onToggleLayerVisibility(layer.id) }, onUpdateName = { onUpdateLayer(layer.id, it) }, onDelete = { onRemoveLayer(layer.id) }, onNavigate = { if (pins.isNotEmpty()) { pinsToNavigate = pins; showNavigationDialog = true } else Toast.makeText(context, "No pins in this layer", Toast.LENGTH_SHORT).show() }, showSelectAll = pins.isNotEmpty() && expandedLayerIds.contains(layer.id), isAllSelected = pins.isNotEmpty() && pins.all { it.id in selectedNavPinIds }, onSelectAll = { s -> val ids = pins.map { it.id }.toSet(); selectedNavPinIds = if (s) selectedNavPinIds + ids else selectedNavPinIds - ids }, onMoveUp = { val idx = mapData.layers.indexOfFirst { it.id == layer.id }; if (idx > 0) viewModel.moveGroup(idx, idx - 1) }, onMoveDown = { val idx = mapData.layers.indexOfFirst { it.id == layer.id }; if (idx < mapData.layers.size - 1) viewModel.moveGroup(idx, idx + 1) }, userRole = userRole) }
+                if (expandedLayerIds.contains(layer.id)) {
                     items(pins) { pin ->
                         LegendPinItem(pin, { onPinClick(pin) }, pin.id in selectedNavPinIds, { s -> selectedNavPinIds = if (s) selectedNavPinIds + pin.id else selectedNavPinIds - pin.id }, { val idx = mapData.pins.indexOfFirst { it.id == pin.id }; if (idx > 0) viewModel.movePin(idx, idx - 1) }, { val idx = mapData.pins.indexOfFirst { it.id == pin.id }; if (idx < mapData.pins.size - 1) viewModel.movePin(idx, idx + 1) }, userRole)
                     }
@@ -657,7 +657,7 @@ fun LegendContent(
 }
 
 @Composable
-fun LegendGroupHeader(id: String?, name: String, isExpanded: Boolean, isVisible: Boolean, onToggle: () -> Unit, onToggleVisibility: () -> Unit, onUpdateName: (String) -> Unit = {}, onDelete: () -> Unit = {}, onNavigate: () -> Unit = {}, showSelectAll: Boolean = false, isAllSelected: Boolean = false, onSelectAll: (Boolean) -> Unit = {}, onMoveUp: () -> Unit = {}, onMoveDown: () -> Unit = {}, userRole: String? = "owner") {
+fun LegendLayerHeader(id: String?, name: String, isExpanded: Boolean, isVisible: Boolean, onToggle: () -> Unit, onToggleVisibility: () -> Unit, onUpdateName: (String) -> Unit = {}, onDelete: () -> Unit = {}, onNavigate: () -> Unit = {}, showSelectAll: Boolean = false, isAllSelected: Boolean = false, onSelectAll: (Boolean) -> Unit = {}, onMoveUp: () -> Unit = {}, onMoveDown: () -> Unit = {}, userRole: String? = "owner") {
     Surface(color = if (isExpanded) DarkSlateBlue.copy(alpha = 0.05f) else Color.Transparent, modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.fillMaxWidth().clickable { onToggle() }.padding(vertical = 12.dp, horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onToggleVisibility, modifier = Modifier.size(24.dp)) { Icon(if (isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff, null, tint = DarkSlateBlue) }

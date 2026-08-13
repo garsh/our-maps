@@ -19,11 +19,11 @@ data class Pin(
     @SerializedName("imageUrl") val imageUrl: String? = null,
     @SerializedName("color") val color: String? = "blue",
     @SerializedName("icon") val icon: String? = "default",
-    @SerializedName("groupId") val groupId: String? = null,
+    @SerializedName("layerId") val layerId: String? = null,
     @SerializedName("position") val position: Int = 0
 )
 
-data class PinGroup(
+data class PinLayer(
     @SerializedName("id") val id: String,
     @SerializedName("name") val name: String,
     @SerializedName("position") val position: Int = 0
@@ -42,7 +42,7 @@ data class MapData(
     val ownerId: String,
     val ownerName: String?,
     val ownerEmail: String?,
-    val groups: List<PinGroup>,
+    val layers: List<PinLayer>,
     val pins: List<Pin>,
     val userRole: String?, // Current user's role
     val permissions: List<MapPermission>?, // List of all users with access

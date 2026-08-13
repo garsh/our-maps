@@ -61,16 +61,24 @@ export default function LandingPage() {
 
   const handleDelete = async (id: string) => {
     if (isOffline) {
-      alert('Cannot delete maps while offline.');
+      alert('Cannot modify maps while offline.');
       return;
     }
+    
+    const map = maps.find(m => m.id === id);
+    if (!map) return;
+
     try {
-      await apiService.deleteMap(id);
-      setMaps(prev => prev.filter(m => m.id !== id));
+      if (map.ownerId === user?.id) {
+        await apiService.deleteMap(id);
+      } else {
+        await apiService.removeShare(id, user!.id);
+      }
+      setMaps(maps.filter(m => m.id !== id));
       localStorage.setItem('cached_maps', JSON.stringify(maps.filter(m => m.id !== id)));
     } catch (error) {
-      console.error('Failed to delete map', error);
-      alert('Failed to delete map');
+      console.error('Failed to perform action on map', error);
+      alert('Failed to perform action on map');
     } finally {
       setDeleteConfirm(null);
     }
@@ -115,7 +123,7 @@ export default function LandingPage() {
         boxShadow: 'var(--shadow-md)',
         marginBottom: '1rem'
       }}>
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: 0, fontSize: '1.5rem', fontWeight: 'bold', userSelect: 'none' }}>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: 0, fontSize: '1.5rem', fontWeight: 'bold', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}>
           <Map size={28} /> OurMaps
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
@@ -126,7 +134,7 @@ export default function LandingPage() {
           )}
           <div 
             onClick={() => setShowSignOutDialog(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.1)', padding: '4px 12px', borderRadius: '50px', cursor: 'pointer' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.1)', padding: '4px 12px', borderRadius: '50px', cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
           >
             {user?.picture && <img src={user.picture} alt={user.name} style={{ width: '24px', height: '24px', borderRadius: '50%' }} />}
             <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>{user?.name}</span>
@@ -245,11 +253,11 @@ export default function LandingPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', color: '#999' }}>
                     <span>{formatDate(map.lastAccessedAt)}</span>
                   </div>
-                  {map.ownerId === user?.id && !isOffline && (
+                  {!isOffline && (
                     <button 
                       onClick={(e) => { e.stopPropagation(); setDeleteConfirm(map.id); }}
                       style={{ position: 'relative', top: 'auto', right: 'auto', background: 'rgba(231, 76, 60, 0.1)', border: 'none', color: 'var(--error-color)', padding: '6px', borderRadius: '50%', cursor: 'pointer', display: 'flex' }}
-                      title="Delete Map"
+                      title={map.ownerId === user?.id ? "Delete Map" : "Leave Map"}
                     >
                       <Trash2 size={16} />
                     </button>
@@ -264,13 +272,20 @@ export default function LandingPage() {
       {deleteConfirm && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(4px)' }} onClick={() => setDeleteConfirm(null)}>
           <div style={{ background: 'white', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '450px', width: '90%', boxShadow: 'var(--shadow-lg)' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>Delete Map?</h3>
-            <p style={{ color: 'var(--text-secondary)', lineHeight: '1.5', margin: '1rem 0 2rem 0' }}>
-              Are you sure you want to delete <strong>{maps.find(m => m.id === deleteConfirm)?.name}</strong>? This action is permanent and cannot be reversed.
+            <h3 style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>
+              {maps.find(m => m.id === deleteConfirm)?.ownerId === user?.id ? 'Delete Map?' : 'Leave Map?'}
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '2rem' }}>
+              {maps.find(m => m.id === deleteConfirm)?.ownerId === user?.id 
+                ? <>Are you sure you want to delete <strong>{maps.find(m => m.id === deleteConfirm)?.name}</strong>? This action is permanent and cannot be reversed.</>
+                : <>Are you sure you want to leave <strong>{maps.find(m => m.id === deleteConfirm)?.name}</strong>? You will be removed as a collaborator and it will no longer appear in your list of maps.</>
+              }
             </p>
             <div style={{ display: 'flex', gap: '1rem' }}>
               <button onClick={() => setDeleteConfirm(null)} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)' }}>Cancel</button>
-              <button onClick={() => handleDelete(deleteConfirm)} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--error-color)', color: 'white', fontWeight: '600' }}>Delete Map</button>
+              <button onClick={() => handleDelete(deleteConfirm)} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--error-color)', color: 'white', fontWeight: '600' }}>
+                {maps.find(m => m.id === deleteConfirm)?.ownerId === user?.id ? 'Delete Map' : 'Leave Map'}
+              </button>
             </div>
           </div>
         </div>

@@ -100,7 +100,7 @@ const fetchGoogleContacts = async (accessToken: string): Promise<Contact[]> => {
 interface ShareDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onShare: (email: string, role: 'view' | 'edit') => Promise<void>;
+  onShare: (email: string, role: 'view' | 'edit' | 'owner') => Promise<void>;
   onRemoveShare: (userId: string) => Promise<void>;
   permissions: MapPermission[];
   owner?: { id: string, name?: string, email?: string, picture?: string } | null;
@@ -110,9 +110,10 @@ interface ShareDialogProps {
 export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, permissions, owner, currentUserId }: ShareDialogProps) {
   const isOwner = owner?.id === currentUserId;
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'view' | 'edit' | null>(null);
+  const [role, setRole] = useState<'view' | 'edit' | 'owner' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [confirmTransferEmail, setConfirmTransferEmail] = useState<string | null>(null);
   const [userToRemove, setUserToRemove] = useState<string | null>(null);
   
   const [contacts, setContacts] = useState<Contact[] | null>(null);
@@ -125,8 +126,23 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
     if (contacts && email) {
       const lower = email.toLowerCase();
       setFilteredContacts(contacts.filter(c => c.name.toLowerCase().includes(lower) || c.email.toLowerCase().includes(lower)));
+    } else if (contacts) {
+      setFilteredContacts(contacts);
     } else {
-      setFilteredContacts(contacts || []);
+      const searchTimer = setTimeout(async () => {
+        try {
+          const { users } = await apiService.searchUsers(email);
+          setFilteredContacts(users);
+          if (users.length > 0 && email.length > 0) {
+            if (!(users.length === 1 && users[0].email === email)) {
+              setShowDropdown(true);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to search users', e);
+        }
+      }, 300);
+      return () => clearTimeout(searchTimer);
     }
   }, [email, contacts]);
 
@@ -192,11 +208,18 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!role) return;
+    
+    if (role === 'owner') {
+      setConfirmTransferEmail(email);
+      return;
+    }
+
     setError(null);
     setLoading(true);
     try {
       await onShare(email, role);
       setEmail('');
+      setRole(null);
     } catch (err: any) {
       setError(err.message || 'Failed to share');
     } finally {
@@ -265,14 +288,14 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
                     setShowDropdown(true);
                   }}
                   onFocus={() => {
-                    if (contacts) setShowDropdown(true);
+                    if (contacts || filteredContacts.length > 0) setShowDropdown(true);
                   }}
                   required
                   className="input-field"
                   style={{ marginBottom: '12px', width: '100%', boxSizing: 'border-box' }}
                   autoComplete="off"
                 />
-                {showDropdown && contacts && (
+                {showDropdown && (contacts || filteredContacts.length > 0) && (
                   <div style={{ 
                     position: 'absolute', 
                     top: '40px', 
@@ -313,20 +336,21 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
                 )}
               </div>
               
-              <div style={{ display: 'flex', gap: '1rem', background: 'var(--bg-color)', padding: '4px', borderRadius: 'var(--radius-sm)' }}>
+              <div style={{ display: 'flex', gap: '1rem', padding: '4px 0' }}>
                 <button 
                   type="button"
                   onClick={() => setRole('view')}
                   style={{ 
                     flex: 1, 
-                    padding: '8px', 
-                    borderRadius: '6px', 
-                    border: 'none', 
-                    background: role === 'view' ? 'white' : 'transparent',
+                    padding: '10px', 
+                    borderRadius: 'var(--radius-sm)', 
+                    border: role === 'view' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', 
+                    background: role === 'view' ? 'rgba(72, 61, 139, 0.05)' : 'white',
                     color: role === 'view' ? 'var(--primary-color)' : 'var(--text-secondary)',
                     fontWeight: '700',
-                    fontSize: '0.85rem',
-                    boxShadow: role === 'view' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none'
+                    fontSize: '0.9rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
                   }}
                 >
                   Viewer
@@ -336,18 +360,39 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
                   onClick={() => setRole('edit')}
                   style={{ 
                     flex: 1, 
-                    padding: '8px', 
-                    borderRadius: '6px', 
-                    border: 'none', 
-                    background: role === 'edit' ? 'white' : 'transparent',
+                    padding: '10px', 
+                    borderRadius: 'var(--radius-sm)', 
+                    border: role === 'edit' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', 
+                    background: role === 'edit' ? 'rgba(72, 61, 139, 0.05)' : 'white',
                     color: role === 'edit' ? 'var(--primary-color)' : 'var(--text-secondary)',
                     fontWeight: '700',
-                    fontSize: '0.85rem',
-                    boxShadow: role === 'edit' ? '0 2px 4px rgba(0,0,0,0.05)' : 'none'
+                    fontSize: '0.9rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
                   }}
                 >
                   Editor
                 </button>
+                {isOwner && (
+                  <button 
+                    type="button"
+                    onClick={() => setRole('owner')}
+                    style={{ 
+                      flex: 1, 
+                      padding: '10px', 
+                      borderRadius: 'var(--radius-sm)', 
+                      border: role === 'owner' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', 
+                      background: role === 'owner' ? 'rgba(72, 61, 139, 0.05)' : 'white',
+                      color: role === 'owner' ? 'var(--primary-color)' : 'var(--text-secondary)',
+                      fontWeight: '700',
+                      fontSize: '0.9rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    Owner
+                  </button>
+                )}
               </div>
             </div>
             {error && <div style={{ color: 'var(--error-color)', fontSize: '0.85rem', marginBottom: '12px', background: 'rgba(203, 43, 62, 0.1)', padding: '8px', borderRadius: '4px' }}>{error}</div>}
@@ -437,6 +482,42 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
           <button onClick={onClose} style={{ background: 'var(--bg-color)', border: 'none', padding: '10px 24px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontWeight: '700', color: 'var(--text-secondary)' }}>Done</button>
         </div>
       </div>
+      
+      {confirmTransferEmail && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, backdropFilter: 'blur(4px)' }} onClick={() => setConfirmTransferEmail(null)}>
+          <div style={{ background: 'white', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '400px', width: '90%', boxShadow: 'var(--shadow-lg)' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>Transfer Ownership?</h3>
+            <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, margin: '1rem 0 2rem 0' }}>
+              Are you sure you want to transfer ownership of this map to <strong>{confirmTransferEmail}</strong>? 
+              <br/><br/>
+              You will automatically be downgraded to an Editor, and you will no longer have the ability to delete this map or manage permissions.
+            </p>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button onClick={() => setConfirmTransferEmail(null)} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)', cursor: 'pointer' }}>Cancel</button>
+              <button 
+                onClick={async () => {
+                  setLoading(true);
+                  try {
+                    await onShare(confirmTransferEmail, 'owner');
+                    setEmail('');
+                    setRole(null);
+                    setConfirmTransferEmail(null);
+                  } catch (err: any) {
+                    setError(err.response?.data?.error || err.message || 'Failed to transfer ownership');
+                    setConfirmTransferEmail(null);
+                  } finally {
+                    setLoading(false);
+                  }
+                }} 
+                disabled={loading}
+                style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--error-color)', color: 'white', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer' }}
+              >
+                {loading ? 'Transferring...' : 'Transfer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

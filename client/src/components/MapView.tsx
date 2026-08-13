@@ -21,12 +21,14 @@ interface MapViewProps {
   userRole?: 'owner' | 'edit' | 'view';
   hoveredPinId?: string | null;
   onHoverPin?: (id: string | null) => void;
-  hiddenGroupIds?: Set<string | null>;
+  hiddenLayerIds?: Set<string | null>;
   previewLocation?: {lat: number, lng: number} | null;
   bottomPadding?: number;
+  editingPinId?: string | null;
+  onBackgroundClick?: () => void;
 }
 
-const MapEvents = ({ onMapClick, onBoundsChange, bottomPadding = 0 }: { onMapClick: (lat: number, lng: number) => void, onBoundsChange: (bounds: string) => void, bottomPadding?: number }) => {
+const MapEvents = ({ onMapClick, onBoundsChange, onBackgroundClick, bottomPadding = 0 }: { onMapClick: (lat: number, lng: number) => void, onBoundsChange: (bounds: string) => void, onBackgroundClick?: () => void, bottomPadding?: number }) => {
   const map = useMap();
 
   const updateBounds = () => {
@@ -47,6 +49,9 @@ const MapEvents = ({ onMapClick, onBoundsChange, bottomPadding = 0 }: { onMapCli
   useMapEvents({
     contextmenu: (e) => {
       onMapClick(e.latlng.lat, e.latlng.lng);
+    },
+    click: () => {
+      onBackgroundClick?.();
     },
     moveend: updateBounds,
     zoomend: updateBounds
@@ -108,6 +113,7 @@ const PinMarker = ({
   onPinClick,
   hoveredPinId, 
   targetPinId,
+  editingPinId,
   readOnly,
   setMarkerRef
 }: { 
@@ -117,6 +123,7 @@ const PinMarker = ({
   onPinClick?: (pin: Pin) => void,
   hoveredPinId?: string | null, 
   targetPinId?: string | null,
+  editingPinId?: string | null,
   readOnly: boolean,
   setMarkerRef: (id: string, marker: L.Marker | null) => void
 }) => {
@@ -138,10 +145,10 @@ const PinMarker = ({
   return (
     <Marker 
       position={[pin.lat, pin.lng]} 
-      icon={getMarkerIcon(pin.color, pin.icon, hoveredPinId === pin.id || targetPinId === pin.id)}
-      zIndexOffset={hoveredPinId === pin.id || targetPinId === pin.id ? 1000 : 0}
+      icon={getMarkerIcon(pin.color, pin.icon, hoveredPinId === pin.id || targetPinId === pin.id || editingPinId === pin.id)}
+      zIndexOffset={hoveredPinId === pin.id || targetPinId === pin.id || editingPinId === pin.id ? 1000 : 0}
       ref={(ref) => setMarkerRef(pin.id, ref)}
-      draggable={!readOnly}
+      draggable={!readOnly && editingPinId === pin.id}
       eventHandlers={{
         click: () => onPinClick?.(pin),
         mouseover: () => onHoverPin?.(pin.id),
@@ -166,16 +173,18 @@ const MapView = ({
   userRole = 'owner',
   hoveredPinId,
   onHoverPin,
-  hiddenGroupIds,
+  hiddenLayerIds,
   previewLocation,
-  bottomPadding = 0
+  bottomPadding = 0,
+  editingPinId,
+  onBackgroundClick
 }: MapViewProps) => {
   const markerRefs = useRef<Record<string, L.Marker | null>>({});
   const mapRef = useRef<L.Map | null>(null);
   const readOnly = userRole === 'view';
 
-  // Filter pins based on hiddenGroupIds
-  const visiblePins = pins.filter(pin => !hiddenGroupIds?.has(pin.groupId || null));
+  // Filter pins based on hiddenLayerIds
+  const visiblePins = pins.filter(pin => !hiddenLayerIds?.has(pin.layerId || null));
 
   // Removed popup open logic
 
@@ -200,7 +209,7 @@ const MapView = ({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           noWrap={true}
         />
-        <MapEvents onMapClick={onMapClick} onBoundsChange={onBoundsChange} bottomPadding={bottomPadding} />
+        <MapEvents onMapClick={onMapClick} onBoundsChange={onBoundsChange} onBackgroundClick={onBackgroundClick} bottomPadding={bottomPadding} />
         <MapController targetLocation={targetLocation} boundsToFit={boundsToFit} bottomPadding={bottomPadding} />
         <UserLocationMarker />
         {visiblePins.map((pin) => (
@@ -212,8 +221,9 @@ const MapView = ({
             onPinClick={onPinClick}
             hoveredPinId={hoveredPinId}
             targetPinId={targetPinId}
+            editingPinId={editingPinId}
             readOnly={readOnly}
-            setMarkerRef={(id, marker) => { markerRefs.current[id] = marker; }}
+            setMarkerRef={(id, ref) => { markerRefs.current[id] = ref; }}
           />
         ))}
         {previewLocation && (

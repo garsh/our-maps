@@ -17,14 +17,14 @@ object KmlHelper {
         parser.nextTag()
 
         val pins = mutableListOf<Pin>()
-        val groups = mutableListOf<com.google.ourmaps.model.PinGroup>()
+        val layers = mutableListOf<com.google.ourmaps.model.PinLayer>()
         var mapName = "Imported Map"
 
         while (parser.next() != XmlPullParser.END_DOCUMENT) {
             if (parser.eventType != XmlPullParser.START_TAG) continue
             
             if (parser.name == "Document" || parser.name == "Folder" || parser.name == "kml") {
-                parseContainer(parser, pins, groups, null, if (parser.name == "Document") { name -> mapName = name } else null)
+                parseContainer(parser, pins, layers, null, if (parser.name == "Document") { name -> mapName = name } else null)
             }
         }
 
@@ -34,7 +34,7 @@ object KmlHelper {
             ownerId = ownerId,
             ownerName = null,
             ownerEmail = null,
-            groups = groups,
+            layers = layers,
             pins = pins,
             userRole = null,
             permissions = null,
@@ -45,7 +45,7 @@ object KmlHelper {
     private fun parseContainer(
         parser: XmlPullParser,
         pins: MutableList<Pin>,
-        groups: MutableList<com.google.ourmaps.model.PinGroup>,
+        layers: MutableList<com.google.ourmaps.model.PinLayer>,
         currentGroupId: String?,
         onNameFound: ((String) -> Unit)?
     ) {
@@ -61,11 +61,11 @@ object KmlHelper {
                     // Extract folder name first if possible or handle inside
                     // For simplicity in this stream parser, we might miss the name if it's after other tags.
                     // A proper DOM parser is often better for KML, but recursive Pull is okay if structure is standard.
-                    // We'll Create a group for this folder.
+                    // We'll Create a layer for this folder.
                     val newGroupId = java.util.UUID.randomUUID().toString()
                     // We need to find the name of this folder.
                     // This recursion is tricky with PullParser. 
-                    // Let's simplified: If we hit Folder, we create a group and recurse.
+                    // Let's simplified: If we hit Folder, we create a layer and recurse.
                     // The name might be the first child.
                     
                     var folderName = "Untitled Group"
@@ -74,20 +74,20 @@ object KmlHelper {
                     
                     val tempPins = mutableListOf<Pin>() // We might need to assign them later
                     
-                    // Actually, let's just make a new group and update its name if we find one.
-                    val group = com.google.ourmaps.model.PinGroup(newGroupId, folderName, groups.size)
-                    groups.add(group)
+                    // Actually, let's just make a new layer and update its name if we find one.
+                    val layer = com.google.ourmaps.model.PinLayer(newGroupId, folderName, layers.size)
+                    layers.add(layer)
                     
-                    parseContainer(parser, pins, groups, newGroupId) { name -> 
-                        // Update group name in the list (mutable)
-                        val index = groups.indexOf(group)
+                    parseContainer(parser, pins, layers, newGroupId) { name -> 
+                        // Update layer name in the list (mutable)
+                        val index = layers.indexOf(layer)
                         if (index != -1) {
-                            groups[index] = group.copy(name = name)
+                            layers[index] = layer.copy(name = name)
                         }
                     }
                 }
                 "Placemark" -> {
-                    pins.add(readPlacemark(parser).copy(groupId = currentGroupId))
+                    pins.add(readPlacemark(parser).copy(layerId = currentGroupId))
                 }
                 else -> skip(parser)
             }
@@ -144,7 +144,7 @@ object KmlHelper {
             imageUrl = null,
             color = "blue",
             icon = "default",
-            groupId = null,
+            layerId = null,
             position = 0
         )
     }

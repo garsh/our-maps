@@ -105,11 +105,11 @@ export const apiService = {
     }
   },
 
-  async updateMap(id: string, name: string, groups: any[], pins: Pin[]): Promise<{ message: string }> {
+  async updateMap(id: string, name: string, layers: any[], pins: Pin[]): Promise<{ message: string }> {
     const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, {
       method: 'PUT',
       headers: getHeaders(),
-      body: JSON.stringify({ name, groups, pins }),
+      body: JSON.stringify({ name, layers, pins }),
     });
     if (!res.ok) {
         if (res.status === 401) this._logoutCallback?.();
@@ -119,7 +119,7 @@ export const apiService = {
     return res.json();
   },
 
-  async shareMap(id: string, email: string, role: 'view' | 'edit'): Promise<any> {
+  async shareMap(id: string, email: string, role: 'view' | 'edit' | 'owner'): Promise<any> {
     const res = await fetchWithRetry(`${API_BASE}/maps/${id}/share`, {
       method: 'POST',
       headers: getHeaders(),
@@ -143,6 +143,17 @@ export const apiService = {
       if (res.status === 401) this._logoutCallback?.();
       const err = await res.json();
       throw new Error(err.error || 'Failed to filter contacts');
+    }
+    return res.json();
+  },
+
+  async searchUsers(query: string): Promise<{ users: any[] }> {
+    const res = await fetchWithRetry(`${API_BASE}/auth/search-users?q=${encodeURIComponent(query)}`, {
+      headers: getHeaders(),
+    });
+    if (!res.ok) {
+      if (res.status === 401) this._logoutCallback?.();
+      throw new Error('Failed to search users');
     }
     return res.json();
   },

@@ -33,8 +33,11 @@ async function migrate(db) {
     if (!columnNames.includes('icon')) {
         await db.exec("ALTER TABLE pins ADD COLUMN icon TEXT DEFAULT 'default'");
     }
-    if (!columnNames.includes('group_id')) {
-        await db.exec("ALTER TABLE pins ADD COLUMN group_id TEXT");
+    if (columnNames.includes('group_id')) {
+        await db.exec("ALTER TABLE pins RENAME COLUMN group_id TO layer_id");
+    }
+    else if (!columnNames.includes('layer_id')) {
+        await db.exec("ALTER TABLE pins ADD COLUMN layer_id TEXT");
     }
     if (!columnNames.includes('position')) {
         await db.exec("ALTER TABLE pins ADD COLUMN position INTEGER DEFAULT 0");
@@ -48,11 +51,31 @@ async function migrate(db) {
 async function getDb() {
     if (db)
         return db;
+    const dbPath = process.env.DB_PATH || path_1.default.join(__dirname, currentDbName);
     db = await (0, sqlite_1.open)({
-        filename: process.env.DB_PATH || path_1.default.join(__dirname, currentDbName),
+        filename: dbPath,
         driver: sqlite3_1.default.Database
     });
+    // Enable foreign keys
+    await db.run('PRAGMA foreign_keys = ON;');
     await db.exec('PRAGMA busy_timeout = 5000');
+    const tables = await db.all("SELECT name FROM sqlite_master WHERE type='table'");
+    const tableNames = tables.map((t) => t.name);
+    if (tableNames.includes('pin_groups')) {
+        if (tableNames.includes('pin_layers')) {
+            // Split-brain recovery: If both tables exist due to a previous crash, merge them
+            await db.run('PRAGMA foreign_keys = OFF;');
+            await db.exec("ALTER TABLE pin_layers RENAME TO pin_layers_temp");
+            await db.run('PRAGMA foreign_keys = ON;');
+            await db.exec("ALTER TABLE pin_groups RENAME TO pin_layers");
+            await db.exec("INSERT OR IGNORE INTO pin_layers SELECT * FROM pin_layers_temp");
+            await db.exec("DROP TABLE pin_layers_temp");
+        }
+        else {
+            // Normal migration: rename legacy table to new name
+            await db.exec("ALTER TABLE pin_groups RENAME TO pin_layers");
+        }
+    }
     await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -86,7 +109,7 @@ async function getDb() {
       FOREIGN KEY (map_id) REFERENCES maps(id) ON DELETE CASCADE
     );
 
-    CREATE TABLE IF NOT EXISTS pin_groups (
+    CREATE TABLE IF NOT EXISTS pin_layers (
       id TEXT PRIMARY KEY,
       map_id TEXT NOT NULL,
       name TEXT NOT NULL,
@@ -97,7 +120,7 @@ async function getDb() {
     CREATE TABLE IF NOT EXISTS pins (
       id TEXT PRIMARY KEY,
       map_id TEXT NOT NULL,
-      group_id TEXT,
+      layer_id TEXT,
       lat REAL NOT NULL,
       lng REAL NOT NULL,
       label TEXT,
@@ -108,7 +131,7 @@ async function getDb() {
       icon TEXT DEFAULT 'default',
       position INTEGER DEFAULT 0,
       FOREIGN KEY (map_id) REFERENCES maps(id) ON DELETE CASCADE,
-      FOREIGN KEY (group_id) REFERENCES pin_groups(id) ON DELETE SET NULL
+      FOREIGN KEY (layer_id) REFERENCES pin_layers(id) ON DELETE SET NULL
     );
   `);
     await migrate(db);

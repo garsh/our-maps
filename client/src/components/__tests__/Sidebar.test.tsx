@@ -12,10 +12,10 @@ describe('Sidebar', () => {
     const [editingPinId, setEditingPinId] = useState<string | null>(null);
     const mockHandlers = {
       onMapNameChange: vi.fn(),
-      groups: [],
-      onAddGroup: vi.fn(),
-      onUpdateGroup: vi.fn(),
-      onRemoveGroup: vi.fn(),
+      layers: [],
+      onAddLayer: vi.fn(),
+      onUpdateLayer: vi.fn(),
+      onRemoveLayer: vi.fn(),
       onResultSelect: vi.fn(),
       onAddPin: vi.fn(),
       onRemovePin: vi.fn(),
@@ -24,7 +24,7 @@ describe('Sidebar', () => {
       onDragEnd: vi.fn(),
       onShare: vi.fn(),
       onImport: vi.fn(),
-      expandedGroupIds: new Set<string | null>([null]),
+      collapsedLayerIds: new Set<string | null>(),
       onToggleExpand: vi.fn(),
       ...handlers
     };
@@ -54,14 +54,14 @@ describe('Sidebar', () => {
     expect(screen.getByText(/description/i)).toBeInTheDocument();
   });
 
-  it('calls onAddGroup when Add Group button is clicked', () => {
-    const onAddGroup = vi.fn();
-    render(<TestWrapper handlers={{ onAddGroup }} />);
+  it('calls onAddLayer when Add Layer button is clicked', () => {
+    const onAddLayer = vi.fn();
+    render(<TestWrapper handlers={{ onAddLayer }} />);
     
     fireEvent.click(screen.getByLabelText(/more options/i));
     fireEvent.click(screen.getByText(/New Layer/i));
     
-    expect(onAddGroup).toHaveBeenCalled();
+    expect(onAddLayer).toHaveBeenCalled();
   });
 
   it('calls onUpdatePin when description is changed', () => {

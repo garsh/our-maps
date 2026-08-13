@@ -9,11 +9,11 @@ import ShareDialog from './components/ShareDialog';
 import { apiService } from './services/api'
 import { reverseGeocode } from './utils/geocoding';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import type { Pin, PinGroup, MapPermission, MapData } from '@shared/interfaces'
+import type { Pin, PinLayer, MapPermission, MapData } from '@shared/interfaces'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { Loader2, Map as MapIcon, LogOut } from 'lucide-react';
 import L from 'leaflet';
-import { reorderPins, reorderGroups } from './utils/reorderUtils';
+import { reorderPins, reorderLayers } from './utils/reorderUtils';
 import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
@@ -25,7 +25,7 @@ export function MapEditor() {
   const socketRef = useRef<Socket | null>(null);
   
   const [pins, setPins] = useState<Pin[]>([])
-  const [groups, setGroups] = useState<PinGroup[]>([])
+  const [layers, setLayers] = useState<PinLayer[]>([])
   const [mapId, setMapId] = useState<string | null>(id && id !== 'new' ? id : null);
   const [mapName, setMapName] = useState(id === 'new' ? 'My Map' : '');
   const [owner, setOwner] = useState<{ id: string, name?: string, email?: string, picture?: string } | null>(null);
@@ -78,7 +78,7 @@ export function MapEditor() {
 
   const [hoveredPinId, setHoveredPinId] = useState<string | null>(null);
   const [selectedNavIds, setSelectedNavIds] = useState<Set<string>>(new Set());
-  const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string | null>>(() => {
+  const [hiddenLayerIds, setHiddenLayerIds] = useState<Set<string | null>>(() => {
     const mapIdVal = id || null;
     if (mapIdVal) {
       const savedVisibility = localStorage.getItem(`ourmaps_visibility_${mapIdVal}`);
@@ -88,12 +88,12 @@ export function MapEditor() {
     }
     return new Set();
   });
-  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string | null>>(() => {
+  const [collapsedLayerIds, setCollapsedLayerIds] = useState<Set<string | null>>(() => {
     const mapIdVal = id || null;
     if (mapIdVal) {
-      const savedExpanded = localStorage.getItem(`ourmaps_expanded_${mapIdVal}`);
-      if (savedExpanded) {
-        return new Set(JSON.parse(savedExpanded));
+      const savedCollapsed = localStorage.getItem(`ourmaps_collapsed_${mapIdVal}`);
+      if (savedCollapsed) {
+        return new Set(JSON.parse(savedCollapsed));
       }
     }
     return new Set([null]);
@@ -109,41 +109,33 @@ export function MapEditor() {
     if (mapId) {
       const savedVisibility = localStorage.getItem(`ourmaps_visibility_${mapId}`);
       if (savedVisibility) {
-        setHiddenGroupIds(new Set(JSON.parse(savedVisibility)));
+        setHiddenLayerIds(new Set(JSON.parse(savedVisibility)));
       } else {
-        setHiddenGroupIds(new Set());
+        setHiddenLayerIds(new Set());
       }
 
-      const savedExpanded = localStorage.getItem(`ourmaps_expanded_${mapId}`);
-      if (savedExpanded) {
-        setExpandedGroupIds(new Set(JSON.parse(savedExpanded)));
+      const savedCollapsed = localStorage.getItem(`ourmaps_collapsed_${mapId}`);
+      if (savedCollapsed) {
+        setCollapsedLayerIds(new Set(JSON.parse(savedCollapsed)));
       } else {
-        // Default to all expanded
-        setExpandedGroupIds(new Set([...groups.map(g => g.id), null]));
+        setCollapsedLayerIds(new Set());
       }
     }
   }, [mapId]);
 
-  // Default expansion when groups load for the first time if not saved
-  useEffect(() => {
-    if (mapId && groups.length > 0 && !localStorage.getItem(`ourmaps_expanded_${mapId}`)) {
-        setExpandedGroupIds(new Set([...groups.map(g => g.id), null]));
-    }
-  }, [groups.length, mapId]);
-
   // Persist visibility changes
   useEffect(() => {
     if (mapId) {
-      localStorage.setItem(`ourmaps_visibility_${mapId}`, JSON.stringify(Array.from(hiddenGroupIds)));
+      localStorage.setItem(`ourmaps_visibility_${mapId}`, JSON.stringify(Array.from(hiddenLayerIds)));
     }
-  }, [hiddenGroupIds, mapId]);
+  }, [hiddenLayerIds, mapId]);
 
-  // Persist expansion changes
+  // Persist collapse changes
   useEffect(() => {
     if (mapId) {
-      localStorage.setItem(`ourmaps_expanded_${mapId}`, JSON.stringify(Array.from(expandedGroupIds)));
+      localStorage.setItem(`ourmaps_collapsed_${mapId}`, JSON.stringify(Array.from(collapsedLayerIds)));
     }
-  }, [expandedGroupIds, mapId]);
+  }, [collapsedLayerIds, mapId]);
 
   useEffect(() => {
     localStorage.setItem('customColors', JSON.stringify(customColors));
@@ -175,8 +167,8 @@ export function MapEditor() {
 
       socket.emit('join-map', id);
 
-      socket.on('map-remote-updated', (data: { pins: Pin[], groups: PinGroup[], name: string }) => {
-        if (!data || !data.pins || !data.groups) {
+      socket.on('map-remote-updated', (data: { pins: Pin[], layers: PinLayer[], name: string }) => {
+        if (!data || !data.pins || !data.layers) {
           console.warn('[SOCKET] Received malformed remote update');
           return;
         }
@@ -184,7 +176,7 @@ export function MapEditor() {
         console.log('[SOCKET] Received remote update for pins:', data.pins.length);
         isRemoteUpdateRef.current = true;
         setPins(data.pins);
-        setGroups(data.groups);
+        setLayers(data.layers);
         setMapName(data.name || '');
 
         // Use a timeout to reset the flag to ensure all batched state updates 
@@ -204,7 +196,7 @@ export function MapEditor() {
       setMapId(null);
       setMapName('My Map');
       setPins([]);
-      setGroups([]);
+      setLayers([]);
       setUserRole('owner');
       setIsMapLoading(false);
     }
@@ -226,7 +218,7 @@ export function MapEditor() {
     }, 2000); // 2 second debounce for auto-save
 
     return () => clearTimeout(timer);
-  }, [mapName, pins, groups]);
+  }, [mapName, pins, layers]);
 
   const loadMap = async (mapId: string) => {
     setIsMapLoading(true);
@@ -237,7 +229,7 @@ export function MapEditor() {
       setMapId(data.id);
       setMapName(data.name || 'My Map');
       setOwner({ id: data.ownerId, name: data.ownerName, email: data.ownerEmail, picture: data.ownerPicture });
-      setGroups(data.groups || []);
+      setLayers(data.layers || []);
       setPins(data.pins);
       if (data.pins && data.pins.length > 0) {
         const bounds = L.latLngBounds(data.pins.map(p => [p.lat, p.lng]));
@@ -264,13 +256,13 @@ export function MapEditor() {
       await new Promise(resolve => setTimeout(resolve, 500));
       
       if (mapId) {
-        await apiService.updateMap(mapId, mapName, groups, pins);
+        await apiService.updateMap(mapId, mapName, layers, pins);
         
         // Notify others via socket
         socketRef.current?.emit('map-updated', {
             mapId,
             pins,
-            groups,
+            layers,
             name: mapName
         });
       } else {
@@ -279,7 +271,7 @@ export function MapEditor() {
         await apiService.createMap({ 
           id: newId, 
           name: mapName, 
-          groups, 
+          layers, 
           pins,
           ownerId: user?.id || '',
         });
@@ -294,11 +286,26 @@ export function MapEditor() {
     }
   };
 
-  const handleShare = async (email: string, role: 'view' | 'edit') => {
+  // Refresh permissions when opening the share dialog to ensure we have the latest list
+  useEffect(() => {
+    if (isSharing && mapId) {
+      apiService.getMap(mapId)
+        .then(data => {
+          setPermissions(data.permissions || []);
+          setOwner({ id: data.ownerId, name: data.ownerName, email: data.ownerEmail, picture: data.ownerPicture });
+          if (data.userRole) setUserRole(data.userRole);
+        })
+        .catch(err => console.error('Failed to refresh permissions', err));
+    }
+  }, [isSharing, mapId]);
+
+  const handleShare = async (email: string, role: 'view' | 'edit' | 'owner') => {
     if (!mapId) return;
     await apiService.shareMap(mapId, email, role);
     const data = await apiService.getMap(mapId);
     setPermissions(data.permissions || []);
+    setOwner({ id: data.ownerId, name: data.ownerName, email: data.ownerEmail, picture: data.ownerPicture });
+    if (data.userRole) setUserRole(data.userRole);
   };
 
   const handleRemoveShare = async (userId: string) => {
@@ -308,12 +315,19 @@ export function MapEditor() {
   };
 
   const handlePinSelect = (pinId: string) => {
+    // Clear stuck hover states on mobile/touch, or if a different pin was clicked
+    if (window.matchMedia('(hover: none)').matches || (hoveredPinId && hoveredPinId !== pinId)) {
+      setHoveredPinId(null);
+    }
+    setHoveredPinId(null);
     setTargetPinId(prev => prev === pinId ? null : pinId);
   };
 
   const handleSetEditingPinId = (id: string | null) => {
     setEditingPinId(id);
     if (id !== null) {
+      setTargetPinId(id);
+    } else {
       setTargetPinId(null);
     }
   };
@@ -321,6 +335,20 @@ export function MapEditor() {
   const handleEditPin = (pin: Pin) => {
     handleSetEditingPinId(pin.id);
   };
+
+  const handleHoverPin = useCallback((id: string | null) => {
+    // If a card is open, don't allow other pins to be highlighted by hover
+    if (targetPinId !== null || editingPinId !== null) {
+      return;
+    }
+    setHoveredPinId(id);
+  }, [targetPinId, editingPinId]);
+
+  const handleBackgroundClick = useCallback(() => {
+    setTargetPinId(null);
+    setEditingPinId(null);
+    setHoveredPinId(null);
+  }, []);
 
   const handleMapClick = useCallback(async (lat: number, lng: number) => {
     if (userRole === 'view') return;
@@ -375,25 +403,25 @@ export function MapEditor() {
     setPins(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
   };
 
-  const addGroup = () => {
+  const addLayer = () => {
     if (userRole === 'view') return;
-    const newGroup: PinGroup = {
+    const newGroup: PinLayer = {
       id: crypto.randomUUID(),
-      name: `Group ${groups.length + 1}`,
-      position: groups.length
+      name: `Layer ${layers.length + 1}`,
+      position: layers.length
     };
-    setGroups(prev => [...prev, newGroup]);
+    setLayers(prev => [...prev, newGroup]);
   };
 
-  const updateGroup = (id: string, updates: Partial<PinGroup>) => {
+  const updateLayer = (id: string, updates: Partial<PinLayer>) => {
     if (userRole === 'view') return;
-    setGroups(prev => prev.map(g => g.id === id ? { ...g, ...updates } : g));
+    setLayers(prev => prev.map(g => g.id === id ? { ...g, ...updates } : g));
   };
 
-  const removeGroup = (id: string) => {
+  const removeLayer = (id: string) => {
     if (userRole === 'view') return;
-    setGroups(prev => prev.filter(g => g.id !== id));
-    setPins(prev => prev.map(p => p.groupId === id ? { ...p, groupId: undefined } : p));
+    setLayers(prev => prev.filter(g => g.id !== id));
+    setPins(prev => prev.map(p => p.layerId === id ? { ...p, layerId: undefined } : p));
   };
 
   const handleDragOver = (event: any) => {
@@ -409,17 +437,17 @@ export function MapEditor() {
       const activePin = pins.find(p => p.id === activeId);
       if (!activePin) return;
 
-      let newGroupId: string | undefined = activePin.groupId;
-      if (overData?.type === 'group' || overId === 'default') {
-        newGroupId = overId === 'default' ? undefined : (overData?.group?.id || overId);
+      let newLayerId: string | undefined = activePin.layerId;
+      if (overData?.type === 'layer' || overId === 'default') {
+        newLayerId = overId === 'default' ? undefined : (overData?.layer?.id || overId);
       } else if (overData?.type === 'pin') {
-        newGroupId = overData.pin.groupId;
+        newLayerId = overData.pin.layerId;
       }
 
-      // ONLY update state in onDragOver if the group actually changed (moving between layers)
+      // ONLY update state in onDragOver if the layer actually changed (moving between layers)
       // This provides immediate visual feedback of layer changes.
-      // We prevent moving into collapsed groups during drag to avoid unmounting the active item.
-      if (newGroupId !== activePin.groupId && expandedGroupIds.has(newGroupId || null)) {
+      // We prevent moving into collapsed layers during drag to avoid unmounting the active item.
+      if (newLayerId !== activePin.layerId && !collapsedLayerIds.has(newLayerId || null)) {
         setPins((prevPins) => {
           const pinsToMoveIds = selectedNavIds.has(activeId) 
             ? Array.from(selectedNavIds) 
@@ -428,8 +456,8 @@ export function MapEditor() {
           const movedPins = pinsToMoveIds.map(id => prevPins.find(p => p.id === id)).filter(Boolean) as Pin[];
           const otherPins = prevPins.filter(p => !pinsToMoveIds.includes(p.id));
           
-          // Move the bundle to the new group (just append to end during hover for visual feedback)
-          const updatedMovedPins = movedPins.map(p => ({ ...p, groupId: newGroupId }));
+          // Move the bundle to the new layer (just append to end during hover for visual feedback)
+          const updatedMovedPins = movedPins.map(p => ({ ...p, layerId: newLayerId }));
           const result = [...otherPins, ...updatedMovedPins];
           return result.map((p, i) => ({ ...p, position: i }));
         });
@@ -443,33 +471,33 @@ export function MapEditor() {
     
     if (!over) return;
 
-    if (active.data.current?.type === 'group') {
+    if (active.data.current?.type === 'layer') {
       const overData = over.data.current;
-      let targetGroupId = over.id as string;
+      let targetLayerId = over.id as string;
       
       if (overData?.type === 'pin') {
-        if (overData.pin.groupId) {
-          targetGroupId = overData.pin.groupId;
+        if (overData.pin.layerId) {
+          targetLayerId = overData.pin.layerId;
         } else {
           return;
         }
       }
       
-      setGroups(prev => reorderGroups(prev, active.id as string, targetGroupId));
+      setLayers(prev => reorderLayers(prev, active.id as string, targetLayerId));
       return;
     }
 
     // Handle final reorder for pins
     if (active.data.current?.type === 'pin') {
       const overData = over.data.current;
-      const overGroupId = overData?.type === 'pin' ? overData.pin.groupId : (over.id === 'default' ? undefined : over.id as string);
+      const overLayerId = overData?.type === 'pin' ? overData.pin.layerId : (over.id === 'default' ? undefined : over.id as string);
       
       setPins(prev => reorderPins(
         prev, 
         active.id as string, 
         over.id as string, 
-        overData?.type === 'pin' ? 'pin' : 'group',
-        overGroupId,
+        overData?.type === 'pin' ? 'pin' : 'layer',
+        overLayerId,
         selectedNavIds
       ));
     }
@@ -485,7 +513,7 @@ export function MapEditor() {
         setTimeout(() => setBoundsToFit(null), 1000);
       }
     }
-    if (data.groups) setGroups(data.groups);
+    if (data.layers) setLayers(data.layers);
     setSuccessMessage('Map imported! Auto-saving...');
     setTimeout(() => setSuccessMessage(null), 3000);
   };
@@ -530,7 +558,7 @@ export function MapEditor() {
       zIndex: 1000,
       flexShrink: 0
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', minWidth: 0, flexShrink: 1, userSelect: 'none' }} onClick={() => navigate('/')}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', minWidth: 0, flexShrink: 1, userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} onClick={() => navigate('/')}>
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <MapIcon size={18} />
         </div>
@@ -615,10 +643,10 @@ export function MapEditor() {
             mapId={mapId}
             mapName={mapName}
             onMapNameChange={setMapName}
-            groups={groups}
-            onAddGroup={addGroup}
-            onUpdateGroup={updateGroup}
-            onRemoveGroup={removeGroup}
+            layers={layers}
+            onAddLayer={addLayer}
+            onUpdateLayer={updateLayer}
+            onRemoveLayer={removeLayer}
             pins={pins}
             onResultSelect={(lat, lng) => {
               setTargetLocation([lat, lng]);
@@ -639,7 +667,7 @@ export function MapEditor() {
             editingPinId={editingPinId}
             onSetEditingPinId={handleSetEditingPinId}
             hoveredPinId={hoveredPinId}
-            onHoverPin={setHoveredPinId}
+            onHoverPin={handleHoverPin}
             targetPinId={targetPinId}
             customColors={customColors}
             onAddCustomColor={addCustomColor}
@@ -666,18 +694,18 @@ export function MapEditor() {
                 return newSet;
               });
             }}
-            hiddenGroupIds={hiddenGroupIds}
-            onToggleGroupVisibility={(id) => {
-              setHiddenGroupIds(prev => {
+            hiddenLayerIds={hiddenLayerIds}
+            onToggleLayerVisibility={(id) => {
+              setHiddenLayerIds(prev => {
                 const newSet = new Set(prev);
                 if (newSet.has(id)) newSet.delete(id);
                 else newSet.add(id);
                 return newSet;
               });
             }}
-            expandedGroupIds={expandedGroupIds}
+            collapsedLayerIds={collapsedLayerIds}
             onToggleExpand={(id) => {
-              setExpandedGroupIds(prev => {
+              setCollapsedLayerIds(prev => {
                 const newSet = new Set(prev);
                 if (newSet.has(id)) newSet.delete(id);
                 else newSet.add(id);
@@ -715,7 +743,7 @@ export function MapEditor() {
         {!isMobile && (
           <div 
             onClick={() => setShowSignOutDialog(true)}
-            style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '10px', background: 'white', padding: '6px 12px', borderRadius: '50px', boxShadow: 'var(--shadow-sm)', cursor: 'pointer' }}
+            style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '10px', background: 'white', padding: '6px 12px', borderRadius: '50px', boxShadow: 'var(--shadow-sm)', cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
           >
             <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)' }}>{user?.name}</span>
             {user?.picture && <img src={user.picture} alt={user.name} style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid rgba(0,0,0,0.05)' }} />}
@@ -728,12 +756,14 @@ export function MapEditor() {
             onUpdatePin={updatePin}
             targetLocation={targetLocation} 
             targetPinId={targetPinId}
+            editingPinId={editingPinId}
             boundsToFit={boundsToFit}
             onBoundsChange={setMapBounds}
             userRole={userRole}
             hoveredPinId={hoveredPinId}
-            onHoverPin={setHoveredPinId}
-            hiddenGroupIds={hiddenGroupIds}
+            onHoverPin={handleHoverPin}
+            onBackgroundClick={handleBackgroundClick}
+            hiddenLayerIds={hiddenLayerIds}
             previewLocation={previewLocation}
             bottomPadding={isMobile ? sheetHeight : 0}
           />

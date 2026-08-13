@@ -10,11 +10,11 @@ export const PinSchema = z.object({
   imageUrl: z.string().url().or(z.string().max(0)).optional().nullable(),
   color: z.string().max(50).optional().nullable(),
   icon: z.string().max(50).optional().nullable(),
-  groupId: z.string().optional().nullable(),
+  layerId: z.string().optional().nullable(),
   position: z.number().int().nonnegative().optional().default(0),
 });
 
-export const GroupSchema = z.object({
+export const LayerSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(255),
   position: z.number().int().nonnegative().optional().default(0),
@@ -22,18 +22,18 @@ export const GroupSchema = z.object({
 
 export const MapUpdateSchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  groups: z.array(GroupSchema).optional(),
+  layers: z.array(LayerSchema).optional(),
   pins: z.array(PinSchema).optional(),
 });
 
 export const MapCreateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(255),
-  groups: z.array(GroupSchema).optional(),
+  layers: z.array(LayerSchema).optional(),
   pins: z.array(PinSchema).optional(),
 });
 
 export const ShareSchema = z.object({
   email: z.string().email(),
-  role: z.enum(['view', 'edit']),
+  role: z.enum(['view', 'edit', 'owner']),
 });
