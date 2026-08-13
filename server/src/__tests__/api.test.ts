@@ -55,11 +55,11 @@ describe('API Endpoints', () => {
     const mapData = {
       id: mapId,
       name: 'Test Map',
-      groups: [
-        { id: 'group-1', name: 'My Group', position: 0 }
+      layers: [
+        { id: 'layer-1', name: 'My Layer', position: 0 }
       ],
       pins: [
-        { id: 'pin-1', map_id: mapId, groupId: 'group-1', lat: 10, lng: 20, label: 'Pin 1', description: 'Desc 1', imageUrl: 'http://img.com/1', color: 'red', icon: 'hotel', position: 0 }
+        { id: 'pin-1', map_id: mapId, layerId: 'layer-1', lat: 10, lng: 20, label: 'Pin 1', description: 'Desc 1', imageUrl: 'http://img.com/1', color: 'red', icon: 'hotel', position: 0 }
       ]
     };
 
@@ -77,13 +77,13 @@ describe('API Endpoints', () => {
     expect(map.name).toBe('Test Map');
     expect(map.owner_id).toBe(mockUser.id);
 
-    const groups = await db.all('SELECT * FROM pin_groups WHERE map_id = ?', mapId);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].name).toBe('My Group');
+    const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ?', mapId);
+    expect(layers).toHaveLength(1);
+    expect(layers[0].name).toBe('My Layer');
 
     const pins = await db.all('SELECT * FROM pins WHERE map_id = ?', mapId);
     expect(pins).toHaveLength(1);
-    expect(pins[0].group_id).toBe('group-1');
+    expect(pins[0].layer_id).toBe('layer-1');
     expect(pins[0].position).toBe(0);
   });
 
@@ -99,16 +99,16 @@ describe('API Endpoints', () => {
     expect(res.body.error).toBe('Map not found');
   });
 
-  it('POST /api/maps should create a new map with groups and pins', async () => {
-    const mapId = 'create-map-with-groups-id';
+  it('POST /api/maps should create a new map with layers and pins', async () => {
+    const mapId = 'create-map-with-layers-id';
     const postData = {
       id: mapId,
       name: 'Map with Groups',
-      groups: [
-        { id: 'group-uuid-1', name: 'Group 1', position: 0 }
+      layers: [
+        { id: 'layer-uuid-1', name: 'Layer 1', position: 0 }
       ],
       pins: [
-        { id: 'pin-uuid-1', groupId: 'group-uuid-1', lat: 10, lng: 20, label: 'Pin 1', position: 0 }
+        { id: 'pin-uuid-1', layerId: 'layer-uuid-1', lat: 10, lng: 20, label: 'Pin 1', position: 0 }
       ]
     };
 
@@ -121,9 +121,9 @@ describe('API Endpoints', () => {
     expect(res.body.id).toBe(mapId);
 
     const db = await getDb();
-    const groups = await db.all('SELECT * FROM pin_groups WHERE map_id = ?', mapId);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].id).toBe('group-uuid-1');
+    const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ?', mapId);
+    expect(layers).toHaveLength(1);
+    expect(layers[0].id).toBe('layer-uuid-1');
   });
 
   it('GET /api/maps/:id should return map data', async () => {
@@ -147,11 +147,11 @@ describe('API Endpoints', () => {
 
     const updateData = {
       name: 'New Name',
-      groups: [
+      layers: [
         { id: 'g1', name: 'G1', position: 0 }
       ],
       pins: [
-        { id: 'new-pin', map_id: mapId, groupId: 'g1', lat: 50, lng: 60, label: 'New Pin', description: 'New Desc', imageUrl: 'http://new.com', color: 'green', icon: 'airport', position: 0 }
+        { id: 'new-pin', map_id: mapId, layerId: 'g1', lat: 50, lng: 60, label: 'New Pin', description: 'New Desc', imageUrl: 'http://new.com', color: 'green', icon: 'airport', position: 0 }
       ]
     };
 
@@ -165,14 +165,14 @@ describe('API Endpoints', () => {
     const map = await db.get('SELECT * FROM maps WHERE id = ?', mapId);
     expect(map.name).toBe('New Name');
 
-    const groups = await db.all('SELECT * FROM pin_groups WHERE map_id = ?', mapId);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].name).toBe('G1');
+    const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ?', mapId);
+    expect(layers).toHaveLength(1);
+    expect(layers[0].name).toBe('G1');
 
     const pins = await db.all('SELECT * FROM pins WHERE map_id = ?', mapId);
     expect(pins).toHaveLength(1);
     expect(pins[0].id).toBe('new-pin');
-    expect(pins[0].group_id).toBe('g1');
+    expect(pins[0].layer_id).toBe('g1');
   });
 
   it('POST /api/auth/google-login should return 400 if credential is missing', async () => {
@@ -199,7 +199,7 @@ describe('API Endpoints', () => {
     const mapData = {
       id: mapId,
       name: 'JWT Map',
-      groups: [],
+      layers: [],
       pins: []
     };
 

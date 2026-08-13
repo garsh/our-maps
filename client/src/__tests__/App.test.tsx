@@ -75,7 +75,7 @@ describe('App Components Error Handling', () => {
       id: 'map-1',
       name: 'Test Map',
       pins: [],
-      groups: [],
+      layers: [],
       userRole: 'owner'
     });
     (apiService.updateMap as any).mockRejectedValue(new Error('Save Failed'));

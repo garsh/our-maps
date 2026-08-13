@@ -26,11 +26,11 @@ export interface Pin {
   imageUrl?: string;
   color?: PinColor;
   icon?: PinIcon;
-  groupId?: string;
+  layerId?: string;
   position: number;
 }
 
-export interface PinGroup {
+export interface PinLayer {
   id: string;
   name: string;
   position: number;
@@ -43,7 +43,7 @@ export interface MapData {
   ownerName?: string;
   ownerEmail?: string;
   ownerPicture?: string;
-  groups: PinGroup[];
+  layers: PinLayer[];
   pins: Pin[];
   permissions?: MapPermission[];
   userRole?: 'view' | 'edit' | 'owner';

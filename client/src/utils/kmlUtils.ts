@@ -1,12 +1,12 @@
-import type { Pin, PinGroup } from '@shared/interfaces';
+import type { Pin, PinLayer } from '@shared/interfaces';
 
 /**
  * Manually parses KML DOM to extract Folders and Placemarks, preserving hierarchy.
  */
-export const parseKmlHierarchy = (kmlDoc: Document): { pins: Pin[], groups: PinGroup[] } => {
+export const parseKmlHierarchy = (kmlDoc: Document): { pins: Pin[], layers: PinLayer[] } => {
   const pins: Pin[] = [];
-  const groups: PinGroup[] = [];
-  const groupMap = new Map<string, string>(); // name -> id
+  const layers: PinLayer[] = [];
+  const layerMap = new Map<string, string>(); // name -> id
 
   const generateId = (): string => {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -16,22 +16,22 @@ export const parseKmlHierarchy = (kmlDoc: Document): { pins: Pin[], groups: PinG
     });
   };
 
-  const getOrCreateGroupId = (folderName: string): string => {
-    if (groupMap.has(folderName)) {
-      return groupMap.get(folderName)!;
+  const getOrCreateLayerId = (folderName: string): string => {
+    if (layerMap.has(folderName)) {
+      return layerMap.get(folderName)!;
     }
     const newId = generateId();
-    groupMap.set(folderName, newId);
-    groups.push({
+    layerMap.set(folderName, newId);
+    layers.push({
       id: newId,
       name: folderName,
-      position: groups.length
+      position: layers.length
     });
     return newId;
   };
 
   // Helper to parse a Placemark element
-  const parsePlacemark = (placemark: Element, groupId?: string) => {
+  const parsePlacemark = (placemark: Element, layerId?: string) => {
     const name = placemark.querySelector('name')?.textContent || 'Imported Pin';
     const description = placemark.querySelector('description')?.textContent || '';
     
@@ -61,31 +61,31 @@ export const parseKmlHierarchy = (kmlDoc: Document): { pins: Pin[], groups: PinG
       imageUrl: '', // Hard to extract reliably from raw KML description HTML
       color: 'blue',
       icon: 'default',
-      groupId,
+      layerId,
       position: pins.length
     });
   };
 
   // Recursive traversal to handle nested Folders correctly
-  const traverse = (element: Element, currentGroupId?: string) => {
+  const traverse = (element: Element, currentLayerId?: string) => {
     for (let i = 0; i < element.children.length; i++) {
       const child = element.children[i];
       const tagName = child.tagName;
 
       if (tagName === 'Folder') {
         // Extract folder name from direct child
-        let folderName = 'Untitled Group';
+        let folderName = 'Untitled Layer';
         const nameNode = Array.from(child.children).find(c => c.tagName === 'name');
         if (nameNode && nameNode.textContent) {
           folderName = nameNode.textContent;
         }
 
-        const groupId = getOrCreateGroupId(folderName);
-        traverse(child, groupId);
+        const layerId = getOrCreateLayerId(folderName);
+        traverse(child, layerId);
       } else if (tagName === 'Placemark') {
-        parsePlacemark(child, currentGroupId);
+        parsePlacemark(child, currentLayerId);
       } else if (tagName === 'Document' || tagName === 'kml') {
-        traverse(child, currentGroupId);
+        traverse(child, currentLayerId);
       }
     }
   };
@@ -95,5 +95,5 @@ export const parseKmlHierarchy = (kmlDoc: Document): { pins: Pin[], groups: PinG
     traverse(kmlDoc.firstElementChild);
   }
 
-  return { pins, groups };
+  return { pins, layers };
 };

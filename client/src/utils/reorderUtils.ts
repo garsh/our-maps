@@ -1,4 +1,4 @@
-import type { Pin, PinGroup } from '@shared/interfaces';
+import type { Pin, PinLayer } from '@shared/interfaces';
 import { arrayMove } from '@dnd-kit/sortable';
 
 /**
@@ -8,8 +8,8 @@ export function reorderPins(
     prevPins: Pin[],
     activeId: string,
     overId: string,
-    overType: 'pin' | 'group',
-    overGroupId: string | undefined,
+    overType: 'pin' | 'layer',
+    overLayerId: string | undefined,
     selectedNavIds: Set<string>
 ): Pin[] {
     const pinsToMoveIds = selectedNavIds.has(activeId) 
@@ -36,11 +36,11 @@ export function reorderPins(
             targetIndex += 1;
         }
     } else {
-        // Dropped on a group header: append to the end of that group
-        const targetGroupId = overGroupId === 'default' ? undefined : overGroupId;
-        const pinsInTargetGroup = otherPins.filter(p => p.groupId === targetGroupId);
-        if (pinsInTargetGroup.length > 0) {
-            const lastPin = pinsInTargetGroup[pinsInTargetGroup.length - 1];
+        // Dropped on a layer header: append to the end of that layer
+        const targetLayerId = overLayerId === 'default' ? undefined : overLayerId;
+        const pinsInTargetLayer = otherPins.filter(p => p.layerId === targetLayerId);
+        if (pinsInTargetLayer.length > 0) {
+            const lastPin = pinsInTargetLayer[pinsInTargetLayer.length - 1];
             targetIndex = otherPins.findIndex(p => p.id === lastPin.id) + 1;
         } else {
             targetIndex = otherPins.length;
@@ -49,7 +49,7 @@ export function reorderPins(
 
     const updatedMovedPins = movedPins.map(p => ({ 
         ...p, 
-        groupId: overGroupId === 'default' ? undefined : overGroupId
+        layerId: overLayerId === 'default' ? undefined : overLayerId
     }));
     
     const result = [...otherPins];
@@ -58,20 +58,20 @@ export function reorderPins(
 }
 
 /**
- * Reorders a list of groups based on a drag-and-drop event.
+ * Reorders a list of layers based on a drag-and-drop event.
  */
-export function reorderGroups(
-    prevGroups: PinGroup[],
+export function reorderLayers(
+    prevLayers: PinLayer[],
     activeId: string,
     overId: string
-): PinGroup[] {
-    if (activeId === overId) return prevGroups;
+): PinLayer[] {
+    if (activeId === overId) return prevLayers;
     
-    const oldIndex = prevGroups.findIndex((i) => i.id === activeId);
-    const newIndex = prevGroups.findIndex((i) => i.id === overId);
+    const oldIndex = prevLayers.findIndex((i) => i.id === activeId);
+    const newIndex = prevLayers.findIndex((i) => i.id === overId);
     
-    if (oldIndex === -1 || newIndex === -1) return prevGroups;
+    if (oldIndex === -1 || newIndex === -1) return prevLayers;
     
-    const newItems = arrayMove(prevGroups, oldIndex, newIndex);
+    const newItems = arrayMove(prevLayers, oldIndex, newIndex);
     return newItems.map((item, index) => ({ ...item, position: index }));
 }

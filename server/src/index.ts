@@ -10,7 +10,7 @@ import { Server, Socket } from 'socket.io';
 import { getDb } from './db';
 import mapsRouter from './routes/maps';
 import placesRouter from './routes/places';
-import { googleLoginHandler, filterContactsHandler, authMiddleware } from './auth';
+import { googleLoginHandler, filterContactsHandler, searchUsersHandler, authMiddleware } from './auth';
 
 const app = express();
 const server = http.createServer(app);
@@ -21,7 +21,7 @@ const io = new Server(server, {
   }
 });
 
-const port = process.env.PORT || 3002;
+const port = process.env.PORT || 3001;
 
 // Security: Use helmet for secure headers
 app.use(helmet({
@@ -75,6 +75,7 @@ app.use(express.json({ limit: '10mb' }));
 // API Routes
 app.post('/api/auth/google-login', googleLoginHandler);
 app.post('/api/auth/filter-contacts', authMiddleware, filterContactsHandler);
+app.get('/api/auth/search-users', authMiddleware, searchUsersHandler);
 app.use('/api/maps', mapsRouter);
 app.use('/api/places', placesRouter);
 
@@ -91,13 +92,13 @@ io.on('connection', (socket: Socket) => {
     console.log(`[SOCKET] User ${socket.id} joined map:${mapId}`);
   });
 
-  socket.on('map-updated', (data: { mapId: string, pins?: any[], groups?: any[], name: string }) => {
+  socket.on('map-updated', (data: { mapId: string, pins?: any[], layers?: any[], name: string }) => {
     // Sanitize and validate before broadcasting
     const safePayload = {
       mapId: data.mapId,
       name: data.name || 'Unnamed Map',
       pins: Array.isArray(data.pins) ? data.pins : [],
-      groups: Array.isArray(data.groups) ? data.groups : []
+      layers: Array.isArray(data.layers) ? data.layers : []
     };
     
     // Broadcast update to everyone else in the map room

@@ -1,5 +1,5 @@
 import tokml from 'tokml';
-import type { MapData, Pin, PinGroup, PinIcon } from '@shared/interfaces';
+import type { MapData, Pin, PinLayer, PinIcon } from '@shared/interfaces';
 import { parseKmlHierarchy } from './kmlUtils';
 
 /**
@@ -19,7 +19,7 @@ export const mapDataToGeoJSON = (mapData: MapData) => {
       imageUrl: pin.imageUrl,
       color: pin.color,
       icon: pin.icon,
-      groupId: pin.groupId,
+      layerId: pin.layerId,
       position: pin.position
     }
   }));
@@ -46,14 +46,14 @@ const generateId = (): string => {
 
 /**
  * Parses GeoJSON FeatureCollection into Pins and Groups.
- * Extracts group info from 'folder' property (used by togeojson for KML layers).
+ * Extracts layer info from 'folder' property (used by togeojson for KML layers).
  */
-export const geoJSONToData = (geojson: any): { pins: Pin[], groups: PinGroup[] } => {
-  if (!geojson || geojson.type !== 'FeatureCollection') return { pins: [], groups: [] };
+export const geoJSONToData = (geojson: any): { pins: Pin[], layers: PinLayer[] } => {
+  if (!geojson || geojson.type !== 'FeatureCollection') return { pins: [], layers: [] };
 
   const pins: Pin[] = [];
-  const groups: PinGroup[] = [];
-  const groupMap = new Map<string, string>(); // name -> id
+  const layers: PinLayer[] = [];
+  const layerMap = new Map<string, string>(); // name -> id
 
   geojson.features
     .filter((f: any) => f.geometry && f.geometry.type === 'Point')
@@ -62,7 +62,7 @@ export const geoJSONToData = (geojson: any): { pins: Pin[], groups: PinGroup[] }
       const props = f.properties || {};
       
       // Handle Groups (KML folders / layers)
-      let groupId = props.groupId;
+      let layerId = props.layerId;
       
       // Helper to find folder name deeply
       const findFolderName = (obj: any): string | undefined => {
@@ -84,16 +84,16 @@ export const geoJSONToData = (geojson: any): { pins: Pin[], groups: PinGroup[] }
 
       const folderName = findFolderName(props);
       
-      if (!groupId && folderName) {
-        if (groupMap.has(folderName)) {
-          groupId = groupMap.get(folderName);
+      if (!layerId && folderName) {
+        if (layerMap.has(folderName)) {
+          layerId = layerMap.get(folderName);
         } else {
-          groupId = generateId();
-          groupMap.set(folderName, groupId);
-          groups.push({
-            id: groupId,
+          layerId = generateId();
+          layerMap.set(folderName, layerId);
+          layers.push({
+            id: layerId,
             name: folderName,
-            position: groups.length
+            position: layers.length
           });
         }
       }
@@ -115,12 +115,12 @@ export const geoJSONToData = (geojson: any): { pins: Pin[], groups: PinGroup[] }
         imageUrl: props.imageUrl || '',
         color,
         icon,
-        groupId,
+        layerId,
         position: props.position ?? index
       });
     });
 
-  return { pins, groups };
+  return { pins, layers };
 };
 
 /**
@@ -178,12 +178,12 @@ export const importMapFile = async (file: File): Promise<Partial<MapData>> => {
     if (extension === 'json') {
       const data = JSON.parse(content);
       if (Array.isArray(data.pins)) {
-        const groupIdMap = new Map<string, string>();
-        const groups: PinGroup[] = Array.isArray(data.groups)
-          ? data.groups.map((g: PinGroup) => {
+        const layerIdMap = new Map<string, string>();
+        const layers: PinLayer[] = Array.isArray(data.layers)
+          ? data.layers.map((g: PinLayer) => {
               const newId = generateId();
               if (g.id) {
-                groupIdMap.set(g.id, newId);
+                layerIdMap.set(g.id, newId);
               }
               return {
                 ...g,
@@ -195,27 +195,27 @@ export const importMapFile = async (file: File): Promise<Partial<MapData>> => {
         const pins: Pin[] = data.pins.map((p: Pin) => ({
           ...p,
           id: generateId(),
-          groupId: p.groupId ? (groupIdMap.get(p.groupId) || p.groupId) : undefined
+          layerId: p.layerId ? (layerIdMap.get(p.layerId) || p.layerId) : undefined
         }));
 
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { id: _ignoreId, ...rest } = data;
         return {
           ...rest,
-          groups,
+          layers,
           pins
         };
       }
     } else if (extension === 'geojson' || extension === 'kml') {
       let pins: Pin[] = [];
-      let groups: PinGroup[] = [];
+      let layers: PinLayer[] = [];
       let name: string | undefined;
 
       if (extension === 'geojson') {
         const geojson = JSON.parse(content);
         const data = geoJSONToData(geojson);
         pins = data.pins;
-        groups = data.groups;
+        layers = data.layers;
       } else {
         const parser = new DOMParser();
         const kmlDoc = parser.parseFromString(content, 'text/xml');
@@ -225,10 +225,10 @@ export const importMapFile = async (file: File): Promise<Partial<MapData>> => {
         name = extractMapNameFromKML(kmlDoc);
         const result = parseKmlHierarchy(kmlDoc);
         pins = result.pins;
-        groups = result.groups;
+        layers = result.layers;
       }
       
-      return { name, pins, groups };
+      return { name, pins, layers };
     }
   } catch (error) {
     console.error('Failed to parse import file:', error);

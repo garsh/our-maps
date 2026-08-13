@@ -85,11 +85,11 @@ const testDbName = '../test-database.sqlite';
         const mapData = {
             id: mapId,
             name: 'Test Map',
-            groups: [
-                { id: 'group-1', name: 'My Group', position: 0 }
+            layers: [
+                { id: 'layer-1', name: 'My Layer', position: 0 }
             ],
             pins: [
-                { id: 'pin-1', map_id: mapId, groupId: 'group-1', lat: 10, lng: 20, label: 'Pin 1', description: 'Desc 1', imageUrl: 'http://img.com/1', color: 'red', icon: 'hotel', position: 0 }
+                { id: 'pin-1', map_id: mapId, layerId: 'layer-1', lat: 10, lng: 20, label: 'Pin 1', description: 'Desc 1', imageUrl: 'http://img.com/1', color: 'red', icon: 'hotel', position: 0 }
             ]
         };
         const res = await (0, supertest_1.default)(index_1.app)
@@ -103,12 +103,12 @@ const testDbName = '../test-database.sqlite';
         const map = await db.get('SELECT * FROM maps WHERE id = ?', mapId);
         (0, vitest_1.expect)(map.name).toBe('Test Map');
         (0, vitest_1.expect)(map.owner_id).toBe(mockUser.id);
-        const groups = await db.all('SELECT * FROM pin_groups WHERE map_id = ?', mapId);
-        (0, vitest_1.expect)(groups).toHaveLength(1);
-        (0, vitest_1.expect)(groups[0].name).toBe('My Group');
+        const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ?', mapId);
+        (0, vitest_1.expect)(layers).toHaveLength(1);
+        (0, vitest_1.expect)(layers[0].name).toBe('My Layer');
         const pins = await db.all('SELECT * FROM pins WHERE map_id = ?', mapId);
         (0, vitest_1.expect)(pins).toHaveLength(1);
-        (0, vitest_1.expect)(pins[0].group_id).toBe('group-1');
+        (0, vitest_1.expect)(pins[0].layer_id).toBe('layer-1');
         (0, vitest_1.expect)(pins[0].position).toBe(0);
     });
     (0, vitest_1.it)('POST /api/maps should return 400 if map id is missing', async () => {
@@ -121,16 +121,16 @@ const testDbName = '../test-database.sqlite';
         (0, vitest_1.expect)(res.status).toBe(404);
         (0, vitest_1.expect)(res.body.error).toBe('Map not found');
     });
-    (0, vitest_1.it)('POST /api/maps should create a new map with groups and pins', async () => {
-        const mapId = 'create-map-with-groups-id';
+    (0, vitest_1.it)('POST /api/maps should create a new map with layers and pins', async () => {
+        const mapId = 'create-map-with-layers-id';
         const postData = {
             id: mapId,
             name: 'Map with Groups',
-            groups: [
-                { id: 'group-uuid-1', name: 'Group 1', position: 0 }
+            layers: [
+                { id: 'layer-uuid-1', name: 'Layer 1', position: 0 }
             ],
             pins: [
-                { id: 'pin-uuid-1', groupId: 'group-uuid-1', lat: 10, lng: 20, label: 'Pin 1', position: 0 }
+                { id: 'pin-uuid-1', layerId: 'layer-uuid-1', lat: 10, lng: 20, label: 'Pin 1', position: 0 }
             ]
         };
         const res = await (0, supertest_1.default)(index_1.app)
@@ -140,9 +140,9 @@ const testDbName = '../test-database.sqlite';
         (0, vitest_1.expect)(res.status).toBe(201);
         (0, vitest_1.expect)(res.body.id).toBe(mapId);
         const db = await (0, db_1.getDb)();
-        const groups = await db.all('SELECT * FROM pin_groups WHERE map_id = ?', mapId);
-        (0, vitest_1.expect)(groups).toHaveLength(1);
-        (0, vitest_1.expect)(groups[0].id).toBe('group-uuid-1');
+        const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ?', mapId);
+        (0, vitest_1.expect)(layers).toHaveLength(1);
+        (0, vitest_1.expect)(layers[0].id).toBe('layer-uuid-1');
     });
     (0, vitest_1.it)('GET /api/maps/:id should return map data', async () => {
         const mapId = 'test-map-id';
@@ -161,11 +161,11 @@ const testDbName = '../test-database.sqlite';
         await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', mapId, 'Old Name', mockUser.id);
         const updateData = {
             name: 'New Name',
-            groups: [
+            layers: [
                 { id: 'g1', name: 'G1', position: 0 }
             ],
             pins: [
-                { id: 'new-pin', map_id: mapId, groupId: 'g1', lat: 50, lng: 60, label: 'New Pin', description: 'New Desc', imageUrl: 'http://new.com', color: 'green', icon: 'airport', position: 0 }
+                { id: 'new-pin', map_id: mapId, layerId: 'g1', lat: 50, lng: 60, label: 'New Pin', description: 'New Desc', imageUrl: 'http://new.com', color: 'green', icon: 'airport', position: 0 }
             ]
         };
         const res = await (0, supertest_1.default)(index_1.app)
@@ -175,13 +175,13 @@ const testDbName = '../test-database.sqlite';
         (0, vitest_1.expect)(res.status).toBe(200);
         const map = await db.get('SELECT * FROM maps WHERE id = ?', mapId);
         (0, vitest_1.expect)(map.name).toBe('New Name');
-        const groups = await db.all('SELECT * FROM pin_groups WHERE map_id = ?', mapId);
-        (0, vitest_1.expect)(groups).toHaveLength(1);
-        (0, vitest_1.expect)(groups[0].name).toBe('G1');
+        const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ?', mapId);
+        (0, vitest_1.expect)(layers).toHaveLength(1);
+        (0, vitest_1.expect)(layers[0].name).toBe('G1');
         const pins = await db.all('SELECT * FROM pins WHERE map_id = ?', mapId);
         (0, vitest_1.expect)(pins).toHaveLength(1);
         (0, vitest_1.expect)(pins[0].id).toBe('new-pin');
-        (0, vitest_1.expect)(pins[0].group_id).toBe('g1');
+        (0, vitest_1.expect)(pins[0].layer_id).toBe('g1');
     });
     (0, vitest_1.it)('POST /api/auth/google-login should return 400 if credential is missing', async () => {
         const res = await (0, supertest_1.default)(index_1.app).post('/api/auth/google-login').send({});
@@ -201,7 +201,7 @@ const testDbName = '../test-database.sqlite';
         const mapData = {
             id: mapId,
             name: 'JWT Map',
-            groups: [],
+            layers: [],
             pins: []
         };
         // Make request using Bearer token

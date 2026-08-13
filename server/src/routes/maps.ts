@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { getDb } from '../db';
-import type { Pin, MapData, MapPermission, PinGroup } from '@shared/interfaces';
+import type { Pin, MapData, MapPermission, PinLayer } from '@shared/interfaces';
 import { authMiddleware, type AuthRequest } from '../auth';
 import { MapCreateSchema, MapUpdateSchema, ShareSchema } from '../schemas';
 import { z } from 'zod';
@@ -88,7 +88,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
     ON CONFLICT(user_id, map_id) DO UPDATE SET last_accessed_at = CURRENT_TIMESTAMP
   `, userId, mapId);
 
-  const groups = await db.all('SELECT * FROM pin_groups WHERE map_id = ? ORDER BY position', mapId);
+  const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ? ORDER BY position', mapId);
   const pins = await db.all('SELECT * FROM pins WHERE map_id = ? ORDER BY position', mapId);
   
   // Get permissions for all users who have access
@@ -105,7 +105,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
   const formattedPins = pins.map(p => ({
     ...p,
     imageUrl: p.image_url,
-    groupId: p.group_id,
+    layerId: p.layer_id,
     address: p.address,
     color: p.color || 'blue',
     icon: p.icon || 'default',
@@ -118,7 +118,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
     ownerName: map.owner_name,
     ownerEmail: map.owner_email,
     ownerPicture: map.owner_picture,
-    groups: groups || [],
+    layers: layers || [],
     pins: formattedPins,
     userRole: role,
     permissions
@@ -131,7 +131,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
 router.post('/', async (req: AuthRequest, res) => {
   try {
     const validatedData = MapCreateSchema.parse(req.body);
-    const { id, name, groups, pins } = validatedData;
+    const { id, name, layers, pins } = validatedData;
     const userId = req.user!.id;
     const db = await getDb();
 
@@ -140,28 +140,28 @@ router.post('/', async (req: AuthRequest, res) => {
     try {
       await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', id, name, userId);
       
-      const finalGroups: PinGroup[] = [];
-      const groupIdMap = new Map<string, string>();
-      const processedGroupIds = new Set<string>();
+      const finalGroups: PinLayer[] = [];
+      const layerIdMap = new Map<string, string>();
+      const processedLayerIds = new Set<string>();
 
-      if (groups && groups.length > 0) {
-        for (const group of groups) {
-          let groupId = group.id;
-          const existingGroup = groupId ? await db.get('SELECT id FROM pin_groups WHERE id = ?', groupId) : null;
-          if (!groupId || processedGroupIds.has(groupId) || existingGroup) {
-            const newGroupId = crypto.randomUUID();
-            if (groupId) groupIdMap.set(groupId, newGroupId);
-            groupId = newGroupId;
+      if (layers && layers.length > 0) {
+        for (const layer of layers) {
+          let layerId = layer.id;
+          const existingLayer = layerId ? await db.get('SELECT id FROM pin_layers WHERE id = ?', layerId) : null;
+          if (!layerId || processedLayerIds.has(layerId) || existingLayer) {
+            const newLayerId = crypto.randomUUID();
+            if (layerId) layerIdMap.set(layerId, newLayerId);
+            layerId = newLayerId;
           }
-          processedGroupIds.add(groupId);
-          finalGroups.push({ ...group, id: groupId });
+          processedLayerIds.add(layerId);
+          finalGroups.push({ ...layer, id: layerId });
         }
 
-        const groupStmt = await db.prepare('INSERT INTO pin_groups (id, map_id, name, position) VALUES (?, ?, ?, ?)');
-        for (const group of finalGroups) {
-          await groupStmt.run(group.id, id, group.name, group.position);
+        const layerStmt = await db.prepare('INSERT INTO pin_layers (id, map_id, name, position) VALUES (?, ?, ?, ?)');
+        for (const layer of finalGroups) {
+          await layerStmt.run(layer.id, id, layer.name, layer.position);
         }
-        await groupStmt.finalize();
+        await layerStmt.finalize();
       }
 
       const finalPins: Pin[] = [];
@@ -175,16 +175,16 @@ router.post('/', async (req: AuthRequest, res) => {
           }
           processedPinIds.add(pinId);
 
-          let targetGroupId = pin.groupId || null;
-          if (targetGroupId && groupIdMap.has(targetGroupId)) {
-            targetGroupId = groupIdMap.get(targetGroupId)!;
+          let targetLayerId = pin.layerId || null;
+          if (targetLayerId && layerIdMap.has(targetLayerId)) {
+            targetLayerId = layerIdMap.get(targetLayerId)!;
           }
-          finalPins.push({ ...pin, id: pinId, groupId: targetGroupId || undefined } as Pin);
+          finalPins.push({ ...pin, id: pinId, layerId: targetLayerId || undefined } as Pin);
         }
 
-        const stmt = await db.prepare('INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        const stmt = await db.prepare('INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         for (const pin of finalPins) {
-          await stmt.run(pin.id, id, pin.groupId || null, pin.lat, pin.lng, pin.label || null, pin.description || null, pin.address || null, pin.imageUrl || null, pin.color || 'blue', pin.icon || 'default', pin.position);
+          await stmt.run(pin.id, id, pin.layerId || null, pin.lat, pin.lng, pin.label || null, pin.description || null, pin.address || null, pin.imageUrl || null, pin.color || 'blue', pin.icon || 'default', pin.position);
         }
         await stmt.finalize();
       }
@@ -200,7 +200,7 @@ router.post('/', async (req: AuthRequest, res) => {
       res.status(201).json({ 
         id, 
         name, 
-        groups: finalGroups, 
+        layers: finalGroups, 
         pins: finalPins,
         ownerId: userId,
         userRole: 'owner'
@@ -222,7 +222,7 @@ router.post('/', async (req: AuthRequest, res) => {
 router.put('/:id', async (req: AuthRequest, res) => {
   try {
     const validatedData = MapUpdateSchema.parse(req.body);
-    const { name, groups, pins } = validatedData;
+    const { name, layers, pins } = validatedData;
     const mapId = req.params.id;
     const userId = req.user!.id;
     const db = await getDb();
@@ -248,46 +248,46 @@ router.put('/:id', async (req: AuthRequest, res) => {
         await db.run('UPDATE maps SET name = ? WHERE id = ?', name, mapId);
       }
 
-      const groupIdMap = new Map<string, string>();
+      const layerIdMap = new Map<string, string>();
       // 1. Sync Groups: Upsert and Diff
-      if (groups !== undefined) {
-        const finalGroups: PinGroup[] = [];
-        const processedGroupIds = new Set<string>();
+      if (layers !== undefined) {
+        const finalGroups: PinLayer[] = [];
+        const processedLayerIds = new Set<string>();
 
-        for (const group of groups) {
-          let groupId = group.id;
-          const existingOtherGroup = groupId ? await db.get('SELECT map_id FROM pin_groups WHERE id = ? AND map_id != ?', groupId, mapId) : null;
-          if (!groupId || processedGroupIds.has(groupId) || existingOtherGroup) {
-            const newGroupId = crypto.randomUUID();
-            if (groupId) groupIdMap.set(groupId, newGroupId);
-            groupId = newGroupId;
+        for (const layer of layers) {
+          let layerId = layer.id;
+          const existingOtherLayer = layerId ? await db.get('SELECT map_id FROM pin_layers WHERE id = ? AND map_id != ?', layerId, mapId) : null;
+          if (!layerId || processedLayerIds.has(layerId) || existingOtherLayer) {
+            const newLayerId = crypto.randomUUID();
+            if (layerId) layerIdMap.set(layerId, newLayerId);
+            layerId = newLayerId;
           }
-          processedGroupIds.add(groupId);
-          finalGroups.push({ ...group, id: groupId });
+          processedLayerIds.add(layerId);
+          finalGroups.push({ ...layer, id: layerId });
         }
 
-        const providedGroupIds = finalGroups.map(g => g.id);
+        const providedLayerIds = finalGroups.map(g => g.id);
         
-        // Remove groups not in provided list
-        if (providedGroupIds.length > 0) {
-            await db.run(`DELETE FROM pin_groups WHERE map_id = ? AND id NOT IN (${providedGroupIds.map(() => '?').join(',')})`, mapId, ...providedGroupIds);
+        // Remove layers not in provided list
+        if (providedLayerIds.length > 0) {
+            await db.run(`DELETE FROM pin_layers WHERE map_id = ? AND id NOT IN (${providedLayerIds.map(() => '?').join(',')})`, mapId, ...providedLayerIds);
         } else {
-            await db.run('DELETE FROM pin_groups WHERE map_id = ?', mapId);
+            await db.run('DELETE FROM pin_layers WHERE map_id = ?', mapId);
         }
 
-        // Upsert provided groups
-        const groupStmt = await db.prepare(`
-          INSERT INTO pin_groups (id, map_id, name, position) 
+        // Upsert provided layers
+        const layerStmt = await db.prepare(`
+          INSERT INTO pin_layers (id, map_id, name, position) 
           VALUES (?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET 
             map_id = excluded.map_id,
             name = excluded.name,
             position = excluded.position
         `);
-        for (const group of finalGroups) {
-          await groupStmt.run(group.id, mapId, group.name, group.position);
+        for (const layer of finalGroups) {
+          await layerStmt.run(layer.id, mapId, layer.name, layer.position);
         }
-        await groupStmt.finalize();
+        await layerStmt.finalize();
       }
 
       // 2. Sync Pins: Upsert and Diff
@@ -303,11 +303,11 @@ router.put('/:id', async (req: AuthRequest, res) => {
           }
           processedPinIds.add(pinId);
 
-          let targetGroupId = pin.groupId || null;
-          if (targetGroupId && groupIdMap.has(targetGroupId)) {
-            targetGroupId = groupIdMap.get(targetGroupId)!;
+          let targetLayerId = pin.layerId || null;
+          if (targetLayerId && layerIdMap.has(targetLayerId)) {
+            targetLayerId = layerIdMap.get(targetLayerId)!;
           }
-          finalPins.push({ ...pin, id: pinId, groupId: targetGroupId || undefined } as Pin);
+          finalPins.push({ ...pin, id: pinId, layerId: targetLayerId || undefined } as Pin);
         }
 
         const providedPinIds = finalPins.map(p => p.id);
@@ -321,11 +321,11 @@ router.put('/:id', async (req: AuthRequest, res) => {
 
         // Upsert provided pins
         const pinStmt = await db.prepare(`
-          INSERT INTO pins (id, map_id, group_id, lat, lng, label, description, address, image_url, color, icon, position) 
+          INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, image_url, color, icon, position) 
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET 
             map_id = excluded.map_id,
-            group_id = excluded.group_id,
+            layer_id = excluded.layer_id,
             lat = excluded.lat,
             lng = excluded.lng,
             label = excluded.label,
@@ -338,7 +338,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
         `);
         for (const pin of finalPins) {
           await pinStmt.run(
-            pin.id, mapId, pin.groupId || null, pin.lat, pin.lng, pin.label || null, 
+            pin.id, mapId, pin.layerId || null, pin.lat, pin.lng, pin.label || null, 
             pin.description || null, pin.address || null, pin.imageUrl || null, 
             pin.color || 'blue', pin.icon || 'default', pin.position
           );
@@ -384,11 +384,34 @@ router.post('/:id/share', async (req: AuthRequest, res) => {
       return res.status(400).json({ error: 'Cannot share with yourself' });
     }
 
-    // Add/Update permission
-    await db.run(`
-      INSERT INTO map_permissions (map_id, user_id, role) VALUES (?, ?, ?)
-      ON CONFLICT(map_id, user_id) DO UPDATE SET role = excluded.role
-    `, mapId, targetUser.id, role);
+    if (role === 'owner') {
+      try {
+        await db.run('BEGIN TRANSACTION');
+        
+        // Remove target user from permissions if they are already there
+        await db.run('DELETE FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, targetUser.id);
+        
+        // Change ownership
+        await db.run('UPDATE maps SET owner_id = ? WHERE id = ?', targetUser.id, mapId);
+        
+        // Add previous owner as an editor
+        await db.run(`
+          INSERT INTO map_permissions (map_id, user_id, role) VALUES (?, ?, 'edit')
+          ON CONFLICT(map_id, user_id) DO UPDATE SET role = 'edit'
+        `, mapId, userId);
+        
+        await db.run('COMMIT');
+      } catch (error) {
+        await db.run('ROLLBACK');
+        throw error;
+      }
+    } else {
+      // Add/Update permission
+      await db.run(`
+        INSERT INTO map_permissions (map_id, user_id, role) VALUES (?, ?, ?)
+        ON CONFLICT(map_id, user_id) DO UPDATE SET role = excluded.role
+      `, mapId, targetUser.id, role);
+    }
 
     res.json({ message: 'Map shared', userId: targetUser.id, email, role });
   } catch (error: any) {
@@ -409,7 +432,9 @@ router.delete('/:id/share/:userId', async (req: AuthRequest, res) => {
   try {
     const map = await db.get('SELECT owner_id FROM maps WHERE id = ?', mapId);
     if (!map) return res.status(404).json({ error: 'Map not found' });
-    if (map.owner_id !== ownerId) return res.status(403).json({ error: 'Only owner can manage shares' });
+    if (map.owner_id !== ownerId && ownerId !== targetUserId) {
+      return res.status(403).json({ error: 'Only owner can manage shares, or you can remove yourself' });
+    }
 
     await db.run('DELETE FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, targetUserId);
     res.json({ message: 'Permission removed' });

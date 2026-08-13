@@ -7,7 +7,7 @@ describe('fileUtils', () => {
     id: 'map-1',
     name: 'Test Map',
     ownerId: 'user-1',
-    groups: [],
+    layers: [],
     pins: [
       {
         id: 'pin-1',
@@ -84,11 +84,11 @@ describe('fileUtils', () => {
   });
 
   it('handles empty or invalid geojson', () => {
-    expect(geoJSONToData(null)).toEqual({ pins: [], groups: [] });
-    expect(geoJSONToData({})).toEqual({ pins: [], groups: [] });
+    expect(geoJSONToData(null)).toEqual({ pins: [], layers: [] });
+    expect(geoJSONToData({})).toEqual({ pins: [], layers: [] });
   });
 
-  it('converts KML folders into groups', () => {
+  it('converts KML folders into layers', () => {
     const geojson = {
       type: 'FeatureCollection',
       features: [
@@ -110,16 +110,16 @@ describe('fileUtils', () => {
       ]
     };
 
-    const { pins, groups } = geoJSONToData(geojson);
+    const { pins, layers } = geoJSONToData(geojson);
     
-    expect(groups).toHaveLength(2);
-    expect(groups[0].name).toBe('Layer 1');
-    expect(groups[1].name).toBe('Layer 2');
+    expect(layers).toHaveLength(2);
+    expect(layers[0].name).toBe('Layer 1');
+    expect(layers[1].name).toBe('Layer 2');
     
     expect(pins).toHaveLength(3);
-    expect(pins[0].groupId).toBe(groups[0].id);
-    expect(pins[1].groupId).toBe(groups[0].id);
-    expect(pins[2].groupId).toBe(groups[1].id);
+    expect(pins[0].layerId).toBe(layers[0].id);
+    expect(pins[1].layerId).toBe(layers[0].id);
+    expect(pins[2].layerId).toBe(layers[1].id);
   });
 
   it('detects folders from various property names (folder, layer, parentName)', () => {
@@ -129,25 +129,25 @@ describe('fileUtils', () => {
         {
           type: 'Feature',
           geometry: { type: 'Point', coordinates: [10, 10] },
-          properties: { name: 'P1', layer: 'Group A' }
+          properties: { name: 'P1', layer: 'Layer A' }
         },
         {
           type: 'Feature',
           geometry: { type: 'Point', coordinates: [20, 20] },
-          properties: { name: 'P2', parentName: 'Group B' }
+          properties: { name: 'P2', parentName: 'Layer B' }
         }
       ]
     };
 
-    const { pins, groups } = geoJSONToData(geojson);
+    const { pins, layers } = geoJSONToData(geojson);
     
-    expect(groups).toHaveLength(2);
-    expect(groups.find(g => g.name === 'Group A')).toBeDefined();
-    expect(groups.find(g => g.name === 'Group B')).toBeDefined();
+    expect(layers).toHaveLength(2);
+    expect(layers.find(g => g.name === 'Layer A')).toBeDefined();
+    expect(layers.find(g => g.name === 'Layer B')).toBeDefined();
     
     const pin1 = pins.find(p => p.label === 'P1');
-    const groupA = groups.find(g => g.name === 'Group A');
-    expect(pin1?.groupId).toBe(groupA?.id);
+    const groupA = layers.find(g => g.name === 'Layer A');
+    expect(pin1?.layerId).toBe(groupA?.id);
   });
 
   it('detects folders from nested meta properties (common in some KML exports)', () => {
@@ -167,11 +167,11 @@ describe('fileUtils', () => {
       ]
     };
 
-    const { groups } = geoJSONToData(geojson);
+    const { layers } = geoJSONToData(geojson);
     
-    expect(groups).toHaveLength(2);
-    expect(groups.find(g => g.name === 'Nested Layer')).toBeDefined();
-    expect(groups.find(g => g.name === 'Direct Folder')).toBeDefined();
+    expect(layers).toHaveLength(2);
+    expect(layers.find(g => g.name === 'Nested Layer')).toBeDefined();
+    expect(layers.find(g => g.name === 'Direct Folder')).toBeDefined();
   });
 
   it('correctly associates Placemarks with their parent Folder in standard KML', async () => {
@@ -203,26 +203,26 @@ describe('fileUtils', () => {
     
     const result = await importMapFile(file);
     
-    expect(result.groups).toHaveLength(1);
-    expect(result.groups![0].name).toBe('Shopping');
+    expect(result.layers).toHaveLength(1);
+    expect(result.layers![0].name).toBe('Shopping');
     
     const costco = result.pins!.find(p => p.label === 'Costco');
     expect(costco).toBeDefined();
-    expect(costco!.groupId).toBe(result.groups![0].id);
+    expect(costco!.layerId).toBe(result.layers![0].id);
     
     const orphan = result.pins!.find(p => p.label === 'Orphan Pin');
-    expect(orphan!.groupId).toBeUndefined();
+    expect(orphan!.layerId).toBeUndefined();
   });
 
-  it('remaps group and pin IDs when importing a JSON map file', async () => {
+  it('remaps layer and pin IDs when importing a JSON map file', async () => {
     const jsonContent = JSON.stringify({
       id: 'existing-map-id',
       name: 'Imported JSON Map',
-      groups: [
-        { id: 'old-group-1', name: 'Favorites', position: 0 }
+      layers: [
+        { id: 'old-layer-1', name: 'Favorites', position: 0 }
       ],
       pins: [
-        { id: 'old-pin-1', groupId: 'old-group-1', lat: 37.77, lng: -122.41, label: 'SF Landmark', position: 0 }
+        { id: 'old-pin-1', layerId: 'old-layer-1', lat: 37.77, lng: -122.41, label: 'SF Landmark', position: 0 }
       ]
     });
 
@@ -233,12 +233,12 @@ describe('fileUtils', () => {
 
     expect(result.id).toBeUndefined();
     expect(result.name).toBe('Imported JSON Map');
-    expect(result.groups).toHaveLength(1);
-    expect(result.groups![0].id).not.toBe('old-group-1');
-    expect(result.groups![0].name).toBe('Favorites');
+    expect(result.layers).toHaveLength(1);
+    expect(result.layers![0].id).not.toBe('old-layer-1');
+    expect(result.layers![0].name).toBe('Favorites');
 
     expect(result.pins).toHaveLength(1);
     expect(result.pins![0].id).not.toBe('old-pin-1');
-    expect(result.pins![0].groupId).toBe(result.groups![0].id);
+    expect(result.pins![0].layerId).toBe(result.layers![0].id);
   });
 });

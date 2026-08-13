@@ -49,7 +49,7 @@ class MapListViewModel(private val repository: MapRepository) : ViewModel() {
                 ownerId = "me",
                 ownerName = null,
                 ownerEmail = null,
-                groups = emptyList(),
+                layers = emptyList(),
                 pins = emptyList(),
                 userRole = "owner",
                 permissions = null,
@@ -170,7 +170,7 @@ class MapDetailViewModel(
                     put("mapId", mapData.id)
                     put("name", mapData.name)
                     put("pins", org.json.JSONArray(gson.toJson(mapData.pins)))
-                    put("groups", org.json.JSONArray(gson.toJson(mapData.groups)))
+                    put("layers", org.json.JSONArray(gson.toJson(mapData.layers)))
                 })
 
                 // Auto-sync: update local cache immediately on save
@@ -233,14 +233,14 @@ class MapDetailViewModel(
     fun moveGroup(fromIndex: Int, toIndex: Int) {
         val state = _uiState.value
         if (state is UiState.Success) {
-            val groups = state.data.groups.toMutableList()
-            if (fromIndex !in groups.indices || toIndex !in groups.indices) return
+            val layers = state.data.layers.toMutableList()
+            if (fromIndex !in layers.indices || toIndex !in layers.indices) return
             
-            val group = groups.removeAt(fromIndex)
-            groups.add(toIndex, group)
+            val layer = layers.removeAt(fromIndex)
+            layers.add(toIndex, layer)
             
-            val updatedGroups = groups.mapIndexed { index, g -> g.copy(position = index) }
-            updateMap(state.data.copy(groups = updatedGroups))
+            val updatedGroups = layers.mapIndexed { index, g -> g.copy(position = index) }
+            updateMap(state.data.copy(layers = updatedGroups))
         }
     }
 

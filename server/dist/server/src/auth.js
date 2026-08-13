@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.googleLoginHandler = googleLoginHandler;
 exports.authMiddleware = authMiddleware;
 exports.filterContactsHandler = filterContactsHandler;
+exports.searchUsersHandler = searchUsersHandler;
 const google_auth_library_1 = require("google-auth-library");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const db_1 = require("./db");
@@ -157,5 +158,49 @@ async function filterContactsHandler(req, res) {
     catch (err) {
         console.error('Failed to filter contacts', err);
         res.status(500).json({ error: 'Failed to filter contacts' });
+    }
+}
+async function searchUsersHandler(req, res) {
+    try {
+        const q = req.query.q || '';
+        const currentUserEmail = req.user?.email || '';
+        const currentUserId = req.user?.id || '';
+        const db = await (0, db_1.getDb)();
+        let baseQuery = `
+      SELECT email, name, picture as photoUrl 
+      FROM users 
+      WHERE email != ? AND id IN (
+        SELECT owner_id FROM maps WHERE id IN (
+          SELECT id FROM maps WHERE owner_id = ?
+          UNION
+          SELECT p.map_id FROM map_permissions p JOIN maps m ON p.map_id = m.id WHERE p.user_id = ?
+        )
+        UNION
+        SELECT p2.user_id FROM map_permissions p2 JOIN maps m2 ON p2.map_id = m2.id WHERE p2.map_id IN (
+          SELECT id FROM maps WHERE owner_id = ?
+          UNION
+          SELECT p3.map_id FROM map_permissions p3 JOIN maps m3 ON p3.map_id = m3.id WHERE p3.user_id = ?
+        )
+      )
+    `;
+        let queryParams = [
+            currentUserEmail,
+            currentUserId, currentUserId,
+            currentUserId, currentUserId
+        ];
+        if (q.trim() !== '') {
+            const searchTerm = `%${q.trim()}%`;
+            baseQuery += ` AND (email LIKE ? OR name LIKE ?)`;
+            queryParams.push(searchTerm, searchTerm);
+        }
+        baseQuery += ` ORDER BY name ASC, email ASC LIMIT 20`;
+        const rows = await db.all(baseQuery, ...queryParams);
+        // Add type 'other' so it fits the Contact interface on the client
+        const users = rows.map(r => ({ ...r, type: 'other' }));
+        return res.json({ users });
+    }
+    catch (err) {
+        console.error('Failed to search users', err);
+        res.status(500).json({ error: 'Failed to search users' });
     }
 }

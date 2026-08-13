@@ -25,7 +25,7 @@ const io = new socket_io_1.Server(server, {
         methods: ['GET', 'POST']
     }
 });
-const port = process.env.PORT || 3002;
+const port = process.env.PORT || 3001;
 // Security: Use helmet for secure headers
 app.use((0, helmet_1.default)({
     contentSecurityPolicy: {
@@ -75,6 +75,7 @@ app.use(express_1.default.json({ limit: '10mb' }));
 // API Routes
 app.post('/api/auth/google-login', auth_1.googleLoginHandler);
 app.post('/api/auth/filter-contacts', auth_1.authMiddleware, auth_1.filterContactsHandler);
+app.get('/api/auth/search-users', auth_1.authMiddleware, auth_1.searchUsersHandler);
 app.use('/api/maps', maps_1.default);
 app.use('/api/places', places_1.default);
 app.get('/api/hello', (req, res) => {
@@ -93,7 +94,7 @@ io.on('connection', (socket) => {
             mapId: data.mapId,
             name: data.name || 'Unnamed Map',
             pins: Array.isArray(data.pins) ? data.pins : [],
-            groups: Array.isArray(data.groups) ? data.groups : []
+            layers: Array.isArray(data.layers) ? data.layers : []
         };
         // Broadcast update to everyone else in the map room
         socket.to(`map:${data.mapId}`).emit('map-remote-updated', safePayload);

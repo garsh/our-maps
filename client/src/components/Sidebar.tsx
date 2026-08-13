@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import SearchBar from './SearchBar';
 import { reverseGeocode } from '../utils/geocoding';
-import type { Pin, PinIcon, PinGroup } from '@shared/interfaces';
+import type { Pin, PinIcon, PinLayer } from '@shared/interfaces';
 import { 
   Bed, 
   Utensils, 
@@ -29,6 +29,7 @@ import {
   closestCorners,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -67,10 +68,10 @@ interface SidebarProps {
   mapId: string | null;
   mapName: string;
   onMapNameChange: (name: string) => void;
-  groups: PinGroup[];
-  onAddGroup: () => void;
-  onUpdateGroup: (id: string, updates: Partial<PinGroup>) => void;
-  onRemoveGroup: (id: string) => void;
+  layers: PinLayer[];
+  onAddLayer: () => void;
+  onUpdateLayer: (id: string, updates: Partial<PinLayer>) => void;
+  onRemoveLayer: (id: string) => void;
   pins: Pin[];
   onResultSelect: (lat: number, lng: number) => void;
   onAddPin: (lat: number, lng: number, label: string, address?: string) => void;
@@ -93,9 +94,9 @@ interface SidebarProps {
   selectedNavIds?: Set<string>;
   onToggleNavId?: (id: string) => void;
   onToggleNavIds?: (ids: string[], force?: boolean) => void;
-  hiddenGroupIds?: Set<string | null>;
-  onToggleGroupVisibility?: (id: string | null) => void;
-  expandedGroupIds?: Set<string | null>;
+  hiddenLayerIds?: Set<string | null>;
+  onToggleLayerVisibility?: (id: string | null) => void;
+  collapsedLayerIds?: Set<string | null>;
   onToggleExpand?: (id: string | null) => void;
   onHoverSearchResult?: (lat: number | null, lng: number | null) => void;
   isMobile?: boolean;
@@ -257,7 +258,7 @@ const SortablePin = ({
   isSelected,
   onToggleSelect,
   customColors,
-  allGroups,
+  allLayers,
   isAnySelectedDragging,
   isDragActive
 }: { 
@@ -275,7 +276,7 @@ const SortablePin = ({
   isSelected?: boolean,
   onToggleSelect?: (id: string) => void,
   customColors?: string[],
-  allGroups: PinGroup[],
+  allLayers: PinLayer[],
   isAnySelectedDragging: boolean,
   isDragActive: boolean
 }) => {
@@ -363,9 +364,9 @@ const SortablePin = ({
         marginBottom: '0px',
         scrollMarginTop: '24px',
         borderRadius: 'var(--radius-sm)',
-        background: (hoveredPinId === pin.id && !isDragActive) ? 'rgba(72, 61, 139, 0.05)' : (editingPinId === pin.id ? 'var(--bg-color)' : 'transparent'),
+        background: ((hoveredPinId === pin.id || targetPinId === pin.id) && !isDragActive) ? 'rgba(72, 61, 139, 0.05)' : (editingPinId === pin.id ? 'var(--bg-color)' : 'transparent'),
         border: editingPinId === pin.id ? '1px solid var(--primary-color)' : '1px solid transparent',
-        boxShadow: (hoveredPinId === pin.id && !isDragActive) ? '0 0 0 1px var(--primary-color)' : 'none',
+        boxShadow: ((hoveredPinId === pin.id || targetPinId === pin.id) && !isDragActive) ? '0 0 0 1px var(--primary-color)' : 'none',
         transition: 'all 0.1s ease',
         cursor: 'default'
       }}
@@ -379,13 +380,16 @@ const SortablePin = ({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
           {!readOnly && (
-            <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '0px', color: '#bbb', padding: '1px 1px', marginLeft: '-2px' }}>
+            <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '0px', color: '#bbb', padding: '1px 1px', marginLeft: '-2px', touchAction: 'none' }}>
               <GripVertical size={10} />
             </div>
           )}
           <div 
             style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', flex: 1, padding: '0px' }}
-            onClick={() => onPinClick(pin)}
+            onClick={() => {
+              if (editingPinId === pin.id) return;
+              onPinClick(pin);
+            }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <div 
@@ -521,13 +525,13 @@ const SortablePin = ({
           <div style={{ marginBottom: '5px' }}>
             <label style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Layer</label>
             <select 
-                value={pin.groupId || ''} 
-                onChange={(e) => onUpdatePin(pin.id, { groupId: e.target.value || undefined })}
+                value={pin.layerId || ''} 
+                onChange={(e) => onUpdatePin(pin.id, { layerId: e.target.value || undefined })}
                 className="input-field"
                 style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit', background: 'white' }}
             >
                 <option value="">Default Layer</option>
-                {allGroups.map(g => (
+                {allLayers.map(g => (
                     <option key={g.id} value={g.id}>{g.name}</option>
                 ))}
             </select>
@@ -616,11 +620,11 @@ const SortablePin = ({
   );
 };
 
-const SortableGroup = ({ 
-  group, 
-  groupPins,
-  onUpdateGroup,
-  onRemoveGroup,
+const SortableLayer = ({ 
+  layer, 
+  layerPins,
+  onUpdateLayer,
+  onRemoveLayer,
   onPinClick,
   onRemovePin,
   onUpdatePin,
@@ -635,19 +639,19 @@ const SortableGroup = ({
   selectedNavIds,
   onToggleNavId,
   onToggleNavIds,
-  allGroups,
+  allLayers,
   isHidden,
   onToggleVisibility,
   isExpanded,
   onToggleExpand,
   isAnySelectedDragging,
-  isGroupDragging,
+  isLayerDragging,
   isDragActive
 }: { 
-  group: PinGroup,
-  groupPins: Pin[],
-  onUpdateGroup: (id: string, updates: Partial<PinGroup>) => void,
-  onRemoveGroup: (id: string) => void,
+  layer: PinLayer,
+  layerPins: Pin[],
+  onUpdateLayer: (id: string, updates: Partial<PinLayer>) => void,
+  onRemoveLayer: (id: string) => void,
   onPinClick: (pin: Pin) => void,
   onRemovePin: (id: string) => void,
   onUpdatePin: (id: string, updates: Partial<Pin>) => void,
@@ -662,24 +666,24 @@ const SortableGroup = ({
   selectedNavIds?: Set<string>,
   onToggleNavId?: (id: string) => void,
   onToggleNavIds?: (ids: string[], force?: boolean) => void,
-  allGroups: PinGroup[],
+  allLayers: PinLayer[],
   isHidden: boolean,
   onToggleVisibility: () => void,
   isExpanded: boolean,
   onToggleExpand: () => void,
   isAnySelectedDragging: boolean,
-  isGroupDragging: boolean,
+  isLayerDragging: boolean,
   isDragActive: boolean
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
 
   useEffect(() => {
-    if (editingPinId && groupPins.some(p => p.id === editingPinId)) {
+    if (editingPinId && layerPins.some(p => p.id === editingPinId)) {
       if (!isExpanded) {
         onToggleExpand();
       }
     }
-  }, [editingPinId, groupPins, isExpanded, onToggleExpand]);
+  }, [editingPinId, layerPins, isExpanded, onToggleExpand]);
 
   const {
     attributes,
@@ -690,8 +694,8 @@ const SortableGroup = ({
     isDragging,
     isOver
   } = useSortable({ 
-    id: group.id,
-    data: { type: 'group', group },
+    id: layer.id,
+    data: { type: 'layer', layer },
     disabled: readOnly
   });
 
@@ -703,8 +707,8 @@ const SortableGroup = ({
     zIndex: isDragging ? 100 : 0
   };
 
-  const isAllSelected = groupPins.length > 0 && groupPins.every(p => selectedNavIds?.has(p.id));
-  const isSomeSelected = groupPins.some(p => selectedNavIds?.has(p.id));
+  const isAllSelected = layerPins.length > 0 && layerPins.every(p => selectedNavIds?.has(p.id));
+  const isSomeSelected = layerPins.some(p => selectedNavIds?.has(p.id));
 
   return (
     <div ref={setNodeRef} style={style}>
@@ -712,10 +716,10 @@ const SortableGroup = ({
         position: 'sticky',
         top: '4px',
         zIndex: 5,
-        background: (isOver && !isDragging && !isGroupDragging) ? 'rgba(72, 61, 139, 0.05)' : (isEditingName ? 'var(--bg-color)' : 'white'),
+        background: (isOver && !isDragging && !isLayerDragging) ? 'rgba(72, 61, 139, 0.05)' : (isEditingName ? 'var(--bg-color)' : 'white'),
         borderRadius: 'var(--radius-sm)',
-        border: (isOver && !isDragging && !isGroupDragging) ? '1px solid var(--primary-color)' : (isEditingName ? '1px solid var(--primary-color)' : '1px solid transparent'),
-        boxShadow: (isOver && !isDragging && !isGroupDragging) ? '0 0 0 1px var(--primary-color)' : 'var(--shadow-sm)',
+        border: (isOver && !isDragging && !isLayerDragging) ? '1px solid var(--primary-color)' : (isEditingName ? '1px solid var(--primary-color)' : '1px solid transparent'),
+        boxShadow: (isOver && !isDragging && !isLayerDragging) ? '0 0 0 1px var(--primary-color)' : 'var(--shadow-sm)',
         transition: 'all 0.1s ease'
       }}>
         <div style={{ 
@@ -723,10 +727,11 @@ const SortableGroup = ({
           alignItems: 'center', 
           padding: '0 0.15rem', 
           borderBottom: 'none',
+          minHeight: '20px',
           transition: 'all 0.1s ease'
         }}>
           {!readOnly && (
-            <div {...attributes} {...listeners} style={{ cursor: 'grab', color: '#bbb', padding: '1px 1px', marginLeft: '-2px', display: 'flex', alignItems: 'center' }}>
+            <div {...attributes} {...listeners} style={{ cursor: 'grab', color: '#bbb', padding: '1px 1px', marginLeft: '-2px', display: 'flex', alignItems: 'center', touchAction: 'none' }}>
               <GripVertical size={11} />
             </div>
           )}
@@ -735,14 +740,14 @@ const SortableGroup = ({
               {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
             </div>
             <span onDoubleClick={() => !readOnly && setIsEditingName(true)} style={{ fontWeight: '700', fontSize: '0.65rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {group.name} <span style={{ fontWeight: 'normal', color: '#aaa', fontSize: '0.55rem', marginLeft: '2px' }}>({groupPins.length})</span>
+              {layer.name} <span style={{ fontWeight: 'normal', color: '#aaa', fontSize: '0.55rem', marginLeft: '2px' }}>({layerPins.length})</span>
             </span>
           </div>
           <div style={{ display: 'flex', gap: '2px', marginLeft: '4px', alignItems: 'center' }}>
             <button 
               onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}
               style={{ background: 'transparent', border: 'none', color: isHidden ? '#ccc' : '#555', cursor: 'pointer', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
-              title={isHidden ? "Show group on map" : "Hide group on map"}
+              title={isHidden ? "Show layer on map" : "Hide layer on map"}
             >
               {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
             </button>
@@ -752,11 +757,11 @@ const SortableGroup = ({
               ref={el => { if (el) el.indeterminate = isSomeSelected && !isAllSelected; }}
               onChange={(e) => {
                 const checked = e.target.checked;
-                onToggleNavIds?.(groupPins.map(p => p.id), checked);
+                onToggleNavIds?.(layerPins.map(p => p.id), checked);
               }}
               style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
               onClick={(e) => e.stopPropagation()}
-              title="Select all in group for navigation"
+              title="Select all in layer for navigation"
             />
             {!readOnly && (
               <div style={{ display: 'flex', gap: '2px' }}>
@@ -765,16 +770,16 @@ const SortableGroup = ({
                   onClick={(e) => { 
                     e.stopPropagation(); 
                     let msg = 'Are you sure you want to delete this layer?';
-                    if (groupPins.length > 0) {
-                      msg += ` The ${groupPins.length} pin${groupPins.length === 1 ? '' : 's'} inside it will be moved to the default layer.`;
+                    if (layerPins.length > 0) {
+                      msg += ` The ${layerPins.length} pin${layerPins.length === 1 ? '' : 's'} inside it will be moved to the default layer.`;
                     }
                     if (window.confirm(msg)) {
-                      onRemoveGroup(group.id); 
+                      onRemoveLayer(layer.id); 
                     }
                   }}
                   style={{ background: 'transparent', border: 'none', color: 'var(--error-color)', cursor: 'pointer', padding: '0px 3px', display: 'flex', alignItems: 'center' }}
-                  className="delete-group-btn"
-                  title="Delete Group"
+                  className="delete-layer-btn"
+                  title="Delete Layer"
                 >
                   <Trash2 size={12} />
                 </button>
@@ -793,12 +798,12 @@ const SortableGroup = ({
         {isEditingName && !readOnly && (
           <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '0', borderTop: '1px solid var(--border-color)', fontSize: '0.7rem' }}>
             <div style={{ marginBottom: '5px' }}>
-              <label htmlFor={`label-${group.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>NAME</label>
+              <label htmlFor={`label-${layer.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>NAME</label>
               <input 
-                id={`label-${group.id}`}
+                id={`label-${layer.id}`}
                 type="text" 
-                value={group.name} 
-                onChange={(e) => onUpdateGroup(group.id, { name: e.target.value })}
+                value={layer.name} 
+                onChange={(e) => onUpdateLayer(layer.id, { name: e.target.value })}
                 className="input-field"
                 style={{ padding: '2px 4px', fontSize: '0.7rem' }}
               />
@@ -809,9 +814,9 @@ const SortableGroup = ({
       
       {isExpanded && (
         <div style={{ paddingLeft: '0.2rem', borderLeft: '1px solid var(--border-color)', marginTop: '0px', marginLeft: '0.4rem' }}>
-          <SortableContext items={groupPins.map(p => p.id)} strategy={verticalListSortingStrategy}>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, minHeight: '10px' }}>
-              {groupPins.map(pin => (
+          <SortableContext items={layerPins.map(p => p.id)} strategy={verticalListSortingStrategy}>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, paddingTop: '4px', minHeight: '10px' }}>
+              {layerPins.map(pin => (
                 <SortablePin 
                   key={pin.id} 
                   pin={pin} 
@@ -828,7 +833,7 @@ const SortableGroup = ({
                   isSelected={selectedNavIds?.has(pin.id)}
                   onToggleSelect={onToggleNavId}
                   customColors={customColors}
-                  allGroups={allGroups}
+                  allLayers={allLayers}
                   isAnySelectedDragging={isAnySelectedDragging}
                   isDragActive={isDragActive}
                 />
@@ -845,10 +850,10 @@ const Sidebar = ({
   mapId,
   mapName,
   onMapNameChange,
-  groups,
-  onAddGroup,
-  onUpdateGroup,
-  onRemoveGroup,
+  layers,
+  onAddLayer,
+  onUpdateLayer,
+  onRemoveLayer,
   pins,
   onResultSelect,
   onAddPin,
@@ -871,9 +876,9 @@ const Sidebar = ({
   selectedNavIds,
   onToggleNavId,
   onToggleNavIds,
-  hiddenGroupIds,
-  onToggleGroupVisibility,
-  expandedGroupIds,
+  hiddenLayerIds,
+  onToggleLayerVisibility,
+  collapsedLayerIds,
   onToggleExpand,
   onHoverSearchResult,
   isMobile
@@ -884,7 +889,7 @@ const Sidebar = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const readOnly = userRole === 'view';
   const [activePin, setActivePin] = useState<Pin | null>(null);
-  const [activeGroup, setActiveGroup] = useState<PinGroup | null>(null);
+  const [activeLayer, setActiveLayer] = useState<PinLayer | null>(null);
   // PWA Install State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
@@ -1040,7 +1045,7 @@ const Sidebar = ({
       id: '', 
       name: mapName, 
       pins, 
-      groups,
+      layers,
       ownerId: '' 
     }, exportFormat, exportFileName);
     setShowExportModal(false);
@@ -1071,18 +1076,24 @@ const Sidebar = ({
         distance: 5,
       },
     }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 5,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
 
-  const defaultPins = pins.filter(p => !p.groupId).sort((a, b) => a.position - b.position);
+  const defaultPins = pins.filter(p => !p.layerId).sort((a, b) => a.position - b.position);
 
   const getVisualOrder = (pin: Pin) => {
-    if (!pin.groupId) return { groupIndex: Number.MAX_SAFE_INTEGER, pinPosition: pin.position };
-    const groupIndex = groups.findIndex(g => g.id === pin.groupId);
+    if (!pin.layerId) return { layerIndex: Number.MAX_SAFE_INTEGER, pinPosition: pin.position };
+    const layerIndex = layers.findIndex(g => g.id === pin.layerId);
     return { 
-      groupIndex: groupIndex !== -1 ? groupIndex : Number.MAX_SAFE_INTEGER, 
+      layerIndex: layerIndex !== -1 ? layerIndex : Number.MAX_SAFE_INTEGER, 
       pinPosition: pin.position 
     };
   };
@@ -1091,8 +1102,8 @@ const Sidebar = ({
     .sort((a, b) => {
       const orderA = getVisualOrder(a);
       const orderB = getVisualOrder(b);
-      if (orderA.groupIndex !== orderB.groupIndex) {
-        return orderA.groupIndex - orderB.groupIndex;
+      if (orderA.layerIndex !== orderB.layerIndex) {
+        return orderA.layerIndex - orderB.layerIndex;
       }
       return orderA.pinPosition - orderB.pinPosition;
     });
@@ -1124,35 +1135,35 @@ const Sidebar = ({
     const { active } = event;
     if (active.data.current?.type === 'pin') {
       setActivePin(active.data.current.pin);
-    } else if (active.data.current?.type === 'group') {
-      setActiveGroup(active.data.current.group);
+    } else if (active.data.current?.type === 'layer') {
+      setActiveLayer(active.data.current.layer);
     }
   };
 
   const handleDragEndInternal = (event: DragEndEvent) => {
     setActivePin(null);
-    setActiveGroup(null);
+    setActiveLayer(null);
     onDragEnd(event);
   };
 
   const activePinId = activePin?.id;
   const isAnySelectedDragging = !!(activePinId && selectedNavIds?.has(activePinId));
-  const isDragActive = !!(activePinId || activeGroup);
+  const isDragActive = !!(activePinId || activeLayer);
 
   const customCollisionDetection = (args: any) => {
     const pointerCollisions = closestCorners(args);
-    if (args.active.data.current?.type === 'group' && pointerCollisions.length > 0) {
+    if (args.active.data.current?.type === 'layer' && pointerCollisions.length > 0) {
       const firstCollision = pointerCollisions[0];
       const container = args.droppableContainers.find((c: any) => c.id === firstCollision.id);
       
       if (container?.data.current?.type === 'pin') {
-        const pinGroupId = container.data.current.pin.groupId;
-        if (pinGroupId) {
-          const groupContainer = args.droppableContainers.find((c: any) => c.id === pinGroupId);
-          if (groupContainer) {
+        const pinLayerId = container.data.current.pin.layerId;
+        if (pinLayerId) {
+          const layerContainer = args.droppableContainers.find((c: any) => c.id === pinLayerId);
+          if (layerContainer) {
             return [{
-              id: pinGroupId,
-              data: { droppableContainer: groupContainer }
+              id: pinLayerId,
+              data: { droppableContainer: layerContainer }
             }];
           }
         }
@@ -1264,7 +1275,7 @@ const Sidebar = ({
                             <div 
                               style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
                               onClick={() => {
-                                selectedPins.forEach(p => onUpdatePin(p.id, { groupId: undefined }));
+                                selectedPins.forEach(p => onUpdatePin(p.id, { layerId: undefined }));
                                 setIsMenuOpen(false);
                               }}
                               onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
@@ -1272,18 +1283,18 @@ const Sidebar = ({
                             >
                               Default Layer
                             </div>
-                            {groups.map(group => (
+                            {layers.map(layer => (
                               <div 
-                                key={group.id}
+                                key={layer.id}
                                 style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
                                 onClick={() => {
-                                  selectedPins.forEach(p => onUpdatePin(p.id, { groupId: group.id }));
+                                  selectedPins.forEach(p => onUpdatePin(p.id, { layerId: layer.id }));
                                   setIsMenuOpen(false);
                                 }}
                                 onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                               >
-                                {group.name}
+                                {layer.name}
                               </div>
                             ))}
                           </>
@@ -1292,7 +1303,7 @@ const Sidebar = ({
                           <div 
                             style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
                             onClick={() => {
-                              onAddGroup();
+                              onAddLayer();
                               setIsMenuOpen(false);
                             }}
                             onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
@@ -1337,14 +1348,14 @@ const Sidebar = ({
             margin: '0 -4px'
           }}>
           <div style={{ position: 'sticky', top: 0, height: '4px', background: 'white', zIndex: 4, margin: '0 -4px' }} />
-          <SortableContext items={groups.map(g => g.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
-            {groups.map(group => (
-              <SortableGroup 
-                key={group.id} 
-                group={group} 
-                groupPins={pins.filter(p => p.groupId === group.id).sort((a, b) => a.position - b.position)}
-                onUpdateGroup={onUpdateGroup}
-                onRemoveGroup={onRemoveGroup}
+          <SortableContext items={layers.map(layer => layer.id)} strategy={verticalListSortingStrategy}>
+            {layers.map((layer) => (
+              <SortableLayer
+                key={layer.id}
+                layer={layer}
+                layerPins={pins.filter(p => p.layerId === layer.id).sort((a, b) => a.position - b.position)}
+                onUpdateLayer={onUpdateLayer}
+                onRemoveLayer={onRemoveLayer}
                 onPinClick={onPinClick}
                 onRemovePin={onRemovePin}
                 onUpdatePin={onUpdatePin}
@@ -1359,19 +1370,18 @@ const Sidebar = ({
                 selectedNavIds={selectedNavIds}
                 onToggleNavId={onToggleNavId}
                 onToggleNavIds={onToggleNavIds}
-                allGroups={groups}
-                isHidden={!!hiddenGroupIds?.has(group.id)}
-                onToggleVisibility={() => onToggleGroupVisibility?.(group.id)}
-                isExpanded={!!expandedGroupIds?.has(group.id)}
-                onToggleExpand={() => onToggleExpand?.(group.id)}
+                allLayers={layers}
+                isHidden={hiddenLayerIds?.has(layer.id) || false}
+                onToggleVisibility={() => onToggleLayerVisibility?.(layer.id)}
+                isExpanded={!collapsedLayerIds?.has(layer.id)}
+                onToggleExpand={() => onToggleExpand?.(layer.id)}
                 isAnySelectedDragging={isAnySelectedDragging}
-                isGroupDragging={!!activeGroup}
+                isLayerDragging={!!activeLayer}
                 isDragActive={isDragActive}
               />
             ))}
           </SortableContext>
-
-          <div style={{ marginTop: groups.length > 0 ? '0.6rem' : '0' }}>
+          <div style={{ marginTop: layers.length > 0 ? '0.3rem' : '0' }}>
             <div 
               id="default"
               style={{ 
@@ -1379,33 +1389,36 @@ const Sidebar = ({
                 top: '4px', 
                 zIndex: 5, 
                 background: 'white',
-                borderTop: '1px solid transparent',
-                borderLeft: '1px solid transparent',
-                borderRight: '1px solid transparent',
-                borderBottom: 'none',
                 borderRadius: 'var(--radius-sm)',
+                border: '1px solid transparent',
                 boxShadow: 'var(--shadow-sm)',
-                padding: '0 0.15rem',
-                marginBottom: '0.2rem',
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'space-between'
+                transition: 'all 0.1s ease'
               }}>
-              <div onClick={() => onToggleExpand?.(null)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
-                <div style={{ color: 'var(--primary-color)', marginRight: '1px', display: 'flex' }}>
-                    {expandedGroupIds?.has(null) ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-                </div>
-                <h4 style={{ fontSize: '0.55rem', color: '#aaa', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '0.1em', margin: 0 }}>
-                    Default Layer
-                </h4>
-              </div>
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  padding: '0 0.15rem', 
+                  borderBottom: 'none',
+                  minHeight: '20px',
+                  transition: 'all 0.1s ease'
+                }}>
+                  {/* Empty placeholder to exactly match GripVertical width and padding from regular layers */}
+                  <div style={{ padding: '1px 1px', marginLeft: '-2px', display: 'flex', alignItems: 'center', width: '13px', height: '13px' }}></div>
+                  <div onClick={() => onToggleExpand?.(null)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
+                    <div style={{ color: 'var(--primary-color)', marginRight: '1px', display: 'flex' }}>
+                        {collapsedLayerIds?.has(null) ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+                    </div>
+                    <span style={{ fontWeight: '700', fontSize: '0.65rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        Default Layer <span style={{ fontWeight: 'normal', color: '#aaa', fontSize: '0.55rem', marginLeft: '2px' }}>({defaultPins.length})</span>
+                    </span>
+                  </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '4px' }}>
                 <button 
-                  onClick={(e) => { e.stopPropagation(); onToggleGroupVisibility?.(null); }}
-                  style={{ background: 'transparent', border: 'none', color: hiddenGroupIds?.has(null) ? '#bbb' : 'var(--primary-color)', cursor: 'pointer', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
-                  title={hiddenGroupIds?.has(null) ? "Show group" : "Hide group"}
+                  onClick={(e) => { e.stopPropagation(); onToggleLayerVisibility?.(null); }}
+                  style={{ background: 'transparent', border: 'none', color: hiddenLayerIds?.has(null) ? '#bbb' : 'var(--primary-color)', cursor: 'pointer', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
+                  title={hiddenLayerIds?.has(null) ? "Show layer" : "Hide layer"}
                 >
-                  {hiddenGroupIds?.has(null) ? <EyeOff size={11} /> : <Eye size={11} />}
+                  {hiddenLayerIds?.has(null) ? <EyeOff size={11} /> : <Eye size={11} />}
                 </button>
                 {defaultPins.length > 0 ? (
                   <input 
@@ -1427,10 +1440,11 @@ const Sidebar = ({
                 )}
               </div>
             </div>
-            {expandedGroupIds?.has(null) && (
+          </div>
+            {!collapsedLayerIds?.has(null) && (
               <div style={{ paddingLeft: '0.2rem', borderLeft: '1px solid var(--border-color)', marginTop: '0px', marginLeft: '0.4rem' }}>
                 <SortableContext items={defaultPins.map(p => p.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, minHeight: '10px' }}>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, paddingTop: '2px', minHeight: '10px' }}>
                     {defaultPins.map((pin) => (
                       <SortablePin 
                         key={pin.id} 
@@ -1448,12 +1462,12 @@ const Sidebar = ({
                         onAddCustomColor={onAddCustomColor}
                         isSelected={selectedNavIds?.has(pin.id)}
                         onToggleSelect={onToggleNavId}
-                        allGroups={groups}
+                        allLayers={layers}
                         isAnySelectedDragging={isAnySelectedDragging}
                         isDragActive={isDragActive}
                       />
                     ))}
-                    {defaultPins.length === 0 && groups.length === 0 && (
+                    {defaultPins.length === 0 && layers.length === 0 && (
                       <li style={{ padding: '1rem 0.5rem', color: '#bbb', textAlign: 'center', fontSize: '0.65rem' }}>
                         <div style={{ background: 'var(--bg-color)', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.5rem auto' }}>
                           <MapPin size={16} />
@@ -1557,7 +1571,7 @@ const Sidebar = ({
         {createPortal(
           <DragOverlay 
             modifiers={[restrictToVerticalAxis, restrictToWindowEdges]}
-            style={{ pointerEvents: 'none' }}
+            style={{ pointerEvents: 'none', zIndex: 3000 }}
             dropAnimation={{
             sideEffects: defaultDropAnimationSideEffects({
                 styles: {
@@ -1569,7 +1583,7 @@ const Sidebar = ({
           }}>
             <div>
             {activePin ? (
-              <div style={{ width: '200px', position: 'relative' }}>
+              <div style={{ width: '200px', position: 'relative', transform: isMobile ? 'scale(1.5)' : 'none', transformOrigin: 'top left' }}>
                 {/* Bundle visual: a stack of items if multiple are selected */}
                 {isAnySelectedDragging && selectedNavIds && selectedNavIds.size > 1 ? (
                     <>
@@ -1606,9 +1620,9 @@ const Sidebar = ({
                     <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
                 )}
               </div>
-            ) : activeGroup ? (
-              <div style={{ width: '240px', background: 'white', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.9, boxShadow: 'var(--shadow-md)', marginLeft: '12px' }}>
-                <div style={{ fontWeight: '700', fontSize: '0.65rem' }}>{activeGroup.name}</div>
+            ) : activeLayer ? (
+              <div style={{ width: '240px', background: 'white', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.9, boxShadow: 'var(--shadow-md)', marginLeft: '12px', transform: isMobile ? 'scale(1.5)' : 'none', transformOrigin: 'top left' }}>
+                <div style={{ fontWeight: '700', fontSize: '0.65rem' }}>{activeLayer.name}</div>
               </div>
             ) : null}
             </div>
