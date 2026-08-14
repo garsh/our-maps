@@ -122,9 +122,24 @@ describe('Sidebar', () => {
 
   it('shows Remove Download option in the menu when map is downloaded', async () => {
     const tileUtilsModule = await import('../../utils/tileUtils');
-    vi.spyOn(tileUtilsModule, 'isMapDownloaded').mockResolvedValue(true);
+    vi.spyOn(tileUtilsModule, 'getManifestStats').mockResolvedValue({ total: 10, completed: 10 });
 
-    const { rerender } = render(<TestWrapper handlers={{ mapId: 'test-map-1' }} />);
+    render(<TestWrapper handlers={{ mapId: 'test-map-1' }} />);
+    
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+    
+    expect(await screen.findByText(/Remove Download/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Download for Offline/i)).not.toBeInTheDocument();
+    
+    vi.restoreAllMocks();
+  });
+
+  it('shows Remove Download option when map is partially downloaded', async () => {
+    const tileUtilsModule = await import('../../utils/tileUtils');
+    vi.spyOn(tileUtilsModule, 'getManifestStats').mockResolvedValue({ total: 10, completed: 4 });
+
+    render(<TestWrapper handlers={{ mapId: 'test-map-1' }} />);
     
     const moreBtn = screen.getByLabelText(/more options/i);
     fireEvent.click(moreBtn);

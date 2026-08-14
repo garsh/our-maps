@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/api';
-import { Map, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download } from 'lucide-react';
-import { getDownloadedMapIds } from '../utils/tileUtils';
+import { Map as MapIcon, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download } from 'lucide-react';
+import { getMapDownloadStatuses, type MapDownloadStatus } from '../utils/tileUtils';
 
 interface MapSummary {
   id: string;
@@ -18,25 +18,25 @@ export default function LandingPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [maps, setMaps] = useState<MapSummary[]>([]);
-  const [downloadedMapIds, setDownloadedMapIds] = useState<Set<string>>(new Set());
+  const [downloadStatuses, setDownloadStatuses] = useState<Map<string, MapDownloadStatus>>(new Map());
   const [loading, setLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [showSignOutDialog, setShowSignOutDialog] = useState(false);
 
-  const fetchDownloadedMapIds = async () => {
+  const fetchDownloadedMapStatuses = async () => {
     try {
-      const ids = await getDownloadedMapIds();
-      setDownloadedMapIds(new Set(ids));
+      const statusMap = await getMapDownloadStatuses();
+      setDownloadStatuses(statusMap);
     } catch (err) {
-      console.error('Failed to load downloaded map IDs', err);
+      console.error('Failed to load downloaded map statuses', err);
     }
   };
 
   const fetchMaps = async () => {
     setLoading(true);
-    fetchDownloadedMapIds();
+    fetchDownloadedMapStatuses();
     try {
       const data = await apiService.getMaps();
       setMaps(data);
@@ -137,7 +137,7 @@ export default function LandingPage() {
         marginBottom: '1rem'
       }}>
         <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: 0, fontSize: '1.5rem', fontWeight: 'bold', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}>
-          <Map size={28} /> OurMaps
+          <MapIcon size={28} /> OurMaps
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
           {isOffline && (
@@ -168,7 +168,7 @@ export default function LandingPage() {
                 style={{ paddingLeft: '40px' }}
               />
               <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#aaa' }}>
-                <Map size={18} />
+                <MapIcon size={18} />
               </div>
             </div>
             {!isOffline && (
@@ -200,7 +200,7 @@ export default function LandingPage() {
         ) : maps.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '6rem 2rem', background: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)' }}>
             <div style={{ background: 'var(--bg-color)', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
-              <Map size={40} color="var(--primary-color)" />
+              <MapIcon size={40} color="var(--primary-color)" />
             </div>
             <h3 style={{ color: 'var(--text-primary)', fontSize: '1.5rem', marginBottom: '0.5rem' }}>No maps yet</h3>
             <p style={{ color: 'var(--text-secondary)', marginBottom: '2.5rem', maxWidth: '400px', margin: '0 auto 2.5rem auto' }}>Start creating your personal map collections or import KML files to get started!</p>
@@ -261,11 +261,25 @@ export default function LandingPage() {
                       <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: map.ownerId === user?.id ? 'var(--primary-color)' : 'var(--success-color)' }}></div>
                       {map.ownerId === user?.id ? 'Owner' : `Shared by ${map.ownerName}`}
                     </div>
-                    {downloadedMapIds.has(map.id) && (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: '#27ae60', background: 'rgba(39, 174, 96, 0.12)', padding: '2px 8px', borderRadius: '12px', fontWeight: '700' }}>
-                        <Download size={12} /> Downloaded
-                      </span>
-                    )}
+                    {(() => {
+                      const status = downloadStatuses.get(map.id);
+                      if (!status) return null;
+                      if (status.isComplete) {
+                        return (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: '#27ae60', background: 'rgba(39, 174, 96, 0.12)', padding: '2px 8px', borderRadius: '12px', fontWeight: '700' }}>
+                            <Download size={12} /> Downloaded
+                          </span>
+                        );
+                      }
+                      if (status.isPartial) {
+                        return (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: '#3b82f6', background: 'rgba(59, 130, 246, 0.12)', padding: '2px 8px', borderRadius: '12px', fontWeight: '700' }}>
+                            <Download size={12} className="animated-download-icon" /> Downloading
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                 </div>
 

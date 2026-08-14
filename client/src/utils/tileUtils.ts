@@ -88,20 +88,88 @@ export async function getPendingFromManifest(mapId: string): Promise<ManifestEnt
 }
 
 export async function getManifestStats(mapId: string): Promise<{ total: number, completed: number }> {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction(MANIFEST_STORE, 'readonly');
-        const store = transaction.objectStore(MANIFEST_STORE);
-        const index = store.index('mapId');
-        const request = index.getAll(IDBKeyRange.only(mapId));
+    if (!mapId || typeof indexedDB === 'undefined') return { total: 0, completed: 0 };
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(MANIFEST_STORE, 'readonly');
+            const store = transaction.objectStore(MANIFEST_STORE);
+            const index = store.index('mapId');
+            const request = index.getAll(IDBKeyRange.only(mapId));
 
-        request.onsuccess = () => {
-            const all = request.result as ManifestEntry[];
-            const completed = all.filter(e => e.status === 'completed').length;
-            resolve({ total: all.length, completed });
-        };
-        request.onerror = () => reject(request.error);
-    });
+            request.onsuccess = () => {
+                const all = request.result as ManifestEntry[];
+                const completed = all.filter(e => e.status === 'completed').length;
+                resolve({ total: all.length, completed });
+            };
+            request.onerror = () => reject(request.error);
+        });
+    } catch {
+        return { total: 0, completed: 0 };
+    }
+}
+
+export async function getManifestEntries(mapId: string): Promise<ManifestEntry[]> {
+    if (!mapId || typeof indexedDB === 'undefined') return [];
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(MANIFEST_STORE, 'readonly');
+            const store = transaction.objectStore(MANIFEST_STORE);
+            const index = store.index('mapId');
+            const request = index.getAll(IDBKeyRange.only(mapId));
+
+            request.onsuccess = () => resolve(request.result as ManifestEntry[]);
+            request.onerror = () => reject(request.error);
+        });
+    } catch {
+        return [];
+    }
+}
+
+export interface MapDownloadStatus {
+    isComplete: boolean;
+    isPartial: boolean;
+}
+
+export async function getMapDownloadStatuses(): Promise<Map<string, MapDownloadStatus>> {
+    if (typeof indexedDB === 'undefined') return new Map();
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(MANIFEST_STORE, 'readonly');
+            const store = transaction.objectStore(MANIFEST_STORE);
+            const request = store.getAll();
+
+            request.onsuccess = () => {
+                const all = request.result as ManifestEntry[];
+                const mapStats = new Map<string, { total: number; completed: number }>();
+                all.forEach(entry => {
+                    if (!entry.mapId) return;
+                    const current = mapStats.get(entry.mapId) || { total: 0, completed: 0 };
+                    current.total++;
+                    if (entry.status === 'completed') {
+                        current.completed++;
+                    }
+                    mapStats.set(entry.mapId, current);
+                });
+
+                const resultMap = new Map<string, MapDownloadStatus>();
+                mapStats.forEach((stats, mapId) => {
+                    if (stats.total > 0) {
+                        resultMap.set(mapId, {
+                            isComplete: stats.completed === stats.total,
+                            isPartial: stats.completed < stats.total
+                        });
+                    }
+                });
+                resolve(resultMap);
+            };
+            request.onerror = () => reject(request.error);
+        });
+    } catch {
+        return new Map();
+    }
 }
 
 export async function isMapDownloaded(mapId: string): Promise<boolean> {

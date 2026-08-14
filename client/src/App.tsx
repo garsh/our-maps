@@ -593,6 +593,7 @@ export function MapEditor() {
       </div>
       
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
+        <div id="download-pill-container" style={{ display: 'flex', alignItems: 'center' }}></div>
         {userRole !== 'view' && (
           <button 
             onClick={() => {
