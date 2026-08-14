@@ -110,14 +110,29 @@ describe('Sidebar', () => {
     expect(onPinClick).toHaveBeenCalled();
   });
 
-  it('shows the Download for Offline option in the menu', () => {
+  it('shows the Download for Offline option in the menu when map is not downloaded', async () => {
     render(<TestWrapper />);
     
     // Open the more menu
     const moreBtn = screen.getByLabelText(/more options/i);
     fireEvent.click(moreBtn);
     
-    expect(screen.getByText(/Download for Offline/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Download for Offline/i)).toBeInTheDocument();
+  });
+
+  it('shows Remove Download option in the menu when map is downloaded', async () => {
+    const tileUtilsModule = await import('../../utils/tileUtils');
+    vi.spyOn(tileUtilsModule, 'isMapDownloaded').mockResolvedValue(true);
+
+    const { rerender } = render(<TestWrapper handlers={{ mapId: 'test-map-1' }} />);
+    
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+    
+    expect(await screen.findByText(/Remove Download/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Download for Offline/i)).not.toBeInTheDocument();
+    
+    vi.restoreAllMocks();
   });
 
   it('generates correct navigation URL with first pin as origin', () => {
