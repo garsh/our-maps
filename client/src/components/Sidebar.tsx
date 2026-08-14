@@ -53,6 +53,8 @@ import {
   getTilesForArea, 
   getSurgicalBoxes,
   getPinsBoundingBox,
+  isMapDownloaded,
+  removeMapDownload,
   type BoundingBox 
 } from '../utils/tileUtils';
 import { canFit } from '../utils/storageUtils';
@@ -331,12 +333,12 @@ const SortablePin = ({
             const stickyHeaderHeight = 24;
             
             if (rect.top < containerRect.top + stickyHeaderHeight || el.offsetHeight >= container.clientHeight - stickyHeaderHeight) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                el.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
             } else if (rect.bottom > containerRect.bottom) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                el.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
             }
           } else {
-            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            el.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
           }
         }
       }, 150); // wait for expand transition
@@ -937,6 +939,7 @@ const Sidebar = ({
   const [downloadSummary, setDownloadSummary] = useState<DownloadSummary | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isDownloaded, setIsDownloaded] = useState(false);
 
   // Export Modal State
   const [showExportModal, setShowExportModal] = useState(false);
@@ -946,6 +949,16 @@ const Sidebar = ({
   useEffect(() => {
     setLocalMapName(mapName);
   }, [mapName]);
+
+  useEffect(() => {
+    if (mapId) {
+      isMapDownloaded(mapId)
+        .then(setIsDownloaded)
+        .catch(err => console.error('Failed to check download state', err));
+    } else {
+      setIsDownloaded(false);
+    }
+  }, [mapId]);
 
   const handleDownloadClick = async () => {
     let bbox: BoundingBox | null = getPinsBoundingBox(pins);
@@ -988,6 +1001,19 @@ const Sidebar = ({
     setIsMenuOpen(false);
   };
 
+  const handleRemoveDownload = async () => {
+    if (!mapId) return;
+    try {
+      await removeMapDownload(mapId);
+      setIsDownloaded(false);
+      setIsMenuOpen(false);
+      alert('Downloaded map data removed.');
+    } catch (error) {
+      console.error("Failed to remove download:", error);
+      alert("Failed to remove download.");
+    }
+  };
+
   const startDownload = async () => {
     if (!downloadSummary || !mapId) return;
     
@@ -1021,6 +1047,7 @@ const Sidebar = ({
                 setDownloadProgress(progress);
             } else if (type === 'complete') {
                 setIsDownloading(false);
+                setIsDownloaded(true);
                 setDownloadProgress(null);
                 alert(`Map tiles downloaded successfully! ${uniqueTiles.length.toLocaleString()} tiles are now available offline.`);
                 worker.terminate();
@@ -1281,14 +1308,25 @@ const Sidebar = ({
                             Install App
                           </div>
                         )}
-                        <div 
-                          style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isDownloading ? '#999' : 'inherit' }}
-                          onClick={isDownloading ? undefined : handleDownloadClick}
-                          onMouseEnter={(e) => !isDownloading && (e.currentTarget.style.background = 'var(--bg-color)')}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          Download for Offline
-                        </div>
+                        {isDownloaded ? (
+                          <div 
+                            style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                            onClick={handleRemoveDownload}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                          >
+                            Remove Download
+                          </div>
+                        ) : (
+                          <div 
+                            style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isDownloading ? '#999' : 'inherit' }}
+                            onClick={isDownloading ? undefined : handleDownloadClick}
+                            onMouseEnter={(e) => !isDownloading && (e.currentTarget.style.background = 'var(--bg-color)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                          >
+                            Download for Offline
+                          </div>
+                        )}
                         {selectedPins.length > 0 && !readOnly && (
                           <>
                             <div style={{ padding: '8px 16px', fontSize: '0.65rem', fontWeight: '800', color: '#999', background: '#fcfcfc', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)' }}>MOVE SELECTED TO...</div>

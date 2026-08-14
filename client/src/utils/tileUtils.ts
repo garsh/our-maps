@@ -35,6 +35,9 @@ const TILE_STORE = 'tiles';
 const DB_VERSION = 1;
 
 async function openDB(): Promise<IDBDatabase> {
+    if (typeof indexedDB === 'undefined') {
+        return Promise.reject(new Error('IndexedDB is not supported in this environment'));
+    }
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
         request.onupgradeneeded = () => {
@@ -100,6 +103,67 @@ export async function getManifestStats(mapId: string): Promise<{ total: number, 
         request.onerror = () => reject(request.error);
     });
 }
+
+export async function isMapDownloaded(mapId: string): Promise<boolean> {
+    if (!mapId || typeof indexedDB === 'undefined') return false;
+    try {
+        const { total, completed } = await getManifestStats(mapId);
+        return total > 0 && completed > 0;
+    } catch {
+        return false;
+    }
+}
+
+export async function getDownloadedMapIds(): Promise<string[]> {
+    if (typeof indexedDB === 'undefined') return [];
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(MANIFEST_STORE, 'readonly');
+            const store = transaction.objectStore(MANIFEST_STORE);
+            const request = store.getAll();
+
+            request.onsuccess = () => {
+                const all = request.result as ManifestEntry[];
+                const downloadedSet = new Set<string>();
+                all.forEach(entry => {
+                    if (entry.status === 'completed' && entry.mapId) {
+                        downloadedSet.add(entry.mapId);
+                    }
+                });
+                resolve(Array.from(downloadedSet));
+            };
+            request.onerror = () => reject(request.error);
+        });
+    } catch {
+        return [];
+    }
+}
+
+export async function removeMapDownload(mapId: string): Promise<void> {
+    if (!mapId) return;
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([MANIFEST_STORE, TILE_STORE], 'readwrite');
+        const manifestStore = transaction.objectStore(MANIFEST_STORE);
+        const tileStore = transaction.objectStore(TILE_STORE);
+
+        const index = manifestStore.index('mapId');
+        const request = index.getAll(IDBKeyRange.only(mapId));
+
+        request.onsuccess = () => {
+            const entries = request.result as ManifestEntry[];
+            entries.forEach(entry => {
+                tileStore.delete(entry.url);
+                manifestStore.delete(entry.url);
+            });
+        };
+
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+    });
+}
+
 
 export async function saveTile(url: string, blob: Blob): Promise<void> {
     const db = await openDB();
