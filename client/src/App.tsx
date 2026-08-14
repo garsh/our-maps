@@ -48,8 +48,23 @@ export function MapEditor() {
 
   // Mobile layout states
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  // Dynamic mobile scale: calibrated so DPR ~2.75 (e.g. Pixel 10a) gives scale 1.5.
+  // Higher-DPR devices (e.g. Pixel 10 Pro) automatically get a larger scale so the
+  // UI stays a comfortable physical size regardless of screen resolution.
+  const computeMobileScale = () => {
+    const dpr = window.devicePixelRatio || 1;
+    const BASELINE_DPR = 2.75; // DPR at which 1.5× feels right
+    const BASELINE_SCALE = 1.5;
+    return Math.max(1.0, Math.min(2.5, (dpr / BASELINE_DPR) * BASELINE_SCALE));
+  };
+  const [mobileScale, setMobileScale] = useState(computeMobileScale);
+
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+      setMobileScale(computeMobileScale());
+    };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -658,10 +673,10 @@ export function MapEditor() {
         {!isMobile && appHeader}
 
         <div style={isMobile ? { 
-          transform: 'scale(1.5)', 
+          transform: `scale(${mobileScale})`, 
           transformOrigin: 'top left', 
-          width: '66.6666%', 
-          height: `66.6666%`,
+          width: `${(1 / mobileScale) * 100}%`, 
+          height: `${(1 / mobileScale) * 100}%`,
           flex: 'none',
           display: 'flex',
           flexDirection: 'column'
