@@ -315,7 +315,7 @@ export function getTilesForArea(box: BoundingBox, minZoom: number, maxZoom: numb
             for (let y = yStart; y <= yEnd; y++) {
                 tiles.push({
                     x, y, z,
-                    url: `https://tiles.stadiamaps.com/tiles/alidade_bright/${z}/${x}/${y}.png?api_key=${import.meta.env.VITE_STADIA_API_KEY}`
+                    url: `https://tiles.stadiamaps.com/tiles/osm_bright/${z}/${x}/${y}.png?api_key=${import.meta.env.VITE_STADIA_API_KEY}`
                 });
             }
         }
