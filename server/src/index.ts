@@ -1,9 +1,13 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+// Load server/.env first; fall back to the root-level .env (used in dev)
+dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), override: false });
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import path from 'path';
+
 import fs from 'fs';
 import http from 'http';
 import { Server, Socket } from 'socket.io';

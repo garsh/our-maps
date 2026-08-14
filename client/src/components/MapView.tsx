@@ -59,9 +59,10 @@ const MapEvents = ({ onMapClick, onBoundsChange, onBackgroundClick, bottomPaddin
   return null;
 };
 
-const MapController = ({ targetLocation, boundsToFit, bottomPadding = 0 }: { targetLocation?: [number, number] | null, boundsToFit?: L.LatLngBounds | null, bottomPadding?: number }) => {
+const MapController = ({ targetLocation, boundsToFit, targetPinId, pins, bottomPadding = 0 }: { targetLocation?: [number, number] | null, boundsToFit?: L.LatLngBounds | null, targetPinId?: string | null, pins?: Pin[], bottomPadding?: number }) => {
   const map = useMap();
   const lastTarget = useRef<[number, number] | null>(null);
+  const lastTargetPinId = useRef<string | null>(null);
   
   useEffect(() => {
     if (targetLocation && (targetLocation[0] !== lastTarget.current?.[0] || targetLocation[1] !== lastTarget.current?.[1])) {
@@ -69,6 +70,17 @@ const MapController = ({ targetLocation, boundsToFit, bottomPadding = 0 }: { tar
       lastTarget.current = targetLocation;
     }
   }, [targetLocation, map]);
+
+  useEffect(() => {
+    if (!targetPinId || targetPinId === lastTargetPinId.current) return;
+    lastTargetPinId.current = targetPinId;
+    const pin = pins?.find(p => p.id === targetPinId);
+    if (!pin) return;
+    const bounds = map.getBounds();
+    if (!bounds.contains([pin.lat, pin.lng])) {
+      map.flyTo([pin.lat, pin.lng], map.getZoom(), { duration: 1.2 });
+    }
+  }, [targetPinId, pins, map]);
 
   useEffect(() => {
     if (boundsToFit && boundsToFit.isValid()) {
@@ -210,7 +222,7 @@ const MapView = ({
           noWrap={true}
         />
         <MapEvents onMapClick={onMapClick} onBoundsChange={onBoundsChange} onBackgroundClick={onBackgroundClick} bottomPadding={bottomPadding} />
-        <MapController targetLocation={targetLocation} boundsToFit={boundsToFit} bottomPadding={bottomPadding} />
+        <MapController targetLocation={targetLocation} boundsToFit={boundsToFit} targetPinId={targetPinId} pins={pins} bottomPadding={bottomPadding} />
         <UserLocationMarker />
         {visiblePins.map((pin) => (
           <PinMarker 
