@@ -14,6 +14,7 @@ import type { DragEndEvent } from '@dnd-kit/core'
 import { Loader2, Map as MapIcon, LogOut } from 'lucide-react';
 import L from 'leaflet';
 import { reorderPins, reorderLayers } from './utils/reorderUtils';
+import { generateId } from './utils/fileUtils';
 import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
@@ -266,7 +267,7 @@ export function MapEditor() {
             name: mapName
         });
       } else {
-        const newId = crypto.randomUUID();
+        const newId = generateId();
         hasLoadedRef.current = true;
         await apiService.createMap({ 
           id: newId, 
@@ -352,7 +353,7 @@ export function MapEditor() {
 
   const handleMapClick = useCallback(async (lat: number, lng: number) => {
     if (userRole === 'view') return;
-    const id = crypto.randomUUID();
+    const id = generateId();
     const newPin: Pin = {
       id,
       lat,
@@ -372,7 +373,7 @@ export function MapEditor() {
 
   const addPinAtLocation = async (lat: number, lng: number, label: string, address?: string) => {
     if (userRole === 'view') return;
-    const id = crypto.randomUUID();
+    const id = generateId();
     const newPin: Pin = {
       id,
       lat,
@@ -406,7 +407,7 @@ export function MapEditor() {
   const addLayer = () => {
     if (userRole === 'view') return;
     const newGroup: PinLayer = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       name: `Layer ${layers.length + 1}`,
       position: layers.length
     };

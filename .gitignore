@@ -101,3 +101,4 @@ android-native/.kotlin/*
 
 # database
 server/database.sqlite
+server/dist/
