@@ -218,7 +218,7 @@ const MapView = ({
       >
         <TileLayer
           attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>, &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors'
-          url={`https://tiles.stadiamaps.com/tiles/alidade_bright/{z}/{x}/{y}{r}.png?api_key=${import.meta.env.VITE_STADIA_API_KEY}`}
+          url={`https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}{r}.png?api_key=${import.meta.env.VITE_STADIA_API_KEY}`}
           noWrap={true}
         />
         <MapEvents onMapClick={onMapClick} onBoundsChange={onBoundsChange} onBackgroundClick={onBackgroundClick} bottomPadding={bottomPadding} />
