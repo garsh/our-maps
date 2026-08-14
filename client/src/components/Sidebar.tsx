@@ -75,6 +75,7 @@ interface SidebarProps {
   pins: Pin[];
   onResultSelect: (lat: number, lng: number) => void;
   onAddPin: (lat: number, lng: number, label: string, address?: string) => void;
+  onSelectPin?: (pinId: string) => void;
   onRemovePin: (id: string) => void;
   onPinClick: (pin: Pin) => void;
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
@@ -346,10 +347,10 @@ const SortablePin = ({
     transform: transform ? CSS.Transform.toString(transform) : undefined,
     transition,
     zIndex: isDragging ? 10 : undefined,
-    opacity: isDragging ? 0 : 1, // Invisible ghost for the active item
+    opacity: isDragging ? 0 : (isItemInDraggingBundle ? 0 : 1),
     position: 'relative' as const,
     pointerEvents: (isDragging || isItemInDraggingBundle) ? 'none' as const : undefined,
-    display: (isItemInDraggingBundle && !isDragging) ? 'none' : 'block', // Remove non-active bundle items from layout
+    // Keep in layout flow (no display:none) to avoid layout shifts that misalign the DragOverlay
   };
 
   const currentColor = COLORS.find(c => c.name === pin.color)?.value || pin.color || '#2A81CB';
@@ -799,17 +800,35 @@ const SortableLayer = ({
           <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '0', borderTop: '1px solid var(--border-color)', fontSize: '0.7rem' }}>
             <div style={{ marginBottom: '5px' }}>
               <label htmlFor={`label-${layer.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>NAME</label>
-              <input 
-                id={`label-${layer.id}`}
-                type="text" 
-                value={layer.name} 
-                onChange={(e) => onUpdateLayer(layer.id, { name: e.target.value })}
-                className="input-field"
-                style={{ padding: '2px 4px', fontSize: '0.7rem' }}
-              />
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <input 
+                  id={`label-${layer.id}`}
+                  type="text" 
+                  value={layer.name} 
+                  onChange={(e) => onUpdateLayer(layer.id, { name: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && layer.name.trim()) {
+                      setIsEditingName(false);
+                    }
+                  }}
+                  className="input-field"
+                  style={{ padding: '2px 24px 2px 4px', fontSize: '0.7rem', width: '100%' }}
+                  autoFocus
+                />
+                {layer.name && (
+                  <button
+                    onMouseDown={(e) => { e.preventDefault(); onUpdateLayer(layer.id, { name: '' }); }}
+                    style={{ position: 'absolute', right: '4px', background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0' }}
+                    title="Clear name"
+                  >
+                    <X size={11} />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
+
       </div>
       
       {isExpanded && (
@@ -857,6 +876,7 @@ const Sidebar = ({
   pins,
   onResultSelect,
   onAddPin,
+  onSelectPin,
   onRemovePin,
   onPinClick,
   onUpdatePin,
@@ -1328,7 +1348,8 @@ const Sidebar = ({
         {!readOnly && (
           <SearchBar 
             onResultSelect={onResultSelect} 
-            onAddPin={onAddPin} 
+            onAddPin={onAddPin}
+            onSelectPin={onSelectPin}
             pins={pins} 
             disabled={readOnly} 
             mapBounds={mapBounds}

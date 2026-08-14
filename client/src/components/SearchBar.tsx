@@ -17,6 +17,7 @@ interface SearchResult {
 interface SearchBarProps {
   onResultSelect: (lat: number, lng: number) => void;
   onAddPin: (lat: number, lng: number, label: string, address?: string) => void;
+  onSelectPin?: (pinId: string) => void;
   pins: Pin[];
   disabled?: boolean;
   debounceMs?: number;
@@ -52,7 +53,7 @@ const renderAddressParts = (title: string, address: string = '') => {
   );
 };
 
-const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHoverSearchResult, onHoverPin }: SearchBarProps) => {
+const SearchBar = ({ onResultSelect, onAddPin, onSelectPin, pins, disabled, debounceMs = 500, mapBounds, onHoverSearchResult, onHoverPin }: SearchBarProps) => {
   const [query, setQuery] = useState('');
   const [globalResults, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -96,17 +97,7 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500,
       try {
         const formatted = await apiService.search(query, mapBounds);
         
-        // Filter out global results that are too close to existing pins (approx 10m)
-        const filteredGlobal = formatted.filter(globalResult => {
-          const gLat = parseFloat(globalResult.lat);
-          const gLon = parseFloat(globalResult.lon);
-          return !pins.some(pin => 
-            Math.abs(pin.lat - gLat) < 0.0001 && 
-            Math.abs(pin.lng - gLon) < 0.0001
-          );
-        });
-        
-        setResults(filteredGlobal);
+        setResults(formatted);
       } catch (error) {
         console.error('Search failed:', error);
       } finally {
@@ -115,12 +106,16 @@ const SearchBar = ({ onResultSelect, onAddPin, pins, disabled, debounceMs = 500,
     }, debounceMs);
 
     return () => clearTimeout(handler);
-  }, [query, debounceMs, mapBounds, pins]);
+  }, [query, debounceMs, mapBounds]);
 
   const handleResultClick = (result: SearchResult) => {
-    onResultSelect(parseFloat(result.lat), parseFloat(result.lon));
-    // Clear search on local select to clean up UI
-    if (result.type === 'local') setQuery('');
+    if (result.type === 'local' && result.pinId && onSelectPin) {
+      // For existing pins: highlight + scroll + expand collapsed layer
+      onSelectPin(result.pinId);
+    } else {
+      onResultSelect(parseFloat(result.lat), parseFloat(result.lon));
+    }
+    setQuery('');
   };
 
   return (

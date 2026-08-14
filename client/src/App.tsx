@@ -97,7 +97,7 @@ export function MapEditor() {
         return new Set(JSON.parse(savedCollapsed));
       }
     }
-    return new Set([null]);
+    return new Set();
   });
   
   const [customColors, setCustomColors] = useState<string[]>(() => {
@@ -119,7 +119,7 @@ export function MapEditor() {
       if (savedCollapsed) {
         setCollapsedLayerIds(new Set(JSON.parse(savedCollapsed)));
       } else {
-        setCollapsedLayerIds(new Set());
+        setCollapsedLayerIds(new Set()); // All layers expanded by default on a new device
       }
     }
   }, [mapId]);
@@ -321,6 +321,21 @@ export function MapEditor() {
       setHoveredPinId(null);
     }
     setHoveredPinId(null);
+
+    // Expand the collapsed layer containing this pin so the pin element is in the DOM
+    const pin = pins.find(p => p.id === pinId);
+    if (pin) {
+      const layerKey = pin.layerId || null;
+      setCollapsedLayerIds(prev => {
+        if (prev.has(layerKey)) {
+          const next = new Set(prev);
+          next.delete(layerKey);
+          return next;
+        }
+        return prev;
+      });
+    }
+
     setTargetPinId(prev => prev === pinId ? null : pinId);
   };
 
@@ -383,7 +398,7 @@ export function MapEditor() {
       position: pins.length
     };
     setPins(prev => [...prev, newPin]);
-    handleEditPin(newPin);
+    handlePinSelect(id); // Highlight the new pin without opening edit mode
 
     // Geocode only if address is missing
     if (!address) {
@@ -401,7 +416,18 @@ export function MapEditor() {
 
   const updatePin = (id: string, updates: Partial<Pin>) => {
     if (userRole === 'view') return;
-    setPins(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+    setPins(prev => {
+      // When the layer changes, move the pin to the end of the target layer
+      if ('layerId' in updates) {
+        const targetLayerId = updates.layerId; // undefined = Default Layer
+        const pinsInTargetLayer = prev.filter(p => p.id !== id && p.layerId === targetLayerId);
+        const endPosition = pinsInTargetLayer.length > 0
+          ? Math.max(...pinsInTargetLayer.map(p => p.position)) + 1
+          : 0;
+        return prev.map(p => p.id === id ? { ...p, ...updates, position: endPosition } : p);
+      }
+      return prev.map(p => p.id === id ? { ...p, ...updates } : p);
+    });
   };
 
   const addLayer = () => {
@@ -654,6 +680,7 @@ export function MapEditor() {
               if (isMobile) setSheetHeight(40);
             }}
             onAddPin={addPinAtLocation}
+            onSelectPin={handlePinSelect}
             onRemovePin={removePin}
             onPinClick={(pin) => {
               handlePinSelect(pin.id);
