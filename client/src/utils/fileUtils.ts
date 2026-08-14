@@ -33,7 +33,7 @@ export const mapDataToGeoJSON = (mapData: MapData) => {
 /**
  * Generates a unique ID with a fallback for non-secure contexts.
  */
-const generateId = (): string => {
+export const generateId = (): string => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }

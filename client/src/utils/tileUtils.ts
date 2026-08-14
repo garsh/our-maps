@@ -168,8 +168,6 @@ function latToY(lat: number, zoom: number): number {
 
 export function getTilesForArea(box: BoundingBox, minZoom: number, maxZoom: number): TileInfo[] {
     const tiles: TileInfo[] = [];
-    const subdomains = ['a', 'b', 'c'];
-    
     for (let z = minZoom; z <= maxZoom; z++) {
         const xMin = longToX(box.west, z);
         const xMax = longToX(box.east, z);
@@ -183,10 +181,9 @@ export function getTilesForArea(box: BoundingBox, minZoom: number, maxZoom: numb
 
         for (let x = xStart; x <= xEnd; x++) {
             for (let y = yStart; y <= yEnd; y++) {
-                const s = subdomains[(x + y) % subdomains.length];
                 tiles.push({
                     x, y, z,
-                    url: `https://${s}.tile.openstreetmap.org/${z}/${x}/${y}.png`
+                    url: `https://tiles.stadiamaps.com/tiles/alidade_bright/${z}/${x}/${y}.png?api_key=${import.meta.env.VITE_STADIA_API_KEY}`
                 });
             }
         }

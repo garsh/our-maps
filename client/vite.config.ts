@@ -30,10 +30,10 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/.*\.tile\.openstreetmap\.org\/.*/i,
+            urlPattern: /^https:\/\/tiles\.stadiamaps\.com\/.*/i,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'osm-tiles',
+              cacheName: 'stadia-tiles',
               expiration: {
                 maxEntries: 5000,
                 maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
@@ -67,9 +67,10 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:3001',
+        target: 'http://127.0.0.1:3002',
         changeOrigin: true,
         configure: (proxy) => {
           proxy.on('error', (err) => {

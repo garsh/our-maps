@@ -73,8 +73,10 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
   const authHeader = req.headers.authorization;
   const mockUserHeader = req.headers['x-mock-user'];
   
-  // SUPPORT MOCK USER FOR DEVELOPMENT
-  if (process.env.NODE_ENV !== 'production' && mockUserHeader) {
+  const isMockAllowed = process.env.NODE_ENV !== 'production' || process.env.GOOGLE_CLIENT_ID === 'MOCK_CLIENT_ID' || !process.env.GOOGLE_CLIENT_ID;
+
+  // SUPPORT MOCK USER FOR DEVELOPMENT OR WHEN NOT CONFIGURED
+  if (isMockAllowed && mockUserHeader) {
     try {
       const mockUser = JSON.parse(mockUserHeader as string);
       req.user = mockUser;
@@ -93,7 +95,7 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
 
   try {
     // If it looks like a mock token (no dots) and we're not in production, try to decode it first
-    if (!token.includes('.') && process.env.NODE_ENV !== 'production') {
+    if (!token.includes('.') && isMockAllowed) {
       try {
         const decoded = Buffer.from(token, 'base64').toString();
         const user = JSON.parse(decoded);
@@ -124,7 +126,7 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
       return next();
     } catch (jwtErr: any) {
       // Fallback for development if signature verification failed
-      if (process.env.NODE_ENV === 'production') {
+      if (!isMockAllowed) {
         return res.status(401).json({ error: `Authentication failed: ${jwtErr.message}` });
       }
 
