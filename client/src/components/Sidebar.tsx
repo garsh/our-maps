@@ -1225,7 +1225,7 @@ const Sidebar = ({
   };
 
   return (
-    <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: isMobile ? '0.2rem 0.6rem 0.6rem 0.6rem' : '0.6rem', boxSizing: 'border-box', overflow: 'hidden', borderRight: '1px solid var(--border-color)', position: 'relative' }}>
+    <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: isMobile ? '0.2rem 0.6rem 0.6rem 0.6rem' : '0.6rem', boxSizing: 'border-box', overflow: 'hidden', position: 'relative' }}>
       <DndContext 
         sensors={sensors}
         collisionDetection={customCollisionDetection}
