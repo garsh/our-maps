@@ -175,4 +175,51 @@ describe('Sidebar', () => {
     
     vi.unstubAllGlobals();
   });
+
+  it('shows Rename Map option at the top of menu and updates map name on submit', async () => {
+    const onMapNameChange = vi.fn();
+    render(<TestWrapper handlers={{ onMapNameChange }} />);
+    
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+    
+    const renameMenuItem = screen.getByText(/Rename Map/i);
+    expect(renameMenuItem).toBeInTheDocument();
+    fireEvent.click(renameMenuItem);
+    
+    const input = screen.getByLabelText(/New Map Name/i);
+    expect(input).toHaveValue('Test Map');
+    fireEvent.change(input, { target: { value: 'Renamed Test Map' } });
+    
+    const saveBtn = screen.getByText('Save');
+    fireEvent.click(saveBtn);
+    
+    expect(onMapNameChange).toHaveBeenCalledWith('Renamed Test Map');
+  });
+
+  it('clears rename input when X button is clicked', () => {
+    render(<TestWrapper />);
+    
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+    
+    fireEvent.click(screen.getByText(/Rename Map/i));
+    
+    const input = screen.getByLabelText(/New Map Name/i);
+    expect(input).toHaveValue('Test Map');
+    
+    const clearBtn = screen.getByLabelText(/Clear map name/i);
+    fireEvent.click(clearBtn);
+    
+    expect(input).toHaveValue('');
+  });
+
+  it('hides Rename Map option when readOnly is true', () => {
+    render(<TestWrapper handlers={{ userRole: 'view' }} />);
+    
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+    
+    expect(screen.queryByText(/Rename Map/i)).not.toBeInTheDocument();
+  });
 });
