@@ -721,8 +721,6 @@ export function MapEditor() {
               justifyContent: 'center',
               background: 'var(--bg-color)',
               borderRadius: '0 6px 6px 0',
-              border: '1px solid var(--border-color)',
-              borderLeft: 'none',
             }}
           >
             <div style={{
