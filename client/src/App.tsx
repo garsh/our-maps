@@ -719,7 +719,7 @@ export function MapEditor() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: 'var(--bg-color)',
+              background: 'white',
               borderRadius: '0 6px 6px 0',
             }}
           >
