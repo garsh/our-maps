@@ -35,6 +35,7 @@ export function MapEditor() {
   const [permissions, setPermissions] = useState<MapPermission[]>([]);
   
   const [isSaving, setIsSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [showSignOutDialog, setShowSignOutDialog] = useState(false);
   const [targetLocation, setTargetLocation] = useState<[number, number] | null>(null);
@@ -228,6 +229,9 @@ export function MapEditor() {
 
     // Don't auto-save empty new maps
     if (!mapId && pins.length === 0 && mapName === 'My Map') return;
+
+    // Mark as dirty immediately so the pill updates before the debounce fires
+    setIsDirty(true);
     
     const timer = setTimeout(() => {
       handleSave();
@@ -235,6 +239,31 @@ export function MapEditor() {
 
     return () => clearTimeout(timer);
   }, [mapName, pins, layers]);
+
+  // Warn on browser-level navigation (tab close, refresh, address bar) when dirty
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
+  // Keep refs pointing at the latest values so the unmount cleanup isn't stale
+  const isDirtyRef = useRef(false);
+  const handleSaveRef = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => { isDirtyRef.current = isDirty; }, [isDirty]);
+  useEffect(() => { handleSaveRef.current = handleSave; });
+
+  // Flush pending save when the component unmounts (e.g. user hits the back button)
+  useEffect(() => {
+    return () => {
+      if (isDirtyRef.current) {
+        handleSaveRef.current();
+      }
+    };
+  }, []); // empty deps — cleanup only runs on unmount
 
   const loadMap = async (mapId: string) => {
     setIsMapLoading(true);
@@ -268,11 +297,9 @@ export function MapEditor() {
     setIsSaving(true);
     setError(null);
     try {
-      // Add a small artificial delay so the UI state is detectable
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
       if (mapId) {
         await apiService.updateMap(mapId, mapName, layers, pins);
+        setIsDirty(false);
         
         // Notify others via socket
         socketRef.current?.emit('map-updated', {
@@ -291,6 +318,7 @@ export function MapEditor() {
           pins,
           ownerId: user?.id || '',
         });
+        setIsDirty(false);
         setMapId(newId);
         navigate(`/map/${newId}`, { replace: true });
       }
@@ -632,9 +660,9 @@ export function MapEditor() {
             fontFamily: 'inherit',
             fontSize: '0.65rem'
           }}>
-            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: error ? '#ff4d4f' : (isSaving ? '#ffcc00' : '#4ade80'), flexShrink: 0 }} />
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: error ? '#ff4d4f' : (isSaving || isDirty ? '#ffcc00' : '#4ade80'), flexShrink: 0 }} />
             <span>
-              {error || successMessage || (isSaving ? 'Saving changes...' : 'Map Synced')}
+              {error || successMessage || (isSaving ? 'Saving changes...' : (isDirty ? 'Pending Updates...' : 'Map Synced'))}
             </span>
           </button>
         )}

@@ -128,7 +128,6 @@ export function getPreviewMarkerIcon(color: string = '#ef4444') {
         ">
           <svg width="30" height="42" viewBox="0 0 30 42" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z" fill="${color}"/>
-            <path d="M15 10v10M10 15h10" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
           </svg>
         </div>
       </div>
