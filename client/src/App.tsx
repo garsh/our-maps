@@ -684,7 +684,7 @@ export function MapEditor() {
           display: 'flex',
           flexDirection: 'column',
           overflow: 'visible'
-        } : { width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 10, background: 'var(--bg-color)' }}
+        } : { width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 10, background: 'var(--bg-color)', borderRight: '1px solid var(--border-color)' }}
       >
         {isMobile && (
           <div 
@@ -700,6 +700,41 @@ export function MapEditor() {
         )}
 
         {!isMobile && appHeader}
+
+        {!isMobile && (
+          <div
+            className="resizer-handle"
+            onMouseDown={startResize}
+            onMouseEnter={() => setIsHoveringResizer(true)}
+            onMouseLeave={() => setIsHoveringResizer(false)}
+            style={{
+              position: 'absolute',
+              right: '-6px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              width: '12px',
+              height: '48px',
+              cursor: 'col-resize',
+              zIndex: 101,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'var(--bg-color)',
+              borderRadius: '0 6px 6px 0',
+              border: '1px solid var(--border-color)',
+              borderLeft: 'none',
+            }}
+          >
+            <div style={{
+              width: '4px',
+              height: '28px',
+              borderRadius: '4px',
+              background: (isResizing || isHoveringResizer) ? 'var(--primary-color)' : 'var(--border-color)',
+              transition: 'background 0.2s, transform 0.15s',
+              transform: (isResizing || isHoveringResizer) ? 'scaleY(1.1)' : 'scaleY(1)',
+            }} />
+          </div>
+        )}
 
         <div style={isMobile ? { 
           transform: `scale(${mobileScale})`, 
@@ -800,35 +835,7 @@ export function MapEditor() {
         </div>
       </div>
 
-      {!isMobile && (
-        <div
-          className="resizer-handle"
-          onMouseDown={startResize}
-          onMouseEnter={() => setIsHoveringResizer(true)}
-          onMouseLeave={() => setIsHoveringResizer(false)}
-          style={{
-            width: '12px',
-            cursor: 'col-resize',
-            position: 'relative',
-            zIndex: 100,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            background: 'var(--bg-color)',
-            borderLeft: '1px solid var(--border-color)',
-          }}
-        >
-          <div style={{
-            width: '4px',
-            height: '32px',
-            borderRadius: '4px',
-            background: (isResizing || isHoveringResizer) ? 'var(--primary-color)' : 'var(--border-color)',
-            transition: 'background 0.2s, transform 0.15s',
-            transform: (isResizing || isHoveringResizer) ? 'scaleY(1.15)' : 'scaleY(1)',
-          }} />
-        </div>
-      )}
+
 
       <main style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {!isMobile && (
