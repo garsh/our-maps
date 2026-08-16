@@ -684,7 +684,7 @@ export function MapEditor() {
           display: 'flex',
           flexDirection: 'column',
           overflow: 'visible'
-        } : { width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 10, background: 'var(--bg-color)', borderRight: '1px solid var(--border-color)' }}
+        } : { width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1000, background: 'var(--bg-color)', borderRight: '1px solid var(--border-color)' }}
       >
         {isMobile && (
           <div 
@@ -709,7 +709,7 @@ export function MapEditor() {
             onMouseLeave={() => setIsHoveringResizer(false)}
             style={{
               position: 'absolute',
-              right: '-6px',
+              right: '-12px',
               top: '50%',
               transform: 'translateY(-50%)',
               width: '12px',
@@ -837,7 +837,7 @@ export function MapEditor() {
 
 
 
-      <main style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+      <main style={{ flex: 1, position: 'relative', overflow: 'hidden', zIndex: 1 }}>
         {!isMobile && (
           <div 
             onClick={() => setShowSignOutDialog(true)}
