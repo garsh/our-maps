@@ -159,7 +159,7 @@ button:active {
   align-items: center;
   justify-content: center;
   cursor: grab;
-  background: var(--bg-color);
+  background: white;
   border-radius: 12px 12px 0 0;
   border-top: 1px solid var(--border-color);
   border-left: 1px solid var(--border-color);
