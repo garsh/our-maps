@@ -44,7 +44,7 @@ export function MapEditor() {
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
   const [mapBounds, setMapBounds] = useState<string | null>(null);
   const [previewLocation, setPreviewLocation] = useState<{lat: number, lng: number} | null>(null);
-  const [sidebarWidth, setSidebarWidth] = useState(320);
+  const [sidebarWidth, setSidebarWidth] = useState(400);
   const [isResizing, setIsResizing] = useState(false);
 
   // Mobile layout states
@@ -708,7 +708,15 @@ export function MapEditor() {
           flex: 'none',
           display: 'flex',
           flexDirection: 'column'
-        } : { display: 'flex', flex: 1, overflow: 'hidden' }}>
+        } : {
+          transform: 'scale(1.25)',
+          transformOrigin: 'top left',
+          width: `${(1 / 1.25) * 100}%`,
+          height: `${(1 / 1.25) * 100}%`,
+          flex: 'none',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
           <Sidebar 
             isMobile={isMobile}
             mapId={mapId}
