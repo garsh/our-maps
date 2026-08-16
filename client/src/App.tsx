@@ -633,7 +633,7 @@ export function MapEditor() {
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <MapIcon size={18} />
         </div>
-        <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1 }}>{isMobile ? mapName || 'Untitled Map' : 'OurMaps'}</h1>
+        <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1 }}>{mapName || 'Untitled Map'}</h1>
       </div>
       
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>

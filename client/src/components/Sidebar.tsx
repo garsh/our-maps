@@ -906,6 +906,7 @@ const Sidebar = ({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const readOnly = userRole === 'view';
   const [activePin, setActivePin] = useState<Pin | null>(null);
   const [activeLayer, setActiveLayer] = useState<PinLayer | null>(null);
@@ -943,8 +944,13 @@ const Sidebar = ({
   const [exportFileName, setExportFileName] = useState('');
   const [exportFormat, setExportFormat] = useState<'json' | 'geojson' | 'kml'>('json');
 
+  // Rename Modal State
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameInput, setRenameInput] = useState(mapName);
+
   useEffect(() => {
     setLocalMapName(mapName);
+    setRenameInput(mapName);
   }, [mapName]);
 
   useEffect(() => {
@@ -1225,7 +1231,7 @@ const Sidebar = ({
   };
 
   return (
-    <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: isMobile ? '0.2rem 0.6rem 0.6rem 0.6rem' : '0.6rem', boxSizing: 'border-box', overflow: 'hidden', position: 'relative' }}>
+    <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: isMobile ? '0.2rem 0.6rem 0.6rem 0.6rem' : '0.4rem 0.6rem 0.6rem 0.6rem', boxSizing: 'border-box', overflow: 'hidden', position: 'relative' }}>
       <DndContext 
         sensors={sensors}
         collisionDetection={customCollisionDetection}
@@ -1234,158 +1240,166 @@ const Sidebar = ({
         onDragEnd={handleDragEndInternal}
         autoScroll={false}
       >
-        <div style={{ marginBottom: isMobile ? '0.2rem' : '0.6rem', display: isMobile && readOnly ? 'none' : 'block' }}>
-
-          <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
-            <input 
-              id="map-name"
-              aria-label="map name"
-              type="text" 
-              value={localMapName} 
-              onChange={(e) => setLocalMapName(e.target.value)}
-              onBlur={() => onMapNameChange(localMapName)}
-              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-              disabled={readOnly}
-              className="input-field map-name-input"
-              style={{ fontWeight: '800', fontSize: '0.9rem', padding: '3px 6px', border: 'none', background: 'transparent', flex: 1, textOverflow: 'ellipsis' }}
-            />
-            
-            <div style={{ display: 'flex', gap: '2px', alignItems: 'center', flexShrink: 0 }}>
-              {selectedPins.length > 0 && (
-                <button 
-                  onClick={handleNavigate}
-                  style={{ fontSize: '0.6rem', background: 'var(--success-color)', color: 'white', border: 'none', padding: '2px 7px', borderRadius: '50px', cursor: 'pointer', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '3px' }}
-                >
-                  <Navigation size={9} /> Go ({selectedPins.length})
-                </button>
-              )}
+        <input 
+          id="map-name"
+          type="text" 
+          value={localMapName} 
+          onChange={(e) => setLocalMapName(e.target.value)}
+          onBlur={() => onMapNameChange(localMapName)}
+          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+          disabled={readOnly}
+          className="input-field map-name-input"
+          style={{ fontWeight: '800', fontSize: '0.9rem', padding: '3px 6px', border: 'none', background: 'transparent', flex: 1, textOverflow: 'ellipsis' }}
+        />
+        
+        {selectedPins.length > 0 && (
+          <div style={{ marginBottom: '0.4rem', display: 'flex', justifyContent: 'flex-end' }}>
+            <button 
+              onClick={handleNavigate}
+              style={{ fontSize: '0.6rem', background: 'var(--success-color)', color: 'white', border: 'none', padding: '2px 7px', borderRadius: '50px', cursor: 'pointer', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '3px' }}
+            >
+              <Navigation size={9} /> Go ({selectedPins.length})
+            </button>
+          </div>
+        )}
+        
+        {(() => {
+          const menuContent = (
+            <div style={{ position: 'relative' }} ref={menuRef}>
+              <button 
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                aria-label="More options"
+                style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', padding: '3px' }}
+              >
+                <MoreVertical size={20} />
+              </button>
               
-              {(() => {
-                const menuContent = (
-                  <div style={{ position: 'relative' }} ref={menuRef}>
-                    <button 
-                      onClick={() => setIsMenuOpen(!isMenuOpen)}
-                      aria-label="More options"
-                      style={{ background: 'none', border: 'none', color: isMobile ? 'white' : '#888', cursor: 'pointer', display: 'flex', padding: '3px' }}
+              {isMenuOpen && (
+                <div style={{ position: 'absolute', top: '100%', right: 0, width: '180px', background: 'white', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 1600, overflow: 'hidden' }}>
+                  {!readOnly && (
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={() => {
+                        setRenameInput(localMapName);
+                        setShowRenameModal(true);
+                        setIsMenuOpen(false);
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
-                      <MoreVertical size={isMobile ? 20 : 16} />
-                    </button>
-                    
-                    {isMenuOpen && (
-                      <div style={{ position: 'absolute', top: '100%', right: 0, width: '180px', background: 'white', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 1600, overflow: 'hidden' }}>
-                          <div 
-                            style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                            onClick={() => { onShare?.(); setIsMenuOpen(false); }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                          >
-                            Share
-                          </div>
-                        {!readOnly && (
-                          <div 
-                            style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                            onClick={handleImportClick}
-                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                          >
-                            Import
-                          </div>
-                        )}
+                      Rename Map
+                    </div>
+                  )}
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={() => { onShare?.(); setIsMenuOpen(false); }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      Share
+                    </div>
+                  {!readOnly && (
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={handleImportClick}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      Import
+                    </div>
+                  )}
+                  <div 
+                    style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                    onClick={handleExportClick}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                      Export
+                  </div>
+                  {deferredPrompt && (
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={() => {
+                        handleInstallClick();
+                        setIsMenuOpen(false);
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      Install App
+                    </div>
+                  )}
+                  {isDownloaded || isDownloading || hasPartialDownload ? (
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={handleRemoveDownload}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      Remove Download
+                    </div>
+                  ) : (
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isDownloading ? '#999' : 'inherit' }}
+                      onClick={isDownloading ? undefined : handleDownloadClick}
+                      onMouseEnter={(e) => !isDownloading && (e.currentTarget.style.background = 'var(--bg-color)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      Download for Offline
+                    </div>
+                  )}
+                  {selectedPins.length > 0 && !readOnly && (
+                    <>
+                      <div style={{ padding: '8px 16px', fontSize: '0.65rem', fontWeight: '800', color: '#999', background: '#fcfcfc', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)' }}>MOVE SELECTED TO...</div>
+                      <div 
+                        style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
+                        onClick={() => {
+                          selectedPins.forEach(p => onUpdatePin(p.id, { layerId: undefined }));
+                          setIsMenuOpen(false);
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        Default Layer
+                      </div>
+                      {layers.map(layer => (
                         <div 
-                          style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                          onClick={handleExportClick}
+                          key={layer.id}
+                          style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
+                          onClick={() => {
+                            selectedPins.forEach(p => onUpdatePin(p.id, { layerId: layer.id }));
+                            setIsMenuOpen(false);
+                          }}
                           onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                            Export
+                          {layer.name}
                         </div>
-                        {deferredPrompt && (
-                          <div 
-                            style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                            onClick={() => {
-                              handleInstallClick();
-                              setIsMenuOpen(false);
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                          >
-                            Install App
-                          </div>
-                        )}
-                        {isDownloaded || isDownloading || hasPartialDownload ? (
-                          <div 
-                            style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                            onClick={handleRemoveDownload}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                          >
-                            Remove Download
-                          </div>
-                        ) : (
-                          <div 
-                            style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isDownloading ? '#999' : 'inherit' }}
-                            onClick={isDownloading ? undefined : handleDownloadClick}
-                            onMouseEnter={(e) => !isDownloading && (e.currentTarget.style.background = 'var(--bg-color)')}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                          >
-                            Download for Offline
-                          </div>
-                        )}
-                        {selectedPins.length > 0 && !readOnly && (
-                          <>
-                            <div style={{ padding: '8px 16px', fontSize: '0.65rem', fontWeight: '800', color: '#999', background: '#fcfcfc', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)' }}>MOVE SELECTED TO...</div>
-                            <div 
-                              style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
-                              onClick={() => {
-                                selectedPins.forEach(p => onUpdatePin(p.id, { layerId: undefined }));
-                                setIsMenuOpen(false);
-                              }}
-                              onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                            >
-                              Default Layer
-                            </div>
-                            {layers.map(layer => (
-                              <div 
-                                key={layer.id}
-                                style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
-                                onClick={() => {
-                                  selectedPins.forEach(p => onUpdatePin(p.id, { layerId: layer.id }));
-                                  setIsMenuOpen(false);
-                                }}
-                                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                              >
-                                {layer.name}
-                              </div>
-                            ))}
-                          </>
-                        )}
-                        {!readOnly && (
-                          <div 
-                            style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                            onClick={() => {
-                              onAddLayer();
-                              setIsMenuOpen(false);
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                          >
-                            New Layer
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-
-                return isMobile && document.getElementById('mobile-header-actions')
-                  ? createPortal(menuContent, document.getElementById('mobile-header-actions')!)
-                  : menuContent;
-              })()}
+                      ))}
+                    </>
+                  )}
+                  {!readOnly && (
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={() => {
+                        onAddLayer();
+                        setIsMenuOpen(false);
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      New Layer
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
-        </div>
+          );
+
+          return document.getElementById('mobile-header-actions')
+            ? createPortal(menuContent, document.getElementById('mobile-header-actions')!)
+            : menuContent;
+        })()}
 
         {!readOnly && (
           <SearchBar 
@@ -1597,6 +1611,84 @@ const Sidebar = ({
                   Export
                 </button>
               </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {/* Rename Modal (Portaled) */}
+        {showRenameModal && createPortal(
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '20px' }}>
+            <div style={{ background: 'white', borderRadius: 'var(--radius-lg)', padding: '32px', maxWidth: '440px', width: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.3rem', fontWeight: '900', color: '#1a1c1e' }}>Rename Map</h3>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                if (renameInput.trim()) {
+                  setLocalMapName(renameInput.trim());
+                  onMapNameChange(renameInput.trim());
+                }
+                setShowRenameModal(false);
+              }}>
+                <div style={{ marginBottom: '24px' }}>
+                  <label htmlFor="rename-map-input" style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', fontWeight: '700' }}>New Map Name</label>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input 
+                      ref={renameInputRef}
+                      id="rename-map-input"
+                      type="text" 
+                      value={renameInput} 
+                      onChange={(e) => setRenameInput(e.target.value)} 
+                      autoFocus
+                      style={{ width: '100%', padding: '10px', paddingRight: renameInput ? '36px' : '10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                    />
+                    {renameInput && (
+                      <button
+                        type="button"
+                        aria-label="Clear map name"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onTouchStart={(e) => e.preventDefault()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setRenameInput('');
+                          renameInputRef.current?.focus();
+                        }}
+                        style={{
+                          position: 'absolute',
+                          right: '8px',
+                          background: 'none',
+                          border: 'none',
+                          color: '#888',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '4px',
+                          borderRadius: '50%'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = '#333'}
+                        onMouseLeave={(e) => e.currentTarget.style.color = '#888'}
+                      >
+                        <X size={16} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '16px' }}>
+                  <button 
+                    type="button"
+                    onClick={() => setShowRenameModal(false)}
+                    style={{ flex: 1, padding: '12px', background: '#f5f5f5', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontWeight: '800', cursor: 'pointer', color: '#444' }}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit"
+                    style={{ flex: 1, padding: '12px', background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: 'var(--radius-md)', fontWeight: '800', cursor: 'pointer', boxShadow: '0 4px 10px rgba(72, 61, 139, 0.3)' }}
+                  >
+                    Save
+                  </button>
+                </div>
+              </form>
             </div>
           </div>,
           document.body

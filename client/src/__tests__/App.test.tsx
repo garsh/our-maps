@@ -97,11 +97,18 @@ describe('App Components Error Handling', () => {
 
 
     // Trigger auto-save by changing map name
-    const nameInput = screen.getByLabelText(/map name/i);
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+
+    const renameMenuItem = screen.getByText(/Rename Map/i);
+    fireEvent.click(renameMenuItem);
+
+    const nameInput = screen.getByLabelText(/New Map Name/i);
 
     await act(async () => {
       fireEvent.change(nameInput, { target: { value: 'Trigger Error' } });
-      fireEvent.blur(nameInput);
+      const saveBtn = screen.getByText('Save');
+      fireEvent.click(saveBtn);
     });
 
     // Wait for the debounced save to fail

@@ -135,10 +135,6 @@ button:active {
     display: none !important;
   }
 
-  .map-name-input {
-    display: none !important;
-  }
-
   .leaflet-control-zoom {
     display: none !important;
   }
@@ -149,6 +145,10 @@ button:active {
     height: 100dvh;
     width: 100vw;
   }
+}
+
+.map-name-input {
+  display: none !important;
 }
 
 .bottom-sheet-drag-handle {
