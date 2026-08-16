@@ -684,7 +684,7 @@ export function MapEditor() {
           display: 'flex',
           flexDirection: 'column',
           overflow: 'visible'
-        } : { width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1000, background: 'var(--bg-color)', borderRight: '1px solid var(--border-color)' }}
+        } : { width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1000, background: 'var(--bg-color)' }}
       >
         {isMobile && (
           <div 
