@@ -94,7 +94,7 @@ export function getMarkerIcon(color: PinColor = 'blue', icon: PinIcon = 'default
   });
 }
 
-export function getPreviewMarkerIcon(color: string = '#ef4444') {
+export function getPreviewMarkerIcon() {
   const width = 20;
   const height = 28;
   const scale = width / 30;
@@ -110,25 +110,48 @@ export function getPreviewMarkerIcon(color: string = '#ef4444') {
         width: ${width}px;
         height: ${height}px;
       ">
+        <!-- Outer translucent halo with moving rainbow gradient border ring window -->
         <div style="
           position: absolute;
           width: ${width * 3}px;
           height: ${width * 3}px;
-          background: ${color}44;
-          border: 3px solid ${color};
           border-radius: 50%;
+          background: rgba(0, 0, 0, 0.12);
           z-index: -1;
           animation: pulse 1.2s infinite;
-          box-shadow: 0 0 15px ${color}66;
-        "></div>
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        ">
+          <div style="
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            padding: 3px;
+            background: linear-gradient(135deg, #b91c1c 0%, #c2410c 10%, #15803d 20%, #1d4ed8 30%, #6b21a8 40%, #b91c1c 50%, #c2410c 60%, #15803d 70%, #1d4ed8 80%, #6b21a8 90%, #b91c1c 100%);
+            background-size: 600% 600%;
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            animation: rainbowMove 30s linear infinite;
+          "></div>
+        </div>
+
+        <!-- Moving Rainbow Pin Window -->
         <div style="
           filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
           transform: scale(${scale});
           transform-origin: center bottom;
         ">
-          <svg width="30" height="42" viewBox="0 0 30 42" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z" fill="${color}"/>
-          </svg>
+          <div style="
+            width: 30px;
+            height: 42px;
+            background: linear-gradient(135deg, #b91c1c 0%, #c2410c 10%, #15803d 20%, #1d4ed8 30%, #6b21a8 40%, #b91c1c 50%, #c2410c 60%, #15803d 70%, #1d4ed8 80%, #6b21a8 90%, #b91c1c 100%);
+            background-size: 600% 600%;
+            animation: rainbowMove 30s linear infinite;
+            -webkit-clip-path: path('M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z');
+            clip-path: path('M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z');
+          "></div>
         </div>
       </div>
     `,
@@ -137,3 +160,4 @@ export function getPreviewMarkerIcon(color: string = '#ef4444') {
     popupAnchor: [0, -height]
   });
 }
+

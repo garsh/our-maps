@@ -54,15 +54,16 @@ describe('SearchBar', () => {
     });
   });
 
-  it('calls onResultSelect when a local result is clicked', async () => {
-    render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={mockPins} />);
+  it('previews a local result when clicked', async () => {
+    const mockOnHoverPin = vi.fn();
+    render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} onHoverPin={mockOnHoverPin} pins={mockPins} />);
     
     fireEvent.change(screen.getByPlaceholderText(/Search.../i), { target: { value: 'Coffee' } });
 
     await waitFor(() => screen.getByText('Local Coffee'));
     fireEvent.click(screen.getByText('Local Coffee'));
 
-    expect(mockOnResultSelect).toHaveBeenCalledWith(10, 20);
+    expect(mockOnHoverPin).toHaveBeenCalledWith('1');
   });
 
   it('calls onAddPin when + Add to Map is clicked', async () => {

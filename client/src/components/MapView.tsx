@@ -241,7 +241,7 @@ const MapView = ({
         {previewLocation && (
           <Marker 
             position={[previewLocation.lat, previewLocation.lng]} 
-            icon={getPreviewMarkerIcon('#ef4444')}
+            icon={getPreviewMarkerIcon()}
             interactive={false}
             zIndexOffset={1000}
           />
