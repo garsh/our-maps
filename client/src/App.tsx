@@ -46,6 +46,7 @@ export function MapEditor() {
   const [previewLocation, setPreviewLocation] = useState<{lat: number, lng: number} | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(400);
   const [isResizing, setIsResizing] = useState(false);
+  const [isHoveringResizer, setIsHoveringResizer] = useState(false);
 
   // Mobile layout states
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
@@ -799,25 +800,35 @@ export function MapEditor() {
         </div>
       </div>
 
-      <div 
-        onMouseDown={startResize}
-        style={{ 
-          width: '1px', 
-          cursor: 'col-resize', 
-          background: 'var(--border-color)', 
-          position: 'relative',
-          zIndex: 100
-        }}
-      >
-        <div style={{
-           position: 'absolute',
-           left: '-2px',
-           width: '5px',
-           height: '100%',
-           background: isResizing ? 'var(--primary-color)' : 'transparent',
-           transition: 'background 0.2s'
-        }} />
-      </div>
+      {!isMobile && (
+        <div
+          className="resizer-handle"
+          onMouseDown={startResize}
+          onMouseEnter={() => setIsHoveringResizer(true)}
+          onMouseLeave={() => setIsHoveringResizer(false)}
+          style={{
+            width: '12px',
+            cursor: 'col-resize',
+            position: 'relative',
+            zIndex: 100,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            background: 'var(--bg-color)',
+            borderLeft: '1px solid var(--border-color)',
+          }}
+        >
+          <div style={{
+            width: '4px',
+            height: '32px',
+            borderRadius: '4px',
+            background: (isResizing || isHoveringResizer) ? 'var(--primary-color)' : 'var(--border-color)',
+            transition: 'background 0.2s, transform 0.15s',
+            transform: (isResizing || isHoveringResizer) ? 'scaleY(1.15)' : 'scaleY(1)',
+          }} />
+        </div>
+      )}
 
       <main style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {!isMobile && (
