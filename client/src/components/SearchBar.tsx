@@ -53,7 +53,7 @@ const renderAddressParts = (title: string, address: string = '') => {
   );
 };
 
-const SearchBar = ({ onResultSelect, onAddPin, onSelectPin, pins, disabled, debounceMs = 500, mapBounds, onHoverSearchResult, onHoverPin }: SearchBarProps) => {
+const SearchBar = ({ onResultSelect: _onResultSelect, onAddPin, onSelectPin: _onSelectPin, pins, disabled, debounceMs = 500, mapBounds, onHoverSearchResult, onHoverPin }: SearchBarProps) => {
   const [query, setQuery] = useState('');
   const [globalResults, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -108,14 +108,13 @@ const SearchBar = ({ onResultSelect, onAddPin, onSelectPin, pins, disabled, debo
     return () => clearTimeout(handler);
   }, [query, debounceMs, mapBounds]);
 
-  const handleResultClick = (result: SearchResult) => {
-    if (result.type === 'local' && result.pinId && onSelectPin) {
-      // For existing pins: highlight + scroll + expand collapsed layer
-      onSelectPin(result.pinId);
+  // Show a hover preview pin without closing the search results (for tap/click)
+  const handleResultPreview = (result: SearchResult) => {
+    if (result.type === 'local' && result.pinId) {
+      onHoverPin?.(result.pinId);
     } else {
-      onResultSelect(parseFloat(result.lat), parseFloat(result.lon));
+      onHoverSearchResult?.(parseFloat(result.lat), parseFloat(result.lon));
     }
-    setQuery('');
   };
 
   return (
@@ -173,7 +172,7 @@ const SearchBar = ({ onResultSelect, onAddPin, onSelectPin, pins, disabled, debo
               {localResults.map((result) => (
                 <div
                   key={result.place_id}
-                  onClick={() => handleResultClick(result)}
+                  onClick={() => handleResultPreview(result)}
                   style={{ padding: '0.4rem 0.2rem', borderBottom: '1px solid #f1f1f1', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', transition: 'background 0.2s' }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'var(--bg-color)';
@@ -210,7 +209,8 @@ const SearchBar = ({ onResultSelect, onAddPin, onSelectPin, pins, disabled, debo
               {globalResults.map((result) => (
                 <div
                   key={result.place_id}
-                  style={{ padding: '0.4rem 0.2rem', borderBottom: '1px solid #f1f1f1', fontSize: '0.85rem', transition: 'background 0.2s' }}
+                  style={{ padding: '0.4rem 0.4rem', borderBottom: '1px solid #f1f1f1', fontSize: '0.85rem', transition: 'background 0.2s', cursor: 'pointer' }}
+                  onClick={() => handleResultPreview(result)}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'var(--bg-color)';
                     onHoverSearchResult?.(parseFloat(result.lat), parseFloat(result.lon));
@@ -220,40 +220,46 @@ const SearchBar = ({ onResultSelect, onAddPin, onSelectPin, pins, disabled, debo
                     onHoverSearchResult?.(null, null);
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', width: '100%' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {renderAddressParts(result.title, result.address)}
+                    </div>
                     {!disabled && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onAddPin(parseFloat(result.lat), parseFloat(result.lon), result.title || result.address.split(',')[0], result.address || undefined);
-                            onHoverSearchResult?.(null, null);
-                            setQuery('');
-                          }}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAddPin(parseFloat(result.lat), parseFloat(result.lon), result.title || result.address.split(',')[0], result.address || undefined);
+                          onHoverSearchResult?.(null, null);
+                          setQuery('');
+                        }}
                         style={{ 
-                          background: '#27ae60', 
-                          color: 'white', 
-                          border: 'none', 
-                          borderRadius: '3px', 
-                          width: '14px',
-                          height: '14px',
-                          padding: '0', 
-                          cursor: 'pointer', 
-                          display: 'flex', 
-                          alignItems: 'center', 
+                          background: 'white',
+                          color: '#27ae60',
+                          border: '2px solid #27ae60',
+                          borderRadius: '50%',
+                          width: '22px',
+                          height: '22px',
+                          padding: '0',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
                           justifyContent: 'center',
-                          flexShrink: 0
+                          flexShrink: 0,
+                          transition: 'background 0.15s, color 0.15s'
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.currentTarget as HTMLButtonElement).style.background = '#27ae60';
+                          (e.currentTarget as HTMLButtonElement).style.color = 'white';
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.currentTarget as HTMLButtonElement).style.background = 'white';
+                          (e.currentTarget as HTMLButtonElement).style.color = '#27ae60';
                         }}
                         title="Add to Map"
                       >
-                        <Plus size={10} />
+                        <Plus size={13} strokeWidth={2.5} />
                       </button>
                     )}
-                    <div 
-                      style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
-                      onClick={() => handleResultClick(result)}
-                    >
-                      {renderAddressParts(result.title, result.address)}
-                    </div>
                   </div>
                 </div>
               ))}
