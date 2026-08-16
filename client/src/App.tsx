@@ -836,6 +836,7 @@ export function MapEditor() {
 
 
       <main style={{ flex: 1, position: 'relative', overflow: 'hidden', zIndex: 1 }}>
+        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '100vw', minWidth: '100%' }}>
         {!isMobile && (
           <div 
             onClick={() => setShowSignOutDialog(true)}
@@ -863,7 +864,8 @@ export function MapEditor() {
             previewLocation={previewLocation}
             bottomPadding={isMobile ? sheetHeight : 0}
           />
-        </main>
+        </div>
+      </main>
 
       <ShareDialog 
         isOpen={isSharing}
