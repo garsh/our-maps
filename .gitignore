@@ -104,3 +104,9 @@ server/database.sqlite*
 *.sqlite-wal
 *.sqlite-shm
 server/dist/
+
+# Map tiles
+*.pmtiles
+data/maps/
+server/public/maps/
+

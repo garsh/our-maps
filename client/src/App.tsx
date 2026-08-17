@@ -27,7 +27,6 @@ import type {
 
 import type { DragEndEvent } from '@dnd-kit/core'
 import { Loader2, Map as MapIcon, LogOut } from 'lucide-react';
-import L from 'leaflet';
 import { reorderPins, reorderLayers, isSameLayer, comparePinPositions } from './utils/reorderUtils';
 import { generateId } from './utils/fileUtils';
 import { io, Socket } from 'socket.io-client';
@@ -55,7 +54,7 @@ export function MapEditor() {
   const [showSignOutDialog, setShowSignOutDialog] = useState(false);
   const [targetLocation, setTargetLocation] = useState<[number, number] | null>(null);
   const [targetPinId, setTargetPinId] = useState<string | null>(null);
-  const [boundsToFit, setBoundsToFit] = useState<L.LatLngBounds | null>(null);
+  const [boundsToFit, setBoundsToFit] = useState<[[number, number], [number, number]] | null>(null);
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
   const [mapBounds, setMapBounds] = useState<string | null>(null);
   const [previewLocation, setPreviewLocation] = useState<{lat: number, lng: number} | null>(null);
@@ -501,9 +500,14 @@ export function MapEditor() {
       setLayers(data.layers || []);
       setPins(data.pins);
       if (data.pins && data.pins.length > 0) {
-        const bounds = L.latLngBounds(data.pins.map(p => [p.lat, p.lng]));
+        const lats = data.pins.map(p => p.lat);
+        const lngs = data.pins.map(p => p.lng);
+        const bounds: [[number, number], [number, number]] = [
+          [Math.min(...lats), Math.min(...lngs)],
+          [Math.max(...lats), Math.max(...lngs)]
+        ];
         setBoundsToFit(bounds);
-        setTimeout(() => setBoundsToFit(null), 1000);
+        setTimeout(() => setBoundsToFit(null), 3000);
       }
       setUserRole(data.userRole || 'view');
       setPermissions(data.permissions || []);
@@ -973,7 +977,12 @@ export function MapEditor() {
     if (data.pins) {
       setPins(data.pins);
       if (data.pins.length > 0) {
-        const bounds = L.latLngBounds(data.pins.map(p => [p.lat, p.lng]));
+        const lats = data.pins.map(p => p.lat);
+        const lngs = data.pins.map(p => p.lng);
+        const bounds: [[number, number], [number, number]] = [
+          [Math.min(...lats), Math.min(...lngs)],
+          [Math.max(...lats), Math.max(...lngs)]
+        ];
         setBoundsToFit(bounds);
         setTimeout(() => setBoundsToFit(null), 1000);
       }

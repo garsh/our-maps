@@ -1,4 +1,3 @@
-import L from 'leaflet';
 import type { PinColor, PinIcon } from '@shared/interfaces';
 
 const COLOR_CODES: Record<PinColor, string> = {
@@ -28,7 +27,7 @@ const ICON_SVG_PATHS: Record<Exclude<PinIcon, 'default'>, string> = {
   train: '<path d="M 20 16 h 1 c 1 0 2 -0.5 2 -2 v -3 c 0 -1.5 -0.5 -2 -2 -2 h -1 v -3 c 0 -1 -1 -2 -2 -2 h -2 c -1 0 -2 1 -2 2 v 3 h -4 v -4 c 0 -1.5 -1 -3 -3 -3 h -2 c -1.5 0 -3 1.5 -3 3 v 9 c 0 1.5 1 2 2 2 M 10 16 h 4"/><circle cx="7" cy="16" r="3"/><circle cx="17" cy="16" r="3"/>'
 };
 
-export function getMarkerIcon(color: PinColor = 'blue', icon: PinIcon = 'default', isHovered = false) {
+export function getMarkerHTML(color: PinColor = 'blue', icon: PinIcon = 'default', isHovered = false) {
   const isHex = color.startsWith('#');
   const colorCode = isHex ? color : (COLOR_CODES[color] || COLOR_CODES.blue);
 
@@ -41,14 +40,12 @@ export function getMarkerIcon(color: PinColor = 'blue', icon: PinIcon = 'default
       </g>
     `;
   } else {
-    // A smaller dot for default icon when pin itself is smaller
     iconContent = `<circle cx="15" cy="15" r="6" fill="white" fill-opacity="0.9"/>`;
   }
 
-  // Smaller base size (half was 30x42, let's try 20x28 which is roughly half area-wise)
   const width = 20;
   const height = 28;
-  const scale = width / 30; // 0.66 scale
+  const scale = width / 30;
 
   const html = `
     <div style="
@@ -85,79 +82,67 @@ export function getMarkerIcon(color: PinColor = 'blue', icon: PinIcon = 'default
     </div>
   `;
 
-  return L.divIcon({
-    className: isHovered ? 'custom-pin-modern hovered' : 'custom-pin-modern',
-    html,
-    iconSize: [width, height],
-    iconAnchor: [width / 2, height],
-    popupAnchor: [0, -height],
-  });
+  const className = isHovered ? 'leaflet-marker-icon custom-pin-modern hovered' : 'leaflet-marker-icon custom-pin-modern';
+  return { html, className, width, height };
 }
 
-export function getPreviewMarkerIcon() {
+export function getPreviewMarkerHTML() {
   const width = 20;
   const height = 28;
   const scale = width / 30;
 
-  return L.divIcon({
-    className: 'custom-pin-modern hovered',
-    html: `
+  const html = `
+    <div style="
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: ${width}px;
+      height: ${height}px;
+    ">
       <div style="
-        position: relative;
+        position: absolute;
+        width: ${width * 3}px;
+        height: ${width * 3}px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.12);
+        z-index: -1;
+        animation: pulse 1.2s infinite;
         display: flex;
         align-items: center;
         justify-content: center;
-        width: ${width}px;
-        height: ${height}px;
       ">
-        <!-- Outer translucent halo with moving rainbow gradient border ring window -->
         <div style="
           position: absolute;
-          width: ${width * 3}px;
-          height: ${width * 3}px;
+          inset: 0;
           border-radius: 50%;
-          background: rgba(0, 0, 0, 0.12);
-          z-index: -1;
-          animation: pulse 1.2s infinite;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        ">
-          <div style="
-            position: absolute;
-            inset: 0;
-            border-radius: 50%;
-            padding: 3px;
-            background: linear-gradient(135deg, #b91c1c 0%, #c2410c 10%, #15803d 20%, #1d4ed8 30%, #6b21a8 40%, #b91c1c 50%, #c2410c 60%, #15803d 70%, #1d4ed8 80%, #6b21a8 90%, #b91c1c 100%);
-            background-size: 600% 600%;
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-            animation: rainbowMove 30s linear infinite;
-          "></div>
-        </div>
-
-        <!-- Moving Rainbow Pin Window -->
-        <div style="
-          filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
-          transform: scale(${scale});
-          transform-origin: center bottom;
-        ">
-          <div style="
-            width: 30px;
-            height: 42px;
-            background: linear-gradient(135deg, #b91c1c 0%, #c2410c 10%, #15803d 20%, #1d4ed8 30%, #6b21a8 40%, #b91c1c 50%, #c2410c 60%, #15803d 70%, #1d4ed8 80%, #6b21a8 90%, #b91c1c 100%);
-            background-size: 600% 600%;
-            animation: rainbowMove 30s linear infinite;
-            -webkit-clip-path: path('M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z');
-            clip-path: path('M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z');
-          "></div>
-        </div>
+          padding: 3px;
+          background: linear-gradient(135deg, #b91c1c 0%, #c2410c 10%, #15803d 20%, #1d4ed8 30%, #6b21a8 40%, #b91c1c 50%, #c2410c 60%, #15803d 70%, #1d4ed8 80%, #6b21a8 90%, #b91c1c 100%);
+          background-size: 600% 600%;
+          -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+          -webkit-mask-composite: xor;
+          mask-composite: exclude;
+          animation: rainbowMove 30s linear infinite;
+        "></div>
       </div>
-    `,
-    iconSize: [width, height],
-    iconAnchor: [width / 2, height],
-    popupAnchor: [0, -height]
-  });
-}
 
+      <div style="
+        filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
+        transform: scale(${scale});
+        transform-origin: center bottom;
+      ">
+        <div style="
+          width: 30px;
+          height: 42px;
+          background: linear-gradient(135deg, #b91c1c 0%, #c2410c 10%, #15803d 20%, #1d4ed8 30%, #6b21a8 40%, #b91c1c 50%, #c2410c 60%, #15803d 70%, #1d4ed8 80%, #6b21a8 90%, #b91c1c 100%);
+          background-size: 600% 600%;
+          animation: rainbowMove 30s linear infinite;
+          -webkit-clip-path: path('M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z');
+          clip-path: path('M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z');
+        "></div>
+      </div>
+    </div>
+  `;
+
+  return { html, className: 'leaflet-marker-icon custom-pin-modern hovered', width, height };
+}

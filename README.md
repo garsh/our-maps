@@ -47,6 +47,23 @@ To configure this:
 
 If `GOOGLE_MAPS_API_KEY` is not set, the server falls back to OpenStreetMap (Nominatim API), which has a significantly smaller places database and may not find user-contributed Google Maps places.
 
+## Vector Map Setup (PMTiles)
+
+Our Maps renders map tiles directly from a local Protomaps PMTiles dataset file (`planet.pmtiles`). Because dataset files can be large, they are not committed to git repository history.
+
+To download the PMTiles dataset on a new clone:
+
+- **Full World Dataset (123.5 GB)**:
+  ```bash
+  npm run setup:maps:full
+  ```
+- **Lightweight Sample Dataset (~20 MB)**:
+  ```bash
+  npm run setup:maps
+  ```
+
+This downloads `planet.pmtiles` into `./data/maps/planet.pmtiles` and sets up the server links for both local development and Docker containers.
+
 ## Self-Hosting
 
 You can easily self-host Our Maps using Docker and Docker Compose. This packages both the client and server into a single container and sets up a persistent volume for your SQLite database.
@@ -56,18 +73,19 @@ You can easily self-host Our Maps using Docker and Docker Compose. This packages
 - Docker Compose
 
 ### Running the App
-1. From the root of the repository, start the application in detached mode:
+1. Download the map dataset (see **Vector Map Setup** above).
+2. From the root of the repository, start the application in detached mode:
    ```bash
    docker compose up -d
    ```
-2. For web browsers, access the application securely at `https://localhost` or `https://47.144.129.56` (with your local IP address).
+3. For web browsers, access the application securely at `https://localhost` or `https://47.144.129.56` (with your local IP address).
    *(Note: Since it uses a self-signed local certificate via Caddy, your browser will warn you. You can safely bypass this warning for local development.)*
-3. For the Android App, keep your Retrofit base URL using plain HTTP on port 3000: `http://47.144.129.56:3000/api/`
-4. To view logs:
+4. For the Android App, keep your Retrofit base URL using plain HTTP on port 3000: `http://47.144.129.56:3000/api/`
+5. To view logs:
    ```bash
    docker compose logs -f
    ```
-5. To stop the application:
+6. To stop the application:
    ```bash
    docker compose down
    ```

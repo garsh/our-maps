@@ -7,6 +7,8 @@
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",
     "install:all": "npm install && cd client && npm install && cd ../server && npm install",
+    "setup:maps": "node scripts/download-map.js --sample",
+    "setup:maps:full": "node scripts/download-map.js --full",
     "build": "cd client && npm run build && cd ../server && npm run build",
     "start": "cd server && npm run start"
   },

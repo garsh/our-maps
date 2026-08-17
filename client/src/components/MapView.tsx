@@ -1,187 +1,148 @@
-import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import Map, { Marker, Popup, type MapRef } from 'react-map-gl/maplibre';
+import * as maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import { Protocol } from 'pmtiles';
+import { layers as protomapsLayers, namedFlavor } from '@protomaps/basemaps';
 import type { Pin } from '@shared/interfaces';
-import { useEffect, useRef, useState } from 'react';
-import { getMarkerIcon, getPreviewMarkerIcon } from '../utils/mapUtils';
-import L from 'leaflet';
+import { getMarkerHTML, getPreviewMarkerHTML } from '../utils/mapUtils';
 import { Locate } from 'lucide-react';
 import { reverseGeocode } from '../utils/geocoding';
 
+let globalPMTilesProtocol: Protocol | null = null;
+function setupPMTilesProtocol() {
+  if (!globalPMTilesProtocol) {
+    globalPMTilesProtocol = new Protocol();
+    maplibregl.addProtocol('pmtiles', globalPMTilesProtocol.tile);
+  }
+}
+setupPMTilesProtocol();
+
 interface MapViewProps {
-  center?: [number, number];
+  center?: [number, number]; // [lat, lng]
   zoom?: number;
   pins: Pin[];
   onMapClick: (lat: number, lng: number) => void;
   onPinClick?: (pin: Pin) => void;
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
   onBoundsChange: (bounds: string) => void;
-  targetLocation?: [number, number] | null;
+  targetLocation?: [number, number] | null; // [lat, lng]
   targetPinId?: string | null;
-  boundsToFit?: L.LatLngBounds | null;
+  boundsToFit?: [[number, number], [number, number]] | null;
   userRole?: 'owner' | 'edit' | 'view';
   hoveredPinId?: string | null;
   onHoverPin?: (id: string | null) => void;
   hiddenLayerIds?: Set<string | null>;
-  previewLocation?: {lat: number, lng: number} | null;
+  previewLocation?: { lat: number; lng: number } | null;
   bottomPadding?: number;
   editingPinId?: string | null;
   onBackgroundClick?: () => void;
 }
 
-const MapEvents = ({ onMapClick, onBoundsChange, onBackgroundClick, bottomPadding = 0 }: { onMapClick: (lat: number, lng: number) => void, onBoundsChange: (bounds: string) => void, onBackgroundClick?: () => void, bottomPadding?: number }) => {
-  const map = useMap();
-
-  const updateBounds = () => {
-    const size = map.getSize();
-    const paddingPx = bottomPadding;
-    
-    // Get visible bounds by translating the container points
-    const nw = map.containerPointToLatLng([0, 0]);
-    const se = map.containerPointToLatLng([size.x, size.y - paddingPx]);
-    
-    onBoundsChange(`${nw.lng},${nw.lat},${se.lng},${se.lat}`);
-  };
-
-  useEffect(() => {
-    updateBounds();
-  }, [bottomPadding, map]);
-
-  useMapEvents({
-    contextmenu: (e) => {
-      onMapClick(e.latlng.lat, e.latlng.lng);
-    },
-    click: () => {
-      onBackgroundClick?.();
-    },
-    moveend: updateBounds,
-    zoomend: updateBounds
-  });
-  return null;
-};
-
-const MapController = ({ targetLocation, boundsToFit, targetPinId, pins, bottomPadding = 0 }: { targetLocation?: [number, number] | null, boundsToFit?: L.LatLngBounds | null, targetPinId?: string | null, pins?: Pin[], bottomPadding?: number }) => {
-  const map = useMap();
-  const lastTarget = useRef<[number, number] | null>(null);
-  const lastTargetPinId = useRef<string | null>(null);
-  
-  useEffect(() => {
-    if (targetLocation && (targetLocation[0] !== lastTarget.current?.[0] || targetLocation[1] !== lastTarget.current?.[1])) {
-      map.flyTo(targetLocation, 14, { duration: 1.5 });
-      lastTarget.current = targetLocation;
-    }
-  }, [targetLocation, map]);
-
-  useEffect(() => {
-    if (!targetPinId || targetPinId === lastTargetPinId.current) return;
-    lastTargetPinId.current = targetPinId;
-    const pin = pins?.find(p => p.id === targetPinId);
-    if (!pin) return;
-    const bounds = map.getBounds();
-    if (!bounds.contains([pin.lat, pin.lng])) {
-      map.flyTo([pin.lat, pin.lng], map.getZoom(), { duration: 1.2 });
-    }
-  }, [targetPinId, pins, map]);
-
-  useEffect(() => {
-    if (boundsToFit && boundsToFit.isValid()) {
-      const paddingPx = bottomPadding;
-      map.fitBounds(boundsToFit, { 
-        paddingTopLeft: [50, 50],
-        paddingBottomRight: [50, 50 + paddingPx],
-        maxZoom: 16 
-      });
-    }
-  }, [boundsToFit, map, bottomPadding]);
-
-  return null;
-};
-
 const UserLocationMarker = () => {
-  const [position, setPosition] = useState<L.LatLng | null>(null);
-  const map = useMap();
+  const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
-    map.locate().on("locationfound", function (e) {
-      setPosition(e.latlng);
-    });
-  }, [map]);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        },
+        (err) => console.warn('Geolocation error:', err),
+        { enableHighAccuracy: true }
+      );
+    }
+  }, []);
 
-  if (position === null) return null;
+  if (!position) return null;
 
-  const blueDotIcon = L.divIcon({
-    className: 'user-location-dot',
-    html: `<div style="width: 16px; height: 16px; background: #4285F4; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.4); animation: pulse 2s infinite;"></div>`,
-    iconSize: [16, 16],
-    iconAnchor: [8, 8],
-  });
+  return (
+    <Marker longitude={position.lng} latitude={position.lat} anchor="center">
+      <div
+        className="user-location-dot"
+        style={{
+          width: '16px',
+          height: '16px',
+          background: '#4285F4',
+          border: '3px solid white',
+          borderRadius: '50%',
+          boxShadow: '0 0 0 2px rgba(66, 133, 244, 0.4)',
+          animation: 'pulse 2s infinite',
+        }}
+      />
+    </Marker>
+  );
+};
 
-  return <Marker position={position} icon={blueDotIcon} />;
-}
-
-const PinMarker = ({ 
-  pin, 
-  onUpdatePin, 
-  onHoverPin, 
+const PinMarker = ({
+  pin,
+  onUpdatePin,
+  onHoverPin,
   onPinClick,
-  hoveredPinId, 
+  hoveredPinId,
   targetPinId,
   editingPinId,
   readOnly,
-  setMarkerRef
-}: { 
-  pin: Pin, 
-  onUpdatePin: (id: string, updates: Partial<Pin>) => void, 
-  onHoverPin?: (id: string | null) => void, 
-  onPinClick?: (pin: Pin) => void,
-  hoveredPinId?: string | null, 
-  targetPinId?: string | null,
-  editingPinId?: string | null,
-  readOnly: boolean,
-  setMarkerRef: (id: string, marker: L.Marker | null) => void
+}: {
+  pin: Pin;
+  onUpdatePin: (id: string, updates: Partial<Pin>) => void;
+  onHoverPin?: (id: string | null) => void;
+  onPinClick?: (pin: Pin) => void;
+  hoveredPinId?: string | null;
+  targetPinId?: string | null;
+  editingPinId?: string | null;
+  readOnly: boolean;
 }) => {
-  const handleDragEnd = async (e: L.DragEndEvent) => {
-    const marker = e.target;
-    const position = marker.getLatLng();
-    const newLat = position.lat;
-    const newLng = position.lng;
+  const isSelected = hoveredPinId === pin.id || targetPinId === pin.id || editingPinId === pin.id;
+  const { html, className } = getMarkerHTML(pin.color, pin.icon, isSelected);
 
+  const handleDragEnd = async (e: any) => {
+    const newLat = e.lngLat.lat;
+    const newLng = e.lngLat.lng;
     const newAddress = await reverseGeocode(newLat, newLng);
-    
-    onUpdatePin(pin.id, { 
-        lat: newLat, 
-        lng: newLng, 
-        address: newAddress || undefined 
+
+    onUpdatePin(pin.id, {
+      lat: newLat,
+      lng: newLng,
+      address: newAddress || undefined,
     });
   };
 
   return (
-    <Marker 
-      position={[pin.lat, pin.lng]} 
-      icon={getMarkerIcon(pin.color, pin.icon, hoveredPinId === pin.id || targetPinId === pin.id || editingPinId === pin.id)}
-      zIndexOffset={hoveredPinId === pin.id || targetPinId === pin.id || editingPinId === pin.id ? 1000 : 0}
-      ref={(ref) => setMarkerRef(pin.id, ref)}
+    <Marker
+      longitude={pin.lng}
+      latitude={pin.lat}
+      anchor="bottom"
       draggable={!readOnly && editingPinId === pin.id}
-      eventHandlers={{
-        click: () => onPinClick?.(pin),
-        mouseover: () => onHoverPin?.(pin.id),
-        mouseout: () => onHoverPin?.(null),
-        dragend: handleDragEnd
-      }}
-    />
+      onDragEnd={handleDragEnd}
+      style={{ zIndex: isSelected ? 1000 : 1 }}
+    >
+      <div
+        className={className}
+        style={{ cursor: 'pointer' }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onPinClick?.(pin);
+        }}
+        onMouseEnter={() => onHoverPin?.(pin.id)}
+        onMouseLeave={() => onHoverPin?.(null)}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </Marker>
   );
-}
+};
 
-const MapView = ({ 
-  center = [20, 0], 
-  zoom = 3, 
-  pins, 
-  onMapClick, 
+const MapView = ({
+  center = [20, 0], // default [lat, lng]
+  zoom = 3,
+  pins,
+  onMapClick,
   onPinClick,
-  onUpdatePin, 
-  onBoundsChange, 
-  targetLocation, 
-  targetPinId, 
-  boundsToFit, 
+  onUpdatePin,
+  onBoundsChange,
+  targetLocation,
+  targetPinId,
+  boundsToFit,
   userRole = 'owner',
   hoveredPinId,
   onHoverPin,
@@ -189,66 +150,354 @@ const MapView = ({
   previewLocation,
   bottomPadding = 0,
   editingPinId,
-  onBackgroundClick
+  onBackgroundClick,
 }: MapViewProps) => {
-  const markerRefs = useRef<Record<string, L.Marker | null>>({});
-  const mapRef = useRef<L.Map | null>(null);
+  const mapRef = useRef<MapRef | null>(null);
   const readOnly = userRole === 'view';
+  const lastTarget = useRef<[number, number] | null>(null);
+  const lastTargetPinId = useRef<string | null>(null);
+  const [isMapLoaded, setIsMapLoaded] = useState(false);
+  const [currentZoom, setCurrentZoom] = useState<number>(zoom);
+  const hasFitInitialBoundsRef = useRef(false);
 
-  // Filter pins based on hiddenLayerIds
-  const visiblePins = pins.filter(pin => !hiddenLayerIds?.has(pin.layerId || null));
+  const mapStyle = useMemo<any>(() => {
+    const pmtilesUrl = `${window.location.origin}/maps/planet.pmtiles`;
+    const rawLayers = protomapsLayers('protomaps', namedFlavor('light'), { lang: 'en' });
 
-  // Removed popup open logic
+    // Customize Protomaps layers to match Stadia Alidade Bright theme palette & typography
+    const customLayers = rawLayers.map((layer: any) => {
+      const l = {
+        ...layer,
+        paint: layer.paint ? { ...layer.paint } : {},
+        layout: layer.layout ? { ...layer.layout } : {},
+      };
+
+      // Land & Water
+      if (l.id === 'background') l.paint['background-color'] = '#fcfbfa';
+      if (l.id === 'earth') l.paint['fill-color'] = '#f8f7f4';
+      if (l.id === 'water') l.paint['fill-color'] = '#a0c8f0';
+      if (l.id.includes('water_river') || l.id.includes('water_stream')) l.paint['line-color'] = '#a0c8f0';
+      if (l.id === 'landuse_park' || l.id === 'landuse_urban_green') l.paint['fill-color'] = '#d8ebd2';
+      if (l.id === 'buildings') { l.paint['fill-color'] = '#e8e4dc'; l.paint['fill-opacity'] = 0.7; }
+      if (l.id === 'landuse_school') l.paint['fill-color'] = '#fbf3d5';
+      if (l.id === 'landuse_hospital') l.paint['fill-color'] = '#f6e5e5';
+      if (l.id === 'landuse_industrial') l.paint['fill-color'] = '#eceeef';
+      if (l.id.includes('boundaries')) l.paint['line-color'] = '#8a8a8a';
+
+      // Typography & Labels
+      if (l.type === 'symbol') {
+        if (l.paint['text-color']) {
+          l.paint['text-color'] = l.id.includes('water_') ? '#1d4ed8' : '#000000';
+          l.paint['text-halo-color'] = '#ffffff';
+          l.paint['text-halo-width'] = 2.5;
+        }
+        if (l.layout?.['text-size']) {
+          const s = l.layout['text-size'];
+          if (typeof s === 'number') l.layout['text-size'] = s + 2.5;
+          else if (Array.isArray(s) && (s[0] === 'interpolate' || s[0] === 'step')) {
+            const bumped = [...s];
+            for (let i = 4; i < bumped.length; i += 2) {
+              if (typeof bumped[i] === 'number') bumped[i] = (bumped[i] as number) + 2.5;
+            }
+            l.layout['text-size'] = bumped;
+          }
+        }
+      }
+
+      // Highways / Interstates (I-76, I-79)
+      if (l.id.includes('roads_highway') && !l.id.includes('casing') && !l.id.includes('labels')) l.paint['line-color'] = '#fca855';
+      if (l.id.includes('roads_highway_casing')) l.paint['line-color'] = '#de7a22';
+
+      // Major Primary / Secondary Roads (Route 19, Route 50)
+      if (l.id.includes('roads_major') && !l.id.includes('casing') && !l.id.includes('labels')) {
+        l.paint['line-color'] = '#ffd54f';
+        l.paint['line-width'] = ['interpolate', ['linear'], ['zoom'], 6, 0.8, 8, 2.2, 12, 3.8, 15, 5.5, 18, 14];
+      }
+      if (l.id.includes('roads_major_casing')) {
+        l.paint['line-color'] = '#e0aa1b';
+        l.paint['line-width'] = ['interpolate', ['linear'], ['zoom'], 7, 0.5, 9, 1.0, 12, 1.8];
+      }
+      if (l.id === 'roads_labels_major') l.minzoom = 8;
+
+      // Minor / Residential Streets
+      if ((l.id.includes('roads_minor') || l.id.includes('roads_other') || l.id.includes('roads_pier')) && !l.id.includes('casing')) {
+        l.paint['line-color'] = ['interpolate', ['linear'], ['zoom'], 10, '#e2dfd7', 13.5, '#d4d0c7', 15.5, '#ffffff'];
+      }
+      if (l.id.includes('roads_minor_casing')) l.paint['line-color'] = '#e0ded7';
+
+      return l;
+    });
+
+    return {
+      version: 8,
+      glyphs: 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf',
+      sources: {
+        protomaps: {
+          type: 'vector',
+          url: `pmtiles://${pmtilesUrl}`,
+          maxzoom: 15,
+          attribution: '&copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; <a href="https://openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+        },
+      },
+      layers: customLayers,
+    };
+  }, []);
+
+  const visiblePins = useMemo(
+    () => pins.filter((pin) => !hiddenLayerIds?.has(pin.layerId || null)),
+    [pins, hiddenLayerIds]
+  );
+  const selectedPin = targetPinId ? visiblePins.find((p) => p.id === targetPinId) : null;
+
+  // Calculate immediate initial view state using native bounds & fitBoundsOptions so the map opens instantly focused on frame 1
+  const initialViewState = useMemo(() => {
+    if (targetLocation) {
+      return { longitude: targetLocation[1], latitude: targetLocation[0], zoom: 14 };
+    }
+
+    let targetBounds: [[number, number], [number, number]] | null = null;
+    if (boundsToFit && Array.isArray(boundsToFit) && boundsToFit.length === 2) {
+      targetBounds = boundsToFit;
+    } else {
+      const pinsToUse = visiblePins.length > 0 ? visiblePins : pins;
+      if (pinsToUse.length > 0) {
+        const lats = pinsToUse.map((p) => p.lat);
+        const lngs = pinsToUse.map((p) => p.lng);
+        targetBounds = [
+          [Math.min(...lats), Math.min(...lngs)],
+          [Math.max(...lats), Math.max(...lngs)],
+        ];
+      }
+    }
+
+    if (targetBounds) {
+      const [first, second] = targetBounds;
+      const minLat = Math.min(first[0], second[0]);
+      const maxLat = Math.max(first[0], second[0]);
+      const minLng = Math.min(first[1], second[1]);
+      const maxLng = Math.max(first[1], second[1]);
+
+      if (Math.abs(maxLat - minLat) < 0.0001 && Math.abs(maxLng - minLng) < 0.0001) {
+        return { longitude: minLng, latitude: minLat, zoom: 14 };
+      }
+
+      return {
+        bounds: [minLng, minLat, maxLng, maxLat] as [number, number, number, number],
+        fitBoundsOptions: {
+          padding: { top: 60, left: 60, right: 60, bottom: 60 + bottomPadding },
+          maxZoom: 15,
+        },
+      };
+    }
+
+    return { longitude: center[1], latitude: center[0], zoom };
+  }, [boundsToFit, visiblePins, pins, targetLocation, center, zoom, bottomPadding]);
+
+  const updateBounds = useCallback(() => {
+    if (!mapRef.current) return;
+    const map = mapRef.current.getMap();
+    setCurrentZoom(map.getZoom());
+    const bounds = map.getBounds();
+    const nw = bounds.getNorthWest();
+    const se = bounds.getSouthEast();
+
+    onBoundsChange(`${nw.lng},${nw.lat},${se.lng},${se.lat}`);
+  }, [onBoundsChange]);
+
+  const applyBoundsToFit = useCallback(
+    (bounds: [[number, number], [number, number]] | null, animate = true) => {
+      if (!bounds || !mapRef.current) return;
+      const [first, second] = bounds;
+
+      const minLat = Math.min(first[0], second[0]);
+      const maxLat = Math.max(first[0], second[0]);
+      const minLng = Math.min(first[1], second[1]);
+      const maxLng = Math.max(first[1], second[1]);
+
+      const duration = animate ? 1200 : 0;
+
+      if (Math.abs(maxLat - minLat) < 0.0001 && Math.abs(maxLng - minLng) < 0.0001) {
+        mapRef.current.flyTo({
+          center: [minLng, minLat],
+          zoom: 14,
+          duration,
+        });
+      } else {
+        mapRef.current.fitBounds(
+          [
+            [minLng, minLat],
+            [maxLng, maxLat],
+          ],
+          {
+            padding: { top: 60, left: 60, right: 60, bottom: 60 + bottomPadding },
+            maxZoom: 15,
+            duration,
+          }
+        );
+      }
+    },
+    [bottomPadding]
+  );
+
+  // Camera movements for targetLocation
+  useEffect(() => {
+    if (
+      targetLocation &&
+      (targetLocation[0] !== lastTarget.current?.[0] || targetLocation[1] !== lastTarget.current?.[1])
+    ) {
+      mapRef.current?.flyTo({
+        center: [targetLocation[1], targetLocation[0]], // [lng, lat]
+        zoom: 14,
+        duration: 1500,
+      });
+      lastTarget.current = targetLocation;
+    }
+  }, [targetLocation]);
+
+  // Camera movements for targetPinId
+  useEffect(() => {
+    if (!targetPinId || targetPinId === lastTargetPinId.current) return;
+    lastTargetPinId.current = targetPinId;
+    const pin = pins?.find((p) => p.id === targetPinId);
+    if (!pin || !mapRef.current) return;
+
+    const map = mapRef.current.getMap();
+    const bounds = map.getBounds();
+    if (!bounds.contains([pin.lng, pin.lat])) {
+      map.flyTo({
+        center: [pin.lng, pin.lat],
+        zoom: map.getZoom(),
+        duration: 1200,
+      });
+    }
+  }, [targetPinId, pins]);
+
+  // Camera movements for boundsToFit (subsequent changes only, preventing initial zoom shift)
+  useEffect(() => {
+    if (!isMapLoaded) return;
+
+    if (!hasFitInitialBoundsRef.current) {
+      hasFitInitialBoundsRef.current = true;
+      return;
+    }
+
+    if (boundsToFit && Array.isArray(boundsToFit) && boundsToFit.length === 2) {
+      applyBoundsToFit(boundsToFit, true);
+    }
+  }, [boundsToFit, isMapLoaded, applyBoundsToFit]);
 
   const handleMyLocation = () => {
-    if (mapRef.current) {
-      mapRef.current.locate({ setView: true, maxZoom: 16 });
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          mapRef.current?.flyTo({
+            center: [pos.coords.longitude, pos.coords.latitude],
+            zoom: 16,
+            duration: 1500,
+          });
+        },
+        (err) => console.warn('Location lookup failed:', err),
+        { enableHighAccuracy: true }
+      );
     }
   };
 
+  const previewMarker = previewLocation ? getPreviewMarkerHTML() : null;
+
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
-      <MapContainer 
-        center={center} 
-        zoom={zoom} 
-        style={{ height: '100%', width: '100%' }}
-        doubleClickZoom={false}
-        ref={mapRef}
-        worldCopyJump={false}
-      >
-        <TileLayer
-          attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>, &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors'
-          url={`https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}{r}.png?api_key=${import.meta.env.VITE_STADIA_API_KEY}`}
-          noWrap={true}
-        />
-        <MapEvents onMapClick={onMapClick} onBoundsChange={onBoundsChange} onBackgroundClick={onBackgroundClick} bottomPadding={bottomPadding} />
-        <MapController targetLocation={targetLocation} boundsToFit={boundsToFit} targetPinId={targetPinId} pins={pins} bottomPadding={bottomPadding} />
-        <UserLocationMarker />
-        {visiblePins.map((pin) => (
-          <PinMarker 
-            key={pin.id} 
-            pin={pin}
-            onUpdatePin={onUpdatePin}
-            onHoverPin={onHoverPin}
-            onPinClick={onPinClick}
-            hoveredPinId={hoveredPinId}
-            targetPinId={targetPinId}
-            editingPinId={editingPinId}
-            readOnly={readOnly}
-            setMarkerRef={(id, ref) => { markerRefs.current[id] = ref; }}
-          />
-        ))}
-        {previewLocation && (
-          <Marker 
-            position={[previewLocation.lat, previewLocation.lng]} 
-            icon={getPreviewMarkerIcon()}
-            interactive={false}
-            zIndexOffset={1000}
-          />
-        )}
-      </MapContainer>
+      {mapStyle && (
+        <Map
+          ref={mapRef}
+          initialViewState={initialViewState}
+          mapStyle={mapStyle}
+          style={{ width: '100%', height: '100%' }}
+          doubleClickZoom={false}
+          maxZoom={22}
+          minZoom={1}
+          onLoad={() => {
+            setIsMapLoaded(true);
+            if (mapRef.current) setCurrentZoom(mapRef.current.getZoom());
+          }}
+          onMove={updateBounds}
+          onMoveEnd={updateBounds}
+          onContextMenu={(e: maplibregl.MapLayerMouseEvent) => {
+            onMapClick(e.lngLat.lat, e.lngLat.lng);
+          }}
+          onClick={(e: maplibregl.MapLayerMouseEvent) => {
+            if (!e.defaultPrevented) {
+              onBackgroundClick?.();
+            }
+          }}
+        >
+          <UserLocationMarker />
+          {visiblePins.map((pin) => (
+            <PinMarker
+              key={pin.id}
+              pin={pin}
+              onUpdatePin={onUpdatePin}
+              onHoverPin={onHoverPin}
+              onPinClick={onPinClick}
+              hoveredPinId={hoveredPinId}
+              targetPinId={targetPinId}
+              editingPinId={editingPinId}
+              readOnly={readOnly}
+            />
+          ))}
+          {selectedPin && (
+            <Popup
+              longitude={selectedPin.lng}
+              latitude={selectedPin.lat}
+              anchor="top"
+              closeButton={false}
+              closeOnClick={false}
+              className="modern-popup"
+            >
+              <div className="leaflet-popup-content" style={{ margin: 0, padding: '4px' }}>
+                <h3 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 600 }}>{selectedPin.label}</h3>
+                {selectedPin.address && <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#666' }}>{selectedPin.address}</p>}
+                {selectedPin.description && <p style={{ margin: '0 0 4px 0', fontSize: '12px' }}>{selectedPin.description}</p>}
+                {selectedPin.imageUrl && <img src={selectedPin.imageUrl} alt={selectedPin.label} style={{ maxWidth: '100%', borderRadius: '8px' }} />}
+              </div>
+            </Popup>
+          )}
+          {previewLocation && previewMarker && (
+            <Marker longitude={previewLocation.lng} latitude={previewLocation.lat} anchor="bottom">
+              <div
+                className={previewMarker.className}
+                dangerouslySetInnerHTML={{ __html: previewMarker.html }}
+              />
+            </Marker>
+          )}
+        </Map>
+      )}
 
-      <button 
+      {/* Live Zoom Level Indicator Pill (Dev Server Only) */}
+      {import.meta.env.DEV && (
+        <div
+          className="zoom-level-pill"
+          style={{
+            position: 'absolute',
+            top: '64px',
+            right: '16px',
+            background: 'rgba(255, 255, 255, 0.9)',
+            backdropFilter: 'blur(8px)',
+            padding: '6px 14px',
+            borderRadius: '20px',
+            fontSize: '12px',
+            fontWeight: 600,
+            color: '#2c3e50',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            zIndex: 1000,
+            pointerEvents: 'none',
+            letterSpacing: '0.3px',
+          }}
+        >
+          Zoom: {currentZoom.toFixed(1)}
+        </div>
+      )}
+
+      <button
         onClick={handleMyLocation}
         style={{
           position: 'absolute',
@@ -266,10 +515,10 @@ const MapView = ({
           cursor: 'pointer',
           zIndex: 1000,
           color: 'var(--primary-color)',
-          transition: 'all 0.2s'
+          transition: 'all 0.2s',
         }}
-        onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
-        onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+        onMouseEnter={(e) => (e.currentTarget.style.background = '#f8f9fa')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'white')}
         title="Find my location"
       >
         <Locate size={24} />
@@ -281,15 +530,7 @@ const MapView = ({
           70% { box-shadow: 0 0 0 15px rgba(66, 133, 244, 0); }
           100% { box-shadow: 0 0 0 0 rgba(66, 133, 244, 0); }
         }
-        .modern-popup .leaflet-popup-content-wrapper {
-          border-radius: 16px;
-          padding: 8px;
-          box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-        }
-        .modern-popup .leaflet-popup-content {
-          margin: 12px;
-        }
-        .leaflet-container {
+        .maplibregl-container {
           background-color: var(--bg-color);
         }
       `}</style>

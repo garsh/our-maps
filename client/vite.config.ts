@@ -28,21 +28,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        navigateFallbackDenylist: [/^\/maps/],
         runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/tiles\.stadiamaps\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'stadia-tiles',
-              expiration: {
-                maxEntries: 5000,
-                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
           {
             urlPattern: /\/api\/.*/i,
             handler: 'NetworkFirst',
@@ -59,6 +46,9 @@ export default defineConfig({
       }
     })
   ],
+  optimizeDeps: {
+    exclude: ['maplibre-gl'],
+  },
   resolve: {
     alias: {
       '@shared': path.resolve(__dirname, '../shared'),
@@ -83,6 +73,10 @@ export default defineConfig({
             console.log('Received Response from the Target:', proxyRes.statusCode, req.url);
           });
         },
+      },
+      '/maps': {
+        target: 'http://127.0.0.1:3002',
+        changeOrigin: true,
       },
       '/socket.io': {
         target: 'http://127.0.0.1:3002',

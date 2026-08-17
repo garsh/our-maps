@@ -52,8 +52,9 @@ app.use(helmet({
       "style-src": ["'self'", "'unsafe-inline'", "https://accounts.google.com/gsi/style", "https://fonts.googleapis.com"],
       "font-src": ["'self'", "https://fonts.gstatic.com"],
       "frame-src": ["'self'", "https://accounts.google.com/gsi/"],
-      "connect-src": ["'self'", "https:", "http:", "wss:", "ws:"],
+      "connect-src": ["'self'", "https:", "http:", "wss:", "ws:", "blob:"],
       "worker-src": ["'self'", "blob:"],
+      "child-src": ["'self'", "blob:"],
       "manifest-src": ["'self'"],
       "upgrade-insecure-requests": null, 
     },
@@ -221,6 +222,35 @@ io.on('connection', (socket: Socket) => {
 });
 
 
+// Serve maps directory (PMTiles, fonts, sprites) with HTTP Range Request and CORS support
+const dataMapsDir = path.resolve(__dirname, '../../data/maps');
+const publicMapsDir = path.resolve(__dirname, '../public/maps');
+const mapsDir = fs.existsSync(dataMapsDir) ? dataMapsDir : publicMapsDir;
+
+console.log(`[MAPS DIR] Serving vector tiles from: ${mapsDir}`);
+
+if (!fs.existsSync(mapsDir)) {
+  fs.mkdirSync(mapsDir, { recursive: true });
+}
+
+app.use('/maps', (req, res, next) => {
+  console.log(`[MAPS REQ] ${req.method} ${req.url} (Range: ${req.headers.range || 'none'})`);
+  next();
+});
+
+const staticOptions = {
+  acceptRanges: true,
+  setHeaders: (res: any) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+  }
+};
+app.use('/maps', express.static(mapsDir, staticOptions));
+if (mapsDir !== publicMapsDir && fs.existsSync(publicMapsDir)) {
+  app.use('/maps', express.static(publicMapsDir, staticOptions));
+}
+
 // Resolve client build path
 const potentialPaths = [
   path.join(__dirname, '../../../../client/dist'), 
@@ -233,7 +263,7 @@ const clientBuildPath = potentialPaths.find(p => fs.existsSync(p)) || potentialP
 app.use(express.static(clientBuildPath));
 
 app.get('*', (req, res) => {
-  if (!req.url.startsWith('/api')) {
+  if (!req.url.startsWith('/api') && !req.url.startsWith('/maps')) {
     const indexPath = path.join(clientBuildPath, 'index.html');
     if (fs.existsSync(indexPath)) {
       res.sendFile(indexPath);
