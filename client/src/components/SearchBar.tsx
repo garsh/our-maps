@@ -118,8 +118,8 @@ const SearchBar = ({ onResultSelect: _onResultSelect, onAddPin, onSelectPin: _on
   };
 
   return (
-    <div className="search-container" style={{ marginBottom: '0.4rem', position: 'relative' }}>
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+    <div className="search-container" style={{ marginBottom: 0, position: 'relative', height: '28px' }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', height: '28px' }}>
         <div style={{ position: 'absolute', left: '12px', color: 'var(--primary-color)', display: 'flex' }}>
           {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
         </div>
@@ -131,6 +131,8 @@ const SearchBar = ({ onResultSelect: _onResultSelect, onAddPin, onSelectPin: _on
           disabled={disabled}
           className="input-field"
           style={{ 
+            height: '28px',
+            boxSizing: 'border-box',
             paddingTop: '6px',
             paddingBottom: '6px',
             paddingLeft: '32px',
