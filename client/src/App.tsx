@@ -73,23 +73,93 @@ export function MapEditor() {
 
   const [sheetHeight, setSheetHeight] = useState(300);
   const [isDraggingSheet, setIsDraggingSheet] = useState(false);
-  const sheetDragStart = useRef({ y: 0, height: 0 });
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const sheetDragStart = useRef<{ y: number; height: number; time: number; moved: boolean }>({ y: 0, height: 300, time: 0, moved: false });
+  const currentDragHeight = useRef<number>(300);
+  const rafId = useRef<number | null>(null);
+
+  const getSheetBounds = () => {
+    const headerHeight = headerRef.current ? headerRef.current.getBoundingClientRect().height : 44;
+    const handleHeight = 28;
+    const maxH = Math.max(100, window.innerHeight - headerHeight - handleHeight);
+    const minH = 0;
+    return { minH, maxH };
+  };
 
   const startSheetDrag = (e: React.PointerEvent) => {
     setIsDraggingSheet(true);
-    sheetDragStart.current = { y: e.clientY, height: sheetHeight };
-    e.currentTarget.setPointerCapture(e.pointerId);
+    sheetDragStart.current = { y: e.clientY, height: sheetHeight, time: Date.now(), moved: false };
+    currentDragHeight.current = sheetHeight;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore in environments where pointer capture is unsupported
+    }
   };
   
   const onSheetDrag = (e: React.PointerEvent) => {
     if (!isDraggingSheet) return;
     const deltaY = sheetDragStart.current.y - e.clientY;
-    setSheetHeight(Math.max(0, Math.min(window.innerHeight - 55, sheetDragStart.current.height + deltaY)));
+    if (Math.abs(deltaY) > 3) {
+      sheetDragStart.current.moved = true;
+    }
+    const { minH, maxH } = getSheetBounds();
+    const newH = Math.max(minH, Math.min(maxH, sheetDragStart.current.height + deltaY));
+    currentDragHeight.current = newH;
+
+    if (rafId.current !== null) {
+      cancelAnimationFrame(rafId.current);
+    }
+    rafId.current = requestAnimationFrame(() => {
+      if (sheetRef.current) {
+        sheetRef.current.style.height = `${newH}px`;
+      }
+    });
   };
   
   const endSheetDrag = (e: React.PointerEvent) => {
+    if (!isDraggingSheet) return;
     setIsDraggingSheet(false);
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    if (rafId.current !== null) {
+      cancelAnimationFrame(rafId.current);
+      rafId.current = null;
+    }
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+
+    const totalDeltaY = sheetDragStart.current.y - e.clientY; // positive = dragged UP, negative = dragged DOWN
+    const elapsed = Math.max(1, Date.now() - sheetDragStart.current.time);
+    const velocity = totalDeltaY / elapsed; // px per ms
+
+    const { minH, maxH } = getSheetBounds();
+    let finalH = currentDragHeight.current;
+
+    if (!sheetDragStart.current.moved || (elapsed < 200 && Math.abs(totalDeltaY) < 5)) {
+      // Toggle collapsed (0) vs open on tap
+      if (sheetHeight < 30) {
+        finalH = Math.min(350, Math.round(window.innerHeight * 0.45));
+      } else {
+        finalH = minH;
+      }
+    } else if (velocity > 0.4) {
+      // Fast flick UP -> raise all the way so handle touches title bar
+      finalH = maxH;
+    } else if (velocity < -0.4) {
+      // Fast flick DOWN -> hide panel completely
+      finalH = minH;
+    } else {
+      // Normal drag release: keep exact custom height where user released
+      finalH = Math.max(minH, Math.min(maxH, currentDragHeight.current));
+    }
+
+    if (sheetRef.current) {
+      sheetRef.current.style.height = `${finalH}px`;
+    }
+    setSheetHeight(finalH);
   };
 
 
@@ -618,17 +688,19 @@ export function MapEditor() {
   }
 
   const appHeader = (
-    <header style={{ 
-      padding: '0.4rem 1rem', 
-      background: 'var(--primary-color)', 
-      color: 'white', 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'space-between',
-      boxShadow: 'var(--shadow-md)', 
-      zIndex: 1000,
-      flexShrink: 0
-    }}>
+    <header 
+      ref={headerRef}
+      style={{ 
+        padding: '0.4rem 1rem', 
+        background: 'var(--primary-color)', 
+        color: 'white', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        boxShadow: 'var(--shadow-md)', 
+        zIndex: 1000,
+        flexShrink: 0
+      }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', minWidth: 0, flexShrink: 1, userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} onClick={() => navigate('/')}>
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <MapIcon size={18} />
@@ -677,6 +749,7 @@ export function MapEditor() {
       {isMobile && appHeader}
 
       <div 
+        ref={sheetRef}
         className={isMobile ? `mobile-bottom-sheet ${isDraggingSheet ? 'dragging' : ''}` : ''}
         style={isMobile ? { 
           height: `${sheetHeight}px`,
@@ -741,7 +814,8 @@ export function MapEditor() {
           height: `${(1 / mobileScale) * 100}%`,
           flex: 'none',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          overflow: 'hidden'
         } : {
           transform: 'scale(1.25)',
           transformOrigin: 'top left',
@@ -763,7 +837,7 @@ export function MapEditor() {
             pins={pins}
             onResultSelect={(lat, lng) => {
               setTargetLocation([lat, lng]);
-              if (isMobile) setSheetHeight(40);
+              if (isMobile) setSheetHeight(0);
             }}
             onAddPin={addPinAtLocation}
             onSelectPin={handlePinSelect}

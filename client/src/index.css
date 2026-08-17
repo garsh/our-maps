@@ -125,10 +125,15 @@ button:active {
     border-right: none !important;
     box-shadow: 0 -4px 12px rgba(0,0,0,0.15) !important;
     touch-action: none;
+    will-change: height;
+  }
+
+  .mobile-bottom-sheet.dragging {
+    transition: none !important;
   }
 
   .mobile-bottom-sheet:not(.dragging) {
-    transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: height 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
   .resizer-handle {
@@ -152,24 +157,26 @@ button:active {
 }
 
 .bottom-sheet-drag-handle {
-  width: 80px;
+  width: 100px;
   margin: 0 auto;
-  height: 24px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: grab;
   background: white;
-  border-radius: 12px 12px 0 0;
+  border-radius: 14px 14px 0 0;
   border-top: 1px solid var(--border-color);
   border-left: 1px solid var(--border-color);
   border-right: 1px solid var(--border-color);
   box-shadow: 0 -4px 12px rgba(0,0,0,0.08);
   position: absolute;
-  top: -24px;
+  top: -28px;
   left: 0;
   right: 0;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .bottom-sheet-drag-handle:active {
