@@ -49,3 +49,6 @@ export interface MapData {
   userRole?: 'view' | 'edit' | 'owner';
   lastAccessedAt?: string;
 }
+
+export * from './types/socket';
+

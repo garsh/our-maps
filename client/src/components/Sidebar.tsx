@@ -60,6 +60,7 @@ import {
 import { canFit } from '../utils/storageUtils';
 import { tileWorkerManager } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
+import { comparePinPositions } from '../utils/reorderUtils';
 
 
 
@@ -80,6 +81,7 @@ interface SidebarProps {
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
   onDragEnd: (event: DragEndEvent) => void;
   onDragOver?: (event: DragOverEvent) => void;
+  onDragStart?: (event: DragStartEvent) => void;
   userRole?: 'owner' | 'edit' | 'view';
   onShare?: () => void;
   onImport?: (data: Partial<MapData>) => void;
@@ -881,6 +883,7 @@ const Sidebar = ({
   onUpdatePin,
   onDragEnd,
   onDragOver,
+  onDragStart,
   userRole = 'owner',
   onShare,
   onImport,
@@ -1144,7 +1147,7 @@ const Sidebar = ({
     })
   );
 
-  const defaultPins = pins.filter(p => !p.layerId).sort((a, b) => a.position - b.position);
+  const defaultPins = pins.filter(p => !p.layerId).sort(comparePinPositions);
 
   const getVisualOrder = (pin: Pin) => {
     if (!pin.layerId) return { layerIndex: Number.MAX_SAFE_INTEGER, pinPosition: pin.position };
@@ -1195,6 +1198,7 @@ const Sidebar = ({
     } else if (active.data.current?.type === 'layer') {
       setActiveLayer(active.data.current.layer);
     }
+    onDragStart?.(event);
   };
 
   const handleDragEndInternal = (event: DragEndEvent) => {
@@ -1430,7 +1434,7 @@ const Sidebar = ({
               <SortableLayer
                 key={layer.id}
                 layer={layer}
-                layerPins={pins.filter(p => p.layerId === layer.id).sort((a, b) => a.position - b.position)}
+                layerPins={pins.filter(p => p.layerId === layer.id).sort(comparePinPositions)}
                 onUpdateLayer={onUpdateLayer}
                 onRemoveLayer={onRemoveLayer}
                 onPinClick={onPinClick}
