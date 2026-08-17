@@ -268,13 +268,6 @@ router.put('/:id', async (req: AuthRequest, res) => {
 
         const providedLayerIds = finalGroups.map(g => g.id);
         
-        // Remove layers not in provided list
-        if (providedLayerIds.length > 0) {
-            await db.run(`DELETE FROM pin_layers WHERE map_id = ? AND id NOT IN (${providedLayerIds.map(() => '?').join(',')})`, mapId, ...providedLayerIds);
-        } else {
-            await db.run('DELETE FROM pin_layers WHERE map_id = ?', mapId);
-        }
-
         // Upsert provided layers
         const layerStmt = await db.prepare(`
           INSERT INTO pin_layers (id, map_id, name, position) 
@@ -290,7 +283,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
         await layerStmt.finalize();
       }
 
-      // 2. Sync Pins: Upsert and Diff
+      // 2. Sync Pins: Upsert provided pins
       if (pins !== undefined) {
         const finalPins: Pin[] = [];
         const processedPinIds = new Set<string>();
@@ -310,16 +303,8 @@ router.put('/:id', async (req: AuthRequest, res) => {
           finalPins.push({ ...pin, id: pinId, layerId: targetLayerId || undefined } as Pin);
         }
 
-        const providedPinIds = finalPins.map(p => p.id);
-
-        // Remove pins not in provided list
-        if (providedPinIds.length > 0) {
-            await db.run(`DELETE FROM pins WHERE map_id = ? AND id NOT IN (${providedPinIds.map(() => '?').join(',')})`, mapId, ...providedPinIds);
-        } else {
-            await db.run('DELETE FROM pins WHERE map_id = ?', mapId);
-        }
-
         // Upsert provided pins
+
         const pinStmt = await db.prepare(`
           INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, image_url, color, icon, position) 
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

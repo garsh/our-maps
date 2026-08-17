@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reorderPins } from '../reorderUtils';
+import { reorderPins, isSameLayer, comparePinPositions } from '../reorderUtils';
 import { Pin } from '@shared/interfaces';
 
 describe('reorderUtils', () => {
@@ -53,5 +53,28 @@ describe('reorderUtils', () => {
         const selectedIds = new Set(['1', '2']);
         const result = reorderPins(pins, '1', '2', 'pin', 'G1', selectedIds);
         expect(result).toEqual(pins);
+    });
+
+    it('should treat undefined, null, and empty string as equivalent default layer in isSameLayer', () => {
+        expect(isSameLayer(undefined, null)).toBe(true);
+        expect(isSameLayer(null, '')).toBe(true);
+        expect(isSameLayer(undefined, 'G1')).toBe(false);
+        expect(isSameLayer('G1', 'G1')).toBe(true);
+    });
+
+    it('should break position ties deterministically using ID in comparePinPositions', () => {
+        const pinA = { id: 'pinA', position: 5 } as Pin;
+        const pinB = { id: 'pinB', position: 5 } as Pin;
+        expect(comparePinPositions(pinA, pinB)).toBeLessThan(0);
+        expect(comparePinPositions(pinB, pinA)).toBeGreaterThan(0);
+    });
+
+    it('should move a multi-selected pin bundle to Default Layer correctly', () => {
+        const selectedIds = new Set(['1', '2']);
+        const result = reorderPins(pins, '1', 'default', 'layer', undefined, selectedIds);
+        const defaultPins = result.filter(p => !p.layerId);
+        expect(defaultPins.length).toBe(2);
+        expect(defaultPins.map(p => p.id)).toContain('1');
+        expect(defaultPins.map(p => p.id)).toContain('2');
     });
 });

@@ -9,11 +9,26 @@ import ShareDialog from './components/ShareDialog';
 import { apiService } from './services/api'
 import { reverseGeocode } from './utils/geocoding';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import type { Pin, PinLayer, MapPermission, MapData } from '@shared/interfaces'
+import type {
+  Pin,
+  PinLayer,
+  MapPermission,
+  MapData,
+  PinCreatePayload,
+  PinUpdatePayload,
+  PinDeletePayload,
+  PinsReorderPayload,
+  LayerCreatePayload,
+  LayerUpdatePayload,
+  LayerDeletePayload,
+  LayersReorderPayload,
+  MapNameUpdatePayload
+} from '@shared/interfaces'
+
 import type { DragEndEvent } from '@dnd-kit/core'
 import { Loader2, Map as MapIcon, LogOut } from 'lucide-react';
 import L from 'leaflet';
-import { reorderPins, reorderLayers } from './utils/reorderUtils';
+import { reorderPins, reorderLayers, isSameLayer, comparePinPositions } from './utils/reorderUtils';
 import { generateId } from './utils/fileUtils';
 import { io, Socket } from 'socket.io-client';
 
@@ -241,11 +256,11 @@ export function MapEditor() {
       setCustomColors(prev => [color, ...prev].slice(0, 10)); // Keep last 10
     }
   };
-
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const isRemoteUpdateRef = useRef(false);
   const hasLoadedRef = useRef(false);
+  const dragStartLayersRef = useRef<Map<string, string | undefined>>(new Map());
 
   useEffect(() => {
     if (id && id !== 'new') {
@@ -262,6 +277,138 @@ export function MapEditor() {
 
       socket.emit('join-map', id);
 
+      // Reconnect re-sync handler
+      socket.on('connect', () => {
+        console.log('[SOCKET] Connected to server, re-syncing map data');
+        if (id) {
+          socket.emit('join-map', id);
+          loadMap(id);
+        }
+      });
+
+      // Granular Delta Listeners
+      socket.on('pin-create', (data: PinCreatePayload) => {
+        if (data.mapId !== id) return;
+        isRemoteUpdateRef.current = true;
+        setPins(prev => {
+          if (prev.some(p => p.id === data.pin.id)) return prev;
+          return [...prev, data.pin];
+        });
+        setIsDirty(false);
+        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
+      });
+
+      socket.on('pin-update', (data: PinUpdatePayload) => {
+        if (data.mapId !== id) return;
+        isRemoteUpdateRef.current = true;
+        setPins(prev => prev.map(p => {
+          if (p.id !== data.pinId) return p;
+          const updatedLayerId = data.updates.layerId === null ? undefined : ('layerId' in data.updates ? data.updates.layerId : p.layerId);
+          return { ...p, ...data.updates, layerId: updatedLayerId };
+        }));
+        setIsDirty(false);
+        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
+      });
+
+      socket.on('pin-delete', (data: PinDeletePayload) => {
+        if (data.mapId !== id) return;
+        isRemoteUpdateRef.current = true;
+        setPins(prev => prev.filter(p => p.id !== data.pinId));
+        setIsDirty(false);
+        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
+      });
+
+      socket.on('pins-reorder', (data: PinsReorderPayload) => {
+        if (data.mapId !== id) return;
+        isRemoteUpdateRef.current = true;
+        const targetLayerId = data.layerId === null ? undefined : data.layerId;
+        setPins(prev => {
+          const pinMap = new Map(prev.map(p => [p.id, p]));
+          const reordered: Pin[] = [];
+          data.pinOrder.forEach((pId, idx) => {
+            const pin = pinMap.get(pId);
+            if (pin) {
+              reordered.push({
+                ...pin,
+                layerId: targetLayerId !== undefined ? targetLayerId : pin.layerId,
+                position: idx
+              });
+              pinMap.delete(pId);
+            }
+          });
+          return [...reordered, ...Array.from(pinMap.values())];
+        });
+        setIsDirty(false);
+        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
+      });
+
+      socket.on('layer-create', (data: LayerCreatePayload) => {
+        if (data.mapId !== id) return;
+        isRemoteUpdateRef.current = true;
+        setLayers(prev => {
+          if (prev.some(l => l.id === data.layer.id)) return prev;
+          return [...prev, data.layer];
+        });
+        setIsDirty(false);
+        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
+      });
+
+      socket.on('layer-update', (data: LayerUpdatePayload) => {
+        if (data.mapId !== id) return;
+        isRemoteUpdateRef.current = true;
+        setLayers(prev => prev.map(l => l.id === data.layerId ? { ...l, ...data.updates } : l));
+        setIsDirty(false);
+        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
+      });
+
+      socket.on('layer-delete', (data: LayerDeletePayload) => {
+        if (data.mapId !== id) return;
+        isRemoteUpdateRef.current = true;
+        setLayers(prev => prev.filter(l => l.id !== data.layerId));
+        setPins(prev => {
+          const defaultPins = prev.filter(p => isSameLayer(p.layerId, undefined));
+          let currentMaxPos = defaultPins.length > 0
+            ? Math.max(...defaultPins.map(p => p.position))
+            : -1;
+          return prev.map(p => {
+            if (p.layerId === data.layerId) {
+              currentMaxPos += 1;
+              return { ...p, layerId: undefined, position: currentMaxPos };
+            }
+            return p;
+          });
+        });
+        setIsDirty(false);
+        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
+      });
+
+      socket.on('layers-reorder', (data: LayersReorderPayload) => {
+        if (data.mapId !== id) return;
+        isRemoteUpdateRef.current = true;
+        setLayers(prev => {
+          const layerMap = new Map(prev.map(l => [l.id, l]));
+          const reordered: PinLayer[] = [];
+          data.layerOrder.forEach((lId, idx) => {
+            const layer = layerMap.get(lId);
+            if (layer) {
+              reordered.push({ ...layer, position: idx });
+              layerMap.delete(lId);
+            }
+          });
+          return [...reordered, ...Array.from(layerMap.values())];
+        });
+        setIsDirty(false);
+        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
+      });
+
+      socket.on('map-name-update', (data: MapNameUpdatePayload) => {
+        if (data.mapId !== id) return;
+        isRemoteUpdateRef.current = true;
+        setMapName(data.name);
+        setIsDirty(false);
+        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
+      });
+
       socket.on('map-remote-updated', (data: { pins: Pin[], layers: PinLayer[], name: string }) => {
         if (!data || !data.pins || !data.layers) {
           console.warn('[SOCKET] Received malformed remote update');
@@ -274,12 +421,11 @@ export function MapEditor() {
         setLayers(data.layers);
         setMapName(data.name || '');
 
-        // Use a timeout to reset the flag to ensure all batched state updates 
-        // and subsequent useEffects see the flag as true.
         setTimeout(() => {
             isRemoteUpdateRef.current = false;
         }, 1000);
       });
+
 
       return () => {
         socket.disconnect();
@@ -308,7 +454,7 @@ export function MapEditor() {
     // Don't auto-save empty new maps
     if (!mapId && pins.length === 0 && mapName === 'My Map') return;
 
-    // Mark as dirty immediately so the pill updates before the debounce fires
+    // Mark as dirty immediately so the status pill updates before the debounce fires
     setIsDirty(true);
     
     const timer = setTimeout(() => {
@@ -378,14 +524,6 @@ export function MapEditor() {
       if (mapId) {
         await apiService.updateMap(mapId, mapName, layers, pins);
         setIsDirty(false);
-        
-        // Notify others via socket
-        socketRef.current?.emit('map-updated', {
-            mapId,
-            pins,
-            layers,
-            name: mapName
-        });
       } else {
         const newId = generateId();
         hasLoadedRef.current = true;
@@ -491,66 +629,135 @@ export function MapEditor() {
 
   const handleMapClick = useCallback(async (lat: number, lng: number) => {
     if (Date.now() < ignoreMapClickUntil.current || userRole === 'view') return;
-    const id = generateId();
+    const idVal = generateId();
+    const defaultPins = pins.filter(p => isSameLayer(p.layerId, undefined));
+    const nextPosition = defaultPins.length > 0 ? Math.max(...defaultPins.map(p => p.position)) + 1 : 0;
     const newPin: Pin = {
-      id,
+      id: idVal,
       lat,
       lng,
       label: `Pin ${pins.length + 1}`,
-      position: pins.length
+      position: nextPosition
     };
     setPins(prev => [...prev, newPin]);
     handleEditPin(newPin);
 
+    if (mapId) {
+      socketRef.current?.emit('pin-create', { mapId, layerId: newPin.layerId === undefined ? null : newPin.layerId, pin: newPin });
+    }
+
     // Geocode once on creation
     const address = await reverseGeocode(lat, lng);
     if (address) {
-      setPins(prev => prev.map(p => p.id === id ? { ...p, address } : p));
+      setPins(prev => prev.map(p => p.id === idVal ? { ...p, address } : p));
+      if (mapId) {
+        socketRef.current?.emit('pin-update', { mapId, pinId: idVal, updates: { address } });
+      }
     }
-  }, [pins.length, userRole]);
+  }, [pins, userRole, mapId]);
 
   const addPinAtLocation = async (lat: number, lng: number, label: string, address?: string) => {
     if (userRole === 'view') return;
-    const id = generateId();
+    const idVal = generateId();
+    const defaultPins = pins.filter(p => isSameLayer(p.layerId, undefined));
+    const nextPosition = defaultPins.length > 0 ? Math.max(...defaultPins.map(p => p.position)) + 1 : 0;
     const newPin: Pin = {
-      id,
+      id: idVal,
       lat,
       lng,
       label: label,
       address, // Use provided address if available
-      position: pins.length
+      position: nextPosition
     };
     setPins(prev => [...prev, newPin]);
-    handlePinSelect(id); // Highlight the new pin without opening edit mode
+    handlePinSelect(idVal); // Highlight the new pin without opening edit mode
+
+    if (mapId) {
+      socketRef.current?.emit('pin-create', { mapId, layerId: newPin.layerId === undefined ? null : newPin.layerId, pin: newPin });
+    }
 
     // Geocode only if address is missing
     if (!address) {
       const fetchedAddress = await reverseGeocode(lat, lng);
       if (fetchedAddress) {
-        setPins(prev => prev.map(p => p.id === id ? { ...p, address: fetchedAddress } : p));
+        setPins(prev => prev.map(p => p.id === idVal ? { ...p, address: fetchedAddress } : p));
+        if (mapId) {
+          socketRef.current?.emit('pin-update', { mapId, pinId: idVal, updates: { address: fetchedAddress } });
+        }
       }
     }
   };
 
-  const removePin = (id: string) => {
+  const removePin = (targetId: string) => {
     if (userRole === 'view') return;
-    setPins(prev => prev.filter(p => p.id !== id));
+    const targetPin = pins.find(p => p.id === targetId);
+    const targetLayerId = targetPin?.layerId;
+
+    const remainingPins = pins.filter(p => p.id !== targetId);
+    setPins(remainingPins);
+
+    if (mapId) {
+      socketRef.current?.emit('pin-delete', { mapId, pinId: targetId });
+      
+      const layerPins = remainingPins
+        .filter(p => isSameLayer(p.layerId, targetLayerId))
+        .sort(comparePinPositions);
+      socketRef.current?.emit('pins-reorder', { 
+        mapId, 
+        layerId: targetLayerId === undefined ? null : targetLayerId, 
+        pinOrder: layerPins.map(p => p.id) 
+      });
+    }
   };
 
-  const updatePin = (id: string, updates: Partial<Pin>) => {
+  const updatePin = (targetId: string, updates: Partial<Pin>) => {
     if (userRole === 'view') return;
-    setPins(prev => {
-      // When the layer changes, move the pin to the end of the target layer
-      if ('layerId' in updates) {
-        const targetLayerId = updates.layerId; // undefined = Default Layer
-        const pinsInTargetLayer = prev.filter(p => p.id !== id && p.layerId === targetLayerId);
-        const endPosition = pinsInTargetLayer.length > 0
-          ? Math.max(...pinsInTargetLayer.map(p => p.position)) + 1
-          : 0;
-        return prev.map(p => p.id === id ? { ...p, ...updates, position: endPosition } : p);
+    
+    const targetPin = pins.find(p => p.id === targetId);
+    const originalLayerId = targetPin?.layerId;
+    let computedUpdates = { ...updates };
+
+    if ('layerId' in updates) {
+      const targetLayerId = updates.layerId; // undefined = Default Layer
+      const pinsInTargetLayer = pins.filter(p => p.id !== targetId && isSameLayer(p.layerId, targetLayerId));
+      const endPosition = pinsInTargetLayer.length > 0
+        ? Math.max(...pinsInTargetLayer.map(p => p.position)) + 1
+        : 0;
+      computedUpdates = { ...updates, position: endPosition };
+    }
+
+    setPins(prev => prev.map(p => p.id === targetId ? { ...p, ...computedUpdates } : p));
+
+    if (mapId) {
+      const socketUpdates: any = { ...computedUpdates };
+      if ('layerId' in socketUpdates && socketUpdates.layerId === undefined) {
+        socketUpdates.layerId = null;
       }
-      return prev.map(p => p.id === id ? { ...p, ...updates } : p);
-    });
+      socketRef.current?.emit('pin-update', { mapId, pinId: targetId, updates: socketUpdates });
+
+      if ('layerId' in updates) {
+        const targetLayerId = updates.layerId;
+        const updatedPins = pins.map(p => p.id === targetId ? { ...p, ...computedUpdates } : p);
+        
+        // Destination layer reorder
+        const destLayerPins = updatedPins.filter(p => isSameLayer(p.layerId, targetLayerId)).sort(comparePinPositions);
+        socketRef.current?.emit('pins-reorder', { 
+          mapId, 
+          layerId: targetLayerId === undefined ? null : targetLayerId, 
+          pinOrder: destLayerPins.map(p => p.id) 
+        });
+
+        // Source layer reorder if layer changed
+        if (!isSameLayer(originalLayerId, targetLayerId)) {
+          const sourceLayerPins = updatedPins.filter(p => isSameLayer(p.layerId, originalLayerId)).sort(comparePinPositions);
+          socketRef.current?.emit('pins-reorder', { 
+            mapId, 
+            layerId: originalLayerId === undefined ? null : originalLayerId, 
+            pinOrder: sourceLayerPins.map(p => p.id) 
+          });
+        }
+      }
+    }
   };
 
   const addLayer = () => {
@@ -561,17 +768,60 @@ export function MapEditor() {
       position: layers.length
     };
     setLayers(prev => [...prev, newGroup]);
+    if (mapId) {
+      socketRef.current?.emit('layer-create', { mapId, layer: newGroup });
+    }
   };
 
-  const updateLayer = (id: string, updates: Partial<PinLayer>) => {
+  const updateLayer = (targetId: string, updates: Partial<PinLayer>) => {
     if (userRole === 'view') return;
-    setLayers(prev => prev.map(g => g.id === id ? { ...g, ...updates } : g));
+    setLayers(prev => prev.map(g => g.id === targetId ? { ...g, ...updates } : g));
+    if (mapId) {
+      socketRef.current?.emit('layer-update', { mapId, layerId: targetId, updates });
+    }
   };
 
-  const removeLayer = (id: string) => {
+  const removeLayer = (targetId: string) => {
     if (userRole === 'view') return;
-    setLayers(prev => prev.filter(g => g.id !== id));
-    setPins(prev => prev.map(p => p.layerId === id ? { ...p, layerId: undefined } : p));
+    const remainingLayers = layers.filter(g => g.id !== targetId);
+    setLayers(remainingLayers);
+    
+    let defaultLayerPinOrder: string[] = [];
+
+    setPins(prev => {
+      const defaultPins = prev.filter(p => isSameLayer(p.layerId, undefined));
+      let currentMaxPos = defaultPins.length > 0
+        ? Math.max(...defaultPins.map(p => p.position))
+        : -1;
+
+      const updated = prev.map(p => {
+        if (p.layerId === targetId) {
+          currentMaxPos += 1;
+          return { ...p, layerId: undefined, position: currentMaxPos };
+        }
+        return p;
+      });
+
+      const allDefaultPins = updated
+        .filter(p => isSameLayer(p.layerId, undefined))
+        .sort(comparePinPositions);
+      defaultLayerPinOrder = allDefaultPins.map(p => p.id);
+
+      return updated;
+    });
+
+    if (mapId) {
+      socketRef.current?.emit('layer-delete', { mapId, layerId: targetId });
+      socketRef.current?.emit('pins-reorder', { mapId, layerId: null, pinOrder: defaultLayerPinOrder });
+      socketRef.current?.emit('layers-reorder', { mapId, layerOrder: remainingLayers.map(l => l.id) });
+    }
+  };
+
+  const handleMapNameChange = (newName: string) => {
+    setMapName(newName);
+    if (mapId) {
+      socketRef.current?.emit('map-name-update', { mapId, name: newName });
+    }
   };
 
   const handleDragOver = (event: any) => {
@@ -615,6 +865,23 @@ export function MapEditor() {
     }
   };
 
+  const handleDragStart = (event: any) => {
+    const { active } = event;
+    if (active.data.current?.type === 'pin') {
+      const activeId = active.id as string;
+      const pinsToMoveIds = selectedNavIds.has(activeId) 
+        ? Array.from(selectedNavIds) 
+        : [activeId];
+      
+      const startMap = new Map<string, string | undefined>();
+      pinsToMoveIds.forEach(id => {
+        const p = pins.find(pin => pin.id === id);
+        if (p) startMap.set(id, p.layerId);
+      });
+      dragStartLayersRef.current = startMap;
+    }
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     if (userRole === 'view') return;
     const { active, over } = event;
@@ -633,25 +900,73 @@ export function MapEditor() {
         }
       }
       
-      setLayers(prev => reorderLayers(prev, active.id as string, targetLayerId));
+      setLayers(prev => {
+        const next = reorderLayers(prev, active.id as string, targetLayerId);
+        if (mapId) {
+          socketRef.current?.emit('layers-reorder', { mapId, layerOrder: next.map(l => l.id) });
+        }
+        return next;
+      });
       return;
     }
 
     // Handle final reorder for pins
     if (active.data.current?.type === 'pin') {
+      const activeId = active.id as string;
       const overData = over.data.current;
       const overLayerId = overData?.type === 'pin' ? overData.pin.layerId : (over.id === 'default' ? undefined : over.id as string);
       
-      setPins(prev => reorderPins(
-        prev, 
-        active.id as string, 
-        over.id as string, 
-        overData?.type === 'pin' ? 'pin' : 'layer',
-        overLayerId,
-        selectedNavIds
-      ));
+      const startLayersMap = dragStartLayersRef.current;
+      dragStartLayersRef.current = new Map();
+
+      const originalLayerId = startLayersMap.get(activeId);
+
+      const pinsToMoveIds = selectedNavIds.has(activeId) 
+        ? Array.from(selectedNavIds) 
+        : [activeId];
+
+      setPins(prev => {
+        const next = reorderPins(
+          prev, 
+          activeId, 
+          over.id as string, 
+          overData?.type === 'pin' ? 'pin' : 'layer',
+          overLayerId,
+          selectedNavIds
+        );
+        if (mapId) {
+          pinsToMoveIds.forEach(pId => {
+            const startLayerId = startLayersMap.get(pId);
+            if (!isSameLayer(startLayerId, overLayerId)) {
+              socketRef.current?.emit('pin-update', { 
+                mapId, 
+                pinId: pId, 
+                updates: { layerId: overLayerId === undefined ? null : overLayerId } 
+              });
+            }
+          });
+
+          const destLayerPins = next.filter(p => isSameLayer(p.layerId, overLayerId));
+          socketRef.current?.emit('pins-reorder', { 
+            mapId, 
+            layerId: overLayerId === undefined ? null : overLayerId, 
+            pinOrder: destLayerPins.map(p => p.id) 
+          });
+
+          if (originalLayerId !== undefined && !isSameLayer(originalLayerId, overLayerId)) {
+            const sourceLayerPins = next.filter(p => isSameLayer(p.layerId, originalLayerId));
+            socketRef.current?.emit('pins-reorder', { 
+              mapId, 
+              layerId: originalLayerId === undefined ? null : originalLayerId, 
+              pinOrder: sourceLayerPins.map(p => p.id) 
+            });
+          }
+        }
+        return next;
+      });
     }
   };
+
 
   const handleImport = (data: Partial<MapData>) => {
     if (data.name) setMapName(data.name);
@@ -843,7 +1158,7 @@ export function MapEditor() {
             isMobile={isMobile}
             mapId={mapId}
             mapName={mapName}
-            onMapNameChange={setMapName}
+            onMapNameChange={handleMapNameChange}
             layers={layers}
             onAddLayer={addLayer}
             onUpdateLayer={updateLayer}
@@ -862,6 +1177,7 @@ export function MapEditor() {
             onUpdatePin={updatePin}
             onDragEnd={handleDragEnd}
             onDragOver={handleDragOver}
+            onDragStart={handleDragStart}
             userRole={userRole}
             onShare={() => setIsSharing(true)}
             onImport={handleImport}

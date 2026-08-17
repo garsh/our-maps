@@ -56,8 +56,10 @@ export async function getDb() {
     driver: sqlite3.Database
   });
 
-  // Enable foreign keys
+  // Enable foreign keys, WAL mode, and busy timeout for concurrent safety
   await db.run('PRAGMA foreign_keys = ON;');
+  await db.run('PRAGMA journal_mode = WAL;');
+  await db.run('PRAGMA busy_timeout = 5000;');
 
   await db.exec('PRAGMA busy_timeout = 5000');
 

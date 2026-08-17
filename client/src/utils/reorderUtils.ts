@@ -1,6 +1,18 @@
 import type { Pin, PinLayer } from '@shared/interfaces';
 import { arrayMove } from '@dnd-kit/sortable';
 
+export function isSameLayer(l1?: string | null, l2?: string | null): boolean {
+  if (!l1 && !l2) return true;
+  return l1 === l2;
+}
+
+export function comparePinPositions(a: Pin, b: Pin): number {
+  if (a.position !== b.position) {
+    return a.position - b.position;
+  }
+  return a.id.localeCompare(b.id);
+}
+
 /**
  * Reorders a list of pins based on a drag-and-drop event.
  */
@@ -38,7 +50,7 @@ export function reorderPins(
     } else {
         // Dropped on a layer header: append to the end of that layer
         const targetLayerId = overLayerId === 'default' ? undefined : overLayerId;
-        const pinsInTargetLayer = otherPins.filter(p => p.layerId === targetLayerId);
+        const pinsInTargetLayer = otherPins.filter(p => isSameLayer(p.layerId, targetLayerId));
         if (pinsInTargetLayer.length > 0) {
             const lastPin = pinsInTargetLayer[pinsInTargetLayer.length - 1];
             targetIndex = otherPins.findIndex(p => p.id === lastPin.id) + 1;
