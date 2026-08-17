@@ -1,7 +1,15 @@
 import { addToManifest, getPendingFromManifest, saveTile, updateManifestStatus } from '../utils/tileUtils';
+import { PMTiles } from 'pmtiles';
 
-// This is a conceptual worker entry. 
-// In a real Vite project, workers often need special handling.
+let pmtilesInstance: PMTiles | null = null;
+
+function getPMTilesInstance(): PMTiles {
+    if (!pmtilesInstance) {
+        const pmtilesUrl = `${self.location.origin}/maps/planet.pmtiles`;
+        pmtilesInstance = new PMTiles(pmtilesUrl);
+    }
+    return pmtilesInstance;
+}
 
 self.onmessage = async (e) => {
     const { type, mapId, tiles } = e.data;
@@ -23,10 +31,18 @@ self.onmessage = async (e) => {
 
             if (pending.length === 0) {
                 self.postMessage({ type: 'progress', progress: 1.0 });
+                self.postMessage({ type: 'complete' });
                 return;
             }
 
-            const CONCURRENCY = 25; // High-performance parallel pumping
+            const pmt = getPMTilesInstance();
+            try {
+                await pmt.getHeader();
+            } catch (err) {
+                console.warn('[TILE WORKER] Pre-fetching PMTiles header failed:', err);
+            }
+
+            const CONCURRENCY = 15;
             const MAX_RETRIES = 3;
             const queue = [...pending];
             
@@ -40,22 +56,17 @@ self.onmessage = async (e) => {
 
                     while (!success && retries < MAX_RETRIES) {
                         try {
-                            const response = await fetch(entry.url, {
-                                headers: {
-                                    'Accept': 'image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
-                                }
-                            });
-                            if (response.ok) {
-                                const blob = await response.blob();
+                            const tileResult = await pmt.getZxy(entry.z, entry.x, entry.y);
+                            if (tileResult && tileResult.data) {
+                                const blob = new Blob([tileResult.data]);
                                 await saveTile(entry.url, blob);
-                                success = true;
                             } else {
-                                throw new Error(`HTTP ${response.status}`);
+                                await updateManifestStatus(entry.url, 'completed');
                             }
+                            success = true;
                         } catch (error) {
                             retries++;
                             if (retries < MAX_RETRIES) {
-                                // Exponential backoff: 500ms, 1000ms, 2000ms
                                 await new Promise(r => setTimeout(r, Math.pow(2, retries) * 250));
                             }
                         }
@@ -66,7 +77,7 @@ self.onmessage = async (e) => {
                     }
 
                     completedCount++;
-                    if (completedCount % 10 === 0 || completedCount === total) {
+                    if (completedCount % 5 === 0 || completedCount === total) {
                         self.postMessage({ type: 'progress', progress: completedCount / total });
                     }
                 }
