@@ -100,5 +100,7 @@ android-native/.gradle/*
 android-native/.kotlin/*
 
 # database
-server/database.sqlite
+server/database.sqlite*
+*.sqlite-wal
+*.sqlite-shm
 server/dist/
