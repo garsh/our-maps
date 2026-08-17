@@ -10,3 +10,7 @@ android-native
 database.sqlite
 playwright-report
 test-results
+data
+*.pmtiles
+server/public/maps
+
