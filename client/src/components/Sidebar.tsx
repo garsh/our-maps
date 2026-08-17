@@ -716,7 +716,7 @@ const SortableLayer = ({
     <div ref={setNodeRef} style={style}>
       <div style={{
         position: 'sticky',
-        top: '4px',
+        top: 0,
         zIndex: 5,
         background: (isOver && !isDragging && !isLayerDragging) ? 'rgba(72, 61, 139, 0.05)' : (isEditingName ? 'var(--bg-color)' : 'white'),
         borderRadius: 'var(--radius-sm)',
@@ -1256,17 +1256,6 @@ const Sidebar = ({
           style={{ fontWeight: '800', fontSize: '0.9rem', padding: '3px 6px', border: 'none', background: 'transparent', flex: 1, textOverflow: 'ellipsis' }}
         />
         
-        {selectedPins.length > 0 && (
-          <div style={{ marginBottom: '0.4rem', display: 'flex', justifyContent: 'flex-end' }}>
-            <button 
-              onClick={handleNavigate}
-              style={{ fontSize: '0.6rem', background: 'var(--success-color)', color: 'white', border: 'none', padding: '2px 7px', borderRadius: '50px', cursor: 'pointer', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '3px' }}
-            >
-              <Navigation size={9} /> Go ({selectedPins.length})
-            </button>
-          </div>
-        )}
-        
         {(() => {
           const menuContent = (
             <div style={{ position: 'relative' }} ref={menuRef}>
@@ -1405,17 +1394,48 @@ const Sidebar = ({
             : menuContent;
         })()}
 
-        {!readOnly && (
-          <SearchBar 
-            onResultSelect={onResultSelect} 
-            onAddPin={onAddPin}
-            onSelectPin={onSelectPin}
-            pins={pins} 
-            disabled={readOnly} 
-            mapBounds={mapBounds}
-            onHoverSearchResult={onHoverSearchResult}
-            onHoverPin={onHoverPin}
-          />
+        {(!readOnly || selectedPins.length > 0) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px', height: '28px' }}>
+            {!readOnly && (
+              <div style={{ flex: 1, minWidth: 0, height: '28px' }}>
+                <SearchBar 
+                  onResultSelect={onResultSelect} 
+                  onAddPin={onAddPin}
+                  onSelectPin={onSelectPin}
+                  pins={pins} 
+                  disabled={readOnly} 
+                  mapBounds={mapBounds}
+                  onHoverSearchResult={onHoverSearchResult}
+                  onHoverPin={onHoverPin}
+                />
+              </div>
+            )}
+            {selectedPins.length > 0 && (
+              <button 
+                onClick={handleNavigate}
+                style={{ 
+                  fontSize: '0.65rem', 
+                  background: 'var(--success-color)', 
+                  color: 'white', 
+                  border: 'none', 
+                  padding: '0 10px', 
+                  borderRadius: '50px', 
+                  cursor: 'pointer', 
+                  fontWeight: '700', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '4px',
+                  flexShrink: 0,
+                  height: '28px',
+                  boxSizing: 'border-box',
+                  whiteSpace: 'nowrap',
+                  marginLeft: readOnly ? 'auto' : undefined
+                }}
+              >
+                <Navigation size={10} /> Go ({selectedPins.length})
+              </button>
+            )}
+          </div>
         )}
 
 
@@ -1426,9 +1446,9 @@ const Sidebar = ({
             flex: 1, 
             overflowY: 'auto', 
             paddingRight: '4px', 
+            paddingTop: '3px',
             margin: '0 -4px'
           }}>
-          <div style={{ position: 'sticky', top: 0, height: '4px', background: 'white', zIndex: 4, margin: '0 -4px' }} />
           <SortableContext items={layers.map(layer => layer.id)} strategy={verticalListSortingStrategy}>
             {layers.map((layer) => (
               <SortableLayer
@@ -1467,7 +1487,7 @@ const Sidebar = ({
               id="default"
               style={{ 
                 position: 'sticky', 
-                top: '4px', 
+                top: 0, 
                 zIndex: 5, 
                 background: 'white',
                 borderRadius: 'var(--radius-sm)',
