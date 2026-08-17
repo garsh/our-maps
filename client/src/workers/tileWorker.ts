@@ -42,7 +42,7 @@ self.onmessage = async (e) => {
                 console.warn('[TILE WORKER] Pre-fetching PMTiles header failed:', err);
             }
 
-            const CONCURRENCY = 15;
+            const CONCURRENCY = 6;
             const MAX_RETRIES = 3;
             const queue = [...pending];
             
