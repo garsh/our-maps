@@ -223,14 +223,26 @@ io.on('connection', (socket: Socket) => {
 
 
 // Serve maps directory (PMTiles, fonts, sprites) with HTTP Range Request and CORS support
-const dataMapsDir = path.resolve(__dirname, '../../data/maps');
-const publicMapsDir = path.resolve(__dirname, '../public/maps');
-const mapsDir = fs.existsSync(dataMapsDir) ? dataMapsDir : publicMapsDir;
+const candidateMapsDirs = [
+  process.env.MAPS_DIR,
+  path.resolve(process.cwd(), 'data/maps'),
+  path.resolve(process.cwd(), 'server/public/maps'),
+  path.resolve(process.cwd(), 'public/maps'),
+  path.resolve(__dirname, '../../data/maps'),
+  path.resolve(__dirname, '../public/maps'),
+  path.resolve(__dirname, '../../public/maps'),
+].filter(Boolean) as string[];
+
+const mapsDir = candidateMapsDirs.find((d) => fs.existsSync(d)) || candidateMapsDirs[0];
 
 console.log(`[MAPS DIR] Serving vector tiles from: ${mapsDir}`);
 
-if (!fs.existsSync(mapsDir)) {
-  fs.mkdirSync(mapsDir, { recursive: true });
+try {
+  if (!fs.existsSync(mapsDir)) {
+    fs.mkdirSync(mapsDir, { recursive: true });
+  }
+} catch (err) {
+  console.warn(`[MAPS DIR] Could not create maps directory (${mapsDir}):`, err);
 }
 
 app.use('/maps', (req, res, next) => {
@@ -246,10 +258,11 @@ const staticOptions = {
     res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
   }
 };
-app.use('/maps', express.static(mapsDir, staticOptions));
-if (mapsDir !== publicMapsDir && fs.existsSync(publicMapsDir)) {
-  app.use('/maps', express.static(publicMapsDir, staticOptions));
-}
+candidateMapsDirs.forEach((dir) => {
+  if (fs.existsSync(dir)) {
+    app.use('/maps', express.static(dir, staticOptions));
+  }
+});
 
 // Resolve client build path
 const potentialPaths = [
