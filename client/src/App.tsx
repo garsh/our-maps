@@ -78,6 +78,7 @@ export function MapEditor() {
   const sheetDragStart = useRef<{ y: number; height: number; time: number; moved: boolean }>({ y: 0, height: 300, time: 0, moved: false });
   const currentDragHeight = useRef<number>(300);
   const rafId = useRef<number | null>(null);
+  const ignoreMapClickUntil = useRef<number>(0);
 
   const getSheetBounds = () => {
     const headerHeight = headerRef.current ? headerRef.current.getBoundingClientRect().height : 44;
@@ -88,6 +89,8 @@ export function MapEditor() {
   };
 
   const startSheetDrag = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    ignoreMapClickUntil.current = Date.now() + 450;
     setIsDraggingSheet(true);
     sheetDragStart.current = { y: e.clientY, height: sheetHeight, time: Date.now(), moved: false };
     currentDragHeight.current = sheetHeight;
@@ -100,6 +103,8 @@ export function MapEditor() {
   
   const onSheetDrag = (e: React.PointerEvent) => {
     if (!isDraggingSheet) return;
+    e.stopPropagation();
+    ignoreMapClickUntil.current = Date.now() + 450;
     const deltaY = sheetDragStart.current.y - e.clientY;
     if (Math.abs(deltaY) > 3) {
       sheetDragStart.current.moved = true;
@@ -120,6 +125,8 @@ export function MapEditor() {
   
   const endSheetDrag = (e: React.PointerEvent) => {
     if (!isDraggingSheet) return;
+    e.stopPropagation();
+    ignoreMapClickUntil.current = Date.now() + 450;
     setIsDraggingSheet(false);
     if (rafId.current !== null) {
       cancelAnimationFrame(rafId.current);
@@ -430,6 +437,7 @@ export function MapEditor() {
   };
 
   const handlePinSelect = (pinId: string) => {
+    if (Date.now() < ignoreMapClickUntil.current) return;
     // Clear stuck hover states on mobile/touch, or if a different pin was clicked
     if (window.matchMedia('(hover: none)').matches || (hoveredPinId && hoveredPinId !== pinId)) {
       setHoveredPinId(null);
@@ -475,13 +483,14 @@ export function MapEditor() {
   }, [targetPinId, editingPinId]);
 
   const handleBackgroundClick = useCallback(() => {
+    if (Date.now() < ignoreMapClickUntil.current) return;
     setTargetPinId(null);
     setEditingPinId(null);
     setHoveredPinId(null);
   }, []);
 
   const handleMapClick = useCallback(async (lat: number, lng: number) => {
-    if (userRole === 'view') return;
+    if (Date.now() < ignoreMapClickUntil.current || userRole === 'view') return;
     const id = generateId();
     const newPin: Pin = {
       id,
@@ -766,6 +775,11 @@ export function MapEditor() {
             onPointerMove={onSheetDrag}
             onPointerUp={endSheetDrag}
             onPointerCancel={endSheetDrag}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              ignoreMapClickUntil.current = Date.now() + 450;
+            }}
             style={{ zIndex: 10 }}
           >
             <div className="drag-pill" />
