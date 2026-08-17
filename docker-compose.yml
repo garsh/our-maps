@@ -30,6 +30,7 @@ services:
       - "${PORT:-3001}:${PORT:-3001}"
     volumes:
       - our_maps_data:/data
+      - ./data/maps:/app/server/public/maps
     restart: unless-stopped
     environment:
       - NODE_ENV=${NODE_ENV:-production}

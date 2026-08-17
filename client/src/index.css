@@ -140,7 +140,8 @@ button:active {
     display: none !important;
   }
 
-  .leaflet-control-zoom {
+  .leaflet-control-zoom,
+  .maplibregl-ctrl-zoom {
     display: none !important;
   }
 
