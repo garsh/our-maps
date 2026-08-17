@@ -59,6 +59,12 @@ class TileWorkerManager {
   }
 
   public startDownload(mapId: string, tiles: TileInfo[]) {
+    // If worker is already downloading this map, don't restart it
+    if (this.activeMapId === mapId && this.isDownloading && this.activeWorker) {
+      this.notifySubscribers();
+      return;
+    }
+
     // If worker is running for another map, terminate it
     if (this.activeWorker) {
       this.activeWorker.terminate();
@@ -67,9 +73,10 @@ class TileWorkerManager {
 
     this.activeMapId = mapId;
     this.isDownloading = true;
-    this.downloadProgress = 0;
     const totalTiles = tiles.length;
-    this.tileStats = { completed: 0, total: totalTiles };
+    const initialCompleted = tiles.filter((t: any) => t.status === 'completed').length;
+    this.downloadProgress = totalTiles > 0 ? initialCompleted / totalTiles : 0;
+    this.tileStats = { completed: initialCompleted, total: totalTiles };
     this.notifySubscribers();
 
     const worker = new Worker(new URL('../workers/tileWorker.ts', import.meta.url), { type: 'module' });
