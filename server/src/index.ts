@@ -269,11 +269,16 @@ app.get('/maps/:filename(*)', (req, res, next) => {
 
   console.log(`[MAPS SERVE] Serving ${foundFilePath} (Range: ${req.headers.range || 'none'})`);
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
-  res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
-
-  res.sendFile(foundFilePath, { acceptRanges: true }, (err) => {
+  res.sendFile(foundFilePath, {
+    acceptRanges: true,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
+      'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges, Content-Type',
+      'Content-Type': 'application/octet-stream',
+    }
+  }, (err) => {
     if (err && !res.headersSent) {
       console.error(`[MAPS ERROR] Failed to send ${foundFilePath}:`, err);
       next(err);
