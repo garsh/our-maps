@@ -1081,7 +1081,7 @@ export function MapEditor() {
             </span>
           </button>
         )}
-        <div id="mobile-header-actions" style={{ display: 'flex', alignItems: 'center' }}></div>
+        <div id="mobile-header-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '26px', minHeight: '26px', flexShrink: 0 }}></div>
       </div>
     </header>
   );
