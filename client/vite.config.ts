@@ -41,6 +41,20 @@ export default defineConfig({
               },
               networkTimeoutSeconds: 10,
             },
+          },
+          {
+            urlPattern: /^https:\/\/protomaps\.github\.io\/basemaps-assets\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'protomaps-assets-cache',
+              expiration: {
+                maxEntries: 500,
+                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
           }
         ]
       }

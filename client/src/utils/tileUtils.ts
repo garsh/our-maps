@@ -316,7 +316,29 @@ export async function getTile(url: string): Promise<Blob | null> {
         const transaction = db.transaction(TILE_STORE, 'readonly');
         const store = transaction.objectStore(TILE_STORE);
         const request = store.get(url);
-        request.onsuccess = () => resolve(request.result || null);
+        request.onsuccess = () => {
+            if (request.result) {
+                resolve(request.result);
+                return;
+            }
+            try {
+                if (url.startsWith('http://') || url.startsWith('https://')) {
+                    const pathname = new URL(url).pathname;
+                    const pathReq = store.get(pathname);
+                    pathReq.onsuccess = () => resolve(pathReq.result || null);
+                    pathReq.onerror = () => resolve(null);
+                } else if (url.startsWith('/')) {
+                    const fullUrl = `${window.location.origin}${url}`;
+                    const fullReq = store.get(fullUrl);
+                    fullReq.onsuccess = () => resolve(fullReq.result || null);
+                    fullReq.onerror = () => resolve(null);
+                } else {
+                    resolve(null);
+                }
+            } catch {
+                resolve(null);
+            }
+        };
         request.onerror = () => reject(request.error);
     });
 }

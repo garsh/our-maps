@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, saveMapOffline, getOfflineMap, removeOfflineMap } from '../tileUtils';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, saveMapOffline, getOfflineMap, removeOfflineMap, saveTile, getTile } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('tileUtils', () => {
@@ -10,32 +10,36 @@ describe('tileUtils', () => {
                 const req: any = {
                     result: {
                         objectStoreNames: { contains: () => true },
-                        transaction: () => ({
-                            objectStore: () => ({
-                                put: (val: any) => {
-                                    store.set(val.id, val);
-                                    const r: any = {};
-                                    setTimeout(() => r.onsuccess && r.onsuccess());
-                                    return r;
-                                },
-                                get: (id: string) => {
-                                    const r: any = {};
-                                    setTimeout(() => {
-                                        r.result = store.get(id);
-                                        r.onsuccess && r.onsuccess();
-                                    });
-                                    return r;
-                                },
-                                delete: (id: string) => {
-                                    store.delete(id);
-                                    const r: any = {};
-                                    setTimeout(() => r.onsuccess && r.onsuccess());
-                                    return r;
-                                }
-                            }),
-                            oncomplete: null,
-                            onerror: null
-                        })
+                        transaction: () => {
+                            const tx: any = {
+                                objectStore: () => ({
+                                    put: (val: any, key?: any) => {
+                                        store.set(key !== undefined ? key : (val?.id ?? val?.url), val);
+                                        const r: any = {};
+                                        setTimeout(() => r.onsuccess && r.onsuccess());
+                                        return r;
+                                    },
+                                    get: (id: string) => {
+                                        const r: any = {};
+                                        setTimeout(() => {
+                                            r.result = store.get(id);
+                                            r.onsuccess && r.onsuccess();
+                                        });
+                                        return r;
+                                    },
+                                    delete: (id: string) => {
+                                        store.delete(id);
+                                        const r: any = {};
+                                        setTimeout(() => r.onsuccess && r.onsuccess());
+                                        return r;
+                                    }
+                                }),
+                                oncomplete: null,
+                                onerror: null
+                            };
+                            setTimeout(() => tx.oncomplete && tx.oncomplete(), 5);
+                            return tx;
+                        }
                     },
                     onsuccess: null,
                     onerror: null,
@@ -49,12 +53,6 @@ describe('tileUtils', () => {
             }
         };
     });
-    // const mockBox = {
-    //     north: 45.1,
-    //     south: 44.9,
-    //     east: -73.9,
-    //     west: -74.1
-    // };
 
     it('should correctly wrap longitude for tile coordinates', () => {
         // Test wrapping around 180/-180
@@ -129,5 +127,17 @@ describe('tileUtils', () => {
         await removeOfflineMap('offline-map-123');
         const afterRemove = await getOfflineMap('offline-map-123');
         expect(afterRemove).toBeNull();
+    });
+
+    it('should save tile blob and retrieve it with getTile including URL fallback matching', async () => {
+        const tileUrl = `${window.location.origin}/maps/tile/12/1234/2345.mvt`;
+        const dummyBlob = new Blob(['tile-data'], { type: 'application/x-protobuf' });
+
+        await saveTile(tileUrl, dummyBlob);
+        const tileFromFullUrl = await getTile(tileUrl);
+        expect(tileFromFullUrl).not.toBeNull();
+
+        const tileFromPathname = await getTile('/maps/tile/12/1234/2345.mvt');
+        expect(tileFromPathname).not.toBeNull();
     });
 });

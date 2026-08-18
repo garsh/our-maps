@@ -29,4 +29,5 @@ The application is deployed using Docker Compose, which builds both the frontend
 - **Map Dataset Preservation**: The map dataset file (`~/work/ourmaps/data/maps/planet.pmtiles`) and its symlinks contain the primary PMTiles vector map data. It must NEVER be deleted, moved, renamed, overwritten, or modified in any way.
 - **Build Verification**: Always run `npm run build` and confirm that the build succeeds after every change.
 - **Database Backup**: Always create a backup of the SQLite database before making any changes to the database schema.
+- **Git Commits**: Do not create or modify git commits until requested. Never git push unless requested.
 - **Dev Server Restarts**: When modifying configuration files (e.g., `package.json`, `.env` variables, or port configurations) that are not automatically watched by `nodemon` or Vite, explicitly inform the user that they must completely stop (`Ctrl+C`) and restart their `npm run dev` server for the changes to take effect.
