@@ -26,6 +26,7 @@ The application is deployed using Docker Compose, which builds both the frontend
 3. **Environment & Configuration**: The `docker-compose.yml` and `Caddyfile` in this repo must be kept strictly in sync with the production environment settings (like using port `3001` and specific domain names). Do not change them to `3000` or `localhost` unless building a separate local dev override.
 
 ## Agent Development Rules
+- **Map Dataset Preservation**: The map dataset file (`~/work/ourmaps/data/maps/planet.pmtiles`) and its symlinks contain the primary PMTiles vector map data. It must NEVER be deleted, moved, renamed, overwritten, or modified in any way.
 - **Build Verification**: Always run `npm run build` and confirm that the build succeeds after every change.
 - **Database Backup**: Always create a backup of the SQLite database before making any changes to the database schema.
 - **Dev Server Restarts**: When modifying configuration files (e.g., `package.json`, `.env` variables, or port configurations) that are not automatically watched by `nodemon` or Vite, explicitly inform the user that they must completely stop (`Ctrl+C`) and restart their `npm run dev` server for the changes to take effect.
