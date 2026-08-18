@@ -27,6 +27,25 @@ if (!fs.existsSync(serverMapsDir)) {
   fs.mkdirSync(serverMapsDir, { recursive: true });
 }
 
+const isForce = process.argv.includes('--force');
+
+if (fs.existsSync(targetPath) && fs.statSync(targetPath).size > 0 && !isForce) {
+  console.log(`Map dataset already exists at ${targetPath} (${(fs.statSync(targetPath).size / (1024 * 1024 * 1024)).toFixed(2)} GB).`);
+  console.log(`Preserving existing map dataset. (Pass --force if you intentionally wish to overwrite).`);
+  
+  try {
+    if (fs.existsSync(symlinkPath)) {
+      fs.unlinkSync(symlinkPath);
+    }
+    const relativeTarget = path.relative(serverMapsDir, targetPath);
+    fs.symlinkSync(relativeTarget, symlinkPath);
+    console.log(`Relative symlink verified at ${symlinkPath} -> ${relativeTarget}`);
+  } catch (err) {
+    console.warn(`Could not update symlink: ${err.message}`);
+  }
+  process.exit(0);
+}
+
 console.log(`Starting Protomaps dataset download (${isSample ? 'Sample ~20MB' : 'Full Planet 123.5GB'})...`);
 console.log(`URL: ${downloadUrl}`);
 console.log(`Target: ${targetPath}`);
