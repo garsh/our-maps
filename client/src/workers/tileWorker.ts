@@ -56,7 +56,8 @@ self.onmessage = async (e) => {
 
                     while (!success && retries < MAX_RETRIES) {
                         try {
-                            const tileResult = await pmt.getZxy(entry.z, entry.x, entry.y);
+                            const targetZoom = Math.min(entry.z, 15);
+                            const tileResult = await pmt.getZxy(targetZoom, entry.x, entry.y);
                             if (tileResult && tileResult.data) {
                                 const blob = new Blob([tileResult.data]);
                                 await saveTile(entry.url, blob);

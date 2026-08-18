@@ -1038,7 +1038,7 @@ const Sidebar = ({
         };
     }
 
-    const totalCount = countTiles(bbox, 1, 12) + getSurgicalBoxes(pins).reduce((acc, box) => acc + countTiles(box, 13, 17), 0);
+    const totalCount = countTiles(bbox, 1, 10) + getSurgicalBoxes(pins).reduce((acc, box) => acc + countTiles(box, 11, 15), 0);
     const estimatedSizeMB = estimateSizeMB(totalCount);
 
     const storageStatus = await canFit(estimatedSizeMB);
@@ -1053,8 +1053,8 @@ const Sidebar = ({
     }
 
     const allTiles = [
-        ...getTilesForArea(bbox, 1, 12),
-        ...getSurgicalBoxes(pins).flatMap(box => getTilesForArea(box, 13, 17))
+        ...getTilesForArea(bbox, 1, 10),
+        ...getSurgicalBoxes(pins).flatMap(box => getTilesForArea(box, 11, 15))
     ];
 
     const uniqueTilesMap = new Map();
