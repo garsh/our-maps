@@ -366,8 +366,8 @@ const SortablePin = ({
         marginBottom: '0px',
         scrollMarginTop: '24px',
         borderRadius: 'var(--radius-sm)',
-        background: ((hoveredPinId === pin.id || targetPinId === pin.id) && !isDragActive) ? 'rgba(72, 61, 139, 0.05)' : (editingPinId === pin.id ? 'var(--bg-color)' : 'transparent'),
-        border: editingPinId === pin.id ? '1px solid var(--primary-color)' : '1px solid transparent',
+        background: ((hoveredPinId === pin.id || targetPinId === pin.id) && !isDragActive) ? 'rgba(72, 61, 139, 0.05)' : (editingPinId === pin.id && !isDragActive ? 'var(--bg-color)' : 'transparent'),
+        border: (editingPinId === pin.id && !isDragActive) ? '1px solid var(--primary-color)' : '1px solid transparent',
         boxShadow: ((hoveredPinId === pin.id || targetPinId === pin.id) && !isDragActive) ? '0 0 0 1px var(--primary-color)' : 'none',
         transition: 'all 0.1s ease',
         cursor: 'default'
@@ -469,7 +469,7 @@ const SortablePin = ({
         </div>
       </div>
 
-      {targetPinId === pin.id && editingPinId !== pin.id && (
+      {!isDragActive && targetPinId === pin.id && editingPinId !== pin.id && (
         <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '0.3rem', borderTop: '1px solid var(--border-color)' }}>
           {pin.address && (
             <div style={{ marginBottom: '8px', fontSize: '0.65rem', color: 'var(--text-secondary)', lineHeight: '1.2' }}>
@@ -498,7 +498,7 @@ const SortablePin = ({
         </div>
       )}
 
-      {editingPinId === pin.id && !readOnly && (
+      {!isDragActive && editingPinId === pin.id && !readOnly && (
         <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '0.3rem', borderTop: '1px solid var(--border-color)', fontSize: '0.7rem' }}>
           <div style={{ marginBottom: '5px' }}>
             <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Name</label>
