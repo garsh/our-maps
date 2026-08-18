@@ -477,25 +477,7 @@ const MapView = ({
 
       {/* Live Zoom Level Indicator Pill (Dev Server Only) */}
       {import.meta.env.DEV && (
-        <div
-          className="zoom-level-pill"
-          style={{
-            position: 'absolute',
-            top: '64px',
-            right: '16px',
-            background: 'rgba(255, 255, 255, 0.9)',
-            backdropFilter: 'blur(8px)',
-            padding: '6px 14px',
-            borderRadius: '20px',
-            fontSize: '12px',
-            fontWeight: 600,
-            color: '#2c3e50',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-            zIndex: 1000,
-            pointerEvents: 'none',
-            letterSpacing: '0.3px',
-          }}
-        >
+        <div className="zoom-level-pill">
           Zoom: {currentZoom.toFixed(1)}
         </div>
       )}
