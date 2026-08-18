@@ -42,8 +42,8 @@ RUN cd server && npm ci --omit=dev
 COPY --from=builder /app/client/dist ./client/dist
 COPY --from=builder /app/server/dist ./server/dist
 
-# Set up the data directory for the SQLite database
-RUN mkdir -p /data && chown -R node:node /data
+# Set up the data and maps directories for SQLite and vector tiles
+RUN mkdir -p /data /app/data/maps /app/server/public/maps && chown -R node:node /data /app/data /app/server
 
 # Expose port 3000 for the app
 EXPOSE 3000
