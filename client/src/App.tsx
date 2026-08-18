@@ -258,6 +258,7 @@ export function MapEditor() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const isRemoteUpdateRef = useRef(false);
+  const isInitialLoadRef = useRef(false);
   const hasLoadedRef = useRef(false);
   const dragStartLayersRef = useRef<Map<string, string | undefined>>(new Map());
 
@@ -432,6 +433,7 @@ export function MapEditor() {
       };
     } else {
       hasLoadedRef.current = false;
+      isInitialLoadRef.current = false;
       // New map defaults
       setMapId(null);
       setMapName('My Map');
@@ -447,6 +449,11 @@ export function MapEditor() {
     if (userRole === 'view' || isMapLoading) return;
     
     if (isRemoteUpdateRef.current) {
+        return;
+    }
+
+    if (isInitialLoadRef.current) {
+        isInitialLoadRef.current = false;
         return;
     }
 
@@ -494,6 +501,7 @@ export function MapEditor() {
     setSelectedNavIds(new Set());
     try {
       const data = await apiService.getMap(mapId);
+      isInitialLoadRef.current = true;
       setMapId(data.id);
       setMapName(data.name || 'My Map');
       setOwner({ id: data.ownerId, name: data.ownerName, email: data.ownerEmail, picture: data.ownerPicture });
@@ -511,6 +519,7 @@ export function MapEditor() {
       }
       setUserRole(data.userRole || 'view');
       setPermissions(data.permissions || []);
+      setIsDirty(false);
     } catch (err) {
       console.error('Failed to load map', err);
       setError('Map not found or access denied');
