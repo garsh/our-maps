@@ -773,7 +773,7 @@ export function MapEditor() {
     }
   };
 
-  const addLayer = () => {
+  const addLayer = (): PinLayer | undefined => {
     if (userRole === 'view') return;
     const newGroup: PinLayer = {
       id: generateId(),
@@ -784,6 +784,7 @@ export function MapEditor() {
     if (mapId) {
       socketRef.current?.emit('layer-create', { mapId, layer: newGroup });
     }
+    return newGroup;
   };
 
   const updateLayer = (targetId: string, updates: Partial<PinLayer>) => {
