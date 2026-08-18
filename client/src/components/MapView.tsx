@@ -2,6 +2,9 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Map, { Marker, Popup, type MapRef } from 'react-map-gl/maplibre';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+
+maplibregl.setWorkerUrl(workerUrl);
 import { Protocol } from 'pmtiles';
 import { layers as protomapsLayers, namedFlavor } from '@protomaps/basemaps';
 import type { Pin } from '@shared/interfaces';
