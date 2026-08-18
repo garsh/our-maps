@@ -245,23 +245,40 @@ try {
   console.warn(`[MAPS DIR] Could not create maps directory (${mapsDir}):`, err);
 }
 
-app.use('/maps', (req, res, next) => {
-  console.log(`[MAPS REQ] ${req.method} ${req.url} (Range: ${req.headers.range || 'none'})`);
-  next();
-});
+app.get('/maps/:filename(*)', (req, res, next) => {
+  const filename = req.params.filename || 'planet.pmtiles';
+  
+  let foundFilePath: string | null = null;
+  for (const dir of candidateMapsDirs) {
+    if (!dir) continue;
+    const p = path.join(dir, filename);
+    try {
+      if (fs.existsSync(p)) {
+        foundFilePath = p;
+        break;
+      }
+    } catch {
+      // Ignore filesystem permission read errors
+    }
+  }
 
-const staticOptions = {
-  acceptRanges: true,
-  setHeaders: (res: any) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+  if (!foundFilePath) {
+    console.warn(`[MAPS 404] Requested file "${filename}" not found in candidate directories:`, candidateMapsDirs);
+    return res.status(404).json({ error: `Map file ${filename} not found` });
   }
-};
-candidateMapsDirs.forEach((dir) => {
-  if (fs.existsSync(dir)) {
-    app.use('/maps', express.static(dir, staticOptions));
-  }
+
+  console.log(`[MAPS SERVE] Serving ${foundFilePath} (Range: ${req.headers.range || 'none'})`);
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+
+  res.sendFile(foundFilePath, { acceptRanges: true }, (err) => {
+    if (err && !res.headersSent) {
+      console.error(`[MAPS ERROR] Failed to send ${foundFilePath}:`, err);
+      next(err);
+    }
+  });
 });
 
 // Resolve client build path
