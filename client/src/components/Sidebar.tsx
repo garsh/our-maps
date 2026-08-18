@@ -55,6 +55,7 @@ import {
   getSurgicalBoxes,
   getPinsBoundingBox,
   getManifestStats,
+  saveMapOffline,
   type BoundingBox 
 } from '../utils/tileUtils';
 import { canFit } from '../utils/storageUtils';
@@ -1105,6 +1106,16 @@ const Sidebar = ({
     const uniqueTilesMap = new Map();
     allTiles.forEach(tile => uniqueTilesMap.set(tile.url, tile));
     const uniqueTiles = Array.from(uniqueTilesMap.values());
+
+    const currentMapData: MapData = {
+      id: mapId,
+      name: mapName,
+      ownerId: '',
+      layers,
+      pins,
+      userRole,
+    };
+    await saveMapOffline(currentMapData);
 
     tileWorkerManager.startDownload(mapId, uniqueTiles);
   };

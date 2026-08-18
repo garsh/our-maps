@@ -76,13 +76,25 @@ export function MapEditor() {
   };
   const [mobileScale, setMobileScale] = useState(computeMobileScale);
 
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth <= 768);
       setMobileScale(computeMobileScale());
     };
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   const [sheetHeight, setSheetHeight] = useState(300);
@@ -1068,7 +1080,7 @@ export function MapEditor() {
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            color: error ? '#ffbdad' : (successMessage ? '#b8ffd1' : 'white'),
+            color: (isOffline || error) ? '#ffbdad' : (successMessage ? '#b8ffd1' : 'white'),
             fontWeight: '600',
             whiteSpace: 'nowrap',
             cursor: error ? 'pointer' : 'default',
@@ -1076,9 +1088,9 @@ export function MapEditor() {
             fontFamily: 'inherit',
             fontSize: '0.65rem'
           }}>
-            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: error ? '#ff4d4f' : (isSaving || isDirty ? '#ffcc00' : '#4ade80'), flexShrink: 0 }} />
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: (isOffline || error) ? '#ff4d4f' : (isSaving || isDirty ? '#ffcc00' : '#4ade80'), flexShrink: 0 }} />
             <span>
-              {error || successMessage || (isSaving ? 'Saving changes...' : (isDirty ? 'Pending Updates...' : 'Map Synced'))}
+              {isOffline ? 'Offline' : (error || successMessage || (isSaving ? 'Saving changes...' : (isDirty ? 'Pending Updates...' : 'Map Synced')))}
             </span>
           </button>
         )}

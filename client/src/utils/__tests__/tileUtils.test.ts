@@ -1,8 +1,54 @@
 import { describe, it, expect } from 'vitest';
-import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes } from '../tileUtils';
+import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, saveMapOffline, getOfflineMap, removeOfflineMap } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('tileUtils', () => {
+    beforeEach(() => {
+        const store = new Map();
+        (global as any).indexedDB = {
+            open: () => {
+                const req: any = {
+                    result: {
+                        objectStoreNames: { contains: () => true },
+                        transaction: () => ({
+                            objectStore: () => ({
+                                put: (val: any) => {
+                                    store.set(val.id, val);
+                                    const r: any = {};
+                                    setTimeout(() => r.onsuccess && r.onsuccess());
+                                    return r;
+                                },
+                                get: (id: string) => {
+                                    const r: any = {};
+                                    setTimeout(() => {
+                                        r.result = store.get(id);
+                                        r.onsuccess && r.onsuccess();
+                                    });
+                                    return r;
+                                },
+                                delete: (id: string) => {
+                                    store.delete(id);
+                                    const r: any = {};
+                                    setTimeout(() => r.onsuccess && r.onsuccess());
+                                    return r;
+                                }
+                            }),
+                            oncomplete: null,
+                            onerror: null
+                        })
+                    },
+                    onsuccess: null,
+                    onerror: null,
+                    onupgradeneeded: null
+                };
+                setTimeout(() => {
+                    if (req.onupgradeneeded) req.onupgradeneeded();
+                    if (req.onsuccess) req.onsuccess();
+                });
+                return req;
+            }
+        };
+    });
     // const mockBox = {
     //     north: 45.1,
     //     south: 44.9,
@@ -62,5 +108,26 @@ describe('tileUtils', () => {
 
         const boxes = getSurgicalBoxes(pins);
         expect(boxes.length).toBe(2);
+    });
+
+    it('should save, retrieve, and remove offline map metadata', async () => {
+        const mockMapData = {
+            id: 'offline-map-123',
+            name: 'Offline Test Map',
+            ownerId: 'user-1',
+            layers: [{ id: 'l1', name: 'Layer 1', color: '#ff0000', position: 0 }],
+            pins: [{ id: 'p1', lat: 40, lng: -70, label: 'Pin 1', position: 0 }],
+            userRole: 'owner' as const
+        };
+
+        await saveMapOffline(mockMapData as any);
+        const retrieved = await getOfflineMap('offline-map-123');
+        expect(retrieved).not.toBeNull();
+        expect(retrieved?.name).toBe('Offline Test Map');
+        expect(retrieved?.pins.length).toBe(1);
+
+        await removeOfflineMap('offline-map-123');
+        const afterRemove = await getOfflineMap('offline-map-123');
+        expect(afterRemove).toBeNull();
     });
 });

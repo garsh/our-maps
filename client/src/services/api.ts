@@ -1,4 +1,5 @@
 import type { Pin, MapData } from '@shared/interfaces';
+import { getOfflineMap, saveMapOffline, isMapDownloaded } from '../utils/tileUtils';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -71,18 +72,30 @@ export const apiService = {
   },
 
   async getMap(id: string): Promise<MapData> {
-    const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, { headers: getHeaders() });
-    if (res.status === 401) {
-        const err = await res.json().catch(() => ({}));
-        console.error('[API] Unauthorized:', err.error);
-        this._logoutCallback?.();
-        throw new Error(err.error || 'Unauthorized: Please sign in again');
+    try {
+      const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, { headers: getHeaders() });
+      if (res.status === 401) {
+          const err = await res.json().catch(() => ({}));
+          console.error('[API] Unauthorized:', err.error);
+          this._logoutCallback?.();
+          throw new Error(err.error || 'Unauthorized: Please sign in again');
+      }
+      if (!res.ok) {
+          if (res.status === 404) throw new Error('Map not found');
+          throw new Error(`Server error: ${res.status}`);
+      }
+      const data: MapData = await res.json();
+      isMapDownloaded(id).then(downloaded => {
+        if (downloaded) saveMapOffline(data);
+      }).catch(() => {});
+      return data;
+    } catch (err) {
+      const offlineMap = await getOfflineMap(id);
+      if (offlineMap) {
+        return offlineMap;
+      }
+      throw err;
     }
-    if (!res.ok) {
-        if (res.status === 404) throw new Error('Map not found');
-        throw new Error(`Server error: ${res.status}`);
-    }
-    return res.json();
   },
 
   async createMap(mapData: MapData): Promise<MapData> {

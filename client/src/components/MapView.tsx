@@ -12,11 +12,48 @@ import { getMarkerHTML, getPreviewMarkerHTML } from '../utils/mapUtils';
 import { Locate } from 'lucide-react';
 import { reverseGeocode } from '../utils/geocoding';
 
+import { getTile } from '../utils/tileUtils';
+
 let globalPMTilesProtocol: Protocol | null = null;
 function setupPMTilesProtocol() {
   if (!globalPMTilesProtocol) {
     globalPMTilesProtocol = new Protocol();
-    maplibregl.addProtocol('pmtiles', globalPMTilesProtocol.tile);
+    const offlineTileHandler: maplibregl.AddProtocolAction = async (params, abortController) => {
+      const match = params.url.match(/pmtiles:\/\/(.+)\/(\d+)\/(\d+)\/(\d+)/);
+      if (match) {
+        const [, , z, x, y] = match;
+        const tileUrl = `${window.location.origin}/maps/tile/${z}/${x}/${y}.mvt`;
+        try {
+          const blob = await getTile(tileUrl);
+          if (blob) {
+            const arrayBuffer = await blob.arrayBuffer();
+            return { data: new Uint8Array(arrayBuffer) };
+          }
+        } catch {
+          // fallback to pmtiles protocol if tile lookup fails
+        }
+      }
+
+      try {
+        return await globalPMTilesProtocol!.tilev4(params, abortController);
+      } catch (err: any) {
+        if (!navigator.onLine || err?.message?.includes('fetch') || err?.message?.includes('Network') || err?.message?.includes('Failed')) {
+          const fallbackMetadata = {
+            tilejson: "3.0.0",
+            scheme: "xyz",
+            tiles: [`${params.url}/{z}/{x}/{y}.mvt`],
+            minzoom: 0,
+            maxzoom: 15,
+            bounds: [-180, -85, 180, 85],
+            center: [0, 0, 0]
+          };
+          const encoder = new TextEncoder();
+          return { data: encoder.encode(JSON.stringify(fallbackMetadata)) };
+        }
+        throw err;
+      }
+    };
+    maplibregl.addProtocol('pmtiles', offlineTileHandler);
   }
 }
 setupPMTilesProtocol();
