@@ -42,6 +42,24 @@ const io = new Server(server, {
 
 const port = process.env.PORT || 3001;
 
+// VERY TOP LEVEL DEBUG LOGGING
+app.use((req, res, next) => {
+  const start = Date.now();
+  const requestId = Math.random().toString(36).substring(7);
+  console.log(`[REQ ${requestId}] ${req.method} ${req.originalUrl} Origin: ${req.headers.origin || 'none'}`);
+  console.log(`[REQ ${requestId}] Headers:`, JSON.stringify(req.headers));
+
+  // Intercept response finish to log status
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`[RES ${requestId}] ${req.method} ${req.originalUrl} -> STATUS ${res.statusCode} (${duration}ms)`);
+    if (res.statusCode >= 400) {
+      console.log(`[RES ${requestId}] Headers Sent:`, JSON.stringify(res.getHeaders()));
+    }
+  });
+  next();
+});
+
 // Security: Use helmet for secure headers
 app.use(helmet({
   contentSecurityPolicy: {
@@ -267,23 +285,70 @@ app.get('/maps/:filename(*)', (req, res, next) => {
     return res.status(404).json({ error: `Map file ${filename} not found` });
   }
 
-  console.log(`[MAPS SERVE] Serving ${foundFilePath} (Range: ${req.headers.range || 'none'})`);
+  try {
+    const stat = fs.statSync(foundFilePath);
+    const total = stat.size;
+    const range = req.headers.range;
 
-  res.sendFile(foundFilePath, {
-    acceptRanges: true,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-      'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
-      'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges, Content-Type',
-      'Content-Type': 'application/octet-stream',
+    console.log(`[MAPS SERVE] File: ${foundFilePath}, Size: ${total}, Range: ${range || 'none'}`);
+
+    // Set CORS and Expose headers explicitly for every response
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Authorization');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges, Content-Type');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Type', 'application/octet-stream');
+
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const partialstart = parts[0];
+      const partialend = parts[1];
+
+      const start = parseInt(partialstart, 10);
+      const end = partialend ? parseInt(partialend, 10) : total - 1;
+      
+      if (start >= total || end >= total || start > end) {
+        console.warn(`[MAPS 416] Invalid range: ${range} for size ${total}`);
+        res.status(416).setHeader('Content-Range', `bytes */${total}`);
+        return res.end();
+      }
+
+      const chunksize = (end - start) + 1;
+      console.log(`[MAPS 206] Sending range: ${start}-${end} (${chunksize} bytes)`);
+
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
+      res.setHeader('Content-Length', chunksize);
+
+      if (req.method === 'HEAD') return res.end();
+
+      const stream = fs.createReadStream(foundFilePath, { start, end });
+      stream.on('open', () => stream.pipe(res));
+      stream.on('error', (streamErr) => {
+        console.error(`[MAPS STREAM ERROR]`, streamErr);
+        if (!res.headersSent) res.status(500).end('Stream error');
+      });
+    } else {
+      console.log(`[MAPS 200] Sending full file: ${total} bytes`);
+      res.setHeader('Content-Length', total);
+      res.status(200);
+      
+      if (req.method === 'HEAD') return res.end();
+
+      const stream = fs.createReadStream(foundFilePath);
+      stream.on('open', () => stream.pipe(res));
+      stream.on('error', (streamErr) => {
+        console.error(`[MAPS STREAM ERROR]`, streamErr);
+        if (!res.headersSent) res.status(500).end('Stream error');
+      });
     }
-  }, (err) => {
-    if (err && !res.headersSent) {
-      console.error(`[MAPS ERROR] Failed to send ${foundFilePath}:`, err);
-      next(err);
+  } catch (err) {
+    console.error(`[MAPS ERROR] Failed to process ${foundFilePath}:`, err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal Server Error processing map file' });
     }
-  });
+  }
 });
 
 // Resolve client build path
