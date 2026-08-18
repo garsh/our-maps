@@ -253,4 +253,11 @@ describe('Sidebar', () => {
     
     expect(screen.queryByText(/Rename Map/i)).not.toBeInTheDocument();
   });
+
+  it('renders default layer header as a droppable element with id="default"', () => {
+    const { container } = render(<TestWrapper />);
+    const defaultLayerHeader = container.querySelector('#default');
+    expect(defaultLayerHeader).not.toBeNull();
+    expect(defaultLayerHeader?.textContent).toContain('Default Layer');
+  });
 });
