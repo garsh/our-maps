@@ -1397,6 +1397,25 @@ const Sidebar = ({
                       Download for Offline
                     </div>
                   )}
+                  {!readOnly && (
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={() => {
+                        isAddingLayerRef.current = true;
+                        const newLayer = onAddLayer();
+                        if (newLayer) {
+                          const id = typeof newLayer === 'string' ? newLayer : newLayer.id;
+                          setEditingLayerId(id);
+                          isAddingLayerRef.current = false;
+                        }
+                        setIsMenuOpen(false);
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      New Layer
+                    </div>
+                  )}
                   {selectedPins.length > 0 && !readOnly && (
                     <>
                       <div style={{ padding: '8px 16px', fontSize: '0.65rem', fontWeight: '800', color: '#999', background: '#fcfcfc', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)' }}>MOVE SELECTED TO...</div>
@@ -1426,25 +1445,6 @@ const Sidebar = ({
                         </div>
                       ))}
                     </>
-                  )}
-                  {!readOnly && (
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                      onClick={() => {
-                        isAddingLayerRef.current = true;
-                        const newLayer = onAddLayer();
-                        if (newLayer) {
-                          const id = typeof newLayer === 'string' ? newLayer : newLayer.id;
-                          setEditingLayerId(id);
-                          isAddingLayerRef.current = false;
-                        }
-                        setIsMenuOpen(false);
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      New Layer
-                    </div>
                   )}
                 </div>
               )}
