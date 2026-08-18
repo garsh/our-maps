@@ -42,8 +42,12 @@ export default function LandingPage() {
       setMaps(data);
       setIsOffline(false);
       localStorage.setItem('cached_maps', JSON.stringify(data));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch maps', error);
+      if (error?.message?.includes('Unauthorized')) {
+        logout();
+        return;
+      }
       setIsOffline(true);
       const cached = localStorage.getItem('cached_maps');
       if (cached) {
