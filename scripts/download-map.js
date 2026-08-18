@@ -35,14 +35,16 @@ function download(url, dest, callback) {
   const file = fs.createWriteStream(dest);
   https
     .get(url, (response) => {
-      if (response.statusCode === 301 || response.statusCode === 302) {
+      if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 307 || response.statusCode === 308) {
+        file.close();
+        try { fs.unlinkSync(dest); } catch {}
         return download(response.headers.location, dest, callback);
       }
 
       if (response.statusCode !== 200) {
         console.error(`Download failed with HTTP status ${response.statusCode}`);
         file.close();
-        fs.unlinkSync(dest);
+        try { fs.unlinkSync(dest); } catch {}
         process.exit(1);
       }
 
@@ -71,7 +73,7 @@ function download(url, dest, callback) {
       });
     })
     .on('error', (err) => {
-      fs.unlink(dest, () => {});
+      try { fs.unlinkSync(dest); } catch {}
       console.error(`Error: ${err.message}`);
       process.exit(1);
     });
