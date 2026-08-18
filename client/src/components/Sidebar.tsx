@@ -69,7 +69,7 @@ interface SidebarProps {
   mapName: string;
   onMapNameChange: (name: string) => void;
   layers: PinLayer[];
-  onAddLayer: () => void;
+  onAddLayer: () => PinLayer | string | void;
   onUpdateLayer: (id: string, updates: Partial<PinLayer>) => void;
   onRemoveLayer: (id: string) => void;
   pins: Pin[];
@@ -632,6 +632,8 @@ const SortableLayer = ({
   onUpdatePin,
   editingPinId,
   onSetEditingPinId,
+  editingLayerId,
+  onSetEditingLayerId,
   readOnly,
   targetPinId,
   hoveredPinId,
@@ -659,6 +661,8 @@ const SortableLayer = ({
   onUpdatePin: (id: string, updates: Partial<Pin>) => void,
   editingPinId: string | null,
   onSetEditingPinId: (id: string | null) => void,
+  editingLayerId?: string | null,
+  onSetEditingLayerId?: (id: string | null) => void,
   readOnly: boolean,
   targetPinId?: string | null,
   hoveredPinId?: string | null,
@@ -677,7 +681,32 @@ const SortableLayer = ({
   isLayerDragging: boolean,
   isDragActive: boolean
 }) => {
-  const [isEditingName, setIsEditingName] = useState(false);
+  const [localIsEditingName, setLocalIsEditingName] = useState(false);
+  const isEditingName = editingLayerId !== undefined 
+    ? editingLayerId === layer.id 
+    : localIsEditingName;
+
+  const setIsEditingName = (val: boolean | ((prev: boolean) => boolean)) => {
+    const nextVal = typeof val === 'function' ? val(isEditingName) : val;
+    if (onSetEditingLayerId) {
+      onSetEditingLayerId(nextVal ? layer.id : null);
+    }
+    setLocalIsEditingName(nextVal);
+  };
+
+  const layerNameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditingName && layerNameInputRef.current) {
+      layerNameInputRef.current.focus();
+      layerNameInputRef.current.select();
+      const timer = setTimeout(() => {
+        layerNameInputRef.current?.focus();
+        layerNameInputRef.current?.select();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isEditingName]);
 
   useEffect(() => {
     if (editingPinId && layerPins.some(p => p.id === editingPinId)) {
@@ -803,10 +832,12 @@ const SortableLayer = ({
               <label htmlFor={`label-${layer.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>NAME</label>
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <input 
+                  ref={layerNameInputRef}
                   id={`label-${layer.id}`}
                   type="text" 
                   value={layer.name} 
                   onChange={(e) => onUpdateLayer(layer.id, { name: e.target.value })}
+                  onFocus={(e) => e.target.select()}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && layer.name.trim()) {
                       setIsEditingName(false);
@@ -913,6 +944,20 @@ const Sidebar = ({
   const readOnly = userRole === 'view';
   const [activePin, setActivePin] = useState<Pin | null>(null);
   const [activeLayer, setActiveLayer] = useState<PinLayer | null>(null);
+  const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const isAddingLayerRef = useRef(false);
+  const prevLayersLengthRef = useRef(layers.length);
+
+  useEffect(() => {
+    if (isAddingLayerRef.current && layers.length > prevLayersLengthRef.current) {
+      const newLayer = layers[layers.length - 1];
+      if (newLayer) {
+        setEditingLayerId(newLayer.id);
+      }
+      isAddingLayerRef.current = false;
+    }
+    prevLayersLengthRef.current = layers.length;
+  }, [layers]);
   // PWA Install State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
@@ -1375,7 +1420,13 @@ const Sidebar = ({
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
                       onClick={() => {
-                        onAddLayer();
+                        isAddingLayerRef.current = true;
+                        const newLayer = onAddLayer();
+                        if (newLayer) {
+                          const id = typeof newLayer === 'string' ? newLayer : newLayer.id;
+                          setEditingLayerId(id);
+                          isAddingLayerRef.current = false;
+                        }
                         setIsMenuOpen(false);
                       }}
                       onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
@@ -1462,6 +1513,8 @@ const Sidebar = ({
                 onUpdatePin={onUpdatePin}
                 editingPinId={editingPinId}
                 onSetEditingPinId={onSetEditingPinId}
+                editingLayerId={editingLayerId}
+                onSetEditingLayerId={setEditingLayerId}
                 readOnly={readOnly}
                 targetPinId={targetPinId}
                 hoveredPinId={hoveredPinId}

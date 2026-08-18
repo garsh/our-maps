@@ -64,6 +64,37 @@ describe('Sidebar', () => {
     expect(onAddLayer).toHaveBeenCalled();
   });
 
+  it('opens newly added layer in edit mode with focus and text selection', () => {
+    const TestComponent = () => {
+      const [layers, setLayers] = useState<any[]>([]);
+      const handleAddLayer = () => {
+        const newLayer = { id: 'layer-1', name: 'Layer 1', position: 0 };
+        setLayers(prev => [...prev, newLayer]);
+        return newLayer;
+      };
+      return (
+        <TestWrapper 
+          handlers={{ 
+            layers, 
+            onAddLayer: handleAddLayer 
+          }} 
+        />
+      );
+    };
+
+    render(<TestComponent />);
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+    fireEvent.click(screen.getByText(/New Layer/i));
+
+    const nameInput = screen.getByLabelText(/NAME/i) as HTMLInputElement;
+    expect(nameInput).toBeInTheDocument();
+    expect(nameInput.value).toBe('Layer 1');
+    expect(document.activeElement).toBe(nameInput);
+    expect(nameInput.selectionStart).toBe(0);
+    expect(nameInput.selectionEnd).toBe('Layer 1'.length);
+  });
+
   it('calls onUpdatePin when description is changed', () => {
     const onUpdatePin = vi.fn();
     render(<TestWrapper handlers={{ onUpdatePin }} />);
