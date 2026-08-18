@@ -276,7 +276,10 @@ const clientBuildPath = potentialPaths.find(p => fs.existsSync(p)) || potentialP
 app.use(express.static(clientBuildPath));
 
 app.get('*', (req, res) => {
-  if (!req.url.startsWith('/api') && !req.url.startsWith('/maps')) {
+  const isApiOrMaps = req.path.startsWith('/api') || req.path.startsWith('/maps');
+  const isStaticAsset = req.path.startsWith('/assets/') || /\.(js|css|json|png|jpg|jpeg|gif|ico|svg|wasm|pbf|pmtiles|map|webmanifest)$/i.test(req.path);
+
+  if (!isApiOrMaps && !isStaticAsset) {
     const indexPath = path.join(clientBuildPath, 'index.html');
     if (fs.existsSync(indexPath)) {
       res.sendFile(indexPath);
