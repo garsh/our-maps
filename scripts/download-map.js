@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const isSample = process.argv.includes('--sample');
 
 const FULL_URL = 'https://build.protomaps.com/20260817.pmtiles';
-const SAMPLE_URL = 'https://pmtiles.io/protomaps(vector)ODbL_firenze.pmtiles';
+const SAMPLE_URL = 'https://build.protomaps.com/20260817.pmtiles';
 
 const downloadUrl = isSample ? SAMPLE_URL : FULL_URL;
 
@@ -82,8 +82,9 @@ download(downloadUrl, targetPath, () => {
     if (fs.existsSync(symlinkPath)) {
       fs.unlinkSync(symlinkPath);
     }
-    fs.symlinkSync(targetPath, symlinkPath);
-    console.log(`Symlink created at ${symlinkPath}`);
+    const relativeTarget = path.relative(serverMapsDir, targetPath);
+    fs.symlinkSync(relativeTarget, symlinkPath);
+    console.log(`Relative symlink created at ${symlinkPath} -> ${relativeTarget}`);
   } catch (err) {
     console.warn(`Could not create symlink (copying file reference instead): ${err.message}`);
   }
