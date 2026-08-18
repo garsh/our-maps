@@ -1306,6 +1306,7 @@ export function MapEditor() {
             hiddenLayerIds={hiddenLayerIds}
             previewLocation={previewLocation}
             bottomPadding={isMobile ? sheetHeight : 0}
+            leftPadding={isMobile ? 0 : sidebarWidth}
           />
         </div>
       </main>
