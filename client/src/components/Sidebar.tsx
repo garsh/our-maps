@@ -37,7 +37,8 @@ import {
   type DragStartEvent,
   type DragOverEvent,
   DragOverlay,
-  defaultDropAnimationSideEffects
+  defaultDropAnimationSideEffects,
+  useDroppable
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -620,6 +621,105 @@ const SortablePin = ({
         </div>
       )}
     </li>
+  );
+};
+
+const DefaultLayerHeader = ({
+  defaultPins,
+  collapsedLayerIds,
+  hiddenLayerIds,
+  isDefaultAllSelected,
+  isDefaultSomeSelected,
+  readOnly,
+  isLayerDragging,
+  onToggleExpand,
+  onToggleLayerVisibility,
+  onToggleNavIds,
+  layersCount
+}: {
+  defaultPins: Pin[];
+  collapsedLayerIds?: Set<string | null>;
+  hiddenLayerIds?: Set<string | null>;
+  isDefaultAllSelected: boolean;
+  isDefaultSomeSelected: boolean;
+  readOnly: boolean;
+  isLayerDragging: boolean;
+  onToggleExpand?: (id: string | null) => void;
+  onToggleLayerVisibility?: (id: string | null) => void;
+  onToggleNavIds?: (ids: string[], force?: boolean) => void;
+  layersCount: number;
+}) => {
+  const { setNodeRef, isOver } = useDroppable({
+    id: 'default',
+    data: { type: 'layer', layer: { id: 'default', name: 'Default Layer' } },
+    disabled: readOnly
+  });
+
+  const isHighlighted = isOver && !isLayerDragging;
+
+  return (
+    <div style={{ marginTop: layersCount > 0 ? '0.3rem' : '0' }}>
+      <div 
+        ref={setNodeRef}
+        id="default"
+        style={{ 
+          position: 'sticky', 
+          top: 0, 
+          zIndex: 5, 
+          background: isHighlighted ? 'rgba(72, 61, 139, 0.05)' : 'white',
+          borderRadius: 'var(--radius-sm)',
+          border: isHighlighted ? '1px solid var(--primary-color)' : '1px solid transparent',
+          boxShadow: isHighlighted ? '0 0 0 1px var(--primary-color)' : 'var(--shadow-sm)',
+          transition: 'all 0.1s ease'
+        }}>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          padding: '0 0.15rem', 
+          borderBottom: 'none',
+          minHeight: '20px',
+          transition: 'all 0.1s ease'
+        }}>
+          {/* Empty placeholder to exactly match GripVertical width and padding from regular layers */}
+          <div style={{ padding: '1px 1px', marginLeft: '-2px', display: 'flex', alignItems: 'center', width: '13px', height: '13px' }}></div>
+          <div onClick={() => onToggleExpand?.(null)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
+            <div style={{ color: 'var(--primary-color)', marginRight: '1px', display: 'flex' }}>
+                {collapsedLayerIds?.has(null) ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+            </div>
+            <span style={{ fontWeight: '700', fontSize: '0.65rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Default Layer <span style={{ fontWeight: 'normal', color: '#aaa', fontSize: '0.55rem', marginLeft: '2px' }}>({defaultPins.length})</span>
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '4px' }}>
+            <button 
+              onClick={(e) => { e.stopPropagation(); onToggleLayerVisibility?.(null); }}
+              style={{ background: 'transparent', border: 'none', color: hiddenLayerIds?.has(null) ? '#bbb' : 'var(--primary-color)', cursor: 'pointer', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
+              title={hiddenLayerIds?.has(null) ? "Show layer" : "Hide layer"}
+            >
+              {hiddenLayerIds?.has(null) ? <EyeOff size={11} /> : <Eye size={11} />}
+            </button>
+            {defaultPins.length > 0 ? (
+              <input 
+                type="checkbox" 
+                checked={isDefaultAllSelected}
+                ref={el => { if (el) el.indeterminate = isDefaultSomeSelected && !isDefaultAllSelected; }}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  onToggleNavIds?.(defaultPins.map(p => p.id), checked);
+                }}
+                style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
+                title="Select all in default layer for navigation"
+              />
+            ) : (
+              <div style={{ width: '9px', height: '9px' }} />
+            )}
+            {!readOnly && (
+              <div style={{ width: '18px' }} />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -1546,66 +1646,19 @@ const Sidebar = ({
               />
             ))}
           </SortableContext>
-          <div style={{ marginTop: layers.length > 0 ? '0.3rem' : '0' }}>
-            <div 
-              id="default"
-              style={{ 
-                position: 'sticky', 
-                top: 0, 
-                zIndex: 5, 
-                background: 'white',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid transparent',
-                boxShadow: 'var(--shadow-sm)',
-                transition: 'all 0.1s ease'
-              }}>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  padding: '0 0.15rem', 
-                  borderBottom: 'none',
-                  minHeight: '20px',
-                  transition: 'all 0.1s ease'
-                }}>
-                  {/* Empty placeholder to exactly match GripVertical width and padding from regular layers */}
-                  <div style={{ padding: '1px 1px', marginLeft: '-2px', display: 'flex', alignItems: 'center', width: '13px', height: '13px' }}></div>
-                  <div onClick={() => onToggleExpand?.(null)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
-                    <div style={{ color: 'var(--primary-color)', marginRight: '1px', display: 'flex' }}>
-                        {collapsedLayerIds?.has(null) ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
-                    </div>
-                    <span style={{ fontWeight: '700', fontSize: '0.65rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        Default Layer <span style={{ fontWeight: 'normal', color: '#aaa', fontSize: '0.55rem', marginLeft: '2px' }}>({defaultPins.length})</span>
-                    </span>
-                  </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '4px' }}>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); onToggleLayerVisibility?.(null); }}
-                  style={{ background: 'transparent', border: 'none', color: hiddenLayerIds?.has(null) ? '#bbb' : 'var(--primary-color)', cursor: 'pointer', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
-                  title={hiddenLayerIds?.has(null) ? "Show layer" : "Hide layer"}
-                >
-                  {hiddenLayerIds?.has(null) ? <EyeOff size={11} /> : <Eye size={11} />}
-                </button>
-                {defaultPins.length > 0 ? (
-                  <input 
-                    type="checkbox" 
-                    checked={isDefaultAllSelected}
-                    ref={el => { if (el) el.indeterminate = isDefaultSomeSelected && !isDefaultAllSelected; }}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      onToggleNavIds?.(defaultPins.map(p => p.id), checked);
-                    }}
-                    style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
-                    title="Select all in default layer for navigation"
-                  />
-                ) : (
-                  <div style={{ width: '9px', height: '9px' }} />
-                )}
-                {!readOnly && (
-                  <div style={{ width: '18px' }} />
-                )}
-              </div>
-            </div>
-          </div>
+          <DefaultLayerHeader 
+            defaultPins={defaultPins}
+            collapsedLayerIds={collapsedLayerIds}
+            hiddenLayerIds={hiddenLayerIds}
+            isDefaultAllSelected={isDefaultAllSelected}
+            isDefaultSomeSelected={isDefaultSomeSelected}
+            readOnly={readOnly}
+            isLayerDragging={!!activeLayer}
+            onToggleExpand={onToggleExpand}
+            onToggleLayerVisibility={onToggleLayerVisibility}
+            onToggleNavIds={onToggleNavIds}
+            layersCount={layers.length}
+          />
             {!collapsedLayerIds?.has(null) && (
               <div style={{ paddingLeft: '0.2rem', borderLeft: '1px solid var(--border-color)', marginTop: '0px', marginLeft: '0.4rem' }}>
                 <SortableContext items={defaultPins.map(p => p.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
@@ -1645,7 +1698,6 @@ const Sidebar = ({
               </div>
             )}
           </div>
-        </div>
 
 
 
