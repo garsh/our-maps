@@ -32,12 +32,19 @@ function setupPMTilesProtocol() {
         } catch {
           // fallback to pmtiles protocol if tile lookup fails
         }
+
+        if (!navigator.onLine) {
+          return { data: new Uint8Array(0) };
+        }
       }
 
       try {
         return await globalPMTilesProtocol!.tilev4(params, abortController);
       } catch (err: any) {
         if (!navigator.onLine || err?.message?.includes('fetch') || err?.message?.includes('Network') || err?.message?.includes('Failed')) {
+          if (match) {
+            return { data: new Uint8Array(0) };
+          }
           const fallbackMetadata = {
             tilejson: "3.0.0",
             scheme: "xyz",
