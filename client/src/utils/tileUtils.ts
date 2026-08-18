@@ -1,4 +1,4 @@
-import type { Pin } from '@shared/interfaces';
+import type { Pin, MapData } from '@shared/interfaces';
 
 export interface BoundingBox {
     north: number;
@@ -32,7 +32,8 @@ export interface ManifestEntry {
 const DB_NAME = 'MapTilesDB_v2';
 const MANIFEST_STORE = 'manifest';
 const TILE_STORE = 'tiles';
-const DB_VERSION = 1;
+const MAP_STORE = 'maps';
+const DB_VERSION = 2;
 
 async function openDB(): Promise<IDBDatabase> {
     if (typeof indexedDB === 'undefined') {
@@ -50,10 +51,59 @@ async function openDB(): Promise<IDBDatabase> {
             if (!db.objectStoreNames.contains(TILE_STORE)) {
                 db.createObjectStore(TILE_STORE);
             }
+            if (!db.objectStoreNames.contains(MAP_STORE)) {
+                db.createObjectStore(MAP_STORE, { keyPath: 'id' });
+            }
         };
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
     });
+}
+
+export async function saveMapOffline(mapData: MapData): Promise<void> {
+    if (typeof indexedDB === 'undefined') return;
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(MAP_STORE, 'readwrite');
+        const store = transaction.objectStore(MAP_STORE);
+        const req = store.put(mapData);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+        transaction.onerror = () => reject(transaction.error);
+    });
+}
+
+export async function getOfflineMap(mapId: string): Promise<MapData | null> {
+    if (!mapId || typeof indexedDB === 'undefined') return null;
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(MAP_STORE, 'readonly');
+            const store = transaction.objectStore(MAP_STORE);
+            const request = store.get(mapId);
+            request.onsuccess = () => resolve(request.result || null);
+            request.onerror = () => reject(request.error);
+        });
+    } catch {
+        return null;
+    }
+}
+
+export async function removeOfflineMap(mapId: string): Promise<void> {
+    if (!mapId || typeof indexedDB === 'undefined') return;
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(MAP_STORE, 'readwrite');
+            const store = transaction.objectStore(MAP_STORE);
+            const req = store.delete(mapId);
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+            transaction.onerror = () => reject(transaction.error);
+        });
+    } catch {
+        return;
+    }
 }
 
 export async function addToManifest(entries: ManifestEntry[]): Promise<void> {
@@ -212,9 +262,12 @@ export async function removeMapDownload(mapId: string): Promise<void> {
     if (!mapId) return;
     const db = await openDB();
     return new Promise((resolve, reject) => {
-        const transaction = db.transaction([MANIFEST_STORE, TILE_STORE], 'readwrite');
+        const transaction = db.transaction([MANIFEST_STORE, TILE_STORE, MAP_STORE], 'readwrite');
         const manifestStore = transaction.objectStore(MANIFEST_STORE);
         const tileStore = transaction.objectStore(TILE_STORE);
+        const mapStore = transaction.objectStore(MAP_STORE);
+
+        mapStore.delete(mapId);
 
         const index = manifestStore.index('mapId');
         const request = index.getAll(IDBKeyRange.only(mapId));
