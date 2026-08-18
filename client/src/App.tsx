@@ -1087,7 +1087,7 @@ export function MapEditor() {
   );
 
   return (
-    <div style={{ display: 'flex', height: '100vh', fontFamily: 'inherit', userSelect: isResizing ? 'none' : 'auto' }} className="app-container">
+    <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', fontFamily: 'inherit', userSelect: isResizing ? 'none' : 'auto' }} className="app-container">
       {isMobile && appHeader}
 
       <div 
@@ -1099,7 +1099,7 @@ export function MapEditor() {
           display: 'flex',
           flexDirection: 'column',
           overflow: 'visible'
-        } : { width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1000, background: 'var(--bg-color)' }}
+        } : { width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1000, background: 'var(--bg-color)', overflow: 'hidden' }}
       >
         {isMobile && (
           <div 
@@ -1164,16 +1164,23 @@ export function MapEditor() {
           flexDirection: 'column',
           overflow: 'hidden'
         } : {
-          transform: 'scale(1.25)',
-          transformOrigin: 'top left',
-          width: `${(1 / 1.25) * 100}%`,
-          height: `${(1 / 1.25) * 100}%`,
-          flex: 'none',
+          flex: 1,
+          minHeight: 0,
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          overflow: 'hidden'
         }}>
-          <Sidebar 
-            isMobile={isMobile}
+          <div style={isMobile ? {} : {
+            transform: 'scale(1.25)',
+            transformOrigin: 'top left',
+            width: `${(1 / 1.25) * 100}%`,
+            height: `${(1 / 1.25) * 100}%`,
+            flex: 'none',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <Sidebar 
+              isMobile={isMobile}
             mapId={mapId}
             mapName={mapName}
             onMapNameChange={handleMapNameChange}
@@ -1254,6 +1261,7 @@ export function MapEditor() {
           />
         </div>
       </div>
+    </div>
 
 
 
