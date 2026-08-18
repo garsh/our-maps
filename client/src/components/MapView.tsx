@@ -82,6 +82,7 @@ interface MapViewProps {
   hiddenLayerIds?: Set<string | null>;
   previewLocation?: { lat: number; lng: number } | null;
   bottomPadding?: number;
+  leftPadding?: number;
   editingPinId?: string | null;
   onBackgroundClick?: () => void;
 }
@@ -196,6 +197,7 @@ const MapView = ({
   hiddenLayerIds,
   previewLocation,
   bottomPadding = 0,
+  leftPadding = 0,
   editingPinId,
   onBackgroundClick,
 }: MapViewProps) => {
@@ -324,21 +326,23 @@ const MapView = ({
       const minLng = Math.min(first[1], second[1]);
       const maxLng = Math.max(first[1], second[1]);
 
+      const computedLeftPadding = leftPadding + 80;
+
       if (Math.abs(maxLat - minLat) < 0.0001 && Math.abs(maxLng - minLng) < 0.0001) {
-        return { longitude: minLng, latitude: minLat, zoom: 14 };
+        return { longitude: minLng, latitude: minLat, zoom: 13 };
       }
 
       return {
         bounds: [minLng, minLat, maxLng, maxLat] as [number, number, number, number],
         fitBoundsOptions: {
-          padding: { top: 60, left: 60, right: 60, bottom: 60 + bottomPadding },
-          maxZoom: 15,
+          padding: { top: 80, left: computedLeftPadding, right: 80, bottom: 80 + bottomPadding },
+          maxZoom: 13,
         },
       };
     }
 
     return { longitude: center[1], latitude: center[0], zoom };
-  }, [boundsToFit, visiblePins, pins, targetLocation, center, zoom, bottomPadding]);
+  }, [boundsToFit, visiblePins, pins, targetLocation, center, zoom, bottomPadding, leftPadding]);
 
   const updateBounds = useCallback(() => {
     if (!mapRef.current) return;
@@ -362,11 +366,12 @@ const MapView = ({
       const maxLng = Math.max(first[1], second[1]);
 
       const duration = animate ? 1200 : 0;
+      const computedLeftPadding = leftPadding + 80;
 
       if (Math.abs(maxLat - minLat) < 0.0001 && Math.abs(maxLng - minLng) < 0.0001) {
         mapRef.current.flyTo({
           center: [minLng, minLat],
-          zoom: 14,
+          zoom: 13,
           duration,
         });
       } else {
@@ -376,14 +381,14 @@ const MapView = ({
             [maxLng, maxLat],
           ],
           {
-            padding: { top: 60, left: 60, right: 60, bottom: 60 + bottomPadding },
-            maxZoom: 15,
+            padding: { top: 80, left: computedLeftPadding, right: 80, bottom: 80 + bottomPadding },
+            maxZoom: 13,
             duration,
           }
         );
       }
     },
-    [bottomPadding]
+    [leftPadding, bottomPadding]
   );
 
   // Camera movements for targetLocation
