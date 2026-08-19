@@ -14,9 +14,14 @@ if (!fs.existsSync(dataSpritesDir)) {
   fs.mkdirSync(dataSpritesDir, { recursive: true });
 }
 const serverPublicMapsDir = path.join(rootDir, 'server', 'public', 'maps');
+const clientPublicMapsDir = path.join(rootDir, 'client', 'public', 'maps');
 if (!fs.existsSync(serverPublicMapsDir)) {
   fs.mkdirSync(serverPublicMapsDir, { recursive: true });
 }
+if (!fs.existsSync(clientPublicMapsDir)) {
+  fs.mkdirSync(clientPublicMapsDir, { recursive: true });
+}
+const clientMapsSpritesDir = path.join(clientPublicMapsDir, 'sprites');
 
 const isForce = process.argv.includes('--force');
 
@@ -56,6 +61,27 @@ function downloadFile(url, dest) {
   });
 }
 
+function ensureSymlink(targetDir, linkPath) {
+  try {
+    try {
+      const stat = fs.lstatSync(linkPath);
+      if (stat.isSymbolicLink()) {
+        fs.unlinkSync(linkPath);
+      } else if (stat.isDirectory() && fs.readdirSync(linkPath).length === 0) {
+        fs.rmdirSync(linkPath);
+      }
+    } catch (e) {
+      // Entry does not exist
+    }
+
+    const relativeTarget = path.relative(path.dirname(linkPath), targetDir);
+    fs.symlinkSync(relativeTarget, linkPath);
+    console.log(`Relative symlink verified at ${linkPath} -> ${relativeTarget}`);
+  } catch (err) {
+    console.warn(`Could not update sprite symlink at ${linkPath}: ${err.message}`);
+  }
+}
+
 async function setupSprites() {
   const missingFiles = SPRITE_FILES.filter(f => !fs.existsSync(path.join(dataSpritesDir, f)) || fs.statSync(path.join(dataSpritesDir, f)).size === 0);
 
@@ -78,26 +104,9 @@ async function setupSprites() {
     console.log('Sprite download complete.');
   }
 
-  // Create symlink server/public/maps/sprites -> ../../../data/sprites
-  try {
-    if (fs.existsSync(serverMapsSpritesDir)) {
-      try {
-        const stat = fs.lstatSync(serverMapsSpritesDir);
-        if (stat.isSymbolicLink()) {
-          fs.unlinkSync(serverMapsSpritesDir);
-        } else if (stat.isDirectory() && fs.readdirSync(serverMapsSpritesDir).length === 0) {
-          fs.rmdirSync(serverMapsSpritesDir);
-        }
-      } catch {}
-    }
-    if (!fs.existsSync(serverMapsSpritesDir)) {
-      const relativeTarget = path.relative(path.dirname(serverMapsSpritesDir), dataSpritesDir);
-      fs.symlinkSync(relativeTarget, serverMapsSpritesDir);
-      console.log(`Relative symlink verified at ${serverMapsSpritesDir} -> ${relativeTarget}`);
-    }
-  } catch (err) {
-    console.warn(`Could not update sprite symlink: ${err.message}`);
-  }
+  // Create symlinks server/public/maps/sprites and client/public/maps/sprites -> data/sprites
+  ensureSymlink(dataSpritesDir, serverMapsSpritesDir);
+  ensureSymlink(dataSpritesDir, clientMapsSpritesDir);
 }
 
 setupSprites();

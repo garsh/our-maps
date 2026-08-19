@@ -111,4 +111,6 @@ data/maps/
 data/sprites/
 server/public/maps/
 server/public/sprites/
+client/public/maps/
+client/public/sprites/
 
