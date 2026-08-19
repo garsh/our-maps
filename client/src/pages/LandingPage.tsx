@@ -156,11 +156,6 @@ export default function LandingPage() {
           <MapIcon size={28} /> OurMaps
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-          {isOffline && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: '50px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-              <WifiOff size={14} /> Offline Mode
-            </div>
-          )}
           <div 
             onClick={() => setShowSignOutDialog(true)}
             style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.1)', padding: '4px 12px', borderRadius: '50px', cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
@@ -273,24 +268,33 @@ export default function LandingPage() {
                 <div style={{ flex: 1, paddingRight: '16px' }}>
                   <h3 style={{ margin: '0 0 0.25rem 0', color: 'var(--text-primary)', fontSize: '1.1rem', fontWeight: '700', paddingRight: '0' }}>{map.name}</h3>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.72rem', padding: '2px 0' }}>
                       <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: map.ownerId === user?.id ? 'var(--primary-color)' : 'var(--success-color)' }}></div>
-                      {map.ownerId === user?.id ? 'Owner' : `Shared by ${map.ownerName}`}
+                      {map.ownerId === user?.id ? 'Owner' : map.ownerName}
                     </div>
                     {(() => {
                       const status = downloadStatuses.get(map.id);
-                      if (!status) return null;
-                      if (status.isComplete) {
+                      if (status?.isComplete) {
                         return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: '#27ae60', background: 'rgba(39, 174, 96, 0.12)', padding: '2px 8px', borderRadius: '12px', fontWeight: '700' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: '#27ae60', background: 'rgba(39, 174, 96, 0.12)', padding: '2px 8px', borderRadius: '12px', fontWeight: '700', marginLeft: 'auto' }}>
                             <Download size={12} /> Downloaded
                           </span>
                         );
                       }
-                      if (status.isPartial) {
+                      if (status?.isPartial) {
                         return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: '#3b82f6', background: 'rgba(59, 130, 246, 0.12)', padding: '2px 8px', borderRadius: '12px', fontWeight: '700' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: '#3b82f6', background: 'rgba(59, 130, 246, 0.12)', padding: '2px 8px', borderRadius: '12px', fontWeight: '700', marginLeft: 'auto' }}>
                             <Download size={12} className="animated-download-icon" /> Downloading
+                          </span>
+                        );
+                      }
+                      if (isOffline) {
+                        return (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: '#e74c3c', background: 'rgba(231, 76, 60, 0.12)', padding: '2px 8px', borderRadius: '12px', fontWeight: '700', marginLeft: 'auto' }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            </svg>
+                            Offline
                           </span>
                         );
                       }
@@ -299,19 +303,35 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', gap: '8px', borderTop: 'none', paddingTop: '0' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', color: '#999' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', gap: '4px', borderTop: 'none', paddingTop: '0' }}>
+                  <button 
+                    onClick={(e) => { 
+                      if (isOffline) return;
+                      e.stopPropagation(); 
+                      setDeleteConfirm(map.id); 
+                    }}
+                    disabled={isOffline}
+                    style={{ 
+                      background: 'rgba(231, 76, 60, 0.1)', 
+                      border: 'none', 
+                      color: 'var(--error-color)', 
+                      padding: '2px', 
+                      borderRadius: '12px', 
+                      cursor: isOffline ? 'default' : 'pointer', 
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      height: '1.1rem',
+                      width: '2.2rem',
+                      visibility: isOffline ? 'hidden' : 'visible'
+                    }}
+                    title={map.ownerId === user?.id ? "Delete Map" : "Leave Map"}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', fontSize: '0.75rem', color: '#999' }}>
                     <span>{formatDate(map.lastAccessedAt)}</span>
                   </div>
-                  {!isOffline && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); setDeleteConfirm(map.id); }}
-                      style={{ position: 'relative', top: 'auto', right: 'auto', background: 'rgba(231, 76, 60, 0.1)', border: 'none', color: 'var(--error-color)', padding: '6px', borderRadius: '50%', cursor: 'pointer', display: 'flex' }}
-                      title={map.ownerId === user?.id ? "Delete Map" : "Leave Map"}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
                 </div>
               </div>
             ))}

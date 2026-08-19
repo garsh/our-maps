@@ -86,4 +86,38 @@ describe('LandingPage Offline Map Access', () => {
     expect(mockNavigate).not.toHaveBeenCalledWith('/map/map-not-downloaded');
     expect(screen.getByText('This map is not available in offline mode')).toBeInTheDocument();
   });
+
+  it('displays Offline badge for undownloaded maps when offline', async () => {
+    (apiService.getMaps as any).mockRejectedValue(new Error('Network Error'));
+    localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
+
+    render(
+      <MemoryRouter>
+        <LandingPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Offline')).toBeInTheDocument();
+      expect(screen.getByText('Downloaded')).toBeInTheDocument();
+    });
+  });
+
+  it('shows owner name without Shared by prefix for shared maps', async () => {
+    const sharedMaps = [
+      { id: 'map-shared', name: 'Shared Map', ownerId: 'user-other', ownerName: 'Alice Smith', ownerEmail: 'alice@test.com' },
+    ];
+    (apiService.getMaps as any).mockResolvedValue(sharedMaps);
+
+    render(
+      <MemoryRouter>
+        <LandingPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Alice Smith')).toBeInTheDocument();
+      expect(screen.queryByText(/Shared by/i)).not.toBeInTheDocument();
+    });
+  });
 });
