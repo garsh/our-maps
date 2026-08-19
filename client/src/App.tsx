@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import MapView from './components/MapView'
-import Sidebar from './components/Sidebar'
+import Sidebar, { type MapTheme } from './components/Sidebar'
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import ShareDialog from './components/ShareDialog';
@@ -61,6 +61,19 @@ export function MapEditor() {
   const [sidebarWidth, setSidebarWidth] = useState(400);
   const [isResizing, setIsResizing] = useState(false);
   const [isHoveringResizer, setIsHoveringResizer] = useState(false);
+
+  const [mapTheme, setMapTheme] = useState<MapTheme>(() => {
+    const saved = localStorage.getItem('ourmaps_map_theme');
+    if (saved && ['light', 'dark', 'grayscale', 'white', 'black'].includes(saved)) {
+      return saved as MapTheme;
+    }
+    return 'light';
+  });
+
+  const handleThemeChange = (theme: MapTheme) => {
+    setMapTheme(theme);
+    localStorage.setItem('ourmaps_map_theme', theme);
+  };
 
   // Mobile layout states
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
@@ -1290,6 +1303,8 @@ export function MapEditor() {
             onHoverSearchResult={(lat, lng) => {
               setPreviewLocation(lat !== null && lng !== null ? { lat, lng } : null);
             }}
+            mapTheme={mapTheme}
+            onThemeChange={handleThemeChange}
           />
         </div>
       </div>
@@ -1326,6 +1341,7 @@ export function MapEditor() {
             previewLocation={previewLocation}
             bottomPadding={isMobile ? sheetHeight : 0}
             leftPadding={isMobile ? 0 : sidebarWidth}
+            mapTheme={mapTheme}
           />
         </div>
       </main>

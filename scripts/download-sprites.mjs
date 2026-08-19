@@ -25,12 +25,14 @@ const clientMapsSpritesDir = path.join(clientPublicMapsDir, 'sprites');
 
 const isForce = process.argv.includes('--force');
 
-const SPRITE_FILES = [
-  'light.json',
-  'light.png',
-  'light@2x.json',
-  'light@2x.png'
-];
+const FLAVORS = ['light', 'dark', 'grayscale', 'white', 'black'];
+
+const SPRITE_FILES = FLAVORS.flatMap(flavor => [
+  `${flavor}.json`,
+  `${flavor}.png`,
+  `${flavor}@2x.json`,
+  `${flavor}@2x.png`
+]);
 
 const BASE_URL = 'https://protomaps.github.io/basemaps-assets/sprites/v4/';
 
