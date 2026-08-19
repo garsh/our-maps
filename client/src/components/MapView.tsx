@@ -11,6 +11,7 @@ import type { Pin } from '@shared/interfaces';
 import { getMarkerHTML, getPreviewMarkerHTML } from '../utils/mapUtils';
 import { Locate } from 'lucide-react';
 import { reverseGeocode } from '../utils/geocoding';
+import type { MapTheme } from './Sidebar';
 
 import { getTile } from '../utils/tileUtils';
 
@@ -92,6 +93,7 @@ interface MapViewProps {
   leftPadding?: number;
   editingPinId?: string | null;
   onBackgroundClick?: () => void;
+  mapTheme?: MapTheme;
 }
 
 const UserLocationMarker = () => {
@@ -99,13 +101,17 @@ const UserLocationMarker = () => {
 
   useEffect(() => {
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
+      const watchId = navigator.geolocation.watchPosition(
         (pos) => {
-          setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          setPosition({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+          });
         },
         (err) => console.warn('Geolocation error:', err),
         { enableHighAccuracy: true }
       );
+      return () => navigator.geolocation.clearWatch(watchId);
     }
   }, []);
 
@@ -114,14 +120,13 @@ const UserLocationMarker = () => {
   return (
     <Marker longitude={position.lng} latitude={position.lat} anchor="center">
       <div
-        className="user-location-dot"
         style={{
-          width: '16px',
-          height: '16px',
-          background: '#4285F4',
-          border: '3px solid white',
+          width: '18px',
+          height: '18px',
           borderRadius: '50%',
-          boxShadow: '0 0 0 2px rgba(66, 133, 244, 0.4)',
+          backgroundColor: '#4285F4',
+          border: '3px solid white',
+          boxShadow: '0 0 8px rgba(0,0,0,0.4)',
           animation: 'pulse 2s infinite',
         }}
       />
@@ -207,6 +212,7 @@ const MapView = ({
   leftPadding = 0,
   editingPinId,
   onBackgroundClick,
+  mapTheme = 'light',
 }: MapViewProps) => {
   const mapRef = useRef<MapRef | null>(null);
   const readOnly = userRole === 'view';
@@ -218,9 +224,10 @@ const MapView = ({
 
   const mapStyle = useMemo<any>(() => {
     const pmtilesUrl = `${window.location.origin}/maps/planet.pmtiles`;
-    const rawLayers = protomapsLayers('protomaps', namedFlavor('light'), { lang: 'en' });
+    const validFlavor = ['light', 'dark', 'grayscale', 'white', 'black'].includes(mapTheme) ? mapTheme : 'light';
+    const rawLayers = protomapsLayers('protomaps', namedFlavor(validFlavor as any), { lang: 'en' });
 
-    // Customize Protomaps layers to match Stadia Alidade Bright theme palette & typography
+    // Customize Protomaps layers according to active theme
     const customLayers = rawLayers.map((layer: any) => {
       const l = {
         ...layer,
@@ -228,58 +235,62 @@ const MapView = ({
         layout: layer.layout ? { ...layer.layout } : {},
       };
 
-      // Land & Water
-      if (l.id === 'background') l.paint['background-color'] = '#fcfbfa';
-      if (l.id === 'earth') l.paint['fill-color'] = '#f8f7f4';
-      if (l.id === 'water') l.paint['fill-color'] = '#a0c8f0';
-      if (l.id.includes('water_river') || l.id.includes('water_stream')) l.paint['line-color'] = '#a0c8f0';
-      if (l.id === 'landuse_park' || l.id === 'landuse_urban_green') l.paint['fill-color'] = '#d8ebd2';
-      if (l.id === 'buildings') { l.paint['fill-color'] = '#e8e4dc'; l.paint['fill-opacity'] = 0.7; }
-      if (l.id === 'landuse_school') l.paint['fill-color'] = '#fbf3d5';
-      if (l.id === 'landuse_hospital') l.paint['fill-color'] = '#f6e5e5';
-      if (l.id === 'landuse_industrial') l.paint['fill-color'] = '#eceeef';
-      if (l.id.includes('boundaries')) l.paint['line-color'] = '#8a8a8a';
+      if (validFlavor === 'light') {
+        // Land & Water
+        if (l.id === 'background') l.paint['background-color'] = '#fcfbfa';
+        if (l.id === 'earth') l.paint['fill-color'] = '#f8f7f4';
+        if (l.id === 'water') l.paint['fill-color'] = '#a0c8f0';
+        if (l.id.includes('water_river') || l.id.includes('water_stream')) l.paint['line-color'] = '#a0c8f0';
+        if (l.id === 'landuse_park' || l.id === 'landuse_urban_green') l.paint['fill-color'] = '#d8ebd2';
+        if (l.id === 'buildings') { l.paint['fill-color'] = '#e8e4dc'; l.paint['fill-opacity'] = 0.7; }
+        if (l.id === 'landuse_school') l.paint['fill-color'] = '#fbf3d5';
+        if (l.id === 'landuse_hospital') l.paint['fill-color'] = '#f6e5e5';
+        if (l.id === 'landuse_industrial') l.paint['fill-color'] = '#eceeef';
+        if (l.id.includes('boundaries')) l.paint['line-color'] = '#8a8a8a';
 
-      // Typography & Labels
-      if (l.type === 'symbol') {
-        if (l.paint['text-color']) {
-          l.paint['text-color'] = l.id.includes('water_') ? '#1d4ed8' : '#000000';
-          l.paint['text-halo-color'] = '#ffffff';
-          l.paint['text-halo-width'] = 2.5;
-        }
-        if (l.layout?.['text-size']) {
-          const s = l.layout['text-size'];
-          if (typeof s === 'number') l.layout['text-size'] = s + 2.5;
-          else if (Array.isArray(s) && (s[0] === 'interpolate' || s[0] === 'step')) {
-            const bumped = [...s];
-            for (let i = 4; i < bumped.length; i += 2) {
-              if (typeof bumped[i] === 'number') bumped[i] = (bumped[i] as number) + 2.5;
-            }
-            l.layout['text-size'] = bumped;
+        // Typography & Labels
+        if (l.type === 'symbol') {
+          if (l.paint['text-color']) {
+            l.paint['text-color'] = l.id.includes('water_') ? '#1d4ed8' : '#000000';
+            l.paint['text-halo-color'] = '#ffffff';
+            l.paint['text-halo-width'] = 2.5;
           }
         }
+
+        // Highways / Interstates (I-76, I-79)
+        if (l.id.includes('roads_highway') && !l.id.includes('casing') && !l.id.includes('labels')) l.paint['line-color'] = '#fca855';
+        if (l.id.includes('roads_highway_casing')) l.paint['line-color'] = '#de7a22';
+
+        // Major Primary / Secondary Roads (Route 19, Route 50)
+        if (l.id.includes('roads_major') && !l.id.includes('casing') && !l.id.includes('labels')) {
+          l.paint['line-color'] = '#ffd54f';
+          l.paint['line-width'] = ['interpolate', ['linear'], ['zoom'], 6, 0.8, 8, 2.2, 12, 3.8, 15, 5.5, 18, 14];
+        }
+        if (l.id.includes('roads_major_casing')) {
+          l.paint['line-color'] = '#e0aa1b';
+          l.paint['line-width'] = ['interpolate', ['linear'], ['zoom'], 7, 0.5, 9, 1.0, 12, 1.8];
+        }
+        if (l.id === 'roads_labels_major') l.minzoom = 8;
+
+        // Minor / Residential Streets
+        if ((l.id.includes('roads_minor') || l.id.includes('roads_other') || l.id.includes('roads_pier')) && !l.id.includes('casing')) {
+          l.paint['line-color'] = ['interpolate', ['linear'], ['zoom'], 10, '#e2dfd7', 13.5, '#d4d0c7', 15.5, '#ffffff'];
+        }
+        if (l.id.includes('roads_minor_casing')) l.paint['line-color'] = '#e0ded7';
       }
 
-      // Highways / Interstates (I-76, I-79)
-      if (l.id.includes('roads_highway') && !l.id.includes('casing') && !l.id.includes('labels')) l.paint['line-color'] = '#fca855';
-      if (l.id.includes('roads_highway_casing')) l.paint['line-color'] = '#de7a22';
-
-      // Major Primary / Secondary Roads (Route 19, Route 50)
-      if (l.id.includes('roads_major') && !l.id.includes('casing') && !l.id.includes('labels')) {
-        l.paint['line-color'] = '#ffd54f';
-        l.paint['line-width'] = ['interpolate', ['linear'], ['zoom'], 6, 0.8, 8, 2.2, 12, 3.8, 15, 5.5, 18, 14];
+      // Bump text size across all themes for readability
+      if (l.type === 'symbol' && l.layout?.['text-size']) {
+        const s = l.layout['text-size'];
+        if (typeof s === 'number') l.layout['text-size'] = s + 2.5;
+        else if (Array.isArray(s) && (s[0] === 'interpolate' || s[0] === 'step')) {
+          const bumped = [...s];
+          for (let i = 4; i < bumped.length; i += 2) {
+            if (typeof bumped[i] === 'number') bumped[i] = (bumped[i] as number) + 2.5;
+          }
+          l.layout['text-size'] = bumped;
+        }
       }
-      if (l.id.includes('roads_major_casing')) {
-        l.paint['line-color'] = '#e0aa1b';
-        l.paint['line-width'] = ['interpolate', ['linear'], ['zoom'], 7, 0.5, 9, 1.0, 12, 1.8];
-      }
-      if (l.id === 'roads_labels_major') l.minzoom = 8;
-
-      // Minor / Residential Streets
-      if ((l.id.includes('roads_minor') || l.id.includes('roads_other') || l.id.includes('roads_pier')) && !l.id.includes('casing')) {
-        l.paint['line-color'] = ['interpolate', ['linear'], ['zoom'], 10, '#e2dfd7', 13.5, '#d4d0c7', 15.5, '#ffffff'];
-      }
-      if (l.id.includes('roads_minor_casing')) l.paint['line-color'] = '#e0ded7';
 
       return l;
     });
@@ -287,7 +298,7 @@ const MapView = ({
     return {
       version: 8,
       glyphs: 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf',
-      sprite: `${window.location.origin}/maps/sprites/light`,
+      sprite: `${window.location.origin}/maps/sprites/${validFlavor}`,
       sources: {
         protomaps: {
           type: 'vector',
@@ -298,7 +309,7 @@ const MapView = ({
       },
       layers: customLayers,
     };
-  }, []);
+  }, [mapTheme]);
 
   const visiblePins = useMemo(
     () => pins.filter((pin) => !hiddenLayerIds?.has(pin.layerId || null)),

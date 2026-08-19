@@ -23,7 +23,10 @@ import {
   Zap,
   Eye,
   EyeOff,
-  Download
+  Download,
+  Palette,
+  Check,
+  ChevronLeft
 } from 'lucide-react';
 import {
   DndContext, 
@@ -64,7 +67,24 @@ import { tileWorkerManager } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
 import { comparePinPositions } from '../utils/reorderUtils';
 
+export type MapTheme = 'light' | 'dark' | 'grayscale' | 'white' | 'black';
 
+export interface ThemeOption {
+  id: MapTheme;
+  label: string;
+  sublabel: string;
+  previewBg: string;
+  previewBorder: string;
+  previewAccent: string;
+}
+
+export const MAP_THEMES: ThemeOption[] = [
+  { id: 'light', label: 'Light', sublabel: 'Alidade bright palette', previewBg: '#fcfbfa', previewBorder: '#d1d5db', previewAccent: '#fca855' },
+  { id: 'dark', label: 'Dark', sublabel: 'Sleek low-light theme', previewBg: '#1e293b', previewBorder: '#334155', previewAccent: '#3b82f6' },
+  { id: 'grayscale', label: 'Grayscale', sublabel: 'Monochrome muted style', previewBg: '#e5e7eb', previewBorder: '#9ca3af', previewAccent: '#6b7280' },
+  { id: 'white', label: 'Minimal White', sublabel: 'Clean minimalist white', previewBg: '#ffffff', previewBorder: '#cbd5e1', previewAccent: '#94a3b8' },
+  { id: 'black', label: 'High Contrast Black', sublabel: 'Dark high contrast', previewBg: '#0f172a', previewBorder: '#475569', previewAccent: '#f59e0b' },
+];
 
 interface SidebarProps {
   mapId: string | null;
@@ -104,6 +124,8 @@ interface SidebarProps {
   onToggleExpand?: (id: string | null) => void;
   onHoverSearchResult?: (lat: number | null, lng: number | null) => void;
   isMobile?: boolean;
+  mapTheme?: MapTheme;
+  onThemeChange?: (theme: MapTheme) => void;
 }
 
 const COLORS = [
@@ -1035,10 +1057,13 @@ const Sidebar = ({
   collapsedLayerIds,
   onToggleExpand,
   onHoverSearchResult,
-  isMobile
+  isMobile,
+  mapTheme = 'light',
+  onThemeChange
 }: SidebarProps) => {
   const [localMapName, setLocalMapName] = useState(mapName);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [menuTab, setMenuTab] = useState<'main' | 'theme'>('main');
   const menuRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -1253,6 +1278,7 @@ const Sidebar = ({
       }
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
+        setMenuTab('main');
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -1434,60 +1460,141 @@ const Sidebar = ({
               </button>
               
               {isMenuOpen && (
-                <div style={{ position: 'absolute', top: '100%', right: 0, width: '180px', background: 'white', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 1600, overflow: 'hidden' }}>
-                  {!readOnly && (
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                      onClick={() => {
-                        setRenameInput(localMapName);
-                        setShowRenameModal(true);
-                        setIsMenuOpen(false);
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      Rename Map
+                <div style={{ position: 'absolute', top: '100%', right: 0, width: '190px', background: 'white', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 1600, overflow: 'hidden' }}>
+                  {menuTab === 'theme' ? (
+                    <div>
+                      <div 
+                        style={{ padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '700', color: 'var(--primary-color)' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMenuTab('main');
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <ChevronLeft size={18} />
+                        <span>Theme</span>
+                      </div>
+                      {MAP_THEMES.map((theme) => {
+                        const isSelected = mapTheme === theme.id;
+                        return (
+                          <div
+                            key={theme.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onThemeChange?.(theme.id);
+                              setIsMenuOpen(false);
+                              setMenuTab('main');
+                            }}
+                            style={{
+                              padding: '9px 14px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              fontSize: '0.82rem',
+                              fontWeight: isSelected ? '700' : '500',
+                              background: isSelected ? '#f0f7ff' : 'transparent',
+                              color: isSelected ? '#1d4ed8' : 'inherit',
+                              borderBottom: '1px solid #f1f5f9',
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!isSelected) e.currentTarget.style.background = 'var(--bg-color)';
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!isSelected) e.currentTarget.style.background = 'transparent';
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div
+                                style={{
+                                  width: '12px',
+                                  height: '12px',
+                                  borderRadius: '50%',
+                                  background: theme.previewBg,
+                                  border: `1.5px solid ${theme.previewBorder}`,
+                                  flexShrink: 0,
+                                }}
+                              />
+                              <span>{theme.label}</span>
+                            </div>
+                            {isSelected && <Check size={14} style={{ color: '#3b82f6' }} />}
+                          </div>
+                        );
+                      })}
                     </div>
-                  )}
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                      onClick={() => { onShare?.(); setIsMenuOpen(false); }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      Share
-                    </div>
-                  {!readOnly && (
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                      onClick={handleImportClick}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      Import
-                    </div>
-                  )}
-                  <div 
-                    style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                    onClick={handleExportClick}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                      Export
-                  </div>
-                  {deferredPrompt && (
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                      onClick={() => {
-                        handleInstallClick();
-                        setIsMenuOpen(false);
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      Install App
-                    </div>
-                  )}
+                  ) : (
+                    <>
+                      {!readOnly && (
+                        <div 
+                          style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                          onClick={() => {
+                            setRenameInput(localMapName);
+                            setShowRenameModal(true);
+                            setIsMenuOpen(false);
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          Rename Map
+                        </div>
+                      )}
+                      {/* Theme item before Share */}
+                      <div 
+                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMenuTab('theme');
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <Palette size={16} />
+                          <span>Theme</span>
+                        </div>
+                        <ChevronRight size={16} />
+                      </div>
+                      <div 
+                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                        onClick={() => { onShare?.(); setIsMenuOpen(false); }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        Share
+                      </div>
+                      {!readOnly && (
+                        <div 
+                          style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                          onClick={handleImportClick}
+                          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          Import
+                        </div>
+                      )}
+                      <div 
+                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                        onClick={handleExportClick}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                          Export
+                      </div>
+                      {deferredPrompt && (
+                        <div 
+                          style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                          onClick={() => {
+                            handleInstallClick();
+                            setIsMenuOpen(false);
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          Install App
+                        </div>
+                      )}
+
                   {isDownloaded || isDownloading || hasPartialDownload ? (
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
@@ -1557,10 +1664,12 @@ const Sidebar = ({
                       ))}
                     </>
                   )}
-                </div>
+                </>
               )}
             </div>
-          );
+          )}
+        </div>
+      );
 
           return document.getElementById('mobile-header-actions')
             ? createPortal(menuContent, document.getElementById('mobile-header-actions')!)
