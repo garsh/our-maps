@@ -244,9 +244,13 @@ io.on('connection', (socket: Socket) => {
 const candidateMapsDirs = [
   process.env.MAPS_DIR,
   path.resolve(process.cwd(), 'data/maps'),
+  path.resolve(process.cwd(), 'data/sprites'),
+  path.resolve(process.cwd(), 'data'),
   path.resolve(process.cwd(), 'server/public/maps'),
   path.resolve(process.cwd(), 'public/maps'),
   path.resolve(__dirname, '../../data/maps'),
+  path.resolve(__dirname, '../../data/sprites'),
+  path.resolve(__dirname, '../../data'),
   path.resolve(__dirname, '../public/maps'),
   path.resolve(__dirname, '../../public/maps'),
 ].filter(Boolean) as string[];

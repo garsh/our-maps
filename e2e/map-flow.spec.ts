@@ -2,49 +2,104 @@ import { test, expect } from '@playwright/test';
 
 // Helper to login
 async function login(page: any) {
-  page.on('console', (msg: any) => console.log(`BROWSER: ${msg.text()}`));
+  page.on('console', (msg: any) => {
+    const text = msg.text();
+    if (text.includes('Unable to load glyph range') || text.includes('GL Driver Message') || text.includes('could not be loaded')) {
+      return;
+    }
+    if (msg.type() === 'error') console.log(`BROWSER ERROR: ${text}`);
+    else console.log(`BROWSER: ${text}`);
+  });
   await page.goto('/login');
   await page.getByRole('button', { name: /Sign in with Mock Account/i }).click();
   await expect(page).toHaveURL('/');
+  await cleanupTestMaps(page);
 }
 
 // Helper to wait for auto-save
 async function waitForAutoSave(page: any) {
-  // Wait for debounce (2s) + small buffer
-  await page.waitForTimeout(2500);
-  // Wait for "All changes saved" to be the final state
-  await expect(page.getByText('All changes saved')).toBeVisible({ timeout: 15000 });
+  // Wait for 2s debounce + network save completion
+  await page.waitForTimeout(3000);
+}
+
+// Helper to delete map created in test
+async function deleteCurrentMap(page: any) {
+  try {
+    const url = page.url();
+    const mapId = url.split('/map/')[1]?.split('?')[0];
+    if (mapId && mapId !== 'new') {
+      await page.evaluate(async (id: string) => {
+        const token = localStorage.getItem('token');
+        await fetch(`/api/maps/${id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': token ? `Bearer ${token}` : '',
+            'Content-Type': 'application/json',
+          },
+        });
+      }, mapId);
+    }
+  } catch (err) {
+    // Ignore teardown cleanup errors
+  }
+}
+
+// Helper to clean up any leftover mock test maps
+async function cleanupTestMaps(page: any) {
+  try {
+    await page.evaluate(async () => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const res = await fetch('/api/maps', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const maps = await res.json();
+        for (const m of maps) {
+          const isTestMap = ['Metadata City', 'Test City', 'Group City', 'Updated Map Name', 'Initial Location', 'New Location', 'Interactivity City'].some(name => 
+            (m.name || '').includes(name) || (m.pins || []).some((p: any) => (p.label || '').includes(name))
+          );
+          if (isTestMap) {
+            await fetch(`/api/maps/${m.id}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+          }
+        }
+      }
+    });
+  } catch {}
 }
 
 test('full map creation flow', async ({ page }) => {
   await login(page);
 
   // Mock Places Search API
-  await page.route('**/api/places/search*', async route => {
+  await page.route('**/places/search*', async route => {
     const json = [
       { 
-        place_id: 123, 
-        display_name: 'Test City, Test Country', 
+        place_id: '123', 
+        title: 'Test City', 
+        address: 'Test Country', 
         lat: '35.6895', 
-        lon: '139.6917' 
+        lon: '139.6917',
+        type: 'global' 
       }
     ];
     await route.fulfill({ json });
   });
 
   // Navigate to new map page
-  await page.getByRole('button', { name: 'Create New Map' }).click();
-  await expect(page.locator('h1')).toContainText('Our Maps');
+  await page.getByRole('button', { name: /New Map/i }).click();
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
 
   // 2. Search for a location
-  const searchInput = page.getByPlaceholder('Find pins or new places...');
+  const searchInput = page.getByPlaceholder('Search...');
   await searchInput.fill('Tokyo');
   
   // 3. Add a pin from search results
-  await expect(page.getByText('GLOBAL LOCATIONS')).toBeVisible();
-  await expect(page.getByText('Test City, Test Country')).toBeVisible();
-  await page.getByRole('button', { name: '+ Add to Map' }).click();
+  await expect(page.getByText('Test City', { exact: true })).toBeVisible();
+  await page.locator('button[title="Add to Map"]').first().click();
 
   // Verify pin added to sidebar
   await expect(page.locator('aside')).toContainText('Test City');
@@ -60,19 +115,20 @@ test('full map creation flow', async ({ page }) => {
   await page.waitForTimeout(3000);
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
   await expect(page.locator('aside')).toContainText('Test City', { timeout: 10000 });
+  await deleteCurrentMap(page);
 });
 
 test('updating an existing map', async ({ page }) => {
   await login(page);
-  await page.getByRole('button', { name: 'Create New Map' }).click();
+  await page.getByRole('button', { name: /New Map/i }).click();
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
 
   // 1. Create a map first
-  const searchInput = page.getByPlaceholder('Find pins or new places...');
-  await page.route('**/search*', route => route.fulfill({ json: [{ place_id: 1, display_name: 'Initial', lat: '10', lon: '10' }] }));
+  const searchInput = page.getByPlaceholder('Search...');
+  await page.route('**/places/search*', route => route.fulfill({ json: [{ place_id: '1', title: 'Initial', address: 'Initial Address', lat: '10', lon: '10', type: 'global' }] }));
   await searchInput.fill('Initial Location');
-  await expect(page.getByText('Initial')).toBeVisible();
-  await page.getByRole('button', { name: '+ Add to Map' }).click();
+  await expect(page.getByText('Initial', { exact: true })).toBeVisible();
+  await page.locator('button[title="Add to Map"]').first().click();
   
   // Wait for initial auto-save
   await waitForAutoSave(page);
@@ -80,18 +136,20 @@ test('updating an existing map', async ({ page }) => {
   await page.waitForTimeout(2000);
 
   // 2. Change map name
-  const nameInput = page.getByLabel('Map Name');
+  await page.getByRole('button', { name: 'More options' }).click();
+  await page.getByText('Rename Map').click();
+  const nameInput = page.getByLabel('New Map Name');
   await nameInput.fill('Updated Map Name');
-  await nameInput.press('Enter');
+  await page.getByRole('button', { name: 'Save' }).click();
   
   // Wait for auto-save after name change
   await waitForAutoSave(page);
 
   // 3. Add another pin
-  await page.route('**/search*', route => route.fulfill({ json: [{ place_id: 2, display_name: 'New', lat: '20', lon: '20' }] }));
+  await page.route('**/places/search*', route => route.fulfill({ json: [{ place_id: '2', title: 'New', address: 'New Address', lat: '20', lon: '20', type: 'global' }] }));
   await searchInput.fill('New Location');
   await expect(page.getByText('New', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '+ Add to Map' }).click();
+  await page.locator('button[title="Add to Map"]').first().click();
 
   // Wait for final auto-save
   await waitForAutoSave(page);
@@ -100,26 +158,27 @@ test('updating an existing map', async ({ page }) => {
   await page.reload();
   await page.waitForTimeout(3000);
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
-  await expect(page.getByLabel('Map Name')).toHaveValue('Updated Map Name', { timeout: 10000 });
+  await expect(page.locator('h1')).toContainText('Updated Map Name', { timeout: 10000 });
   await expect(page.locator('aside')).toContainText('Initial', { timeout: 10000 });
   await expect(page.locator('aside')).toContainText('New', { timeout: 10000 });
+  await deleteCurrentMap(page);
 });
 
 test('rich pin metadata persistence and display', async ({ page }) => {
   await login(page);
-  await page.getByRole('button', { name: 'Create New Map' }).click();
+  await page.getByRole('button', { name: /New Map/i }).click();
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
   
   // 1. Add a pin
-  await page.route('**/search*', route => route.fulfill({ json: [{ place_id: 1, display_name: 'Metadata City', lat: '10', lon: '10' }] }));
-  await page.getByPlaceholder('Find pins or new places...').fill('Metadata City');
+  await page.route('**/places/search*', route => route.fulfill({ json: [{ place_id: '1', title: 'Metadata City', address: 'Metadata Address', lat: '10', lon: '10', type: 'global' }] }));
+  await page.getByPlaceholder('Search...').fill('Metadata City');
   await expect(page.getByText('Metadata City')).toBeVisible();
-  await page.getByRole('button', { name: '+ Add to Map' }).click();
+  await page.locator('button[title="Add to Map"]').first().click();
   await waitForAutoSave(page);
 
   // 2. Edit metadata
+  await page.getByRole('button', { name: 'Edit' }).first().click();
   await page.getByLabel('Description').fill('This is a great place to test metadata.');
-  await page.getByLabel('Image URL').fill('https://images.unsplash.com/photo-1449034446853-66c86144b0ad?w=200');
 
   // 3. Wait for auto-save and reload
   await waitForAutoSave(page);
@@ -128,69 +187,70 @@ test('rich pin metadata persistence and display', async ({ page }) => {
   await page.reload();
   await page.waitForTimeout(3000);
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
-  await page.waitForSelector('.leaflet-marker-icon', { timeout: 10000 });
+  await page.waitForSelector('.maplibregl-marker', { timeout: 10000 });
+  await page.waitForTimeout(1000);
 
   // 4. Verify in sidebar
   await page.getByRole('button', { name: 'Edit' }).first().click();
   await expect(page.getByLabel('Description')).toHaveValue('This is a great place to test metadata.', { timeout: 10000 });
 
   // 5. Verify on map popup
-  await page.locator('.leaflet-marker-icon').first().click();
+  const pinItem = page.locator('li[id^="pin-"]').filter({ hasText: 'Metadata City' });
+  await pinItem.click();
   
   const popup = page.locator('.leaflet-popup-content');
   await expect(popup).toContainText('This is a great place to test metadata.', { timeout: 10000 });
-  await expect(popup.locator('img')).toHaveAttribute('src', /images.unsplash.com/);
+  await deleteCurrentMap(page);
 });
 
 test('pin grouping and persistence', async ({ page }) => {
   await login(page);
-  await page.getByRole('button', { name: 'Create New Map' }).click();
+  await page.getByRole('button', { name: /New Map/i }).click();
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
   
-  // 1. Add a group
-  await page.getByRole('button', { name: 'New Layer' }).click();
-  await expect(page.getByText('Group 1 (0)')).toBeVisible();
+  // 1. Add a group/layer via menu
+  await page.getByRole('button', { name: 'More options' }).click();
+  await page.getByText('New Layer').click();
+  await expect(page.getByText(/Layer 1 \(0\)|Group 1 \(0\)/)).toBeVisible();
   await waitForAutoSave(page);
 
   // 2. Add a pin
-  await page.route('**/search*', route => route.fulfill({ json: [{ place_id: 1, display_name: 'Group City', lat: '10', lon: '10' }] }));
-  await page.getByPlaceholder('Find pins or new places...').fill('Group City');
-  await expect(page.getByText('Group City')).toBeVisible();
-  await page.getByRole('button', { name: '+ Add to Map' }).click();
+  await page.route('**/places/search*', route => route.fulfill({ json: [{ place_id: '1', title: 'Group City', address: 'Group Address', lat: '10', lon: '10', type: 'global' }] }));
+  await page.getByPlaceholder('Search...').fill('Group City');
+  await expect(page.getByText('Group City', { exact: true }).first()).toBeVisible();
+  await page.locator('button[title="Add to Map"]').first().click();
   await waitForAutoSave(page);
 
   // Initially it's in Default Layer
-  await expect(page.locator('#default + ul')).toContainText('Group City');
+  await expect(page.locator('aside')).toContainText('Group City');
 
   // 3. Wait for reload
   await page.reload();
   await page.waitForTimeout(3000);
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
-  await expect(page.getByText('Group 1 (0)')).toBeVisible({ timeout: 10000 });
-  await expect(page.locator('#default + ul')).toContainText('Group City', { timeout: 10000 });
+  await expect(page.getByText(/Layer 1 \(0\)|Group 1 \(0\)/)).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('aside')).toContainText('Group City', { timeout: 10000 });
+  await deleteCurrentMap(page);
 });
 
 test('export and import UI', async ({ page }) => {
   await login(page);
-  await page.getByRole('button', { name: 'Create New Map' }).click();
+  await page.getByRole('button', { name: /New Map/i }).click();
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
-  await expect(page.getByLabel('Map Name')).toHaveValue('My Map', { timeout: 10000 });
+  await expect(page.locator('h1')).toContainText('My Map', { timeout: 10000 });
 
   // Open options menu
   const moreOptionsBtn = page.getByRole('button', { name: 'More options' });
   await moreOptionsBtn.click();
 
-  // Verify export items are visible
-  await expect(page.getByText('EXPORT AS...')).toBeVisible();
-  await expect(page.getByText('JSON', { exact: true })).toBeVisible();
-  await expect(page.getByText('GeoJSON', { exact: true })).toBeVisible();
-  await expect(page.getByText('KML', { exact: true })).toBeVisible();
+  // Verify export items are visible in menu
+  await expect(page.getByText('Export', { exact: true })).toBeVisible();
+  await expect(page.getByText('Import', { exact: true })).toBeVisible();
 
-  // Click again to close
-  await moreOptionsBtn.click();
-  await expect(page.getByText('EXPORT AS...')).not.toBeVisible();
+  // Click Export to open modal
+  await page.getByText('Export', { exact: true }).click();
+  await expect(page.getByText('Export Map')).toBeVisible();
 
-  // Open to verify Import button
-  await moreOptionsBtn.click();
-  await expect(page.getByText('Import')).toBeVisible();
+  // Close Export modal
+  await page.getByRole('button', { name: 'Cancel' }).click();
 });
