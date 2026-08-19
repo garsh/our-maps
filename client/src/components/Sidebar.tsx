@@ -1059,6 +1059,16 @@ const Sidebar = ({
     }
     prevLayersLengthRef.current = layers.length;
   }, [layers]);
+
+  useEffect(() => {
+    const handleEditLayerEvent = (e: CustomEvent<{ layerId: string }>) => {
+      if (e.detail?.layerId) {
+        setEditingLayerId(e.detail.layerId);
+      }
+    };
+    window.addEventListener('ourmaps:edit-layer', handleEditLayerEvent as EventListener);
+    return () => window.removeEventListener('ourmaps:edit-layer', handleEditLayerEvent as EventListener);
+  }, []);
   // PWA Install State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
@@ -1499,7 +1509,7 @@ const Sidebar = ({
                   )}
                   {!readOnly && (
                     <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
                       onClick={() => {
                         isAddingLayerRef.current = true;
                         const newLayer = onAddLayer();
@@ -1513,7 +1523,8 @@ const Sidebar = ({
                       onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
-                      New Layer
+                      <span>New Layer</span>
+                      <span style={{ fontSize: '0.72rem', fontWeight: '500', color: 'var(--text-muted, #888)', opacity: 0.85 }}>Ctrl-Shft-L</span>
                     </div>
                   )}
                   {selectedPins.length > 0 && !readOnly && (

@@ -785,7 +785,7 @@ export function MapEditor() {
     }
   };
 
-  const addLayer = (): PinLayer | undefined => {
+  const addLayer = useCallback((): PinLayer | undefined => {
     if (userRole === 'view') return;
     const newGroup: PinLayer = {
       id: generateId(),
@@ -797,7 +797,26 @@ export function MapEditor() {
       socketRef.current?.emit('layer-create', { mapId, layer: newGroup });
     }
     return newGroup;
-  };
+  }, [userRole, layers.length, mapId]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
+        const target = e.target as HTMLElement | null;
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+          return;
+        }
+        e.preventDefault();
+        const newLayer = addLayer();
+        if (newLayer) {
+          window.dispatchEvent(new CustomEvent('ourmaps:edit-layer', { detail: { layerId: newLayer.id } }));
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [addLayer]);
 
   const updateLayer = (targetId: string, updates: Partial<PinLayer>) => {
     if (userRole === 'view') return;
