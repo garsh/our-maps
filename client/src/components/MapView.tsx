@@ -293,7 +293,7 @@ const MapView = ({
           type: 'vector',
           url: `pmtiles://${pmtilesUrl}`,
           maxzoom: 15,
-          attribution: '&copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; <a href="https://openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+          attribution: `OurMaps v.${import.meta.env.VITE_APP_BUILD_TIME || 'dev'} &copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; <a href="https://openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>`,
         },
       },
       layers: customLayers,
@@ -599,6 +599,14 @@ const MapView = ({
         }
         .maplibregl-container {
           background-color: var(--bg-color);
+        }
+        .maplibregl-ctrl-attrib {
+          display: inline-flex !important;
+          flex-direction: row-reverse !important;
+          align-items: center !important;
+        }
+        .maplibregl-ctrl-attrib a.maplibregl-compact {
+          order: 99 !important;
         }
       `}</style>
     </div>
