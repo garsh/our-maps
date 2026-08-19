@@ -41,23 +41,30 @@ function setupPMTilesProtocol() {
       try {
         return await globalPMTilesProtocol!.tilev4(params, abortController);
       } catch (err: any) {
-        if (!navigator.onLine || err?.message?.includes('fetch') || err?.message?.includes('Network') || err?.message?.includes('Failed')) {
-          if (match) {
-            return { data: new Uint8Array(0) };
-          }
-          const fallbackMetadata = {
-            tilejson: "3.0.0",
-            scheme: "xyz",
-            tiles: [`${params.url}/{z}/{x}/{y}.mvt`],
-            minzoom: 0,
-            maxzoom: 15,
-            bounds: [-180, -85, 180, 85],
-            center: [0, 0, 0]
-          };
-          const encoder = new TextEncoder();
-          return { data: encoder.encode(JSON.stringify(fallbackMetadata)) };
+        if (match) {
+          return { data: new Uint8Array(0) };
         }
-        throw err;
+        const fallbackMetadata = {
+          tilejson: "3.0.0",
+          scheme: "xyz",
+          tiles: [`${params.url}/{z}/{x}/{y}.mvt`],
+          minzoom: 0,
+          maxzoom: 15,
+          bounds: [-180, -85, 180, 85],
+          center: [0, 0, 0],
+          vector_layers: [
+            { id: "boundaries", fields: {} },
+            { id: "buildings", fields: {} },
+            { id: "earth", fields: {} },
+            { id: "landcover", fields: {} },
+            { id: "landuse", fields: {} },
+            { id: "places", fields: {} },
+            { id: "pois", fields: {} },
+            { id: "roads", fields: {} },
+            { id: "water", fields: {} }
+          ]
+        };
+        return { data: fallbackMetadata };
       }
     };
     maplibregl.addProtocol('pmtiles', offlineTileHandler);
