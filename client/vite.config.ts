@@ -5,6 +5,11 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_APP_BUILD_TIME': JSON.stringify(
+      process.env.VITE_APP_BUILD_TIME || new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
+    ),
+  },
   plugins: [
     react(),
     VitePWA({

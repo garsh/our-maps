@@ -24,6 +24,18 @@ export default function LandingPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [showSignOutDialog, setShowSignOutDialog] = useState(false);
+  const [showOfflineInterstitial, setShowOfflineInterstitial] = useState(false);
+
+  const handleMapClick = (mapId: string) => {
+    if (isOffline) {
+      const status = downloadStatuses.get(mapId);
+      if (!status || (!status.isComplete && !status.isPartial)) {
+        setShowOfflineInterstitial(true);
+        return;
+      }
+    }
+    navigate(`/map/${mapId}`);
+  };
 
   const fetchDownloadedMapStatuses = async () => {
     try {
@@ -237,7 +249,7 @@ export default function LandingPage() {
                   alignItems: 'center',
                   justifyContent: 'space-between'
                 }}
-                onClick={() => navigate(`/map/${map.id}`)}
+                onClick={() => handleMapClick(map.id)}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = 'translateY(-4px)';
                   e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
@@ -323,6 +335,34 @@ export default function LandingPage() {
               <button onClick={() => setDeleteConfirm(null)} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)' }}>Cancel</button>
               <button onClick={() => handleDelete(deleteConfirm)} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--error-color)', color: 'white', fontWeight: '600' }}>
                 {maps.find(m => m.id === deleteConfirm)?.ownerId === user?.id ? 'Delete Map' : 'Leave Map'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showOfflineInterstitial && (
+        <div 
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(4px)' }} 
+          onClick={() => setShowOfflineInterstitial(false)}
+        >
+          <div 
+            style={{ background: 'white', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '400px', width: '90%', boxShadow: 'var(--shadow-lg)', textAlign: 'center' }} 
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ background: 'rgba(239, 68, 68, 0.1)', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
+              <WifiOff size={32} color="var(--error-color)" />
+            </div>
+            <h3 style={{ marginTop: 0, fontSize: '1.4rem', fontWeight: '800', color: 'var(--text-primary)' }}>Offline Mode</h3>
+            <p style={{ color: 'var(--text-secondary)', lineHeight: '1.5', margin: '1rem 0 2rem 0' }}>
+              This map is not available in offline mode
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <button 
+                onClick={() => setShowOfflineInterstitial(false)} 
+                style={{ width: '100%', padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--primary-color)', color: 'white', fontWeight: '600', cursor: 'pointer' }}
+              >
+                OK
               </button>
             </div>
           </div>
