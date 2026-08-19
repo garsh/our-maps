@@ -280,6 +280,7 @@ const MapView = ({
     return {
       version: 8,
       glyphs: 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf',
+      sprite: `${window.location.origin}/maps/sprites/light`,
       sources: {
         protomaps: {
           type: 'vector',
@@ -460,15 +461,40 @@ const MapView = ({
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
       {mapStyle && (
         <Map
-          ref={mapRef}
+          localIdeographFontFamily="'Noto Sans CJK JP', 'Hiragino Kaku Gothic ProN', 'Meiryo', 'Yu Gothic', sans-serif"
+          ref={(instance) => {
+            mapRef.current = instance;
+            if (instance) {
+              const map = instance.getMap();
+              if (map && typeof map.setMissingStyleImageResolver === 'function') {
+                map.setMissingStyleImageResolver((id: string) => {
+                  if (!map.hasImage(id)) {
+                    try {
+                      map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
+                    } catch {}
+                  }
+                });
+              }
+            }
+          }}
           initialViewState={initialViewState}
           mapStyle={mapStyle}
           style={{ width: '100%', height: '100%' }}
           doubleClickZoom={false}
           maxZoom={22}
           minZoom={1}
-          onLoad={() => {
+          onLoad={(e: any) => {
             setIsMapLoaded(true);
+            const map = e.target || mapRef.current?.getMap();
+            if (map && typeof map.setMissingStyleImageResolver === 'function') {
+              map.setMissingStyleImageResolver((id: string) => {
+                if (!map.hasImage(id)) {
+                  try {
+                    map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
+                  } catch {}
+                }
+              });
+            }
             if (mapRef.current) setCurrentZoom(mapRef.current.getZoom());
           }}
           onMove={updateBounds}

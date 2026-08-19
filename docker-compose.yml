@@ -31,7 +31,9 @@ services:
     volumes:
       - our_maps_data:/data
       - ./data/maps:/app/data/maps
+      - ./data/sprites:/app/data/sprites
       - ./data/maps:/app/server/public/maps
+      - ./data/sprites:/app/server/public/sprites
     restart: unless-stopped
     environment:
       - NODE_ENV=${NODE_ENV:-production}
