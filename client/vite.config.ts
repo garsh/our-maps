@@ -57,6 +57,20 @@ export default defineConfig({
                 statuses: [0, 200],
               },
             },
+          },
+          {
+            urlPattern: /\/maps\/sprites\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'sprites-cache',
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
           }
         ]
       }

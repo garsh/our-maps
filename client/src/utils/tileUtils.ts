@@ -292,6 +292,12 @@ export async function saveTile(url: string, blob: Blob): Promise<void> {
     
     const tileStore = transaction.objectStore(TILE_STORE);
     tileStore.put(blob, url);
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        try {
+            const pathname = new URL(url).pathname;
+            tileStore.put(blob, pathname);
+        } catch {}
+    }
 
     const manifestStore = transaction.objectStore(MANIFEST_STORE);
     const getReq = manifestStore.get(url);
