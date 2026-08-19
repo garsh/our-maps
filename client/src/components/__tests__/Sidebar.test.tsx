@@ -260,4 +260,21 @@ describe('Sidebar', () => {
     expect(defaultLayerHeader).not.toBeNull();
     expect(defaultLayerHeader?.textContent).toContain('Default Layer');
   });
+
+  it('allows toggling hillshading in theme menu', () => {
+    const onToggleHillshade = vi.fn();
+    render(<TestWrapper handlers={{ onToggleHillshade, showHillshade: true }} />);
+
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+
+    const themeOption = screen.getByText('Theme');
+    fireEvent.click(themeOption);
+
+    const hillshadeOption = screen.getByText('Hillshading');
+    expect(hillshadeOption).toBeInTheDocument();
+
+    fireEvent.click(hillshadeOption);
+    expect(onToggleHillshade).toHaveBeenCalledWith(false);
+  });
 });

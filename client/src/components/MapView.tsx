@@ -94,6 +94,7 @@ interface MapViewProps {
   editingPinId?: string | null;
   onBackgroundClick?: () => void;
   mapTheme?: MapTheme;
+  showHillshade?: boolean;
 }
 
 const UserLocationMarker = () => {
@@ -213,6 +214,7 @@ const MapView = ({
   editingPinId,
   onBackgroundClick,
   mapTheme = 'light',
+  showHillshade = true,
 }: MapViewProps) => {
   const mapRef = useRef<MapRef | null>(null);
   const readOnly = userRole === 'view';
@@ -295,6 +297,29 @@ const MapView = ({
       return l;
     });
 
+    if (showHillshade) {
+      const hillshadeLayer = {
+        id: 'hills',
+        type: 'hillshade',
+        source: 'terrainDem',
+        paint: {
+          'hillshade-exaggeration': validFlavor === 'dark' ? 0.35 : 0.45,
+          'hillshade-shadow-color': validFlavor === 'dark' ? '#000000' : '#473B24',
+          'hillshade-highlight-color': validFlavor === 'dark' ? '#2c3340' : '#FFFFFF',
+          'hillshade-accent-color': '#000000',
+        },
+      };
+
+      const insertIndex = customLayers.findIndex(
+        (l: any) => l.id?.includes('water') || l.id?.includes('roads') || l.type === 'symbol'
+      );
+      if (insertIndex !== -1) {
+        customLayers.splice(insertIndex, 0, hillshadeLayer);
+      } else {
+        customLayers.push(hillshadeLayer);
+      }
+    }
+
     return {
       version: 8,
       glyphs: 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf',
@@ -306,10 +331,22 @@ const MapView = ({
           maxzoom: 15,
           attribution: `OurMaps v.${import.meta.env.VITE_APP_BUILD_TIME || 'dev'} &copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; <a href="https://openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>`,
         },
+        ...(showHillshade
+          ? {
+              terrainDem: {
+                type: 'raster-dem',
+                tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+                encoding: 'terrarium',
+                tileSize: 256,
+                maxzoom: 15,
+                attribution: '&copy; <a href="https://github.com/tilezen/joerd" target="_blank" rel="noopener">Mapzen / AWS Elevation</a>',
+              },
+            }
+          : {}),
       },
       layers: customLayers,
     };
-  }, [mapTheme]);
+  }, [mapTheme, showHillshade]);
 
   const visiblePins = useMemo(
     () => pins.filter((pin) => !hiddenLayerIds?.has(pin.layerId || null)),
