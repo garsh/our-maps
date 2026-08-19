@@ -75,6 +75,16 @@ export function MapEditor() {
     localStorage.setItem('ourmaps_map_theme', theme);
   };
 
+  const [showHillshade, setShowHillshade] = useState<boolean>(() => {
+    const saved = localStorage.getItem('ourmaps_hillshade');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const handleToggleHillshade = (enabled: boolean) => {
+    setShowHillshade(enabled);
+    localStorage.setItem('ourmaps_hillshade', String(enabled));
+  };
+
   // Mobile layout states
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
 
@@ -1305,6 +1315,8 @@ export function MapEditor() {
             }}
             mapTheme={mapTheme}
             onThemeChange={handleThemeChange}
+            showHillshade={showHillshade}
+            onToggleHillshade={handleToggleHillshade}
           />
         </div>
       </div>
@@ -1342,6 +1354,7 @@ export function MapEditor() {
             bottomPadding={isMobile ? sheetHeight : 0}
             leftPadding={isMobile ? 0 : sidebarWidth}
             mapTheme={mapTheme}
+            showHillshade={showHillshade}
           />
         </div>
       </main>

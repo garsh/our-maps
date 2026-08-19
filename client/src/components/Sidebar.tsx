@@ -26,7 +26,8 @@ import {
   Download,
   Palette,
   Check,
-  ChevronLeft
+  ChevronLeft,
+  Mountain
 } from 'lucide-react';
 import {
   DndContext, 
@@ -126,6 +127,8 @@ interface SidebarProps {
   isMobile?: boolean;
   mapTheme?: MapTheme;
   onThemeChange?: (theme: MapTheme) => void;
+  showHillshade?: boolean;
+  onToggleHillshade?: (enabled: boolean) => void;
 }
 
 const COLORS = [
@@ -1059,7 +1062,9 @@ const Sidebar = ({
   onHoverSearchResult,
   isMobile,
   mapTheme = 'light',
-  onThemeChange
+  onThemeChange,
+  showHillshade = true,
+  onToggleHillshade
 }: SidebarProps) => {
   const [localMapName, setLocalMapName] = useState(mapName);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -1522,6 +1527,37 @@ const Sidebar = ({
                           </div>
                         );
                       })}
+                      <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '4px', paddingTop: '4px' }}>
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleHillshade?.(!showHillshade);
+                          }}
+                          style={{
+                            padding: '9px 14px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            fontSize: '0.82rem',
+                            fontWeight: showHillshade ? '700' : '500',
+                            background: showHillshade ? '#f0f7ff' : 'transparent',
+                            color: showHillshade ? '#1d4ed8' : 'inherit',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!showHillshade) e.currentTarget.style.background = 'var(--bg-color)';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!showHillshade) e.currentTarget.style.background = 'transparent';
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Mountain size={14} style={{ color: showHillshade ? '#1d4ed8' : '#64748b' }} />
+                            <span>Hillshading</span>
+                          </div>
+                          {showHillshade && <Check size={14} style={{ color: '#3b82f6' }} />}
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <>
