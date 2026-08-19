@@ -418,7 +418,13 @@ const potentialPaths = [
 ];
 
 const clientBuildPath = potentialPaths.find(p => fs.existsSync(p)) || potentialPaths[0];
-app.use(express.static(clientBuildPath));
+app.use(express.static(clientBuildPath, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('sw.js') || filePath.endsWith('registerSW.js') || filePath.endsWith('index.html') || filePath.endsWith('manifest.webmanifest')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  }
+}));
 
 app.get('*', (req, res) => {
   const isApiOrMaps = req.path.startsWith('/api') || req.path.startsWith('/maps');
@@ -427,6 +433,7 @@ app.get('*', (req, res) => {
   if (!isApiOrMaps && !isStaticAsset) {
     const indexPath = path.join(clientBuildPath, 'index.html');
     if (fs.existsSync(indexPath)) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.sendFile(indexPath);
     } else {
       res.status(404).send('Frontend not found');
