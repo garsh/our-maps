@@ -243,16 +243,48 @@ io.on('connection', (socket: Socket) => {
 // Serve maps directory (PMTiles, fonts, sprites) with HTTP Range Request and CORS support
 const candidateMapsDirs = [
   process.env.MAPS_DIR,
+
+  // Relative to process.cwd()
   path.resolve(process.cwd(), 'data/maps'),
   path.resolve(process.cwd(), 'data/sprites'),
   path.resolve(process.cwd(), 'data'),
   path.resolve(process.cwd(), 'server/public/maps'),
+  path.resolve(process.cwd(), 'server/public/sprites'),
+  path.resolve(process.cwd(), 'server/public'),
   path.resolve(process.cwd(), 'public/maps'),
+  path.resolve(process.cwd(), 'public/sprites'),
+  path.resolve(process.cwd(), 'public'),
+
+  // Going up levels from process.cwd() (e.g. when process.cwd() is server/)
+  path.resolve(process.cwd(), '../data/maps'),
+  path.resolve(process.cwd(), '../data/sprites'),
+  path.resolve(process.cwd(), '../data'),
+  path.resolve(process.cwd(), '../server/public/maps'),
+  path.resolve(process.cwd(), '../server/public/sprites'),
+  path.resolve(process.cwd(), '../server/public'),
+
+  // Relative to __dirname (dev ts-node in src/ vs prod dist/server/src/)
   path.resolve(__dirname, '../../data/maps'),
   path.resolve(__dirname, '../../data/sprites'),
   path.resolve(__dirname, '../../data'),
   path.resolve(__dirname, '../public/maps'),
+  path.resolve(__dirname, '../public/sprites'),
+  path.resolve(__dirname, '../public'),
   path.resolve(__dirname, '../../public/maps'),
+  path.resolve(__dirname, '../../public/sprites'),
+  path.resolve(__dirname, '../../public'),
+  path.resolve(__dirname, '../../../data/maps'),
+  path.resolve(__dirname, '../../../data/sprites'),
+  path.resolve(__dirname, '../../../data'),
+  path.resolve(__dirname, '../../../public/maps'),
+  path.resolve(__dirname, '../../../public/sprites'),
+  path.resolve(__dirname, '../../../public'),
+  path.resolve(__dirname, '../../../../data/maps'),
+  path.resolve(__dirname, '../../../../data/sprites'),
+  path.resolve(__dirname, '../../../../data'),
+  path.resolve(__dirname, '../../../../public/maps'),
+  path.resolve(__dirname, '../../../../public/sprites'),
+  path.resolve(__dirname, '../../../../public'),
 ].filter(Boolean) as string[];
 
 const mapsDir = candidateMapsDirs.find((d) => fs.existsSync(d)) || candidateMapsDirs[0];
@@ -273,14 +305,30 @@ app.get('/maps/:filename(*)', (req, res, next) => {
   let foundFilePath: string | null = null;
   for (const dir of candidateMapsDirs) {
     if (!dir) continue;
+
+    // Direct join
     const p = path.join(dir, filename);
     try {
-      if (fs.existsSync(p)) {
+      if (fs.existsSync(p) && !fs.statSync(p).isDirectory()) {
         foundFilePath = p;
         break;
       }
     } catch {
       // Ignore filesystem permission read errors
+    }
+
+    // If candidate dir is a sprites dir and request starts with "sprites/"
+    if (filename.startsWith('sprites/')) {
+      const trimmedFilename = filename.replace(/^sprites\//, '');
+      const p2 = path.join(dir, trimmedFilename);
+      try {
+        if (fs.existsSync(p2) && !fs.statSync(p2).isDirectory()) {
+          foundFilePath = p2;
+          break;
+        }
+      } catch {
+        // Ignore
+      }
     }
   }
 
@@ -302,7 +350,13 @@ app.get('/maps/:filename(*)', (req, res, next) => {
     res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Authorization');
     res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges, Content-Type');
     res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('Content-Type', 'application/octet-stream');
+    if (foundFilePath.endsWith('.json')) {
+      res.setHeader('Content-Type', 'application/json');
+    } else if (foundFilePath.endsWith('.png')) {
+      res.setHeader('Content-Type', 'image/png');
+    } else {
+      res.setHeader('Content-Type', 'application/octet-stream');
+    }
 
     if (range) {
       const parts = range.replace(/bytes=/, '').split('-');

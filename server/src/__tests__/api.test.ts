@@ -213,4 +213,16 @@ describe('API Endpoints', () => {
     expect(res.body.id).toBe(mapId);
     expect(res.body.ownerId).toBe('jwt-test-user-id');
   });
+
+  it('GET /maps/sprites/light@2x.png should return sprite image', async () => {
+    const res = await request(app).get('/maps/sprites/light@2x.png');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('image/png');
+  });
+
+  it('GET /maps/sprites/light@2x.json should return sprite metadata json', async () => {
+    const res = await request(app).get('/maps/sprites/light@2x.json');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('application/json');
+  });
 });
