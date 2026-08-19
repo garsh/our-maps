@@ -10,7 +10,7 @@
     "setup:sprites": "node scripts/download-sprites.mjs",
     "setup:maps": "node scripts/download-map.js --sample && node scripts/download-sprites.mjs",
     "setup:maps:full": "node scripts/download-map.js --full && node scripts/download-sprites.mjs",
-    "build": "cd client && npm run build && cd ../server && npm run build",
+    "build": "npm run setup:sprites && cd client && npm run build && cd ../server && npm run build",
     "start": "cd server && npm run start"
   },
   "devDependencies": {
