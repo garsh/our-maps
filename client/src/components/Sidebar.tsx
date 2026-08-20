@@ -26,7 +26,6 @@ import {
   Download,
   Palette,
   Check,
-  ChevronLeft,
   Mountain,
   Box
 } from 'lucide-react';
@@ -1486,160 +1485,152 @@ class MouseSensor extends PointerSensor {
               </button>
               
               {isMenuOpen && (
-                <div style={{ position: 'absolute', top: '100%', right: 0, width: '190px', background: 'white', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3000, overflow: 'hidden' }}>
-                  {menuTab === 'theme' ? (
-                    <div>
-                      <div 
-                        style={{ padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '700', color: 'var(--primary-color)' }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setMenuTab('main');
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <ChevronLeft size={18} />
+                <div style={{ position: 'absolute', top: '100%', right: 0, width: '190px', background: 'white', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3000 }}>
+                  {!readOnly && (
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={() => {
+                        setRenameInput(localMapName);
+                        setShowRenameModal(true);
+                        setIsMenuOpen(false);
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      Rename Map
+                    </div>
+                  )}
+                  {/* Theme item before Share */}
+                  <div style={{ position: 'relative' }}>
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', background: menuTab === 'theme' ? 'var(--bg-color)' : 'transparent' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenuTab(menuTab === 'theme' ? 'main' : 'theme');
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => {
+                        if (menuTab !== 'theme') e.currentTarget.style.background = 'transparent';
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Palette size={16} />
                         <span>Theme</span>
                       </div>
-                      {MAP_THEMES.map((theme) => {
-                        const isSelected = mapTheme === theme.id;
-                        return (
-                          <div
-                            key={theme.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onThemeChange?.(theme.id);
-                              setIsMenuOpen(false);
-                              setMenuTab('main');
-                            }}
-                            style={{
-                              padding: '9px 14px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              fontSize: '0.82rem',
-                              fontWeight: isSelected ? '700' : '500',
-                              background: isSelected ? '#f0f7ff' : 'transparent',
-                              color: isSelected ? '#1d4ed8' : 'inherit',
-                              borderBottom: '1px solid #f1f5f9',
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!isSelected) e.currentTarget.style.background = 'var(--bg-color)';
-                            }}
-                            onMouseLeave={(e) => {
-                              if (!isSelected) e.currentTarget.style.background = 'transparent';
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <div
-                                style={{
-                                  width: '12px',
-                                  height: '12px',
-                                  borderRadius: '50%',
-                                  background: theme.previewBg,
-                                  border: `1.5px solid ${theme.previewBorder}`,
-                                  flexShrink: 0,
-                                }}
-                              />
-                              <span>{theme.label}</span>
-                            </div>
-                            {isSelected && <Check size={14} style={{ color: '#3b82f6' }} />}
-                          </div>
-                        );
-                      })}
-                      <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '4px', paddingTop: '4px' }}>
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggleHillshade?.(!showHillshade);
-                          }}
-                          style={{
-                            padding: '9px 14px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            fontSize: '0.82rem',
-                            fontWeight: showHillshade ? '700' : '500',
-                            background: showHillshade ? '#f0f7ff' : 'transparent',
-                            color: showHillshade ? '#1d4ed8' : 'inherit',
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!showHillshade) e.currentTarget.style.background = 'var(--bg-color)';
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!showHillshade) e.currentTarget.style.background = 'transparent';
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <Mountain size={14} style={{ color: showHillshade ? '#1d4ed8' : '#64748b' }} />
-                            <span>Hillshading</span>
-                          </div>
-                          {showHillshade && <Check size={14} style={{ color: '#3b82f6' }} />}
-                        </div>
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggle3D?.(!show3D);
-                          }}
-                          style={{
-                            padding: '9px 14px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            fontSize: '0.82rem',
-                            fontWeight: show3D ? '700' : '500',
-                            background: show3D ? '#f0f7ff' : 'transparent',
-                            color: show3D ? '#1d4ed8' : 'inherit',
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!show3D) e.currentTarget.style.background = 'var(--bg-color)';
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!show3D) e.currentTarget.style.background = 'transparent';
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <Box size={14} style={{ color: show3D ? '#1d4ed8' : '#64748b' }} />
-                            <span>3D Terrain & Buildings</span>
-                          </div>
-                          {show3D && <Check size={14} style={{ color: '#3b82f6' }} />}
-                        </div>
-                      </div>
+                      {menuTab === 'theme' ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                     </div>
-                  ) : (
-                    <>
-                      {!readOnly && (
-                        <div 
-                          style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                          onClick={() => {
-                            setRenameInput(localMapName);
-                            setShowRenameModal(true);
-                            setIsMenuOpen(false);
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          Rename Map
-                        </div>
-                      )}
-                      {/* Theme item before Share */}
+                    {menuTab === 'theme' && (
                       <div 
-                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setMenuTab('theme');
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        style={{ position: 'absolute', top: '100%', left: '-1px', width: 'calc(100% + 2px)', background: 'white', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '0 0 var(--radius-md) var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3100 }}
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Palette size={16} />
-                          <span>Theme</span>
-                        </div>
-                        <ChevronRight size={16} />
+                            {MAP_THEMES.map((theme) => {
+                              const isSelected = mapTheme === theme.id;
+                              return (
+                                <div
+                                  key={theme.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onThemeChange?.(theme.id);
+                                  }}
+                                  style={{
+                                    padding: '9px 14px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    fontSize: '0.82rem',
+                                    fontWeight: isSelected ? '700' : '500',
+                                    background: isSelected ? '#f0f7ff' : 'transparent',
+                                    color: isSelected ? '#1d4ed8' : 'inherit',
+                                    borderBottom: '1px solid #f1f5f9',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (!isSelected) e.currentTarget.style.background = 'var(--bg-color)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (!isSelected) e.currentTarget.style.background = 'transparent';
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div
+                                      style={{
+                                        width: '12px',
+                                        height: '12px',
+                                        borderRadius: '50%',
+                                        background: theme.previewBg,
+                                        border: `1.5px solid ${theme.previewBorder}`,
+                                        flexShrink: 0,
+                                      }}
+                                    />
+                                    <span>{theme.label}</span>
+                                  </div>
+                                  {isSelected && <Check size={14} style={{ color: '#3b82f6' }} />}
+                                </div>
+                              );
+                            })}
+                            <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '4px', paddingTop: '4px' }}>
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onToggleHillshade?.(!showHillshade);
+                                }}
+                                style={{
+                                  padding: '9px 14px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  fontSize: '0.82rem',
+                                  fontWeight: showHillshade ? '700' : '500',
+                                  background: showHillshade ? '#f0f7ff' : 'transparent',
+                                  color: showHillshade ? '#1d4ed8' : 'inherit',
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (!showHillshade) e.currentTarget.style.background = 'var(--bg-color)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (!showHillshade) e.currentTarget.style.background = 'transparent';
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <Mountain size={14} style={{ color: showHillshade ? '#1d4ed8' : '#64748b' }} />
+                                  <span>Hillshading</span>
+                                </div>
+                                {showHillshade && <Check size={14} style={{ color: '#3b82f6' }} />}
+                              </div>
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onToggle3D?.(!show3D);
+                                }}
+                                style={{
+                                  padding: '9px 14px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  fontSize: '0.82rem',
+                                  fontWeight: show3D ? '700' : '500',
+                                  background: show3D ? '#f0f7ff' : 'transparent',
+                                  color: show3D ? '#1d4ed8' : 'inherit',
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (!show3D) e.currentTarget.style.background = 'var(--bg-color)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (!show3D) e.currentTarget.style.background = 'transparent';
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <Box size={14} style={{ color: show3D ? '#1d4ed8' : '#64748b' }} />
+                                  <span>3D Terrain & Buildings</span>
+                                </div>
+                                {show3D && <Check size={14} style={{ color: '#3b82f6' }} />}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                       {!readOnly && (
                         <div 
@@ -1754,12 +1745,10 @@ class MouseSensor extends PointerSensor {
                       ))}
                     </>
                   )}
-                </>
+                </div>
               )}
             </div>
-          )}
-        </div>
-      );
+          );
 
           return document.getElementById('mobile-header-actions')
             ? createPortal(menuContent, document.getElementById('mobile-header-actions')!)

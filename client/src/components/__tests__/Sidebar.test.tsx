@@ -278,6 +278,26 @@ describe('Sidebar', () => {
     expect(onToggleHillshade).toHaveBeenCalledWith(false);
   });
 
+  it('keeps theme menu open when a theme is selected', () => {
+    const onThemeChange = vi.fn();
+    render(<TestWrapper handlers={{ onThemeChange, mapTheme: 'light' }} />);
+
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+
+    const themeOption = screen.getByText('Theme');
+    fireEvent.click(themeOption);
+
+    const darkOption = screen.getByText('Dark');
+    expect(darkOption).toBeInTheDocument();
+
+    fireEvent.click(darkOption);
+    expect(onThemeChange).toHaveBeenCalledWith('dark');
+    // Verify menu is still open and showing theme options
+    expect(screen.getByText('Dark')).toBeInTheDocument();
+    expect(screen.getByText('Hillshading')).toBeInTheDocument();
+  });
+
   it('hides edit menu items and edit buttons when isOffline is true', () => {
     const pins = [{ id: 'p1', lat: 0, lng: 0, label: 'Pin 1', position: 0 }];
     render(<TestWrapper handlers={{ isOffline: true, pins }} />);
