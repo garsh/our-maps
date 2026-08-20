@@ -661,7 +661,8 @@ const DefaultLayerHeader = ({
   onToggleExpand,
   onToggleLayerVisibility,
   onToggleNavIds,
-  layersCount
+  layersCount,
+  children
 }: {
   defaultPins: Pin[];
   collapsedLayerIds?: Set<string | null>;
@@ -674,6 +675,7 @@ const DefaultLayerHeader = ({
   onToggleLayerVisibility?: (id: string | null) => void;
   onToggleNavIds?: (ids: string[], force?: boolean) => void;
   layersCount: number;
+  children?: React.ReactNode;
 }) => {
   const { setNodeRef, isOver } = useDroppable({
     id: 'default',
@@ -692,8 +694,8 @@ const DefaultLayerHeader = ({
           position: 'sticky', 
           top: 0, 
           zIndex: 5, 
-          background: isHighlighted ? 'rgba(72, 61, 139, 0.05)' : 'white',
-          borderRadius: 'var(--radius-sm)',
+          background: isHighlighted ? '#f4f3f9' : 'white',
+          borderRadius: '0 0 var(--radius-sm) var(--radius-sm)',
           border: isHighlighted ? '1px solid var(--primary-color)' : '1px solid transparent',
           boxShadow: isHighlighted ? '0 0 0 1px var(--primary-color)' : 'var(--shadow-sm)',
           transition: 'all 0.1s ease'
@@ -745,6 +747,7 @@ const DefaultLayerHeader = ({
           </div>
         </div>
       </div>
+      {children}
     </div>
   );
 };
@@ -874,8 +877,8 @@ const SortableLayer = ({
         position: 'sticky',
         top: 0,
         zIndex: 5,
-        background: (isOver && !isDragging && !isLayerDragging) ? 'rgba(72, 61, 139, 0.05)' : (isEditingName ? 'var(--bg-color)' : 'white'),
-        borderRadius: 'var(--radius-sm)',
+        background: (isOver && !isDragging && !isLayerDragging) ? '#f4f3f9' : (isEditingName ? 'var(--bg-color)' : 'white'),
+        borderRadius: '0 0 var(--radius-sm) var(--radius-sm)',
         border: (isOver && !isDragging && !isLayerDragging) ? '1px solid var(--primary-color)' : (isEditingName ? '1px solid var(--primary-color)' : '1px solid transparent'),
         boxShadow: (isOver && !isDragging && !isLayerDragging) ? '0 0 0 1px var(--primary-color)' : 'var(--shadow-sm)',
         transition: 'all 0.1s ease'
@@ -1782,7 +1785,7 @@ class MouseSensor extends PointerSensor {
             minHeight: 0,
             overflowY: 'auto', 
             paddingRight: '4px', 
-            paddingTop: '3px',
+            paddingTop: '0px',
             paddingBottom: isMobile ? '4rem' : '1.5rem',
             margin: '0 -4px',
             touchAction: 'pan-y',
@@ -1836,7 +1839,7 @@ class MouseSensor extends PointerSensor {
             onToggleLayerVisibility={onToggleLayerVisibility}
             onToggleNavIds={onToggleNavIds}
             layersCount={layers.length}
-          />
+          >
             {!collapsedLayerIds?.has(null) && (
               <div style={{ paddingLeft: '0.2rem', borderLeft: '1px solid var(--border-color)', marginTop: '0px', marginLeft: '0.4rem' }}>
                 <SortableContext items={defaultPins.map(p => p.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
@@ -1875,6 +1878,7 @@ class MouseSensor extends PointerSensor {
                 </SortableContext>
               </div>
             )}
+          </DefaultLayerHeader>
           </div>
 
 
