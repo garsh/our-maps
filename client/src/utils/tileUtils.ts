@@ -108,11 +108,34 @@ export async function removeOfflineMap(mapId: string): Promise<void> {
 
 export async function addToManifest(entries: ManifestEntry[]): Promise<void> {
     const db = await openDB();
+    const completedUrls = new Set<string>();
+    
+    try {
+        const readTx = db.transaction(MANIFEST_STORE, 'readonly');
+        const store = readTx.objectStore(MANIFEST_STORE);
+        await new Promise<void>((resolve) => {
+            const req = store.getAll();
+            req.onsuccess = () => {
+                const all = (req.result as ManifestEntry[]) || [];
+                all.forEach(e => {
+                    if (e.status === 'completed') {
+                        completedUrls.add(e.url);
+                    }
+                });
+                resolve();
+            };
+            req.onerror = () => resolve();
+        });
+    } catch {}
+
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(MANIFEST_STORE, 'readwrite');
         const store = transaction.objectStore(MANIFEST_STORE);
         
         entries.forEach(entry => {
+            if (completedUrls.has(entry.url) && entry.status !== 'completed') {
+                return;
+            }
             store.put(entry);
         });
 
@@ -120,6 +143,7 @@ export async function addToManifest(entries: ManifestEntry[]): Promise<void> {
         transaction.onerror = () => reject(transaction.error);
     });
 }
+
 
 export async function getPendingFromManifest(mapId: string): Promise<ManifestEntry[]> {
     const db = await openDB();
