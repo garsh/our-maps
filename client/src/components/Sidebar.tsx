@@ -129,6 +129,7 @@ interface SidebarProps {
   onThemeChange?: (theme: MapTheme) => void;
   showHillshade?: boolean;
   onToggleHillshade?: (enabled: boolean) => void;
+  isOffline?: boolean;
 }
 
 const COLORS = [
@@ -1064,7 +1065,8 @@ const Sidebar = ({
   mapTheme = 'light',
   onThemeChange,
   showHillshade = true,
-  onToggleHillshade
+  onToggleHillshade,
+  isOffline = false
 }: SidebarProps) => {
   const [localMapName, setLocalMapName] = useState(mapName);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -1072,7 +1074,7 @@ const Sidebar = ({
   const menuRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
-  const readOnly = userRole === 'view';
+  const readOnly = userRole === 'view' || isOffline;
   const [activePin, setActivePin] = useState<Pin | null>(null);
   const [activeLayer, setActiveLayer] = useState<PinLayer | null>(null);
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
@@ -1602,14 +1604,16 @@ class MouseSensor extends PointerSensor {
                         </div>
                         <ChevronRight size={16} />
                       </div>
-                      <div 
-                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                        onClick={() => { onShare?.(); setIsMenuOpen(false); }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        Share
-                      </div>
+                      {!readOnly && (
+                        <div 
+                          style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                          onClick={() => { onShare?.(); setIsMenuOpen(false); }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          Share
+                        </div>
+                      )}
                       {!readOnly && (
                         <div 
                           style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
@@ -1642,24 +1646,26 @@ class MouseSensor extends PointerSensor {
                         </div>
                       )}
 
-                  {isDownloaded || isDownloading || hasPartialDownload ? (
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                      onClick={handleRemoveDownload}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      Remove Download
-                    </div>
-                  ) : (
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isDownloading ? '#999' : 'inherit' }}
-                      onClick={isDownloading ? undefined : handleDownloadClick}
-                      onMouseEnter={(e) => !isDownloading && (e.currentTarget.style.background = 'var(--bg-color)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      Download for Offline
-                    </div>
+                  {!isOffline && (
+                    isDownloaded || isDownloading || hasPartialDownload ? (
+                      <div 
+                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                        onClick={handleRemoveDownload}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        Remove Download
+                      </div>
+                    ) : (
+                      <div 
+                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isDownloading ? '#999' : 'inherit' }}
+                        onClick={isDownloading ? undefined : handleDownloadClick}
+                        onMouseEnter={(e) => !isDownloading && (e.currentTarget.style.background = 'var(--bg-color)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        Download for Offline
+                      </div>
+                    )
                   )}
                   {!readOnly && (
                     <div 

@@ -674,7 +674,7 @@ export function MapEditor() {
   }, []);
 
   const handleMapClick = useCallback(async (lat: number, lng: number) => {
-    if (Date.now() < ignoreMapClickUntil.current || userRole === 'view') return;
+    if (Date.now() < ignoreMapClickUntil.current || userRole === 'view' || isOffline) return;
     const idVal = generateId();
     const defaultPins = pins.filter(p => isSameLayer(p.layerId, undefined));
     const nextPosition = defaultPins.length > 0 ? Math.max(...defaultPins.map(p => p.position)) + 1 : 0;
@@ -700,10 +700,10 @@ export function MapEditor() {
         socketRef.current?.emit('pin-update', { mapId, pinId: idVal, updates: { address } });
       }
     }
-  }, [pins, userRole, mapId]);
+  }, [pins, userRole, isOffline, mapId]);
 
   const addPinAtLocation = async (lat: number, lng: number, label: string, address?: string) => {
-    if (userRole === 'view') return;
+    if (userRole === 'view' || isOffline) return;
     const idVal = generateId();
     const defaultPins = pins.filter(p => isSameLayer(p.layerId, undefined));
     const nextPosition = defaultPins.length > 0 ? Math.max(...defaultPins.map(p => p.position)) + 1 : 0;
@@ -735,7 +735,7 @@ export function MapEditor() {
   };
 
   const removePin = (targetId: string) => {
-    if (userRole === 'view') return;
+    if (userRole === 'view' || isOffline) return;
     const targetPin = pins.find(p => p.id === targetId);
     const targetLayerId = targetPin?.layerId;
 
@@ -757,7 +757,7 @@ export function MapEditor() {
   };
 
   const updatePin = (targetId: string, updates: Partial<Pin>) => {
-    if (userRole === 'view') return;
+    if (userRole === 'view' || isOffline) return;
     
     const targetPin = pins.find(p => p.id === targetId);
     const originalLayerId = targetPin?.layerId;
@@ -807,7 +807,7 @@ export function MapEditor() {
   };
 
   const addLayer = useCallback((): PinLayer | undefined => {
-    if (userRole === 'view') return;
+    if (userRole === 'view' || isOffline) return;
     const newGroup: PinLayer = {
       id: generateId(),
       name: `Layer ${layers.length + 1}`,
@@ -818,10 +818,11 @@ export function MapEditor() {
       socketRef.current?.emit('layer-create', { mapId, layer: newGroup });
     }
     return newGroup;
-  }, [userRole, layers.length, mapId]);
+  }, [userRole, isOffline, layers.length, mapId]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isOffline || userRole === 'view') return;
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
         const target = e.target as HTMLElement | null;
         if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
@@ -837,10 +838,10 @@ export function MapEditor() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [addLayer]);
+  }, [addLayer, isOffline, userRole]);
 
   const updateLayer = (targetId: string, updates: Partial<PinLayer>) => {
-    if (userRole === 'view') return;
+    if (userRole === 'view' || isOffline) return;
     setLayers(prev => prev.map(g => g.id === targetId ? { ...g, ...updates } : g));
     if (mapId) {
       socketRef.current?.emit('layer-update', { mapId, layerId: targetId, updates });
@@ -848,7 +849,7 @@ export function MapEditor() {
   };
 
   const removeLayer = (targetId: string) => {
-    if (userRole === 'view') return;
+    if (userRole === 'view' || isOffline) return;
     const remainingLayers = layers.filter(g => g.id !== targetId);
     setLayers(remainingLayers);
     
@@ -884,6 +885,7 @@ export function MapEditor() {
   };
 
   const handleMapNameChange = (newName: string) => {
+    if (userRole === 'view' || isOffline) return;
     setMapName(newName);
     if (mapId) {
       socketRef.current?.emit('map-name-update', { mapId, name: newName });
@@ -891,7 +893,7 @@ export function MapEditor() {
   };
 
   const handleDragOver = (event: any) => {
-    if (userRole === 'view') return;
+    if (userRole === 'view' || isOffline) return;
     const { active, over } = event;
     if (!over) return;
 
@@ -932,6 +934,7 @@ export function MapEditor() {
   };
 
   const handleDragStart = (event: any) => {
+    if (userRole === 'view' || isOffline) return;
     const { active } = event;
     if (active.data.current?.type === 'pin') {
       const activeId = active.id as string;
@@ -949,7 +952,7 @@ export function MapEditor() {
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
-    if (userRole === 'view') return;
+    if (userRole === 'view' || isOffline) return;
     const { active, over } = event;
     
     if (!over) return;
@@ -1035,6 +1038,7 @@ export function MapEditor() {
 
 
   const handleImport = (data: Partial<MapData>) => {
+    if (userRole === 'view' || isOffline) return;
     if (data.name) setMapName(data.name);
     if (data.pins) {
       setPins(data.pins);
@@ -1232,6 +1236,7 @@ export function MapEditor() {
           }) as React.CSSProperties}>
             <Sidebar 
               isMobile={isMobile}
+              isOffline={isOffline}
             mapId={mapId}
             mapName={mapName}
             onMapNameChange={handleMapNameChange}
@@ -1342,6 +1347,7 @@ export function MapEditor() {
             boundsToFit={boundsToFit}
             onBoundsChange={setMapBounds}
             userRole={userRole}
+            isOffline={isOffline}
             hoveredPinId={hoveredPinId}
             onHoverPin={handleHoverPin}
             onBackgroundClick={handleBackgroundClick}
