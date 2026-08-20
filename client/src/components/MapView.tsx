@@ -285,6 +285,37 @@ const MapView = ({
     touchStartRef.current = null;
   }, []);
 
+  // Flush MapLibre terrain tile cache when map theme changes while 3D terrain is active
+  const isInitialThemeMount = useRef(true);
+  useEffect(() => {
+    if (isInitialThemeMount.current) {
+      isInitialThemeMount.current = false;
+      return;
+    }
+    if (!mapRef.current) return;
+    const map = mapRef.current.getMap();
+    if (!map) return;
+
+    if (show3D) {
+      try {
+        map.setTerrain(null);
+        setTimeout(() => {
+          if (mapRef.current) {
+            const m = mapRef.current.getMap();
+            if (m) {
+              m.setTerrain({ source: 'terrainElevation', exaggeration: 1.0 });
+              m.triggerRepaint();
+            }
+          }
+        }, 50);
+      } catch {
+        map.triggerRepaint();
+      }
+    } else {
+      map.triggerRepaint();
+    }
+  }, [mapTheme, show3D]);
+
   const mapStyle = useMemo<any>(() => {
     const pmtilesUrl = `${window.location.origin}/maps/planet.pmtiles`;
     const validFlavor = ['light', 'dark', 'grayscale', 'white', 'black'].includes(mapTheme) ? mapTheme : 'light';
@@ -298,6 +329,10 @@ const MapView = ({
         layout: layer.layout ? { ...layer.layout } : {},
       };
 
+      if (l.id === 'buildings' && show3D) {
+        l.layout['visibility'] = 'none';
+      }
+
       if (validFlavor === 'light') {
         // Land & Water
         if (l.id === 'background') l.paint['background-color'] = '#fcfbfa';
@@ -305,7 +340,7 @@ const MapView = ({
         if (l.id === 'water') l.paint['fill-color'] = '#a0c8f0';
         if (l.id.includes('water_river') || l.id.includes('water_stream')) l.paint['line-color'] = '#a0c8f0';
         if (l.id === 'landuse_park' || l.id === 'landuse_urban_green') l.paint['fill-color'] = '#d8ebd2';
-        if (l.id === 'buildings') { l.paint['fill-color'] = '#e8e4dc'; l.paint['fill-opacity'] = 0.7; }
+        if (l.id === 'buildings' && !show3D) { l.paint['fill-color'] = '#e8e4dc'; l.paint['fill-opacity'] = 0.7; }
         if (l.id === 'landuse_school') l.paint['fill-color'] = '#fbf3d5';
         if (l.id === 'landuse_hospital') l.paint['fill-color'] = '#f6e5e5';
         if (l.id === 'landuse_industrial') l.paint['fill-color'] = '#eceeef';
@@ -366,6 +401,8 @@ const MapView = ({
         ? '#333333'
         : validFlavor === 'white'
         ? '#d0d0d0'
+        : validFlavor === 'grayscale'
+        ? '#b0b0b0'
         : '#e0ded7';
 
     const building3dLayer = {
@@ -392,17 +429,40 @@ const MapView = ({
       customLayers.push(building3dLayer);
     }
 
+    const hillshadeShadowColor =
+      validFlavor === 'dark' || validFlavor === 'black'
+        ? '#000000'
+        : validFlavor === 'grayscale'
+        ? '#555555'
+        : validFlavor === 'white'
+        ? '#888888'
+        : '#473B24';
+
+    const hillshadeHighlightColor =
+      validFlavor === 'dark'
+        ? '#2c3340'
+        : validFlavor === 'black'
+        ? '#1f1f1f'
+        : validFlavor === 'grayscale' || validFlavor === 'white'
+        ? '#ffffff'
+        : '#FFFFFF';
+
+    const hillshadeExaggeration =
+      validFlavor === 'dark' || validFlavor === 'black' || validFlavor === 'grayscale' || validFlavor === 'white'
+        ? 0.35
+        : 0.45;
+
     const hillshadeLayer = {
       id: 'hills',
       type: 'hillshade',
-      source: 'terrainElevation',
+      source: 'hillshadeDem',
       layout: {
         visibility: showHillshade ? 'visible' : 'none',
       },
       paint: {
-        'hillshade-exaggeration': validFlavor === 'dark' ? 0.35 : 0.45,
-        'hillshade-shadow-color': validFlavor === 'dark' ? '#000000' : '#473B24',
-        'hillshade-highlight-color': validFlavor === 'dark' ? '#2c3340' : '#FFFFFF',
+        'hillshade-exaggeration': hillshadeExaggeration,
+        'hillshade-shadow-color': hillshadeShadowColor,
+        'hillshade-highlight-color': hillshadeHighlightColor,
         'hillshade-accent-color': '#000000',
       },
     };
@@ -428,6 +488,14 @@ const MapView = ({
           attribution: `&copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; <a href="https://openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>`,
         },
         terrainElevation: {
+          type: 'raster-dem',
+          tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+          encoding: 'terrarium',
+          tileSize: 256,
+          maxzoom: 15,
+          attribution: '&copy; <a href="https://github.com/tilezen/joerd" target="_blank" rel="noopener">Mapzen / AWS Elevation</a>',
+        },
+        hillshadeDem: {
           type: 'raster-dem',
           tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
           encoding: 'terrarium',
@@ -816,7 +884,17 @@ const MapView = ({
           100% { box-shadow: 0 0 0 0 rgba(66, 133, 244, 0); }
         }
         .maplibregl-container {
-          background-color: var(--bg-color);
+          background-color: ${
+            mapTheme === 'dark'
+              ? '#1f1f1f'
+              : mapTheme === 'black'
+              ? '#000000'
+              : mapTheme === 'white'
+              ? '#ffffff'
+              : mapTheme === 'grayscale'
+              ? '#f0f0f0'
+              : '#f8f9fa'
+          };
         }
         .maplibregl-ctrl-attrib {
           display: inline-flex !important;
