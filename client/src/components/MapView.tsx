@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import Map, { Marker, Popup, type MapRef } from 'react-map-gl/maplibre';
+import Map, { Marker, Popup, AttributionControl, type MapRef } from 'react-map-gl/maplibre';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
@@ -331,7 +331,7 @@ const MapView = ({
           type: 'vector',
           url: `pmtiles://${pmtilesUrl}`,
           maxzoom: 15,
-          attribution: `OurMaps v.${import.meta.env.VITE_APP_BUILD_TIME || 'dev'} &copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; <a href="https://openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>`,
+          attribution: `&copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; <a href="https://openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>`,
         },
         ...(showHillshade
           ? {
@@ -518,6 +518,7 @@ const MapView = ({
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
       {mapStyle && (
         <Map
+          attributionControl={false}
           localIdeographFontFamily="'Noto Sans CJK JP', 'Hiragino Kaku Gothic ProN', 'Meiryo', 'Yu Gothic', sans-serif"
           ref={(instance) => {
             mapRef.current = instance;
@@ -565,6 +566,7 @@ const MapView = ({
             }
           }}
         >
+          <AttributionControl compact={true} customAttribution={`OurMaps v.${import.meta.env.VITE_APP_BUILD_TIME || 'dev'}`} />
           <UserLocationMarker />
           {visiblePins.map((pin) => (
             <PinMarker
@@ -618,14 +620,14 @@ const MapView = ({
         onClick={handleMyLocation}
         style={{
           position: 'absolute',
-          bottom: '24px',
-          right: '24px',
-          width: '56px',
-          height: '56px',
-          borderRadius: '16px',
+          bottom: '10px',
+          right: '12px',
+          width: '42px',
+          height: '42px',
+          borderRadius: '12px',
           background: 'white',
           border: 'none',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -654,6 +656,7 @@ const MapView = ({
           display: inline-flex !important;
           flex-direction: row-reverse !important;
           align-items: center !important;
+          margin: 0 60px 10px 0 !important;
         }
         .maplibregl-ctrl-attrib a.maplibregl-compact {
           order: 99 !important;

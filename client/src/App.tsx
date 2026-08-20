@@ -1097,7 +1097,7 @@ export function MapEditor() {
         alignItems: 'center', 
         justifyContent: 'space-between',
         boxShadow: 'var(--shadow-md)', 
-        zIndex: 1000,
+        zIndex: 2500,
         flexShrink: 0
       }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', minWidth: 0, flexShrink: 1, userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} onClick={() => navigate('/')}>

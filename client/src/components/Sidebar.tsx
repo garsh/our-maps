@@ -1478,7 +1478,7 @@ class MouseSensor extends PointerSensor {
               </button>
               
               {isMenuOpen && (
-                <div style={{ position: 'absolute', top: '100%', right: 0, width: '190px', background: 'white', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 1600, overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: '100%', right: 0, width: '190px', background: 'white', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3000, overflow: 'hidden' }}>
                   {menuTab === 'theme' ? (
                     <div>
                       <div 
