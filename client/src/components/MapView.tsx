@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import Map, { Marker, Popup, AttributionControl, type MapRef } from 'react-map-gl/maplibre';
+import Map, { Marker, AttributionControl, type MapRef } from 'react-map-gl/maplibre';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
@@ -226,6 +226,63 @@ const MapView = ({
   const [currentZoom, setCurrentZoom] = useState<number>(zoom);
   const hasFitInitialBoundsRef = useRef(false);
 
+  const [pendingContextLocation, setPendingContextLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number; lat: number; lng: number } | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isDraggingContextMarkerRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    };
+  }, []);
+
+  const handleTouchStart = useCallback(
+    (e: maplibregl.MapLayerTouchEvent) => {
+      if (readOnly) return;
+      const orig = e.originalEvent as TouchEvent | undefined;
+      if (orig && orig.touches && orig.touches.length > 1) {
+        if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+        touchStartRef.current = null;
+        return;
+      }
+
+      const point = e.point;
+      const lngLat = e.lngLat;
+      touchStartRef.current = { x: point.x, y: point.y, lat: lngLat.lat, lng: lngLat.lng };
+
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = setTimeout(() => {
+        if (touchStartRef.current) {
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            try {
+              navigator.vibrate(40);
+            } catch {}
+          }
+          setPendingContextLocation({ lat: touchStartRef.current.lat, lng: touchStartRef.current.lng });
+          touchStartRef.current = null;
+        }
+      }, 500);
+    },
+    [readOnly]
+  );
+
+  const handleTouchMove = useCallback((e: maplibregl.MapLayerTouchEvent) => {
+    if (!touchStartRef.current) return;
+    const point = e.point;
+    const dx = point.x - touchStartRef.current.x;
+    const dy = point.y - touchStartRef.current.y;
+    if (Math.hypot(dx, dy) > 8) {
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      touchStartRef.current = null;
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    touchStartRef.current = null;
+  }, []);
+
   const mapStyle = useMemo<any>(() => {
     const pmtilesUrl = `${window.location.origin}/maps/planet.pmtiles`;
     const validFlavor = ['light', 'dark', 'grayscale', 'white', 'black'].includes(mapTheme) ? mapTheme : 'light';
@@ -354,7 +411,6 @@ const MapView = ({
     () => pins.filter((pin) => !hiddenLayerIds?.has(pin.layerId || null)),
     [pins, hiddenLayerIds]
   );
-  const selectedPin = targetPinId ? visiblePins.find((p) => p.id === targetPinId) : null;
 
   // Calculate immediate initial view state using native bounds & fitBoundsOptions so the map opens instantly focused on frame 1
   const initialViewState = useMemo(() => {
@@ -555,12 +611,26 @@ const MapView = ({
             }
             if (mapRef.current) setCurrentZoom(mapRef.current.getZoom());
           }}
-          onMove={updateBounds}
+          onMove={() => {
+            if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+            touchStartRef.current = null;
+            updateBounds();
+          }}
           onMoveEnd={updateBounds}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
           onContextMenu={(e: maplibregl.MapLayerMouseEvent) => {
-            onMapClick(e.lngLat.lat, e.lngLat.lng);
+            if (readOnly) return;
+            if (e.originalEvent) e.originalEvent.preventDefault();
+            if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+            setPendingContextLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng });
           }}
           onClick={(e: maplibregl.MapLayerMouseEvent) => {
+            if (pendingContextLocation) {
+              setPendingContextLocation(null);
+            }
             if (!e.defaultPrevented) {
               onBackgroundClick?.();
             }
@@ -574,29 +644,88 @@ const MapView = ({
               pin={pin}
               onUpdatePin={onUpdatePin}
               onHoverPin={onHoverPin}
-              onPinClick={onPinClick}
+              onPinClick={(clickedPin) => {
+                setPendingContextLocation(null);
+                onPinClick?.(clickedPin);
+              }}
               hoveredPinId={hoveredPinId}
               targetPinId={targetPinId}
               editingPinId={editingPinId}
               readOnly={readOnly}
             />
           ))}
-          {selectedPin && (
-            <Popup
-              longitude={selectedPin.lng}
-              latitude={selectedPin.lat}
-              anchor="top"
-              closeButton={false}
-              closeOnClick={false}
-              className="modern-popup"
+
+          {pendingContextLocation && !readOnly && (
+            <Marker
+              longitude={pendingContextLocation.lng}
+              latitude={pendingContextLocation.lat}
+              anchor="bottom"
+              draggable={true}
+              onDragStart={() => {
+                isDraggingContextMarkerRef.current = true;
+              }}
+              onDrag={(e: any) => {
+                setPendingContextLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+              }}
+              onDragEnd={(e: any) => {
+                setPendingContextLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+                setTimeout(() => {
+                  isDraggingContextMarkerRef.current = false;
+                }, 100);
+              }}
+              style={{ zIndex: 2000 }}
             >
-              <div className="leaflet-popup-content" style={{ margin: 0, padding: '4px' }}>
-                <h3 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 600 }}>{selectedPin.label}</h3>
-                {selectedPin.address && <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#666' }}>{selectedPin.address}</p>}
-                {selectedPin.description && <p style={{ margin: '0 0 4px 0', fontSize: '12px' }}>{selectedPin.description}</p>}
-                {selectedPin.imageUrl && <img src={selectedPin.imageUrl} alt={selectedPin.label} style={{ maxWidth: '100%', borderRadius: '8px' }} />}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  cursor: 'grab',
+                  filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.3))',
+                  userSelect: 'none',
+                }}
+              >
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isDraggingContextMarkerRef.current) return;
+                    const { lat, lng } = pendingContextLocation;
+                    setPendingContextLocation(null);
+                    onMapClick(lat, lng);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: 'var(--primary-color, #483D8B)',
+                    color: 'white',
+                    border: 'none',
+                    padding: '8px 14px',
+                    borderRadius: '20px',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <svg width="15" height="21" viewBox="0 0 30 42" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ display: 'inline-block', flexShrink: 0 }}>
+                    <path d="M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z" fill="#2A81CB"/>
+                    <circle cx="15" cy="15" r="6" fill="white" fillOpacity="0.9"/>
+                  </svg>
+                  Add Pin Here
+                </button>
+                <div
+                  style={{
+                    width: 0,
+                    height: 0,
+                    borderLeft: '10px solid transparent',
+                    borderRight: '10px solid transparent',
+                    borderTop: '20px solid var(--primary-color, #483D8B)',
+                    marginTop: '-1px',
+                  }}
+                />
               </div>
-            </Popup>
+            </Marker>
           )}
           {previewLocation && previewMarker && (
             <Marker longitude={previewLocation.lng} latitude={previewLocation.lat} anchor="bottom">
@@ -660,6 +789,20 @@ const MapView = ({
         }
         .maplibregl-ctrl-attrib a.maplibregl-compact {
           order: 99 !important;
+        }
+        .add-pin-context-popup .maplibregl-popup-content {
+          background: transparent !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+          border-radius: 0 !important;
+        }
+        .add-pin-context-popup .maplibregl-popup-tip {
+          border-top-width: 20px !important;
+          border-left-width: 10px !important;
+          border-right-width: 10px !important;
+          border-top-color: var(--primary-color, #483D8B) !important;
+          border-bottom-color: var(--primary-color, #483D8B) !important;
+          margin-top: -1px;
         }
       `}</style>
     </div>

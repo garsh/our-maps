@@ -45,20 +45,18 @@ export function getMarkerHTML(color: PinColor = 'blue', icon: PinIcon = 'default
 
   const width = 20;
   const height = 28;
-  const scale = width / 30;
 
   const html = `
     <div style="
       position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       width: ${width}px;
       height: ${height}px;
     ">
       ${isHovered ? `
         <div style="
           position: absolute;
+          top: -${width}px;
+          left: -${width}px;
           width: ${width * 3}px;
           height: ${width * 3}px;
           background: ${colorCode}44;
@@ -67,18 +65,13 @@ export function getMarkerHTML(color: PinColor = 'blue', icon: PinIcon = 'default
           z-index: -1;
           animation: pulse 1.2s infinite;
           box-shadow: 0 0 15px ${colorCode}66;
+          pointer-events: none;
         "></div>
       ` : ''}
-      <div style="
-        filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
-        transform: scale(${scale});
-        transform-origin: center bottom;
-      ">
-        <svg width="30" height="42" viewBox="0 0 30 42" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z" fill="${colorCode}"/>
-          ${iconContent}
-        </svg>
-      </div>
+      <svg width="${width}" height="${height}" viewBox="0 0 30 42" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: block; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));">
+        <path d="M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z" fill="${colorCode}"/>
+        ${iconContent}
+      </svg>
     </div>
   `;
 
