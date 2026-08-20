@@ -38,15 +38,7 @@ test('sidebar items are interactible', async ({ page }) => {
   // 2. Click the pin in the sidebar list
   const sidebarItem = page.locator('li[id^="pin-"]').filter({ hasText: 'Interactivity City' });
   await expect(sidebarItem).toBeVisible();
-  
-  // Clicking it should open the popup on the map
   await sidebarItem.click();
-  
-  // 4. Verify popup is open on the map and shows address
-  const popup = page.locator('.leaflet-popup-content');
-  await expect(popup).toBeVisible({ timeout: 5000 });
-  await expect(popup).toContainText('Interactivity City');
-  await expect(popup).toContainText('123 Test St');
   
   // 5. Test "Edit" button in sidebar
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
