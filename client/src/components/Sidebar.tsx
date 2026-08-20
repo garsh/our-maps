@@ -1617,7 +1617,7 @@ class MouseSensor extends PointerSensor {
                           Share
                         </div>
                       )}
-                      {!readOnly && (
+                      {!readOnly && pins.length === 0 && layers.length === 0 && (
                         <div 
                           style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
                           onClick={handleImportClick}
