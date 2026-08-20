@@ -226,6 +226,10 @@ const MapView = ({
   const lastTargetPinId = useRef<string | null>(null);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [currentZoom, setCurrentZoom] = useState<number>(zoom);
+  const [bearing, setBearing] = useState<number>(0);
+  const [pitch, setPitch] = useState<number>(0);
+  const compassSvgRef = useRef<SVGSVGElement | null>(null);
+  const compassGroupRef = useRef<SVGGElement | null>(null);
   const hasFitInitialBoundsRef = useRef(false);
 
   const [pendingContextLocation, setPendingContextLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -563,13 +567,39 @@ const MapView = ({
   const updateBounds = useCallback(() => {
     if (!mapRef.current) return;
     const map = mapRef.current.getMap();
+    const b = map.getBearing();
+    const p = map.getPitch();
+
     setCurrentZoom(map.getZoom());
+    setBearing(b);
+    setPitch(p);
+
+    if (compassSvgRef.current) {
+      compassSvgRef.current.style.transform = `perspective(60px) rotateX(${Math.min(p, 70)}deg)`;
+    }
+    if (compassGroupRef.current) {
+      compassGroupRef.current.style.transform = `rotate(${-b}deg)`;
+    }
+
     const bounds = map.getBounds();
     const nw = bounds.getNorthWest();
     const se = bounds.getSouthEast();
 
     onBoundsChange(`${nw.lng},${nw.lat},${se.lng},${se.lat}`);
   }, [onBoundsChange]);
+
+  const handleCombinedCompassTilt = () => {
+    if (!mapRef.current) return;
+    const map = mapRef.current.getMap();
+    const currentBearing = map.getBearing();
+    const currentPitch = map.getPitch();
+
+    if (Math.abs(currentBearing) > 0.5 || currentPitch > 5) {
+      mapRef.current.easeTo({ bearing: 0, pitch: 0, duration: 300 });
+    } else {
+      mapRef.current.easeTo({ pitch: 60, duration: 300 });
+    }
+  };
 
   const applyBoundsToFit = useCallback(
     (bounds: [[number, number], [number, number]] | null, animate = true) => {
@@ -714,13 +744,20 @@ const MapView = ({
                 }
               });
             }
-            if (mapRef.current) setCurrentZoom(mapRef.current.getZoom());
+            if (mapRef.current) {
+              const m = mapRef.current.getMap();
+              setCurrentZoom(m.getZoom());
+              setBearing(m.getBearing());
+              setPitch(m.getPitch());
+            }
           }}
           onMove={() => {
             if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
             touchStartRef.current = null;
             updateBounds();
           }}
+          onRotate={updateBounds}
+          onPitch={updateBounds}
           onMoveEnd={updateBounds}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
@@ -849,6 +886,61 @@ const MapView = ({
           Zoom: {currentZoom.toFixed(1)}
         </div>
       )}
+
+      {/* Combined Compass & Tilt Indicator Control */}
+      <button
+        onClick={handleCombinedCompassTilt}
+        style={{
+          position: 'absolute',
+          bottom: '60px',
+          right: '12px',
+          width: '42px',
+          height: '42px',
+          borderRadius: '12px',
+          background: 'white',
+          border: 'none',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          zIndex: 1000,
+          color: 'var(--primary-color)',
+          transition: 'all 0.2s',
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = '#f8f9fa')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'white')}
+        title={`Heading: ${Math.round((bearing % 360 + 360) % 360)}°, Tilt: ${Math.round(pitch)}° (Click to reset)`}
+        aria-label="Compass - Reset bearing to North"
+      >
+        <svg
+          ref={compassSvgRef}
+          width="34"
+          height="34"
+          viewBox="0 0 24 24"
+          style={{
+            transform: `perspective(60px) rotateX(${Math.min(pitch, 70)}deg)`,
+            filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.25))',
+            willChange: 'transform',
+          }}
+        >
+          <g
+            ref={compassGroupRef}
+            style={{
+              transform: `rotate(${-bearing}deg)`,
+              transformOrigin: '12px 12px',
+              willChange: 'transform',
+            }}
+          >
+            {/* Thin outer ring around compass */}
+            <circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.6" />
+            {/* North pointer (solid red) */}
+            <polygon points="12,1 17,12 7,12" fill="#ea4335" />
+            {/* South pointer (solid dark grey) */}
+            <polygon points="12,23 17,12 7,12" fill="#374151" />
+          </g>
+        </svg>
+      </button>
 
       <button
         onClick={handleMyLocation}
