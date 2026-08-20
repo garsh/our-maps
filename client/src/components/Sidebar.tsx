@@ -1327,8 +1327,19 @@ const Sidebar = ({
     input.click();
   };
 
+class MouseSensor extends PointerSensor {
+  static activators = [
+    {
+      eventName: 'onPointerDown' as const,
+      handler: ({ nativeEvent: event }: React.PointerEvent) => {
+        return event.pointerType === 'mouse';
+      },
+    },
+  ];
+}
+
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
       activationConstraint: {
         distance: 5,
       },
@@ -1432,7 +1443,7 @@ const Sidebar = ({
   };
 
   return (
-    <aside style={{ flex: 1, background: 'white', display: 'flex', flexDirection: 'column', padding: isMobile ? '0.2rem 0.6rem 0.6rem 0.6rem' : '0.4rem 0.6rem 0.6rem 0.6rem', boxSizing: 'border-box', overflow: 'hidden', position: 'relative' }}>
+    <aside style={{ flex: 1, minHeight: 0, height: '100%', background: 'white', display: 'flex', flexDirection: 'column', padding: isMobile ? '0.2rem 0.6rem 0.6rem 0.6rem' : '0.4rem 0.6rem 0.6rem 0.6rem', boxSizing: 'border-box', overflow: 'hidden', position: 'relative' }}>
       <DndContext 
         sensors={sensors}
         collisionDetection={customCollisionDetection}
@@ -1762,10 +1773,15 @@ const Sidebar = ({
           ref={scrollContainerRef}
           style={{ 
             flex: 1, 
+            minHeight: 0,
             overflowY: 'auto', 
             paddingRight: '4px', 
             paddingTop: '3px',
-            margin: '0 -4px'
+            paddingBottom: isMobile ? '4rem' : '1.5rem',
+            margin: '0 -4px',
+            touchAction: 'pan-y',
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehaviorY: 'contain'
           }}>
           <SortableContext items={layers.map(layer => layer.id)} strategy={verticalListSortingStrategy}>
             {layers.map((layer) => (
