@@ -58,7 +58,7 @@ class TileWorkerManager {
     this.subscribers.forEach(cb => cb(state));
   }
 
-  public startDownload(mapId: string, tiles: TileInfo[]) {
+  public async startDownload(mapId: string, tiles: TileInfo[]) {
     // If worker is already downloading this map, don't restart it
     if (this.activeMapId === mapId && this.isDownloading && this.activeWorker) {
       this.notifySubscribers();
@@ -74,7 +74,13 @@ class TileWorkerManager {
     this.activeMapId = mapId;
     this.isDownloading = true;
     const totalTiles = tiles.length;
-    const initialCompleted = tiles.filter((t: any) => t.status === 'completed').length;
+    let initialCompleted = tiles.filter((t: any) => t.status === 'completed').length;
+    if (initialCompleted === 0 && mapId) {
+      const stats = await getManifestStats(mapId);
+      if (stats.completed > 0) {
+        initialCompleted = stats.completed;
+      }
+    }
     this.downloadProgress = totalTiles > 0 ? initialCompleted / totalTiles : 0;
     this.tileStats = { completed: initialCompleted, total: totalTiles };
     this.notifySubscribers();

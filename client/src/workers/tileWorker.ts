@@ -18,8 +18,8 @@ self.onmessage = async (e) => {
         try {
             // 1. Add to manifest
             await addToManifest(tiles.map((t: any) => ({
-                ...t,
                 status: 'pending',
+                ...t,
                 mapId,
                 updatedAt: Date.now()
             })));
