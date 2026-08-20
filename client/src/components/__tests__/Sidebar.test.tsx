@@ -277,4 +277,23 @@ describe('Sidebar', () => {
     fireEvent.click(hillshadeOption);
     expect(onToggleHillshade).toHaveBeenCalledWith(false);
   });
+
+  it('hides edit menu items and edit buttons when isOffline is true', () => {
+    const pins = [{ id: 'p1', lat: 0, lng: 0, label: 'Pin 1', position: 0 }];
+    render(<TestWrapper handlers={{ isOffline: true, pins }} />);
+
+    // Open map options menu
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+
+    // Verify edit & offline management menu items are hidden
+    expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
+    expect(screen.queryByText('Share')).not.toBeInTheDocument();
+    expect(screen.queryByText('Import')).not.toBeInTheDocument();
+    expect(screen.queryByText('Download for Offline')).not.toBeInTheDocument();
+    expect(screen.queryByText('New Layer')).not.toBeInTheDocument();
+
+    // Verify Pencil edit button on pin item is hidden
+    expect(screen.queryByLabelText('Edit')).not.toBeInTheDocument();
+  });
 });

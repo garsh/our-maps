@@ -95,6 +95,7 @@ interface MapViewProps {
   onBackgroundClick?: () => void;
   mapTheme?: MapTheme;
   showHillshade?: boolean;
+  isOffline?: boolean;
 }
 
 const UserLocationMarker = () => {
@@ -215,9 +216,10 @@ const MapView = ({
   onBackgroundClick,
   mapTheme = 'light',
   showHillshade = true,
+  isOffline = false,
 }: MapViewProps) => {
   const mapRef = useRef<MapRef | null>(null);
-  const readOnly = userRole === 'view';
+  const readOnly = userRole === 'view' || isOffline;
   const lastTarget = useRef<[number, number] | null>(null);
   const lastTargetPinId = useRef<string | null>(null);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
