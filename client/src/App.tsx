@@ -88,12 +88,10 @@ export function MapEditor() {
   // Mobile layout states
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
 
-  // Dynamic mobile scale: calibrated so DPR ~2.75 (e.g. Pixel 10a) gives scale 1.5.
-  // Higher-DPR devices (e.g. Pixel 10 Pro) automatically get a larger scale so the
-  // UI stays a comfortable physical size regardless of screen resolution.
+  // Dynamic mobile scale: calibrated so DPR ~2.75 gives scale 1.5.
   const computeMobileScale = () => {
     const dpr = window.devicePixelRatio || 1;
-    const BASELINE_DPR = 2.75; // DPR at which 1.5× feels right
+    const BASELINE_DPR = 2.75;
     const BASELINE_SCALE = 1.5;
     return Math.max(1.0, Math.min(2.5, (dpr / BASELINE_DPR) * BASELINE_SCALE));
   };
@@ -1209,23 +1207,21 @@ export function MapEditor() {
           </div>
         )}
 
-        <div style={isMobile ? { 
-          transform: `scale(${mobileScale})`, 
-          transformOrigin: 'top left', 
-          width: `${(1 / mobileScale) * 100}%`, 
-          height: `${(1 / mobileScale) * 100}%`,
-          flex: 'none',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden'
-        } : {
-          flex: 1,
-          minHeight: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden'
+        <div style={{ 
+          flex: 1, 
+          minHeight: 0, 
+          display: 'flex', 
+          flexDirection: 'column', 
+          overflow: 'hidden' 
         }}>
-          <div style={isMobile ? {} : {
+          <div style={(isMobile ? {
+            zoom: mobileScale,
+            flex: 1,
+            minHeight: 0,
+            height: `${(1 / mobileScale) * 100}%`,
+            display: 'flex',
+            flexDirection: 'column'
+          } : {
             transform: 'scale(1.25)',
             transformOrigin: 'top left',
             width: `${(1 / 1.25) * 100}%`,
@@ -1233,7 +1229,7 @@ export function MapEditor() {
             flex: 'none',
             display: 'flex',
             flexDirection: 'column'
-          }}>
+          }) as React.CSSProperties}>
             <Sidebar 
               isMobile={isMobile}
             mapId={mapId}
