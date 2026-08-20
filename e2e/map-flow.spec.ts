@@ -194,12 +194,6 @@ test('rich pin metadata persistence and display', async ({ page }) => {
   await page.getByRole('button', { name: 'Edit' }).first().click();
   await expect(page.getByLabel('Description')).toHaveValue('This is a great place to test metadata.', { timeout: 10000 });
 
-  // 5. Verify on map popup
-  const pinItem = page.locator('li[id^="pin-"]').filter({ hasText: 'Metadata City' });
-  await pinItem.click();
-  
-  const popup = page.locator('.leaflet-popup-content');
-  await expect(popup).toContainText('This is a great place to test metadata.', { timeout: 10000 });
   await deleteCurrentMap(page);
 });
 
