@@ -95,6 +95,7 @@ interface MapViewProps {
   onBackgroundClick?: () => void;
   mapTheme?: MapTheme;
   showHillshade?: boolean;
+  show3D?: boolean;
   isOffline?: boolean;
 }
 
@@ -216,6 +217,7 @@ const MapView = ({
   onBackgroundClick,
   mapTheme = 'light',
   showHillshade = true,
+  show3D = true,
   isOffline = false,
 }: MapViewProps) => {
   const mapRef = useRef<MapRef | null>(null);
@@ -356,27 +358,62 @@ const MapView = ({
       return l;
     });
 
-    if (showHillshade) {
-      const hillshadeLayer = {
-        id: 'hills',
-        type: 'hillshade',
-        source: 'terrainDem',
-        paint: {
-          'hillshade-exaggeration': validFlavor === 'dark' ? 0.35 : 0.45,
-          'hillshade-shadow-color': validFlavor === 'dark' ? '#000000' : '#473B24',
-          'hillshade-highlight-color': validFlavor === 'dark' ? '#2c3340' : '#FFFFFF',
-          'hillshade-accent-color': '#000000',
-        },
-      };
+    // 3D Extruded Buildings layer (active when show3D is toggled on)
+    const building3DColor =
+      validFlavor === 'dark'
+        ? '#2c3340'
+        : validFlavor === 'black'
+        ? '#333333'
+        : validFlavor === 'white'
+        ? '#d0d0d0'
+        : '#e0ded7';
 
-      const insertIndex = customLayers.findIndex(
-        (l: any) => l.id?.includes('water') || l.id?.includes('roads') || l.type === 'symbol'
-      );
-      if (insertIndex !== -1) {
-        customLayers.splice(insertIndex, 0, hillshadeLayer);
-      } else {
-        customLayers.push(hillshadeLayer);
-      }
+    const building3dLayer = {
+      id: '3d-buildings',
+      type: 'fill-extrusion',
+      source: 'protomaps',
+      'source-layer': 'buildings',
+      minzoom: 14,
+      layout: {
+        visibility: show3D ? 'visible' : 'none',
+      },
+      paint: {
+        'fill-extrusion-color': building3DColor,
+        'fill-extrusion-height': ['coalesce', ['get', 'height'], 10],
+        'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+        'fill-extrusion-opacity': 0.8,
+      },
+    };
+
+    const labelIndex = customLayers.findIndex((l: any) => l.type === 'symbol');
+    if (labelIndex !== -1) {
+      customLayers.splice(labelIndex, 0, building3dLayer);
+    } else {
+      customLayers.push(building3dLayer);
+    }
+
+    const hillshadeLayer = {
+      id: 'hills',
+      type: 'hillshade',
+      source: 'terrainElevation',
+      layout: {
+        visibility: showHillshade ? 'visible' : 'none',
+      },
+      paint: {
+        'hillshade-exaggeration': validFlavor === 'dark' ? 0.35 : 0.45,
+        'hillshade-shadow-color': validFlavor === 'dark' ? '#000000' : '#473B24',
+        'hillshade-highlight-color': validFlavor === 'dark' ? '#2c3340' : '#FFFFFF',
+        'hillshade-accent-color': '#000000',
+      },
+    };
+
+    const insertIndex = customLayers.findIndex(
+      (l: any) => l.id?.includes('water') || l.id?.includes('roads') || l.type === 'symbol'
+    );
+    if (insertIndex !== -1) {
+      customLayers.splice(insertIndex, 0, hillshadeLayer);
+    } else {
+      customLayers.push(hillshadeLayer);
     }
 
     return {
@@ -390,22 +427,19 @@ const MapView = ({
           maxzoom: 15,
           attribution: `&copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; <a href="https://openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>`,
         },
-        ...(showHillshade
-          ? {
-              terrainDem: {
-                type: 'raster-dem',
-                tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-                encoding: 'terrarium',
-                tileSize: 256,
-                maxzoom: 15,
-                attribution: '&copy; <a href="https://github.com/tilezen/joerd" target="_blank" rel="noopener">Mapzen / AWS Elevation</a>',
-              },
-            }
-          : {}),
+        terrainElevation: {
+          type: 'raster-dem',
+          tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+          encoding: 'terrarium',
+          tileSize: 256,
+          maxzoom: 15,
+          attribution: '&copy; <a href="https://github.com/tilezen/joerd" target="_blank" rel="noopener">Mapzen / AWS Elevation</a>',
+        },
       },
       layers: customLayers,
+      terrain: show3D ? { source: 'terrainElevation', exaggeration: 1.0 } : undefined,
     };
-  }, [mapTheme, showHillshade]);
+  }, [mapTheme, showHillshade, show3D]);
 
   const visiblePins = useMemo(
     () => pins.filter((pin) => !hiddenLayerIds?.has(pin.layerId || null)),
@@ -538,6 +572,8 @@ const MapView = ({
     }
   }, [targetPinId, pins]);
 
+
+
   // Camera movements for boundsToFit (subsequent changes only, preventing initial zoom shift)
   useEffect(() => {
     if (!isMapLoaded) return;
@@ -597,6 +633,7 @@ const MapView = ({
           doubleClickZoom={false}
           maxZoom={22}
           minZoom={1}
+          maxPitch={85}
           onLoad={(e: any) => {
             setIsMapLoaded(true);
             const map = e.target || mapRef.current?.getMap();

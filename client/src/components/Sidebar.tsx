@@ -27,7 +27,8 @@ import {
   Palette,
   Check,
   ChevronLeft,
-  Mountain
+  Mountain,
+  Box
 } from 'lucide-react';
 import {
   DndContext, 
@@ -129,6 +130,8 @@ interface SidebarProps {
   onThemeChange?: (theme: MapTheme) => void;
   showHillshade?: boolean;
   onToggleHillshade?: (enabled: boolean) => void;
+  show3D?: boolean;
+  onToggle3D?: (enabled: boolean) => void;
   isOffline?: boolean;
 }
 
@@ -1069,6 +1072,8 @@ const Sidebar = ({
   onThemeChange,
   showHillshade = true,
   onToggleHillshade,
+  show3D = true,
+  onToggle3D,
   isOffline = false
 }: SidebarProps) => {
   const [localMapName, setLocalMapName] = useState(mapName);
@@ -1572,6 +1577,35 @@ class MouseSensor extends PointerSensor {
                             <span>Hillshading</span>
                           </div>
                           {showHillshade && <Check size={14} style={{ color: '#3b82f6' }} />}
+                        </div>
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggle3D?.(!show3D);
+                          }}
+                          style={{
+                            padding: '9px 14px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            fontSize: '0.82rem',
+                            fontWeight: show3D ? '700' : '500',
+                            background: show3D ? '#f0f7ff' : 'transparent',
+                            color: show3D ? '#1d4ed8' : 'inherit',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!show3D) e.currentTarget.style.background = 'var(--bg-color)';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!show3D) e.currentTarget.style.background = 'transparent';
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Box size={14} style={{ color: show3D ? '#1d4ed8' : '#64748b' }} />
+                            <span>3D Terrain & Buildings</span>
+                          </div>
+                          {show3D && <Check size={14} style={{ color: '#3b82f6' }} />}
                         </div>
                       </div>
                     </div>
