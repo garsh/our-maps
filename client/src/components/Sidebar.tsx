@@ -25,7 +25,6 @@ import {
   EyeOff,
   Download,
   Palette,
-  Check,
   Mountain,
   Box
 } from 'lucide-react';
@@ -82,9 +81,9 @@ export interface ThemeOption {
 export const MAP_THEMES: ThemeOption[] = [
   { id: 'light', label: 'Light', sublabel: 'Alidade bright palette', previewBg: '#fcfbfa', previewBorder: '#d1d5db', previewAccent: '#fca855' },
   { id: 'dark', label: 'Dark', sublabel: 'Sleek low-light theme', previewBg: '#1e293b', previewBorder: '#334155', previewAccent: '#3b82f6' },
-  { id: 'grayscale', label: 'Grayscale', sublabel: 'Monochrome muted style', previewBg: '#e5e7eb', previewBorder: '#9ca3af', previewAccent: '#6b7280' },
-  { id: 'white', label: 'Minimal White', sublabel: 'Clean minimalist white', previewBg: '#ffffff', previewBorder: '#cbd5e1', previewAccent: '#94a3b8' },
-  { id: 'black', label: 'High Contrast Black', sublabel: 'Dark high contrast', previewBg: '#0f172a', previewBorder: '#475569', previewAccent: '#f59e0b' },
+  { id: 'grayscale', label: 'Gray', sublabel: 'Monochrome muted style', previewBg: '#e5e7eb', previewBorder: '#9ca3af', previewAccent: '#6b7280' },
+  { id: 'white', label: 'White', sublabel: 'Clean minimalist white', previewBg: '#ffffff', previewBorder: '#cbd5e1', previewAccent: '#94a3b8' },
+  { id: 'black', label: 'Black', sublabel: 'Dark high contrast', previewBg: '#0f172a', previewBorder: '#475569', previewAccent: '#f59e0b' },
 ];
 
 interface SidebarProps {
@@ -129,8 +128,10 @@ interface SidebarProps {
   onThemeChange?: (theme: MapTheme) => void;
   showHillshade?: boolean;
   onToggleHillshade?: (enabled: boolean) => void;
-  show3D?: boolean;
-  onToggle3D?: (enabled: boolean) => void;
+  show3DTerrain?: boolean;
+  onToggle3DTerrain?: (enabled: boolean) => void;
+  show3DBuildings?: boolean;
+  onToggle3DBuildings?: (enabled: boolean) => void;
   isOffline?: boolean;
 }
 
@@ -1071,13 +1072,15 @@ const Sidebar = ({
   onThemeChange,
   showHillshade = true,
   onToggleHillshade,
-  show3D = true,
-  onToggle3D,
+  show3DTerrain = true,
+  onToggle3DTerrain,
+  show3DBuildings = true,
+  onToggle3DBuildings,
   isOffline = false
 }: SidebarProps) => {
   const [localMapName, setLocalMapName] = useState(mapName);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [menuTab, setMenuTab] = useState<'main' | 'theme'>('main');
+  const [menuTab, setMenuTab] = useState<'main' | 'appearance'>('main');
   const menuRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -1500,30 +1503,42 @@ class MouseSensor extends PointerSensor {
                       Rename Map
                     </div>
                   )}
-                  {/* Theme item before Share */}
+                  {/* Appearance menu item */}
                   <div style={{ position: 'relative' }}>
                     <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', background: menuTab === 'theme' ? 'var(--bg-color)' : 'transparent' }}
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', background: menuTab === 'appearance' ? 'var(--bg-color)' : 'transparent' }}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setMenuTab(menuTab === 'theme' ? 'main' : 'theme');
+                        setMenuTab(menuTab === 'appearance' ? 'main' : 'appearance');
                       }}
                       onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                       onMouseLeave={(e) => {
-                        if (menuTab !== 'theme') e.currentTarget.style.background = 'transparent';
+                        if (menuTab !== 'appearance') e.currentTarget.style.background = 'transparent';
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <Palette size={16} />
-                        <span>Theme</span>
+                        <span>Appearance</span>
                       </div>
-                      {menuTab === 'theme' ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                      {menuTab === 'appearance' ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                     </div>
-                    {menuTab === 'theme' && (
+                    {menuTab === 'appearance' && (
                       <div 
-                        style={{ position: 'absolute', top: '100%', left: '-1px', width: 'calc(100% + 2px)', background: 'white', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '0 0 var(--radius-md) var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3100 }}
+                        style={{ position: 'absolute', top: '100%', right: '-1px', left: 'auto', width: '240px', background: 'white', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '0 0 var(--radius-md) var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3100 }}
                         onClick={(e) => e.stopPropagation()}
                       >
+                        {/* Theme single-row swatch selector */}
+                        <div
+                          style={{
+                            padding: '10px 10px 8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            borderBottom: '1px solid #f1f5f9',
+                            gap: '6px',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-primary)', flexShrink: 0 }}>Theme:</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flex: 1, justifyContent: 'space-between' }}>
                             {MAP_THEMES.map((theme) => {
                               const isSelected = mapTheme === theme.id;
                               return (
@@ -1534,104 +1549,207 @@ class MouseSensor extends PointerSensor {
                                     onThemeChange?.(theme.id);
                                   }}
                                   style={{
-                                    padding: '9px 14px',
-                                    cursor: 'pointer',
                                     display: 'flex',
+                                    flexDirection: 'column',
                                     alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    fontSize: '0.82rem',
-                                    fontWeight: isSelected ? '700' : '500',
+                                    cursor: 'pointer',
+                                    padding: '3px 3px',
+                                    borderRadius: '12px',
                                     background: isSelected ? '#f0f7ff' : 'transparent',
-                                    color: isSelected ? '#1d4ed8' : 'inherit',
-                                    borderBottom: '1px solid #f1f5f9',
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (!isSelected) e.currentTarget.style.background = 'var(--bg-color)';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    if (!isSelected) e.currentTarget.style.background = 'transparent';
+                                    border: isSelected ? '1.5px solid #3b82f6' : '1.5px solid transparent',
+                                    boxShadow: isSelected ? '0 3px 6px rgba(59, 130, 246, 0.22)' : 'none',
+                                    transform: isSelected ? 'translateY(-2px)' : 'translateY(0)',
+                                    transition: 'all 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
                                   }}
                                 >
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <div
-                                      style={{
-                                        width: '12px',
-                                        height: '12px',
-                                        borderRadius: '50%',
-                                        background: theme.previewBg,
-                                        border: `1.5px solid ${theme.previewBorder}`,
-                                        flexShrink: 0,
-                                      }}
-                                    />
-                                    <span>{theme.label}</span>
-                                  </div>
-                                  {isSelected && <Check size={14} style={{ color: '#3b82f6' }} />}
+                                  <div
+                                    title={theme.label}
+                                    style={{
+                                      width: '16px',
+                                      height: '16px',
+                                      borderRadius: '50%',
+                                      background: theme.previewBg,
+                                      border: `1.5px solid ${theme.previewBorder}`,
+                                      flexShrink: 0,
+                                    }}
+                                  />
+                                  <span
+                                    style={{
+                                      fontSize: '0.62rem',
+                                      fontWeight: isSelected ? '700' : '500',
+                                      color: isSelected ? '#1d4ed8' : '#64748b',
+                                      marginTop: '2px',
+                                      textAlign: 'center',
+                                      lineHeight: '1.1',
+                                      transition: 'color 0.15s ease',
+                                    }}
+                                  >
+                                    {theme.label}
+                                  </span>
                                 </div>
                               );
                             })}
-                            <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '4px', paddingTop: '4px' }}>
+                          </div>
+                        </div>
+
+                        {/* Toggles with pill switches */}
+                        <div>
+                          {/* Hillshading */}
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleHillshade?.(!showHillshade);
+                            }}
+                            style={{
+                              padding: '10px 14px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              fontSize: '0.82rem',
+                              fontWeight: showHillshade ? '600' : '500',
+                              color: 'var(--text-primary)',
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={showHillshade ? '#1d4ed8' : '#64748b'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="m8 3 4 8 5-5 5 15H2L8 3z" />
+                                <path d="M12 11l5 10H12V11z" fill={showHillshade ? '#1d4ed8' : '#64748b'} opacity="0.4" stroke="none" />
+                              </svg>
+                              <span>Hillshading</span>
+                            </div>
+                            <div
+                              style={{
+                                width: '34px',
+                                height: '18px',
+                                borderRadius: '10px',
+                                background: showHillshade ? '#3b82f6' : '#e2e8f0',
+                                position: 'relative',
+                                transition: 'background 0.2s ease',
+                                flexShrink: 0,
+                              }}
+                            >
                               <div
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onToggleHillshade?.(!showHillshade);
-                                }}
                                 style={{
-                                  padding: '9px 14px',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  fontSize: '0.82rem',
-                                  fontWeight: showHillshade ? '700' : '500',
-                                  background: showHillshade ? '#f0f7ff' : 'transparent',
-                                  color: showHillshade ? '#1d4ed8' : 'inherit',
+                                  width: '14px',
+                                  height: '14px',
+                                  borderRadius: '50%',
+                                  background: 'white',
+                                  position: 'absolute',
+                                  top: '2px',
+                                  left: showHillshade ? '18px' : '2px',
+                                  transition: 'left 0.2s ease',
+                                  boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
                                 }}
-                                onMouseEnter={(e) => {
-                                  if (!showHillshade) e.currentTarget.style.background = 'var(--bg-color)';
-                                }}
-                                onMouseLeave={(e) => {
-                                  if (!showHillshade) e.currentTarget.style.background = 'transparent';
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <Mountain size={14} style={{ color: showHillshade ? '#1d4ed8' : '#64748b' }} />
-                                  <span>Hillshading</span>
-                                </div>
-                                {showHillshade && <Check size={14} style={{ color: '#3b82f6' }} />}
-                              </div>
-                              <div
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onToggle3D?.(!show3D);
-                                }}
-                                style={{
-                                  padding: '9px 14px',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  fontSize: '0.82rem',
-                                  fontWeight: show3D ? '700' : '500',
-                                  background: show3D ? '#f0f7ff' : 'transparent',
-                                  color: show3D ? '#1d4ed8' : 'inherit',
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (!show3D) e.currentTarget.style.background = 'var(--bg-color)';
-                                }}
-                                onMouseLeave={(e) => {
-                                  if (!show3D) e.currentTarget.style.background = 'transparent';
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <Box size={14} style={{ color: show3D ? '#1d4ed8' : '#64748b' }} />
-                                  <span>3D Terrain & Buildings</span>
-                                </div>
-                                {show3D && <Check size={14} style={{ color: '#3b82f6' }} />}
-                              </div>
+                              />
                             </div>
                           </div>
-                        )}
+
+                          {/* 3D Terrain */}
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggle3DTerrain?.(!show3DTerrain);
+                            }}
+                            style={{
+                              padding: '10px 14px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              fontSize: '0.82rem',
+                              fontWeight: show3DTerrain ? '600' : '500',
+                              color: 'var(--text-primary)',
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Mountain size={15} style={{ color: show3DTerrain ? '#1d4ed8' : '#64748b' }} />
+                              <span>3D Terrain</span>
+                            </div>
+                            <div
+                              style={{
+                                width: '34px',
+                                height: '18px',
+                                borderRadius: '10px',
+                                background: show3DTerrain ? '#3b82f6' : '#e2e8f0',
+                                position: 'relative',
+                                transition: 'background 0.2s ease',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: '14px',
+                                  height: '14px',
+                                  borderRadius: '50%',
+                                  background: 'white',
+                                  position: 'absolute',
+                                  top: '2px',
+                                  left: show3DTerrain ? '18px' : '2px',
+                                  transition: 'left 0.2s ease',
+                                  boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* 3D Buildings */}
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggle3DBuildings?.(!show3DBuildings);
+                            }}
+                            style={{
+                              padding: '10px 14px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              fontSize: '0.82rem',
+                              fontWeight: show3DBuildings ? '600' : '500',
+                              color: 'var(--text-primary)',
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Box size={15} style={{ color: show3DBuildings ? '#1d4ed8' : '#64748b' }} />
+                              <span>3D Buildings</span>
+                            </div>
+                            <div
+                              style={{
+                                width: '34px',
+                                height: '18px',
+                                borderRadius: '10px',
+                                background: show3DBuildings ? '#3b82f6' : '#e2e8f0',
+                                position: 'relative',
+                                transition: 'background 0.2s ease',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: '14px',
+                                  height: '14px',
+                                  borderRadius: '50%',
+                                  background: 'white',
+                                  position: 'absolute',
+                                  top: '2px',
+                                  left: show3DBuildings ? '18px' : '2px',
+                                  transition: 'left 0.2s ease',
+                                  boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
                       </div>
+                    )}
+                  </div>
                       {!readOnly && (
                         <div 
                           style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}

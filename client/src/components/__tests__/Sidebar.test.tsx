@@ -261,15 +261,15 @@ describe('Sidebar', () => {
     expect(defaultLayerHeader?.textContent).toContain('Default Layer');
   });
 
-  it('allows toggling hillshading in theme menu', () => {
+  it('allows toggling hillshading in appearance menu', () => {
     const onToggleHillshade = vi.fn();
     render(<TestWrapper handlers={{ onToggleHillshade, showHillshade: true }} />);
 
     const moreBtn = screen.getByLabelText(/more options/i);
     fireEvent.click(moreBtn);
 
-    const themeOption = screen.getByText('Theme');
-    fireEvent.click(themeOption);
+    const appearanceOption = screen.getByText('Appearance');
+    fireEvent.click(appearanceOption);
 
     const hillshadeOption = screen.getByText('Hillshading');
     expect(hillshadeOption).toBeInTheDocument();
@@ -278,23 +278,45 @@ describe('Sidebar', () => {
     expect(onToggleHillshade).toHaveBeenCalledWith(false);
   });
 
-  it('keeps theme menu open when a theme is selected', () => {
+  it('allows toggling 3D terrain and 3D buildings in appearance menu', () => {
+    const onToggle3DTerrain = vi.fn();
+    const onToggle3DBuildings = vi.fn();
+    render(<TestWrapper handlers={{ onToggle3DTerrain, show3DTerrain: true, onToggle3DBuildings, show3DBuildings: true }} />);
+
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+
+    const appearanceOption = screen.getByText('Appearance');
+    fireEvent.click(appearanceOption);
+
+    const terrainOption = screen.getByText('3D Terrain');
+    expect(terrainOption).toBeInTheDocument();
+    fireEvent.click(terrainOption);
+    expect(onToggle3DTerrain).toHaveBeenCalledWith(false);
+
+    const buildingsOption = screen.getByText('3D Buildings');
+    expect(buildingsOption).toBeInTheDocument();
+    fireEvent.click(buildingsOption);
+    expect(onToggle3DBuildings).toHaveBeenCalledWith(false);
+  });
+
+  it('keeps appearance menu open when a theme is selected', () => {
     const onThemeChange = vi.fn();
     render(<TestWrapper handlers={{ onThemeChange, mapTheme: 'light' }} />);
 
     const moreBtn = screen.getByLabelText(/more options/i);
     fireEvent.click(moreBtn);
 
-    const themeOption = screen.getByText('Theme');
-    fireEvent.click(themeOption);
+    const appearanceOption = screen.getByText('Appearance');
+    fireEvent.click(appearanceOption);
 
-    const darkOption = screen.getByText('Dark');
-    expect(darkOption).toBeInTheDocument();
+    const darkSwatch = screen.getByTitle('Dark');
+    expect(darkSwatch).toBeInTheDocument();
 
-    fireEvent.click(darkOption);
+    fireEvent.click(darkSwatch);
     expect(onThemeChange).toHaveBeenCalledWith('dark');
-    // Verify menu is still open and showing theme options
-    expect(screen.getByText('Dark')).toBeInTheDocument();
+    // Verify menu is still open and showing appearance options
+    expect(screen.getByTitle('Dark')).toBeInTheDocument();
     expect(screen.getByText('Hillshading')).toBeInTheDocument();
   });
 
