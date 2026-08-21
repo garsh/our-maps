@@ -85,14 +85,28 @@ export function MapEditor() {
     localStorage.setItem('ourmaps_hillshade', String(enabled));
   };
 
-  const [show3D, setShow3D] = useState<boolean>(() => {
-    const saved = localStorage.getItem('ourmaps_3d');
-    return saved !== null ? saved === 'true' : true;
+  const [show3DTerrain, setShow3DTerrain] = useState<boolean>(() => {
+    const saved = localStorage.getItem('ourmaps_3d_terrain');
+    if (saved !== null) return saved === 'true';
+    const legacy = localStorage.getItem('ourmaps_3d');
+    return legacy !== null ? legacy === 'true' : true;
   });
 
-  const handleToggle3D = (enabled: boolean) => {
-    setShow3D(enabled);
-    localStorage.setItem('ourmaps_3d', String(enabled));
+  const handleToggle3DTerrain = (enabled: boolean) => {
+    setShow3DTerrain(enabled);
+    localStorage.setItem('ourmaps_3d_terrain', String(enabled));
+  };
+
+  const [show3DBuildings, setShow3DBuildings] = useState<boolean>(() => {
+    const saved = localStorage.getItem('ourmaps_3d_buildings');
+    if (saved !== null) return saved === 'true';
+    const legacy = localStorage.getItem('ourmaps_3d');
+    return legacy !== null ? legacy === 'true' : true;
+  });
+
+  const handleToggle3DBuildings = (enabled: boolean) => {
+    setShow3DBuildings(enabled);
+    localStorage.setItem('ourmaps_3d_buildings', String(enabled));
   };
 
   // Mobile layout states
@@ -1328,8 +1342,10 @@ export function MapEditor() {
             onThemeChange={handleThemeChange}
             showHillshade={showHillshade}
             onToggleHillshade={handleToggleHillshade}
-            show3D={show3D}
-            onToggle3D={handleToggle3D}
+            show3DTerrain={show3DTerrain}
+            onToggle3DTerrain={handleToggle3DTerrain}
+            show3DBuildings={show3DBuildings}
+            onToggle3DBuildings={handleToggle3DBuildings}
           />
         </div>
       </div>
@@ -1369,7 +1385,8 @@ export function MapEditor() {
             leftPadding={isMobile ? 0 : sidebarWidth}
             mapTheme={mapTheme}
             showHillshade={showHillshade}
-            show3D={show3D}
+            show3DTerrain={show3DTerrain}
+            show3DBuildings={show3DBuildings}
           />
         </div>
       </main>

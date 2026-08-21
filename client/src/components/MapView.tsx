@@ -95,7 +95,8 @@ interface MapViewProps {
   onBackgroundClick?: () => void;
   mapTheme?: MapTheme;
   showHillshade?: boolean;
-  show3D?: boolean;
+  show3DTerrain?: boolean;
+  show3DBuildings?: boolean;
   isOffline?: boolean;
 }
 
@@ -217,7 +218,8 @@ const MapView = ({
   onBackgroundClick,
   mapTheme = 'light',
   showHillshade = true,
-  show3D = true,
+  show3DTerrain = true,
+  show3DBuildings = true,
   isOffline = false,
 }: MapViewProps) => {
   const mapRef = useRef<MapRef | null>(null);
@@ -300,7 +302,7 @@ const MapView = ({
     const map = mapRef.current.getMap();
     if (!map) return;
 
-    if (show3D) {
+    if (show3DTerrain) {
       try {
         map.setTerrain(null);
         setTimeout(() => {
@@ -318,7 +320,7 @@ const MapView = ({
     } else {
       map.triggerRepaint();
     }
-  }, [mapTheme, show3D]);
+  }, [mapTheme, show3DTerrain]);
 
   const mapStyle = useMemo<any>(() => {
     const pmtilesUrl = `${window.location.origin}/maps/planet.pmtiles`;
@@ -333,7 +335,7 @@ const MapView = ({
         layout: layer.layout ? { ...layer.layout } : {},
       };
 
-      if (l.id === 'buildings' && show3D) {
+      if (l.id === 'buildings' && show3DBuildings) {
         l.layout['visibility'] = 'none';
       }
 
@@ -344,7 +346,7 @@ const MapView = ({
         if (l.id === 'water') l.paint['fill-color'] = '#a0c8f0';
         if (l.id.includes('water_river') || l.id.includes('water_stream')) l.paint['line-color'] = '#a0c8f0';
         if (l.id === 'landuse_park' || l.id === 'landuse_urban_green') l.paint['fill-color'] = '#d8ebd2';
-        if (l.id === 'buildings' && !show3D) { l.paint['fill-color'] = '#e8e4dc'; l.paint['fill-opacity'] = 0.7; }
+        if (l.id === 'buildings' && !show3DBuildings) { l.paint['fill-color'] = '#e8e4dc'; l.paint['fill-opacity'] = 0.7; }
         if (l.id === 'landuse_school') l.paint['fill-color'] = '#fbf3d5';
         if (l.id === 'landuse_hospital') l.paint['fill-color'] = '#f6e5e5';
         if (l.id === 'landuse_industrial') l.paint['fill-color'] = '#eceeef';
@@ -416,7 +418,7 @@ const MapView = ({
       'source-layer': 'buildings',
       minzoom: 14,
       layout: {
-        visibility: show3D ? 'visible' : 'none',
+        visibility: show3DBuildings ? 'visible' : 'none',
       },
       paint: {
         'fill-extrusion-color': building3DColor,
@@ -509,9 +511,9 @@ const MapView = ({
         },
       },
       layers: customLayers,
-      terrain: show3D ? { source: 'terrainElevation', exaggeration: 1.0 } : undefined,
+      terrain: show3DTerrain ? { source: 'terrainElevation', exaggeration: 1.0 } : undefined,
     };
-  }, [mapTheme, showHillshade, show3D]);
+  }, [mapTheme, showHillshade, show3DTerrain, show3DBuildings]);
 
   const visiblePins = useMemo(
     () => pins.filter((pin) => !hiddenLayerIds?.has(pin.layerId || null)),
