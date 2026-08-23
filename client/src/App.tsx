@@ -466,24 +466,6 @@ export function MapEditor() {
         setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
       });
 
-      socket.on('map-remote-updated', (data: { pins: Pin[], layers: PinLayer[], name: string }) => {
-        if (!data || !data.pins || !data.layers) {
-          console.warn('[SOCKET] Received malformed remote update');
-          return;
-        }
-        
-        console.log('[SOCKET] Received remote update for pins:', data.pins.length);
-        isRemoteUpdateRef.current = true;
-        setPins(data.pins);
-        setLayers(data.layers);
-        setMapName(data.name || '');
-
-        setTimeout(() => {
-            isRemoteUpdateRef.current = false;
-        }, 1000);
-      });
-
-
       return () => {
         socket.disconnect();
         socketRef.current = null;
@@ -697,56 +679,35 @@ export function MapEditor() {
     setHoveredPinId(null);
   }, []);
 
-  const handleMapClick = useCallback(async (lat: number, lng: number) => {
-    if (Date.now() < ignoreMapClickUntil.current || userRole === 'view' || isOffline) return;
-    const idVal = generateId();
-    const defaultPins = pins.filter(p => isSameLayer(p.layerId, undefined));
-    const nextPosition = defaultPins.length > 0 ? Math.max(...defaultPins.map(p => p.position)) + 1 : 0;
-    const newPin: Pin = {
-      id: idVal,
-      lat,
-      lng,
-      label: `Pin ${pins.length + 1}`,
-      position: nextPosition
-    };
-    setPins(prev => [...prev, newPin]);
-    handleEditPin(newPin);
+  const getNextPinPosition = (allPins: Pin[], targetLayerId?: string): number => {
+    const layerPins = allPins.filter(p => isSameLayer(p.layerId, targetLayerId));
+    return layerPins.length > 0 ? Math.max(...layerPins.map(p => p.position)) + 1 : 0;
+  };
 
-    if (mapId) {
-      socketRef.current?.emit('pin-create', { mapId, layerId: newPin.layerId === undefined ? null : newPin.layerId, pin: newPin });
-    }
-
-    // Geocode once on creation
-    const address = await reverseGeocode(lat, lng);
-    if (address) {
-      setPins(prev => prev.map(p => p.id === idVal ? { ...p, address } : p));
-      if (mapId) {
-        socketRef.current?.emit('pin-update', { mapId, pinId: idVal, updates: { address } });
-      }
-    }
-  }, [pins, userRole, isOffline, mapId]);
-
-  const addPinAtLocation = async (lat: number, lng: number, label: string, address?: string) => {
+  const addPinAtLocation = async (lat: number, lng: number, label?: string, address?: string, autoEdit = false) => {
     if (userRole === 'view' || isOffline) return;
     const idVal = generateId();
-    const defaultPins = pins.filter(p => isSameLayer(p.layerId, undefined));
-    const nextPosition = defaultPins.length > 0 ? Math.max(...defaultPins.map(p => p.position)) + 1 : 0;
+    const nextPosition = getNextPinPosition(pins, undefined);
+    const pinLabel = label || `Pin ${pins.length + 1}`;
     const newPin: Pin = {
       id: idVal,
       lat,
       lng,
-      label: label,
-      address, // Use provided address if available
+      label: pinLabel,
+      address,
       position: nextPosition
     };
     setPins(prev => [...prev, newPin]);
-    handlePinSelect(idVal); // Highlight the new pin without opening edit mode
+    if (autoEdit) {
+      handleEditPin(newPin);
+    } else {
+      handlePinSelect(idVal);
+    }
 
     if (mapId) {
       socketRef.current?.emit('pin-create', { mapId, layerId: newPin.layerId === undefined ? null : newPin.layerId, pin: newPin });
     }
 
-    // Geocode only if address is missing
     if (!address) {
       const fetchedAddress = await reverseGeocode(lat, lng);
       if (fetchedAddress) {
@@ -757,6 +718,11 @@ export function MapEditor() {
       }
     }
   };
+
+  const handleMapClick = useCallback((lat: number, lng: number) => {
+    if (Date.now() < ignoreMapClickUntil.current || userRole === 'view' || isOffline) return;
+    addPinAtLocation(lat, lng, undefined, undefined, true);
+  }, [pins, userRole, isOffline, mapId]);
 
   const removePin = (targetId: string) => {
     if (userRole === 'view' || isOffline) return;
@@ -790,9 +756,7 @@ export function MapEditor() {
     if ('layerId' in updates) {
       const targetLayerId = updates.layerId; // undefined = Default Layer
       const pinsInTargetLayer = pins.filter(p => p.id !== targetId && isSameLayer(p.layerId, targetLayerId));
-      const endPosition = pinsInTargetLayer.length > 0
-        ? Math.max(...pinsInTargetLayer.map(p => p.position)) + 1
-        : 0;
+      const endPosition = getNextPinPosition(pinsInTargetLayer, targetLayerId);
       computedUpdates = { ...updates, position: endPosition };
     }
 
@@ -876,8 +840,6 @@ export function MapEditor() {
     if (userRole === 'view' || isOffline) return;
     const remainingLayers = layers.filter(g => g.id !== targetId);
     setLayers(remainingLayers);
-    
-    let defaultLayerPinOrder: string[] = [];
 
     setPins(prev => {
       const defaultPins = prev.filter(p => isSameLayer(p.layerId, undefined));
@@ -885,26 +847,17 @@ export function MapEditor() {
         ? Math.max(...defaultPins.map(p => p.position))
         : -1;
 
-      const updated = prev.map(p => {
+      return prev.map(p => {
         if (p.layerId === targetId) {
           currentMaxPos += 1;
           return { ...p, layerId: undefined, position: currentMaxPos };
         }
         return p;
       });
-
-      const allDefaultPins = updated
-        .filter(p => isSameLayer(p.layerId, undefined))
-        .sort(comparePinPositions);
-      defaultLayerPinOrder = allDefaultPins.map(p => p.id);
-
-      return updated;
     });
 
     if (mapId) {
       socketRef.current?.emit('layer-delete', { mapId, layerId: targetId });
-      socketRef.current?.emit('pins-reorder', { mapId, layerId: null, pinOrder: defaultLayerPinOrder });
-      socketRef.current?.emit('layers-reorder', { mapId, layerOrder: remainingLayers.map(l => l.id) });
     }
   };
 

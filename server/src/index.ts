@@ -127,108 +127,29 @@ io.on('connection', (socket: Socket) => {
   });
 
   // Granular Delta Events
-  socket.on('pin-create', async (data: PinCreatePayload) => {
-    try {
-      await realtime.handlePinCreate(data);
-      socket.to(`map:${data.mapId}`).emit('pin-create', data);
-      console.log(`[SOCKET] pin-create on map:${data.mapId} by ${socket.id}`);
-    } catch (err) {
-      console.error(`[SOCKET] ERROR pin-create:`, err);
-    }
-  });
+  const deltaHandlers: Record<string, (data: any) => Promise<void>> = {
+    'pin-create': realtime.handlePinCreate,
+    'pin-update': realtime.handlePinUpdate,
+    'pin-delete': realtime.handlePinDelete,
+    'pins-reorder': realtime.handlePinsReorder,
+    'layer-create': realtime.handleLayerCreate,
+    'layer-update': realtime.handleLayerUpdate,
+    'layer-delete': realtime.handleLayerDelete,
+    'layers-reorder': realtime.handleLayersReorder,
+    'map-name-update': realtime.handleMapNameUpdate,
+  };
 
-  socket.on('pin-update', async (data: PinUpdatePayload) => {
-    try {
-      await realtime.handlePinUpdate(data);
-      socket.to(`map:${data.mapId}`).emit('pin-update', data);
-      console.log(`[SOCKET] pin-update on map:${data.mapId} by ${socket.id}`);
-    } catch (err) {
-      console.error(`[SOCKET] ERROR pin-update:`, err);
-    }
-  });
-
-  socket.on('pin-delete', async (data: PinDeletePayload) => {
-    try {
-      await realtime.handlePinDelete(data);
-      socket.to(`map:${data.mapId}`).emit('pin-delete', data);
-      console.log(`[SOCKET] pin-delete on map:${data.mapId} by ${socket.id}`);
-    } catch (err) {
-      console.error(`[SOCKET] ERROR pin-delete:`, err);
-    }
-  });
-
-  socket.on('pins-reorder', async (data: PinsReorderPayload) => {
-    try {
-      await realtime.handlePinsReorder(data);
-      socket.to(`map:${data.mapId}`).emit('pins-reorder', data);
-      console.log(`[SOCKET] pins-reorder on map:${data.mapId} by ${socket.id}`);
-    } catch (err) {
-      console.error(`[SOCKET] ERROR pins-reorder:`, err);
-    }
-  });
-
-  socket.on('layer-create', async (data: LayerCreatePayload) => {
-    try {
-      await realtime.handleLayerCreate(data);
-      socket.to(`map:${data.mapId}`).emit('layer-create', data);
-      console.log(`[SOCKET] layer-create on map:${data.mapId} by ${socket.id}`);
-    } catch (err) {
-      console.error(`[SOCKET] ERROR layer-create:`, err);
-    }
-  });
-
-  socket.on('layer-update', async (data: LayerUpdatePayload) => {
-    try {
-      await realtime.handleLayerUpdate(data);
-      socket.to(`map:${data.mapId}`).emit('layer-update', data);
-      console.log(`[SOCKET] layer-update on map:${data.mapId} by ${socket.id}`);
-    } catch (err) {
-      console.error(`[SOCKET] ERROR layer-update:`, err);
-    }
-  });
-
-  socket.on('layer-delete', async (data: LayerDeletePayload) => {
-    try {
-      await realtime.handleLayerDelete(data);
-      socket.to(`map:${data.mapId}`).emit('layer-delete', data);
-      console.log(`[SOCKET] layer-delete on map:${data.mapId} by ${socket.id}`);
-    } catch (err) {
-      console.error(`[SOCKET] ERROR layer-delete:`, err);
-    }
-  });
-
-  socket.on('layers-reorder', async (data: LayersReorderPayload) => {
-    try {
-      await realtime.handleLayersReorder(data);
-      socket.to(`map:${data.mapId}`).emit('layers-reorder', data);
-      console.log(`[SOCKET] layers-reorder on map:${data.mapId} by ${socket.id}`);
-    } catch (err) {
-      console.error(`[SOCKET] ERROR layers-reorder:`, err);
-    }
-  });
-
-  socket.on('map-name-update', async (data: MapNameUpdatePayload) => {
-    try {
-      await realtime.handleMapNameUpdate(data);
-      socket.to(`map:${data.mapId}`).emit('map-name-update', data);
-      console.log(`[SOCKET] map-name-update on map:${data.mapId} by ${socket.id}`);
-    } catch (err) {
-      console.error(`[SOCKET] ERROR map-name-update:`, err);
-    }
-  });
-
-  // Legacy snapshot event for backward compatibility
-  socket.on('map-updated', (data: { mapId: string, pins?: any[], layers?: any[], name: string }) => {
-    const safePayload = {
-      mapId: data.mapId,
-      name: data.name || 'Unnamed Map',
-      pins: Array.isArray(data.pins) ? data.pins : [],
-      layers: Array.isArray(data.layers) ? data.layers : []
-    };
-    
-    socket.to(`map:${data.mapId}`).emit('map-remote-updated', safePayload);
-    console.log(`[SOCKET] Map ${data.mapId} updated by ${socket.id} (Pins: ${safePayload.pins.length})`);
-  });
+  for (const [eventName, handler] of Object.entries(deltaHandlers)) {
+    socket.on(eventName, async (data: any) => {
+      try {
+        await handler(data);
+        socket.to(`map:${data.mapId}`).emit(eventName, data);
+        console.log(`[SOCKET] ${eventName} on map:${data.mapId} by ${socket.id}`);
+      } catch (err) {
+        console.error(`[SOCKET] ERROR ${eventName}:`, err);
+      }
+    });
+  }
 
   socket.on('disconnect', () => {
     console.log('[SOCKET] User disconnected:', socket.id);
@@ -251,14 +172,6 @@ const candidateMapsDirs = [
   path.resolve(process.cwd(), 'public/sprites'),
   path.resolve(process.cwd(), 'public'),
 
-  // Going up levels from process.cwd() (e.g. when process.cwd() is server/)
-  path.resolve(process.cwd(), '../data/maps'),
-  path.resolve(process.cwd(), '../data/sprites'),
-  path.resolve(process.cwd(), '../data'),
-  path.resolve(process.cwd(), '../server/public/maps'),
-  path.resolve(process.cwd(), '../server/public/sprites'),
-  path.resolve(process.cwd(), '../server/public'),
-
   // Relative to __dirname (dev ts-node in src/ vs prod dist/server/src/)
   path.resolve(__dirname, '../../data/maps'),
   path.resolve(__dirname, '../../data/sprites'),
@@ -266,21 +179,12 @@ const candidateMapsDirs = [
   path.resolve(__dirname, '../public/maps'),
   path.resolve(__dirname, '../public/sprites'),
   path.resolve(__dirname, '../public'),
-  path.resolve(__dirname, '../../public/maps'),
-  path.resolve(__dirname, '../../public/sprites'),
-  path.resolve(__dirname, '../../public'),
   path.resolve(__dirname, '../../../data/maps'),
   path.resolve(__dirname, '../../../data/sprites'),
   path.resolve(__dirname, '../../../data'),
   path.resolve(__dirname, '../../../public/maps'),
   path.resolve(__dirname, '../../../public/sprites'),
   path.resolve(__dirname, '../../../public'),
-  path.resolve(__dirname, '../../../../data/maps'),
-  path.resolve(__dirname, '../../../../data/sprites'),
-  path.resolve(__dirname, '../../../../data'),
-  path.resolve(__dirname, '../../../../public/maps'),
-  path.resolve(__dirname, '../../../../public/sprites'),
-  path.resolve(__dirname, '../../../../public'),
 ].filter(Boolean) as string[];
 
 const mapsDir = candidateMapsDirs.find((d) => fs.existsSync(d)) || candidateMapsDirs[0];

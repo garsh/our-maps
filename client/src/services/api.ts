@@ -30,6 +30,21 @@ const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 
   }
 };
 
+const handleResponse = async <T>(res: Response, logoutCb?: (() => void) | null, fallbackErrMsg = 'Request failed'): Promise<T> => {
+  if (res.status === 401) {
+    const err = await res.json().catch(() => ({}));
+    console.error('[API] Unauthorized:', err.error);
+    logoutCb?.();
+    throw new Error(err.error || 'Unauthorized: Please sign in again');
+  }
+  if (!res.ok) {
+    if (res.status === 404) throw new Error('Map not found');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || fallbackErrMsg);
+  }
+  return res.json();
+};
+
 export const apiService = {
   _logoutCallback: null as (() => void) | null,
   
@@ -54,30 +69,13 @@ export const apiService = {
 
   async getMaps(): Promise<any[]> {
     const res = await fetchWithRetry(`${API_BASE}/maps`, { headers: getHeaders() });
-    if (res.status === 401) {
-        const err = await res.json().catch(() => ({}));
-        console.error('[API] Unauthorized:', err.error);
-        this._logoutCallback?.();
-        throw new Error(err.error || 'Unauthorized: Please sign in again');
-    }
-    if (!res.ok) throw new Error(`Server error: ${res.status}`);
-    return res.json();
+    return handleResponse<any[]>(res, this._logoutCallback, `Server error: ${res.status}`);
   },
 
   async getMap(id: string): Promise<MapData> {
     try {
       const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, { headers: getHeaders() });
-      if (res.status === 401) {
-          const err = await res.json().catch(() => ({}));
-          console.error('[API] Unauthorized:', err.error);
-          this._logoutCallback?.();
-          throw new Error(err.error || 'Unauthorized: Please sign in again');
-      }
-      if (!res.ok) {
-          if (res.status === 404) throw new Error('Map not found');
-          throw new Error(`Server error: ${res.status}`);
-      }
-      const data: MapData = await res.json();
+      const data = await handleResponse<MapData>(res, this._logoutCallback, `Server error: ${res.status}`);
       isMapDownloaded(id).then(downloaded => {
         if (downloaded) saveMapOffline(data);
       }).catch(() => {});
@@ -98,13 +96,7 @@ export const apiService = {
         headers: getHeaders(),
         body: JSON.stringify(mapData),
       });
-      if (!res.ok) {
-        if (res.status === 401) this._logoutCallback?.();
-        const text = await res.text();
-        console.error('API createMap failed:', text);
-        throw new Error('Failed to create map');
-      }
-      return res.json();
+      return await handleResponse<MapData>(res, this._logoutCallback, 'Failed to create map');
     } catch (err) {
       console.error('API createMap FETCH ERROR:', err);
       throw err;
@@ -117,12 +109,7 @@ export const apiService = {
       headers: getHeaders(),
       body: JSON.stringify({ name, layers, pins }),
     });
-    if (!res.ok) {
-        if (res.status === 401) this._logoutCallback?.();
-        const err = await res.json();
-        throw new Error(err.error || 'Failed to update map');
-    }
-    return res.json();
+    return handleResponse<{ message: string }>(res, this._logoutCallback, 'Failed to update map');
   },
 
   async shareMap(id: string, email: string, role: 'view' | 'edit' | 'owner'): Promise<any> {
@@ -131,12 +118,7 @@ export const apiService = {
       headers: getHeaders(),
       body: JSON.stringify({ email, role }),
     });
-    if (!res.ok) {
-      if (res.status === 401) this._logoutCallback?.();
-      const err = await res.json();
-      throw new Error(err.error || 'Failed to share map');
-    }
-    return res.json();
+    return handleResponse<any>(res, this._logoutCallback, 'Failed to share map');
   },
 
   async filterContacts(emails: string[]): Promise<{ existingEmails: string[] }> {
@@ -145,23 +127,14 @@ export const apiService = {
       headers: getHeaders(),
       body: JSON.stringify({ emails }),
     });
-    if (!res.ok) {
-      if (res.status === 401) this._logoutCallback?.();
-      const err = await res.json();
-      throw new Error(err.error || 'Failed to filter contacts');
-    }
-    return res.json();
+    return handleResponse<{ existingEmails: string[] }>(res, this._logoutCallback, 'Failed to filter contacts');
   },
 
   async searchUsers(query: string): Promise<{ users: any[] }> {
     const res = await fetchWithRetry(`${API_BASE}/auth/search-users?q=${encodeURIComponent(query)}`, {
       headers: getHeaders(),
     });
-    if (!res.ok) {
-      if (res.status === 401) this._logoutCallback?.();
-      throw new Error('Failed to search users');
-    }
-    return res.json();
+    return handleResponse<{ users: any[] }>(res, this._logoutCallback, 'Failed to search users');
   },
 
   async removeShare(id: string, userId: string): Promise<any> {
@@ -169,9 +142,7 @@ export const apiService = {
       method: 'DELETE',
       headers: getHeaders(),
     });
-    if (res.status === 401) this._logoutCallback?.();
-    if (!res.ok) throw new Error('Failed to remove share');
-    return res.json();
+    return handleResponse<any>(res, this._logoutCallback, 'Failed to remove share');
   },
 
   async deleteMap(id: string): Promise<any> {
@@ -179,9 +150,7 @@ export const apiService = {
       method: 'DELETE',
       headers: getHeaders(),
     });
-    if (res.status === 401) this._logoutCallback?.();
-    if (!res.ok) throw new Error('Failed to delete map');
-    return res.json();
+    return handleResponse<any>(res, this._logoutCallback, 'Failed to delete map');
   },
 
   async search(query: string, bounds?: string | null): Promise<any[]> {
@@ -190,16 +159,12 @@ export const apiService = {
       url += `&bounds=${encodeURIComponent(bounds)}`;
     }
     const res = await fetchWithRetry(url, { headers: getHeaders() });
-    if (res.status === 401) this._logoutCallback?.();
-    if (!res.ok) throw new Error('Search failed');
-    return res.json();
+    return handleResponse<any[]>(res, this._logoutCallback, 'Search failed');
   },
 
   async reverseGeocode(lat: number, lng: number): Promise<string | null> {
     const res = await fetchWithRetry(`${API_BASE}/places/reverse-geocode?lat=${lat}&lng=${lng}`, { headers: getHeaders() });
-    if (res.status === 401) this._logoutCallback?.();
-    if (!res.ok) throw new Error('Reverse geocode failed');
-    const data = await res.json();
+    const data = await handleResponse<{ address?: string }>(res, this._logoutCallback, 'Reverse geocode failed');
     return data.address || null;
   }
 };

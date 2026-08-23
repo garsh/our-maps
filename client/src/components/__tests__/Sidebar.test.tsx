@@ -338,4 +338,41 @@ describe('Sidebar', () => {
     // Verify Pencil edit button on pin item is hidden
     expect(screen.queryByLabelText('Edit')).not.toBeInTheDocument();
   });
+
+  it('calls onRemoveLayer when Delete Layer button is confirmed', () => {
+    const onRemoveLayer = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const layers = [{ id: 'layer-test-1', name: 'Test Layer', position: 0 }];
+
+    render(<TestWrapper handlers={{ layers, onRemoveLayer }} />);
+
+    // Double-click layer name to enter inline editing mode
+    const layerName = screen.getByText(/Test Layer/i);
+    fireEvent.doubleClick(layerName);
+
+    // Delete button should now be rendered
+    const deleteBtn = screen.getByTitle('Delete Layer');
+    fireEvent.click(deleteBtn);
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(onRemoveLayer).toHaveBeenCalledWith('layer-test-1');
+
+    confirmSpy.mockRestore();
+  });
+
+  it('calls onRemovePin when pin delete button is clicked', () => {
+    const onRemovePin = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(<TestWrapper handlers={{ onRemovePin }} />);
+
+    fireEvent.click(screen.getByLabelText('Edit'));
+    const deletePinBtn = screen.getByTitle('Delete Pin');
+    fireEvent.click(deletePinBtn);
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(onRemovePin).toHaveBeenCalledWith('1');
+
+    confirmSpy.mockRestore();
+  });
 });
