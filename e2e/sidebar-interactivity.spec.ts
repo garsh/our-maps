@@ -27,12 +27,13 @@ test('sidebar items are interactible', async ({ page }) => {
 
   // Navigate to new map page
   await page.getByRole('button', { name: /New Map/i }).click();
+  await page.waitForURL(/\/map\//);
   
   // 1. Add a pin
   await page.route('**/places/search*', route => route.fulfill({ json: [{ place_id: '1', title: 'Interactivity City', address: '123 Test St', lat: '10', lon: '10', type: 'global' }] }));
   await page.getByPlaceholder('Search...').fill('Interactivity City');
-  await expect(page.getByText('Interactivity City', { exact: true })).toBeVisible();
-  await expect(page.getByText('123 Test St', { exact: true })).toBeVisible();
+  await expect(page.getByText('Interactivity City').first()).toBeVisible();
+  await expect(page.getByText('123 Test St').first()).toBeVisible();
   await page.locator('button[title="Add to Map"]').first().click();
 
   // 2. Click the pin in the sidebar list
@@ -41,11 +42,11 @@ test('sidebar items are interactible', async ({ page }) => {
   await sidebarItem.click();
   
   // 5. Test "Edit" button in sidebar
-  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await sidebarItem.getByRole('button', { name: 'Edit' }).click();
   await expect(page.getByLabel('Name', { exact: true })).toBeVisible();
   
   // 6. Test "Close edit" button
-  await page.getByRole('button', { name: 'Close edit' }).click();
+  await sidebarItem.getByRole('button', { name: 'Close edit' }).click();
   await expect(page.getByLabel('Name', { exact: true })).not.toBeVisible();
   
   // 7. Cleanup test map

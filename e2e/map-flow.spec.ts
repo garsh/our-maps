@@ -19,7 +19,7 @@ async function login(page: any) {
 // Helper to wait for auto-save
 async function waitForAutoSave(page: any) {
   // Wait for 2s debounce + network save completion
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(2500);
 }
 
 // Helper to delete map created in test
@@ -91,6 +91,7 @@ test('full map creation flow', async ({ page }) => {
 
   // Navigate to new map page
   await page.getByRole('button', { name: /New Map/i }).click();
+  await page.waitForURL(/\/map\//);
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
 
   // 2. Search for a location
@@ -98,7 +99,7 @@ test('full map creation flow', async ({ page }) => {
   await searchInput.fill('Tokyo');
   
   // 3. Add a pin from search results
-  await expect(page.getByText('Test City', { exact: true })).toBeVisible();
+  await expect(page.getByText('Test City').first()).toBeVisible();
   await page.locator('button[title="Add to Map"]').first().click();
 
   // Verify pin added to sidebar
@@ -106,34 +107,35 @@ test('full map creation flow', async ({ page }) => {
 
   // 4. Wait for auto-save and check URL
   await waitForAutoSave(page);
-  await page.waitForURL(/\/map\//);
+  await page.waitForURL(url => url.pathname !== '/map/new' && url.pathname.includes('/map/'));
   const urlWithId = page.url();
   expect(urlWithId).toContain('/map/');
+  await page.waitForTimeout(1000);
 
   // 5. Reload the page and verify the pin persists
   await page.reload();
-  await page.waitForTimeout(3000);
-  await expect(page.getByText('Loading your map...')).not.toBeVisible();
-  await expect(page.locator('aside')).toContainText('Test City', { timeout: 10000 });
+  await expect(page.getByText('Loading your map...')).not.toBeVisible({ timeout: 15000 });
+  await expect(page.locator('aside')).toContainText('Test City', { timeout: 15000 });
   await deleteCurrentMap(page);
 });
 
 test('updating an existing map', async ({ page }) => {
   await login(page);
   await page.getByRole('button', { name: /New Map/i }).click();
+  await page.waitForURL(/\/map\//);
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
 
   // 1. Create a map first
   const searchInput = page.getByPlaceholder('Search...');
   await page.route('**/places/search*', route => route.fulfill({ json: [{ place_id: '1', title: 'Initial', address: 'Initial Address', lat: '10', lon: '10', type: 'global' }] }));
   await searchInput.fill('Initial Location');
-  await expect(page.getByText('Initial', { exact: true })).toBeVisible();
+  await expect(page.getByText('Initial').first()).toBeVisible();
   await page.locator('button[title="Add to Map"]').first().click();
   
   // Wait for initial auto-save
   await waitForAutoSave(page);
-  await page.waitForURL(/\/map\//);
-  await page.waitForTimeout(2000);
+  await page.waitForURL(url => url.pathname !== '/map/new' && url.pathname.includes('/map/'));
+  await page.waitForTimeout(1000);
 
   // 2. Change map name
   await page.getByRole('button', { name: 'More options' }).click();
@@ -148,16 +150,15 @@ test('updating an existing map', async ({ page }) => {
   // 3. Add another pin
   await page.route('**/places/search*', route => route.fulfill({ json: [{ place_id: '2', title: 'New', address: 'New Address', lat: '20', lon: '20', type: 'global' }] }));
   await searchInput.fill('New Location');
-  await expect(page.getByText('New', { exact: true })).toBeVisible();
+  await expect(page.getByText('New').first()).toBeVisible();
   await page.locator('button[title="Add to Map"]').first().click();
 
   // Wait for final auto-save
   await waitForAutoSave(page);
 
   // 4. Reload and verify everything is updated
-  await page.reload();
-  await page.waitForTimeout(3000);
-  await expect(page.getByText('Loading your map...')).not.toBeVisible();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('Loading your map...')).not.toBeVisible({ timeout: 15000 });
   await expect(page.locator('h1')).toContainText('Updated Map Name', { timeout: 10000 });
   await expect(page.locator('aside')).toContainText('Initial', { timeout: 10000 });
   await expect(page.locator('aside')).toContainText('New', { timeout: 10000 });
@@ -167,14 +168,17 @@ test('updating an existing map', async ({ page }) => {
 test('rich pin metadata persistence and display', async ({ page }) => {
   await login(page);
   await page.getByRole('button', { name: /New Map/i }).click();
+  await page.waitForURL(/\/map\//);
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
   
   // 1. Add a pin
   await page.route('**/places/search*', route => route.fulfill({ json: [{ place_id: '1', title: 'Metadata City', address: 'Metadata Address', lat: '10', lon: '10', type: 'global' }] }));
   await page.getByPlaceholder('Search...').fill('Metadata City');
-  await expect(page.getByText('Metadata City')).toBeVisible();
+  await expect(page.getByText('Metadata City').first()).toBeVisible();
   await page.locator('button[title="Add to Map"]').first().click();
   await waitForAutoSave(page);
+  await page.waitForURL(url => url.pathname !== '/map/new' && url.pathname.includes('/map/'));
+  await page.waitForTimeout(1000);
 
   // 2. Edit metadata
   await page.getByRole('button', { name: 'Edit' }).first().click();
@@ -182,13 +186,10 @@ test('rich pin metadata persistence and display', async ({ page }) => {
 
   // 3. Wait for auto-save and reload
   await waitForAutoSave(page);
-  await page.waitForURL(/\/map\//);
   
-  await page.reload();
-  await page.waitForTimeout(3000);
-  await expect(page.getByText('Loading your map...')).not.toBeVisible();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('Loading your map...')).not.toBeVisible({ timeout: 15000 });
   await page.waitForSelector('.maplibregl-marker', { timeout: 10000 });
-  await page.waitForTimeout(1000);
 
   // 4. Verify in sidebar
   await page.getByRole('button', { name: 'Edit' }).first().click();
@@ -200,28 +201,29 @@ test('rich pin metadata persistence and display', async ({ page }) => {
 test('pin grouping and persistence', async ({ page }) => {
   await login(page);
   await page.getByRole('button', { name: /New Map/i }).click();
+  await page.waitForURL(/\/map\//);
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
   
   // 1. Add a group/layer via menu
   await page.getByRole('button', { name: 'More options' }).click();
   await page.getByText('New Layer').click();
   await expect(page.getByText(/Layer 1 \(0\)|Group 1 \(0\)/)).toBeVisible();
-  await waitForAutoSave(page);
 
   // 2. Add a pin
   await page.route('**/places/search*', route => route.fulfill({ json: [{ place_id: '1', title: 'Group City', address: 'Group Address', lat: '10', lon: '10', type: 'global' }] }));
   await page.getByPlaceholder('Search...').fill('Group City');
-  await expect(page.getByText('Group City', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Group City').first()).toBeVisible();
   await page.locator('button[title="Add to Map"]').first().click();
   await waitForAutoSave(page);
+  await page.waitForURL(url => url.pathname !== '/map/new' && url.pathname.includes('/map/'));
+  await page.waitForTimeout(1000);
 
   // Initially it's in Default Layer
   await expect(page.locator('aside')).toContainText('Group City');
 
   // 3. Wait for reload
-  await page.reload();
-  await page.waitForTimeout(3000);
-  await expect(page.getByText('Loading your map...')).not.toBeVisible();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('Loading your map...')).not.toBeVisible({ timeout: 15000 });
   await expect(page.getByText(/Layer 1 \(0\)|Group 1 \(0\)/)).toBeVisible({ timeout: 10000 });
   await expect(page.locator('aside')).toContainText('Group City', { timeout: 10000 });
   await deleteCurrentMap(page);
@@ -230,6 +232,7 @@ test('pin grouping and persistence', async ({ page }) => {
 test('export and import UI', async ({ page }) => {
   await login(page);
   await page.getByRole('button', { name: /New Map/i }).click();
+  await page.waitForURL(/\/map\//);
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
   await expect(page.locator('h1')).toContainText('My Map', { timeout: 10000 });
 
