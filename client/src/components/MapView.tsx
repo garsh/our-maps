@@ -302,23 +302,35 @@ const MapView = ({
     const map = mapRef.current.getMap();
     if (!map) return;
 
-    if (show3DTerrain) {
-      try {
-        map.setTerrain(null);
-        setTimeout(() => {
-          if (mapRef.current) {
-            const m = mapRef.current.getMap();
-            if (m) {
-              m.setTerrain({ source: 'terrainElevation', exaggeration: 1.0 });
-              m.triggerRepaint();
+    const refreshTerrain = () => {
+      if (!mapRef.current) return;
+      const m = mapRef.current.getMap();
+      if (!m) return;
+
+      if (show3DTerrain) {
+        try {
+          m.setTerrain(null);
+          requestAnimationFrame(() => {
+            if (mapRef.current) {
+              const m2 = mapRef.current.getMap();
+              if (m2) {
+                m2.setTerrain({ source: 'terrainElevation', exaggeration: 1.0 });
+                m2.triggerRepaint();
+              }
             }
-          }
-        }, 50);
-      } catch {
-        map.triggerRepaint();
+          });
+        } catch {
+          m.triggerRepaint();
+        }
+      } else {
+        m.triggerRepaint();
       }
+    };
+
+    if (map.isStyleLoaded() && !map.isMoving()) {
+      refreshTerrain();
     } else {
-      map.triggerRepaint();
+      map.once('idle', refreshTerrain);
     }
   }, [mapTheme, show3DTerrain]);
 
@@ -343,6 +355,7 @@ const MapView = ({
         // Land & Water
         if (l.id === 'background') l.paint['background-color'] = '#fcfbfa';
         if (l.id === 'earth') l.paint['fill-color'] = '#f8f7f4';
+        if (l.id === 'landcover') l.paint['fill-color'] = '#f8f7f4';
         if (l.id === 'water') l.paint['fill-color'] = '#a0c8f0';
         if (l.id.includes('water_river') || l.id.includes('water_stream')) l.paint['line-color'] = '#a0c8f0';
         if (l.id === 'landuse_park' || l.id === 'landuse_urban_green') l.paint['fill-color'] = '#d8ebd2';
@@ -350,6 +363,9 @@ const MapView = ({
         if (l.id === 'landuse_school') l.paint['fill-color'] = '#fbf3d5';
         if (l.id === 'landuse_hospital') l.paint['fill-color'] = '#f6e5e5';
         if (l.id === 'landuse_industrial') l.paint['fill-color'] = '#eceeef';
+        if (l.id === 'landuse_aerodrome' || l.id === 'landuse_pedestrian' || l.id === 'landuse_zoo' || l.id === 'landuse_beach' || l.id === 'landuse_pier' || l.id === 'landuse_runway') {
+          l.paint['fill-color'] = '#f8f7f4';
+        }
         if (l.id.includes('boundaries')) l.paint['line-color'] = '#8a8a8a';
 
         // Typography & Labels
@@ -381,6 +397,60 @@ const MapView = ({
           l.paint['line-color'] = ['interpolate', ['linear'], ['zoom'], 10, '#e2dfd7', 13.5, '#d4d0c7', 15.5, '#ffffff'];
         }
         if (l.id.includes('roads_minor_casing')) l.paint['line-color'] = '#e0ded7';
+      } else if (validFlavor === 'dark') {
+        // Land & Water (Google Maps Android Dark Mode)
+        if (l.id === 'background') l.paint['background-color'] = '#202a3a';
+        if (l.id === 'earth') l.paint['fill-color'] = '#202a3a';
+        if (l.id === 'landcover') l.paint['fill-color'] = '#202a3a';
+        if (l.id === 'water') l.paint['fill-color'] = '#141f2d';
+        if (l.id.includes('water_river') || l.id.includes('water_stream')) l.paint['line-color'] = '#141f2d';
+        if (l.id === 'landuse_park' || l.id === 'landuse_urban_green') l.paint['fill-color'] = '#1a3d3c';
+        if (l.id === 'buildings' && !show3DBuildings) { l.paint['fill-color'] = '#2e3848'; l.paint['fill-opacity'] = 0.75; }
+        if (l.id === 'landuse_school') l.paint['fill-color'] = '#2a3342';
+        if (l.id === 'landuse_hospital') l.paint['fill-color'] = '#3c2d38';
+        if (l.id === 'landuse_industrial') l.paint['fill-color'] = '#283240';
+        if (l.id === 'landuse_aerodrome' || l.id === 'landuse_pedestrian' || l.id === 'landuse_zoo' || l.id === 'landuse_beach' || l.id === 'landuse_pier' || l.id === 'landuse_runway') {
+          l.paint['fill-color'] = '#202a3a';
+        }
+        if (l.id.includes('boundaries')) l.paint['line-color'] = '#4e5d6c';
+
+        // Typography & Labels
+        if (l.type === 'symbol') {
+          if (l.paint['text-color']) {
+            l.paint['text-color'] = l.id.includes('water_') ? '#515c6d' : '#d5e1f2';
+            l.paint['text-halo-color'] = '#202a3a';
+            l.paint['text-halo-width'] = 2.5;
+          }
+        }
+
+        // Highways / Interstates (matching Google Maps dark mode cyan-teal highway tone in screenshot)
+        if (l.id.includes('roads_highway') && !l.id.includes('casing') && !l.id.includes('labels')) {
+          l.paint['line-color'] = '#3c7d9c';
+          l.paint['line-width'] = ['interpolate', ['linear'], ['zoom'], 5, 1.2, 8, 2.8, 12, 4.5, 15, 7.0, 18, 16];
+        }
+        if (l.id.includes('roads_highway') && l.id.includes('casing')) {
+          l.paint['line-color'] = '#14222d';
+          l.paint['line-width'] = ['interpolate', ['linear'], ['zoom'], 6, 0.8, 9, 1.2, 12, 2.0];
+        }
+
+        // Major Primary / Secondary Roads (Rochester Rd, Powell Rd - brighter slate blue)
+        if (l.id.includes('roads_major') && !l.id.includes('casing') && !l.id.includes('labels')) {
+          l.paint['line-color'] = '#526482';
+          l.paint['line-width'] = ['interpolate', ['linear'], ['zoom'], 6, 0.8, 8, 2.2, 12, 3.8, 15, 5.5, 18, 14];
+        }
+        if (l.id.includes('roads_major') && l.id.includes('casing')) {
+          l.paint['line-color'] = '#182230';
+          l.paint['line-width'] = ['interpolate', ['linear'], ['zoom'], 7, 0.5, 9, 1.0, 12, 1.8];
+        }
+        if (l.id === 'roads_labels_major') l.minzoom = 8;
+
+        // Minor / Residential Streets, Links, Service Roads, Tunnels & Bridges (brighter blue-grey street grid)
+        if ((l.id.includes('roads_minor') || l.id.includes('roads_other') || l.id.includes('roads_pier') || l.id.includes('roads_link') || l.id.includes('roads_tunnels') || l.id.includes('roads_bridges')) && !l.id.includes('casing')) {
+          l.paint['line-color'] = ['interpolate', ['linear'], ['zoom'], 9, '#36465e', 13, '#3e506c', 15.5, '#485b7a'];
+        }
+        if (l.id.includes('casing') && !l.id.includes('roads_highway') && !l.id.includes('roads_major')) {
+          l.paint['line-color'] = '#182230';
+        }
       }
 
       // Bump text size across all themes for readability
@@ -402,7 +472,7 @@ const MapView = ({
     // 3D Extruded Buildings layer (active when show3D is toggled on)
     const building3DColor =
       validFlavor === 'dark'
-        ? '#2c3340'
+        ? '#2c3847'
         : validFlavor === 'black'
         ? '#333333'
         : validFlavor === 'white'
@@ -436,7 +506,9 @@ const MapView = ({
     }
 
     const hillshadeShadowColor =
-      validFlavor === 'dark' || validFlavor === 'black'
+      validFlavor === 'dark'
+        ? '#121820'
+        : validFlavor === 'black'
         ? '#000000'
         : validFlavor === 'grayscale'
         ? '#555555'
@@ -446,7 +518,7 @@ const MapView = ({
 
     const hillshadeHighlightColor =
       validFlavor === 'dark'
-        ? '#2c3340'
+        ? '#2f3a4b'
         : validFlavor === 'black'
         ? '#1f1f1f'
         : validFlavor === 'grayscale' || validFlavor === 'white'
