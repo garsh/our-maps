@@ -52,13 +52,6 @@ export const apiService = {
     return res.json();
   },
 
-  async getHello(): Promise<{ message: string }> {
-    const res = await fetchWithRetry(`${API_BASE}/hello`, { headers: getHeaders() });
-    if (res.status === 401) this._logoutCallback?.();
-    if (!res.ok) throw new Error('Failed to fetch hello message');
-    return res.json();
-  },
-
   async getMaps(): Promise<any[]> {
     const res = await fetchWithRetry(`${API_BASE}/maps`, { headers: getHeaders() });
     if (res.status === 401) {

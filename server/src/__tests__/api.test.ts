@@ -42,14 +42,6 @@ describe('API Endpoints', () => {
     await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', mockUser.id, mockUser.email, mockUser.name);
   });
 
-  it('GET /api/hello should return hello message', async () => {
-    // Hello doesn't need auth, but middleware is applied globally now? No, usually selective.
-    // Wait, I applied it to all /api/maps routes. /api/hello is separate.
-    const res = await request(app).get('/api/hello');
-    expect(res.status).toBe(200);
-    expect(res.body.message).toBe('Hello from Our Maps Server!');
-  });
-
   it('POST /api/maps should create a new map', async () => {
     const mapId = 'test-map-id';
     const mapData = {

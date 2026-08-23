@@ -117,10 +117,6 @@ app.get('/api/auth/search-users', authMiddleware, searchUsersHandler);
 app.use('/api/maps', mapsRouter);
 app.use('/api/places', placesRouter);
 
-app.get('/api/hello', (req, res) => {
-  res.json({ message: 'Hello from Our Maps Server!' });
-});
-
 // Socket.io for real-time collaboration
 io.on('connection', (socket: Socket) => {
   console.log('[SOCKET] User connected:', socket.id);

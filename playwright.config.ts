@@ -20,7 +20,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: 'npm run dev:server & npx wait-on http://127.0.0.1:3002/api/hello && npm run dev:client',
+      command: 'npm run dev:server & npx wait-on http://127.0.0.1:3002/api/maps && npm run dev:client',
       url: 'http://127.0.0.1:5173',
       reuseExistingServer: true,
       env: {

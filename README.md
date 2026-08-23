@@ -1,33 +1,6 @@
 # Our Maps
 Our Maps is an app to create and share sets of location pins with others. It is heavily inspired by (the death of) Google My Maps.
 
-## Android App (Native)
-
-The `android-native/` directory contains a completely independent, native Android application written in Kotlin and Jetpack Compose. It does not use Expo or React Native.
-
-### Setup
-1.  Open Android Studio.
-2.  Select **Open** and navigate to the `android-native` folder in this repository.
-3.  Allow Gradle to sync and download dependencies.
-
-### Features
--   **Native UI**: Built with Jetpack Compose for a modern, performant experience.
--   **Networking**: Uses Retrofit to communicate with the shared backend (configured for `10.0.2.2` for emulator access).
--   **Maps**: Integrated with OSMDroid for OpenStreetMap support with current location tracking.
--   **Legend**: View a organized list of all pins in the map with togglable layer visibility.
--   **Pin Viewer**: View pin details without entering edit mode.
--   **Pin Editor**: Advanced pin editor with color and icon selectors matching the web app.
--   **Sharing**: Share maps with others with email auto-completion for frequent collaborators.
--   **Map Management**: Create, import (KML), and delete maps directly from the app.
--   **Offline Support**: View cached maps and download map areas for offline use.
--   **Modern Styling**: Marker symbols and colors aligned with the web application.
-
-### Testing
-Unit tests for the ViewModels and Repositories are included. You can run them via Android Studio or the command line:
-```bash
-./gradlew test
-```
-
 ## Authentication
 Our Maps uses Google OAuth on the client and exchanges the Google ID credential for a custom JSON Web Token (JWT) signed by the server. This custom token is valid for 30 days (compared to the 1-hour Google ID token expiration limit), allowing users to stay signed in for a month.
 
@@ -80,7 +53,6 @@ You can easily self-host Our Maps using Docker and Docker Compose. This packages
    ```
 3. For web browsers, access the application securely at `https://localhost` or `https://47.144.129.56` (with your local IP address).
    *(Note: Since it uses a self-signed local certificate via Caddy, your browser will warn you. You can safely bypass this warning for local development.)*
-4. For the Android App, keep your Retrofit base URL using plain HTTP on port 3000: `http://47.144.129.56:3000/api/`
 5. To view logs:
    ```bash
    docker compose logs -f

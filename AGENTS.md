@@ -6,7 +6,6 @@ Welcome! This file provides essential context, rules, and workflows for the Our 
 - **Client (`client/`)**: A React Single Page Application (SPA) built with Vite. It uses Leaflet (`react-leaflet`) for mapping, and is configured as a Progressive Web App (PWA) using `vite-plugin-pwa`.
 - **Server (`server/`)**: An Express.js backend using SQLite (via the `sqlite` and `sqlite3` packages) for the database. It handles API requests, Google OAuth validation, and real-time collaboration via `socket.io`.
 - **Shared (`shared/`)**: Types and shared utilities that both client and server can depend on.
-- **Android (`android-native/`)**: A native Kotlin/Jetpack Compose Android app that communicates with the server via REST. This code is deprecated and all current Android development uses PWA.
 
 ## Testing Commands
 We use Vitest for unit/integration tests and Playwright for E2E tests.

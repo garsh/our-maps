@@ -58,13 +58,3 @@ export async function canFit(mb: number): Promise<{ ok: boolean, message?: strin
 
     return { ok: true };
 }
-
-/**
- * Requests persistent storage from the browser to prevent eviction.
- */
-export async function requestPersistentStorage(): Promise<boolean> {
-    if (navigator.storage && navigator.storage.persist) {
-        return await navigator.storage.persist();
-    }
-    return false;
-}

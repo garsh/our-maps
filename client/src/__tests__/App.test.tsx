@@ -32,7 +32,6 @@ describe('App Components Error Handling', () => {
     });
 
     // Default API Mock
-    (apiService.getHello as any).mockResolvedValue({ message: 'Mock Hello' });
     (apiService.getMaps as any).mockResolvedValue([]);
   });
 

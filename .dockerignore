@@ -6,7 +6,6 @@ server/dist
 .env
 .git
 .gitignore
-android-native
 database.sqlite
 playwright-report
 test-results
