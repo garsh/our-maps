@@ -951,7 +951,7 @@ const MapView = ({
           justifyContent: 'center',
           cursor: 'pointer',
           zIndex: 1000,
-          color: 'var(--primary-color)',
+          color: mapTheme === 'dark' ? '#cbd5e1' : 'var(--primary-color)',
           transition: 'all 0.2s',
         }}
         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
@@ -1005,7 +1005,7 @@ const MapView = ({
           justifyContent: 'center',
           cursor: 'pointer',
           zIndex: 1000,
-          color: 'var(--primary-color)',
+          color: mapTheme === 'dark' ? '#cbd5e1' : 'var(--primary-color)',
           transition: 'all 0.2s',
         }}
         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
@@ -1041,7 +1041,7 @@ const MapView = ({
         .maplibregl-ctrl-attrib button,
         .maplibregl-ctrl-attrib-button {
           background-color: var(--surface-color) !important;
-          filter: ${mapTheme === 'dark' ? 'invert(1) brightness(1.4)' : 'none'} !important;
+          filter: ${mapTheme === 'dark' ? 'invert(0.75) opacity(0.85)' : 'none'} !important;
           border-radius: 50% !important;
           opacity: 0.9 !important;
         }
