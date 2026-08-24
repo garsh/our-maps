@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { apiService } from '../services/api';
-import { Map as MapIcon, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download } from 'lucide-react';
+import { Map as MapIcon, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download, Sun, Moon } from 'lucide-react';
 import { getMapDownloadStatuses, type MapDownloadStatus } from '../utils/tileUtils';
 
 interface MapSummary {
@@ -16,6 +17,7 @@ interface MapSummary {
 
 export default function LandingPage() {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [maps, setMaps] = useState<MapSummary[]>([]);
   const [downloadStatuses, setDownloadStatuses] = useState<Map<string, MapDownloadStatus>>(new Map());
@@ -25,6 +27,7 @@ export default function LandingPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [showSignOutDialog, setShowSignOutDialog] = useState(false);
   const [showOfflineInterstitial, setShowOfflineInterstitial] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   const handleMapClick = (mapId: string) => {
     if (isOffline) {
@@ -156,12 +159,129 @@ export default function LandingPage() {
           <MapIcon size={28} /> OurMaps
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-          <div 
-            onClick={() => setShowSignOutDialog(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.1)', padding: '4px 12px', borderRadius: '50px', cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
-          >
-            {user?.picture && <img src={user.picture} alt={user.name} style={{ width: '24px', height: '24px', borderRadius: '50%' }} />}
-            <span style={{ fontWeight: '600', fontSize: '0.9rem' }}>{user?.name}</span>
+          <div style={{ position: 'relative' }}>
+            <div 
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              style={{ 
+                width: '36px', 
+                height: '36px', 
+                borderRadius: '50%', 
+                cursor: 'pointer', 
+                overflow: 'hidden', 
+                border: '2px solid rgba(255,255,255,0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(255,255,255,0.2)',
+                fontWeight: 'bold',
+                color: 'white',
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
+                WebkitTouchCallout: 'none'
+              }}
+              title={user?.name}
+            >
+              {user?.picture ? (
+                <img src={user.picture} alt={user.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <span>{user?.name?.[0]?.toUpperCase() || 'U'}</span>
+              )}
+            </div>
+
+            {showUserMenu && (
+              <>
+                <div 
+                  style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000 }} 
+                  onClick={() => setShowUserMenu(false)} 
+                />
+                <div style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  right: 0,
+                  width: '200px',
+                  background: 'var(--surface-color)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  boxShadow: 'var(--shadow-lg)',
+                  zIndex: 1001,
+                  overflow: 'hidden',
+                  padding: '4px 0'
+                }}>
+                  {/* Light/Dark mode toggle */}
+                  <div
+                    onClick={() => {
+                      toggleTheme();
+                    }}
+                    style={{
+                      padding: '10px 16px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.85rem',
+                      fontWeight: '600',
+                      borderBottom: '1px solid var(--border-color)'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {theme === 'dark' ? <Moon size={16} color="#3b82f6" /> : <Sun size={16} color="#64748b" />}
+                      <span>Dark Mode</span>
+                    </div>
+                    <div
+                      style={{
+                        width: '34px',
+                        height: '18px',
+                        borderRadius: '10px',
+                        background: theme === 'dark' ? '#3b82f6' : '#e2e8f0',
+                        position: 'relative',
+                        transition: 'background 0.2s ease',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '14px',
+                          height: '14px',
+                          borderRadius: '50%',
+                          background: 'white',
+                          position: 'absolute',
+                          top: '2px',
+                          left: theme === 'dark' ? '18px' : '2px',
+                          transition: 'left 0.2s ease',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Sign Out */}
+                  <div
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      setShowSignOutDialog(true);
+                    }}
+                    style={{
+                      padding: '10px 16px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '0.85rem',
+                      fontWeight: '600',
+                      color: 'var(--error-color)'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <LogOut size={16} />
+                    <span>Sign Out</span>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -341,7 +461,7 @@ export default function LandingPage() {
 
       {deleteConfirm && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(4px)' }} onClick={() => setDeleteConfirm(null)}>
-          <div style={{ background: 'white', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '450px', width: '90%', boxShadow: 'var(--shadow-lg)' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: 'var(--surface-color)', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '450px', width: '90%', boxShadow: 'var(--shadow-lg)' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>
               {maps.find(m => m.id === deleteConfirm)?.ownerId === user?.id ? 'Delete Map?' : 'Leave Map?'}
             </h3>
@@ -367,7 +487,7 @@ export default function LandingPage() {
           onClick={() => setShowOfflineInterstitial(false)}
         >
           <div 
-            style={{ background: 'white', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '400px', width: '90%', boxShadow: 'var(--shadow-lg)', textAlign: 'center' }} 
+            style={{ background: 'var(--surface-color)', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '400px', width: '90%', boxShadow: 'var(--shadow-lg)', textAlign: 'center' }} 
             onClick={e => e.stopPropagation()}
           >
             <div style={{ background: 'rgba(239, 68, 68, 0.1)', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
@@ -391,7 +511,7 @@ export default function LandingPage() {
 
       {showSignOutDialog && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(4px)' }} onClick={() => setShowSignOutDialog(false)}>
-          <div style={{ background: 'white', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '400px', width: '90%', boxShadow: 'var(--shadow-lg)', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: 'var(--surface-color)', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '400px', width: '90%', boxShadow: 'var(--shadow-lg)', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
             <div style={{ background: 'var(--bg-color)', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
               <LogOut size={32} color="var(--primary-color)" />
             </div>

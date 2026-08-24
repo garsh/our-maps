@@ -26,7 +26,9 @@ import {
   Download,
   Palette,
   Mountain,
-  Box
+  Box,
+  Sun,
+  Moon
 } from 'lucide-react';
 import {
   DndContext, 
@@ -196,12 +198,12 @@ const IconButton = ({ type, Icon, isSelected, onClick }: { type: PinIcon, Icon: 
         minWidth: 0,
         padding: 0,
         borderRadius: '4px',
-        background: isSelected ? 'var(--primary-color)' : '#eee',
+        background: isSelected ? 'var(--primary-color)' : 'var(--bg-color)',
         border: '1px solid var(--border-color)',
         cursor: 'pointer'
       }}
     >
-      <Icon size={12} color={isSelected ? 'white' : '#333'} />
+      <Icon size={12} color={isSelected ? 'white' : 'var(--text-secondary)'} />
     </button>
   );
 };
@@ -239,7 +241,8 @@ const StaticPin = ({ pin, isSelected }: { pin: Pin, isSelected?: boolean }) => {
     <div style={{ 
       padding: '0 0.15rem', 
       borderRadius: 'var(--radius-sm)',
-      background: 'white',
+      background: 'var(--surface-color)',
+      color: 'var(--text-primary)',
       border: '1px solid var(--primary-color)',
       boxShadow: 'var(--shadow-md)',
       display: 'flex', 
@@ -558,7 +561,7 @@ const SortablePin = ({
                 value={pin.layerId || ''} 
                 onChange={(e) => onUpdatePin(pin.id, { layerId: e.target.value || undefined })}
                 className="input-field"
-                style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit', background: 'white' }}
+                style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit', background: 'var(--surface-color)', color: 'var(--text-primary)' }}
             >
                 <option value="">Default Layer</option>
                 {allLayers.map(g => (
@@ -611,7 +614,7 @@ const SortablePin = ({
                   onBlur={(e) => onAddCustomColor?.(e.target.value)}
                   style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 2 }}
                 />
-                <div style={{ width: '16px', height: '16px', borderRadius: '4px', background: '#f1f1f1', border: '1px dashed #ccc', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: '#666' }}>
+                <div style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'var(--bg-color)', border: '1px dashed var(--border-color)', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: 'var(--text-secondary)' }}>
                   +
                 </div>
               </div>
@@ -694,7 +697,7 @@ const DefaultLayerHeader = ({
           position: 'sticky', 
           top: 0, 
           zIndex: 5, 
-          background: isHighlighted ? '#f4f3f9' : 'white',
+          background: isHighlighted ? 'var(--bg-color)' : 'var(--surface-color)',
           borderRadius: '0 0 var(--radius-sm) var(--radius-sm)',
           border: isHighlighted ? '1px solid var(--primary-color)' : '1px solid transparent',
           boxShadow: isHighlighted ? '0 0 0 1px var(--primary-color)' : 'var(--shadow-sm)',
@@ -877,7 +880,7 @@ const SortableLayer = ({
         position: 'sticky',
         top: 0,
         zIndex: 5,
-        background: (isOver && !isDragging && !isLayerDragging) ? '#f4f3f9' : (isEditingName ? 'var(--bg-color)' : 'white'),
+        background: (isOver && !isDragging && !isLayerDragging) ? 'var(--bg-color)' : (isEditingName ? 'var(--bg-color)' : 'var(--surface-color)'),
         borderRadius: '0 0 var(--radius-sm) var(--radius-sm)',
         border: (isOver && !isDragging && !isLayerDragging) ? '1px solid var(--primary-color)' : (isEditingName ? '1px solid var(--primary-color)' : '1px solid transparent'),
         boxShadow: (isOver && !isDragging && !isLayerDragging) ? '0 0 0 1px var(--primary-color)' : 'var(--shadow-sm)',
@@ -1452,7 +1455,7 @@ class MouseSensor extends PointerSensor {
   };
 
   return (
-    <aside style={{ flex: 1, minHeight: 0, height: '100%', background: 'white', display: 'flex', flexDirection: 'column', padding: isMobile ? '0.2rem 0.6rem 0.6rem 0.6rem' : '0.4rem 0.6rem 0.6rem 0.6rem', boxSizing: 'border-box', overflow: 'hidden', position: 'relative' }}>
+    <aside style={{ flex: 1, minHeight: 0, height: '100%', background: 'var(--surface-color)', color: 'var(--text-primary)', display: 'flex', flexDirection: 'column', padding: isMobile ? '0.2rem 0.6rem 0.6rem 0.6rem' : '0.4rem 0.6rem 0.6rem 0.6rem', boxSizing: 'border-box', overflow: 'hidden', position: 'relative' }}>
       <DndContext 
         sensors={sensors}
         collisionDetection={customCollisionDetection}
@@ -1485,7 +1488,7 @@ class MouseSensor extends PointerSensor {
               </button>
               
               {isMenuOpen && (
-                <div style={{ position: 'absolute', top: '100%', right: 0, width: '190px', background: 'white', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3000 }}>
+                <div style={{ position: 'absolute', top: '100%', right: 0, width: '190px', background: 'var(--surface-color)', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3000 }}>
                   {!readOnly && (
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
@@ -1521,71 +1524,57 @@ class MouseSensor extends PointerSensor {
                     </div>
                     {menuTab === 'appearance' && (
                       <div 
-                        style={{ position: 'absolute', top: '100%', right: '-1px', left: 'auto', width: '240px', background: 'white', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '0 0 var(--radius-md) var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3100 }}
+                        style={{ position: 'absolute', top: '100%', right: '-1px', left: 'auto', width: '240px', background: 'var(--surface-color)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '0 0 var(--radius-md) var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3100 }}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {/* Theme single-row swatch selector */}
+                        {/* Light/Dark mode toggle */}
                         <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onThemeChange?.(mapTheme === 'dark' ? 'light' : 'dark');
+                          }}
                           style={{
-                            padding: '10px 10px 8px',
+                            padding: '10px 14px',
+                            cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
-                            borderBottom: '1px solid #f1f5f9',
-                            gap: '6px',
+                            justifyContent: 'space-between',
+                            fontSize: '0.82rem',
+                            fontWeight: mapTheme === 'dark' ? '600' : '500',
+                            color: 'var(--text-primary)',
+                            borderBottom: '1px solid var(--border-color)',
                           }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
-                          <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-primary)', flexShrink: 0 }}>Theme:</span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flex: 1, justifyContent: 'space-between' }}>
-                            {MAP_THEMES.map((theme) => {
-                              const isSelected = mapTheme === theme.id;
-                              return (
-                                <div
-                                  key={theme.id}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onThemeChange?.(theme.id);
-                                  }}
-                                  style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    cursor: 'pointer',
-                                    padding: '3px 3px',
-                                    borderRadius: '12px',
-                                    background: isSelected ? '#f0f7ff' : 'transparent',
-                                    border: isSelected ? '1.5px solid #3b82f6' : '1.5px solid transparent',
-                                    boxShadow: isSelected ? '0 3px 6px rgba(59, 130, 246, 0.22)' : 'none',
-                                    transform: isSelected ? 'translateY(-2px)' : 'translateY(0)',
-                                    transition: 'all 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                                  }}
-                                >
-                                  <div
-                                    title={theme.label}
-                                    style={{
-                                      width: '16px',
-                                      height: '16px',
-                                      borderRadius: '50%',
-                                      background: theme.previewBg,
-                                      border: `1.5px solid ${theme.previewBorder}`,
-                                      flexShrink: 0,
-                                    }}
-                                  />
-                                  <span
-                                    style={{
-                                      fontSize: '0.62rem',
-                                      fontWeight: isSelected ? '700' : '500',
-                                      color: isSelected ? '#1d4ed8' : '#64748b',
-                                      marginTop: '2px',
-                                      textAlign: 'center',
-                                      lineHeight: '1.1',
-                                      transition: 'color 0.15s ease',
-                                    }}
-                                  >
-                                    {theme.label}
-                                  </span>
-                                </div>
-                              );
-                            })}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {mapTheme === 'dark' ? <Moon size={15} color="#3b82f6" /> : <Sun size={15} color="#64748b" />}
+                            <span>Dark Mode</span>
+                          </div>
+                          <div
+                            style={{
+                              width: '34px',
+                              height: '18px',
+                              borderRadius: '10px',
+                              background: mapTheme === 'dark' ? '#3b82f6' : '#e2e8f0',
+                              position: 'relative',
+                              transition: 'background 0.2s ease',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: '14px',
+                                height: '14px',
+                                borderRadius: '50%',
+                                background: 'white',
+                                position: 'absolute',
+                                top: '2px',
+                                left: mapTheme === 'dark' ? '18px' : '2px',
+                                transition: 'left 0.2s ease',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                              }}
+                            />
                           </div>
                         </div>
 
@@ -2024,8 +2013,8 @@ class MouseSensor extends PointerSensor {
         {/* Export Modal (Portaled) */}
         {showExportModal && createPortal(
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '20px' }}>
-            <div style={{ background: 'white', borderRadius: 'var(--radius-lg)', padding: '32px', maxWidth: '440px', width: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.3rem', fontWeight: '900', color: '#1a1c1e' }}>Export Map</h3>
+            <div style={{ background: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', padding: '32px', maxWidth: '440px', width: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.3rem', fontWeight: '900', color: 'var(--text-primary)' }}>Export Map</h3>
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.9rem', fontWeight: '700' }}>File Name</label>
                 <input 
@@ -2079,8 +2068,8 @@ class MouseSensor extends PointerSensor {
         {/* Rename Modal (Portaled) */}
         {showRenameModal && createPortal(
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '20px' }}>
-            <div style={{ background: 'white', borderRadius: 'var(--radius-lg)', padding: '32px', maxWidth: '440px', width: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.3rem', fontWeight: '900', color: '#1a1c1e' }}>Rename Map</h3>
+            <div style={{ background: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', padding: '32px', maxWidth: '440px', width: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.3rem', fontWeight: '900', color: 'var(--text-primary)' }}>Rename Map</h3>
               <form onSubmit={(e) => {
                 e.preventDefault();
                 if (renameInput.trim()) {
@@ -2207,7 +2196,7 @@ class MouseSensor extends PointerSensor {
                 )}
               </div>
             ) : activeLayer ? (
-              <div style={{ width: '240px', background: 'white', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.9, boxShadow: 'var(--shadow-md)', marginLeft: '12px', transform: isMobile ? 'scale(1.5)' : 'none', transformOrigin: 'top left' }}>
+              <div style={{ width: '240px', background: 'var(--surface-color)', color: 'var(--text-primary)', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.9, boxShadow: 'var(--shadow-md)', marginLeft: '12px', transform: isMobile ? 'scale(1.5)' : 'none', transformOrigin: 'top left' }}>
                 <div style={{ fontWeight: '700', fontSize: '0.65rem' }}>{activeLayer.name}</div>
               </div>
             ) : null}

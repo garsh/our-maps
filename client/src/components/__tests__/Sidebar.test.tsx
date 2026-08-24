@@ -300,7 +300,7 @@ describe('Sidebar', () => {
     expect(onToggle3DBuildings).toHaveBeenCalledWith(false);
   });
 
-  it('keeps appearance menu open when a theme is selected', () => {
+  it('keeps appearance menu open when dark mode is toggled', () => {
     const onThemeChange = vi.fn();
     render(<TestWrapper handlers={{ onThemeChange, mapTheme: 'light' }} />);
 
@@ -310,13 +310,13 @@ describe('Sidebar', () => {
     const appearanceOption = screen.getByText('Appearance');
     fireEvent.click(appearanceOption);
 
-    const darkSwatch = screen.getByTitle('Dark');
-    expect(darkSwatch).toBeInTheDocument();
+    const darkModeOption = screen.getByText('Dark Mode');
+    expect(darkModeOption).toBeInTheDocument();
 
-    fireEvent.click(darkSwatch);
+    fireEvent.click(darkModeOption);
     expect(onThemeChange).toHaveBeenCalledWith('dark');
     // Verify menu is still open and showing appearance options
-    expect(screen.getByTitle('Dark')).toBeInTheDocument();
+    expect(screen.getByText('Dark Mode')).toBeInTheDocument();
     expect(screen.getByText('Hillshading')).toBeInTheDocument();
   });
 

@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import LandingPage from '../LandingPage';
 import { apiService } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { ThemeProvider } from '../../contexts/ThemeContext';
 import * as tileUtils from '../../utils/tileUtils';
 
 vi.mock('../../services/api');
@@ -55,7 +56,9 @@ describe('LandingPage Offline Map Access', () => {
 
     render(
       <MemoryRouter>
-        <LandingPage />
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
       </MemoryRouter>
     );
 
@@ -73,7 +76,9 @@ describe('LandingPage Offline Map Access', () => {
 
     render(
       <MemoryRouter>
-        <LandingPage />
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
       </MemoryRouter>
     );
 
@@ -93,7 +98,9 @@ describe('LandingPage Offline Map Access', () => {
 
     render(
       <MemoryRouter>
-        <LandingPage />
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
       </MemoryRouter>
     );
 
@@ -111,7 +118,9 @@ describe('LandingPage Offline Map Access', () => {
 
     render(
       <MemoryRouter>
-        <LandingPage />
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
       </MemoryRouter>
     );
 

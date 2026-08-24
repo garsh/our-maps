@@ -2,13 +2,14 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import MapView from './components/MapView'
-import Sidebar, { type MapTheme } from './components/Sidebar'
+import Sidebar from './components/Sidebar'
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import ShareDialog from './components/ShareDialog';
 import { apiService } from './services/api'
 import { reverseGeocode } from './utils/geocoding';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import type {
   Pin,
   PinLayer,
@@ -62,18 +63,7 @@ export function MapEditor() {
   const [isResizing, setIsResizing] = useState(false);
   const [isHoveringResizer, setIsHoveringResizer] = useState(false);
 
-  const [mapTheme, setMapTheme] = useState<MapTheme>(() => {
-    const saved = localStorage.getItem('ourmaps_map_theme');
-    if (saved && ['light', 'dark'].includes(saved)) {
-      return saved as MapTheme;
-    }
-    return 'light';
-  });
-
-  const handleThemeChange = (theme: MapTheme) => {
-    setMapTheme(theme);
-    localStorage.setItem('ourmaps_map_theme', theme);
-  };
+  const { theme: mapTheme, setTheme: handleThemeChange } = useTheme();
 
   const [showHillshade, setShowHillshade] = useState<boolean>(() => {
     const saved = localStorage.getItem('ourmaps_hillshade');
@@ -1311,7 +1301,7 @@ export function MapEditor() {
         {!isMobile && (
           <div 
             onClick={() => setShowSignOutDialog(true)}
-            style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '10px', background: 'white', padding: '6px 12px', borderRadius: '50px', boxShadow: 'var(--shadow-sm)', cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
+            style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--surface-color)', padding: '6px 12px', borderRadius: '50px', boxShadow: 'var(--shadow-sm)', cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
           >
             <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)' }}>{user?.name}</span>
             {user?.picture && <img src={user.picture} alt={user.name} style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid rgba(0,0,0,0.05)' }} />}
@@ -1356,7 +1346,7 @@ export function MapEditor() {
 
       {showSignOutDialog && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(4px)' }} onClick={() => setShowSignOutDialog(false)}>
-          <div style={{ background: 'white', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '400px', width: '90%', boxShadow: 'var(--shadow-lg)', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: 'var(--surface-color)', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '400px', width: '90%', boxShadow: 'var(--shadow-lg)', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
             <div style={{ background: 'var(--bg-color)', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
               <LogOut size={32} color="var(--primary-color)" />
             </div>
@@ -1391,13 +1381,15 @@ function App() {
   return (
     <GoogleOAuthProvider clientId={clientId}>
       <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/" element={<PrivateRoute><LandingPage /></PrivateRoute>} />
-            <Route path="/map/:id" element={<PrivateRoute><MapEditor /></PrivateRoute>} />
-          </Routes>
-        </BrowserRouter>
+        <ThemeProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/" element={<PrivateRoute><LandingPage /></PrivateRoute>} />
+              <Route path="/map/:id" element={<PrivateRoute><MapEditor /></PrivateRoute>} />
+            </Routes>
+          </BrowserRouter>
+        </ThemeProvider>
       </AuthProvider>
     </GoogleOAuthProvider>
   )
