@@ -59,9 +59,11 @@ export function MapEditor() {
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
   const [mapBounds, setMapBounds] = useState<string | null>(null);
   const [previewLocation, setPreviewLocation] = useState<{lat: number, lng: number} | null>(null);
-  const [sidebarWidth, setSidebarWidth] = useState(400);
+  const DEFAULT_SIDEBAR_WIDTH = 400;
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
-  const [isHoveringResizer, setIsHoveringResizer] = useState(false);
+  const isResizerDraggingRef = useRef(false);
+  const resizerStartXRef = useRef(0);
 
   const { theme: mapTheme, setTheme: handleThemeChange } = useTheme();
 
@@ -1026,8 +1028,11 @@ export function MapEditor() {
   };
 
   const handleResize = useCallback((e: MouseEvent) => {
+    if (Math.abs(e.clientX - resizerStartXRef.current) > 3) {
+      isResizerDraggingRef.current = true;
+    }
     const newWidth = e.clientX;
-    if (newWidth > 200 && newWidth < 600) {
+    if (newWidth > 200 && newWidth < window.innerWidth - 50) {
       setSidebarWidth(newWidth);
     }
   }, []);
@@ -1038,11 +1043,19 @@ export function MapEditor() {
     window.removeEventListener('mouseup', stopResize);
   }, [handleResize]);
 
-  const startResize = useCallback(() => {
+  const startResize = useCallback((e: React.MouseEvent) => {
+    isResizerDraggingRef.current = false;
+    resizerStartXRef.current = e.clientX;
     setIsResizing(true);
     window.addEventListener('mousemove', handleResize);
     window.addEventListener('mouseup', stopResize);
   }, [handleResize, stopResize]);
+
+  const handleResizerClick = useCallback(() => {
+    if (!isResizerDraggingRef.current) {
+      setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
+    }
+  }, []);
 
   if (isMapLoading) {
     return (
@@ -1123,7 +1136,7 @@ export function MapEditor() {
           display: 'flex',
           flexDirection: 'column',
           overflow: 'visible'
-        } : { width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1000, background: 'var(--bg-color)', overflow: 'hidden' }}
+        } : { width: `${sidebarWidth}px`, flexShrink: 0, display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1000, background: 'var(--bg-color)', overflow: 'visible' }}
       >
         {isMobile && (
           <div 
@@ -1147,39 +1160,12 @@ export function MapEditor() {
 
         {!isMobile && (
           <div
-            className="resizer-handle"
+            className={`resizer-handle ${isResizing ? 'resizing' : ''}`}
             onMouseDown={startResize}
-            onMouseEnter={() => setIsHoveringResizer(true)}
-            onMouseLeave={() => setIsHoveringResizer(false)}
-            style={{
-              position: 'absolute',
-              right: '-12px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              width: '12px',
-              height: '48px',
-              cursor: 'col-resize',
-              zIndex: 101,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: mapTheme === 'dark' ? '#1e1e1e' : 'white',
-              border: `1px solid ${mapTheme === 'dark' ? '#333333' : '#dee2e6'}`,
-              borderLeft: 'none',
-              borderRadius: '0 6px 6px 0',
-              boxShadow: 'var(--shadow-sm)',
-            }}
+            onClick={handleResizerClick}
+            title="Drag to resize, click to reset"
           >
-            <div style={{
-              width: '4px',
-              height: '28px',
-              borderRadius: '4px',
-              background: (isResizing || isHoveringResizer) 
-                ? 'var(--primary-color)' 
-                : (mapTheme === 'dark' ? '#cbd5e1' : '#94a3b8'),
-              transition: 'background 0.2s, transform 0.15s',
-              transform: (isResizing || isHoveringResizer) ? 'scaleY(1.1)' : 'scaleY(1)',
-            }} />
+            <div className="drag-pill-vertical" />
           </div>
         )}
 

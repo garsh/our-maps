@@ -237,6 +237,51 @@ button:active {
   opacity: 0.75;
 }
 
+.resizer-handle {
+  width: 14px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  background: var(--surface-color);
+  border-radius: 0 7px 7px 0;
+  border-top: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  border-left: none;
+  box-shadow: var(--shadow-sm);
+  position: absolute;
+  right: -14px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 101;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.resizer-handle:active {
+  cursor: col-resize;
+}
+
+.drag-pill-vertical {
+  width: 2px;
+  height: 12px;
+  background: var(--text-secondary);
+  border-radius: 2px;
+  opacity: 0.75;
+  transition: background 0.2s, opacity 0.2s, transform 0.15s;
+}
+
+.resizer-handle:hover .drag-pill-vertical,
+.resizer-handle.resizing .drag-pill-vertical {
+  background: var(--primary-color);
+  opacity: 1;
+  transform: scaleY(1.1);
+}
+
+
 @keyframes colorCycle {
   0% { color: #3b82f6; transform: translateY(0); }
   25% { color: #06b6d4; }
