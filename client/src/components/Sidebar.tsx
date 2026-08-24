@@ -67,7 +67,7 @@ import { tileWorkerManager } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
 import { comparePinPositions } from '../utils/reorderUtils';
 
-export type MapTheme = 'light' | 'dark' | 'grayscale' | 'white' | 'black';
+export type MapTheme = 'light' | 'dark';
 
 export interface ThemeOption {
   id: MapTheme;
@@ -81,9 +81,6 @@ export interface ThemeOption {
 export const MAP_THEMES: ThemeOption[] = [
   { id: 'light', label: 'Light', sublabel: 'Alidade bright palette', previewBg: '#fcfbfa', previewBorder: '#d1d5db', previewAccent: '#fca855' },
   { id: 'dark', label: 'Dark', sublabel: 'Sleek low-light theme', previewBg: '#242f3e', previewBorder: '#38414e', previewAccent: '#849bbf' },
-  { id: 'grayscale', label: 'Gray', sublabel: 'Monochrome muted style', previewBg: '#e5e7eb', previewBorder: '#9ca3af', previewAccent: '#6b7280' },
-  { id: 'white', label: 'White', sublabel: 'Clean minimalist white', previewBg: '#ffffff', previewBorder: '#cbd5e1', previewAccent: '#94a3b8' },
-  { id: 'black', label: 'Black', sublabel: 'Dark high contrast', previewBg: '#0f172a', previewBorder: '#475569', previewAccent: '#f59e0b' },
 ];
 
 interface SidebarProps {

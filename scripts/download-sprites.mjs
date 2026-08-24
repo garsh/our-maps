@@ -25,7 +25,7 @@ const clientMapsSpritesDir = path.join(clientPublicMapsDir, 'sprites');
 
 const isForce = process.argv.includes('--force');
 
-const FLAVORS = ['light', 'dark', 'grayscale', 'white', 'black'];
+const FLAVORS = ['light', 'dark'];
 
 const SPRITE_FILES = FLAVORS.flatMap(flavor => [
   `${flavor}.json`,

@@ -336,7 +336,7 @@ const MapView = ({
 
   const mapStyle = useMemo<any>(() => {
     const pmtilesUrl = `${window.location.origin}/maps/planet.pmtiles`;
-    const validFlavor = ['light', 'dark', 'grayscale', 'white', 'black'].includes(mapTheme) ? mapTheme : 'light';
+    const validFlavor = ['light', 'dark'].includes(mapTheme) ? mapTheme : 'light';
     const rawLayers = protomapsLayers('protomaps', namedFlavor(validFlavor as any), { lang: 'en' });
 
     // Customize Protomaps layers according to active theme
@@ -470,16 +470,7 @@ const MapView = ({
     });
 
     // 3D Extruded Buildings layer (active when show3D is toggled on)
-    const building3DColor =
-      validFlavor === 'dark'
-        ? '#2c3847'
-        : validFlavor === 'black'
-        ? '#333333'
-        : validFlavor === 'white'
-        ? '#d0d0d0'
-        : validFlavor === 'grayscale'
-        ? '#b0b0b0'
-        : '#e0ded7';
+    const building3DColor = validFlavor === 'dark' ? '#2c3847' : '#e0ded7';
 
     const building3dLayer = {
       id: '3d-buildings',
@@ -505,30 +496,11 @@ const MapView = ({
       customLayers.push(building3dLayer);
     }
 
-    const hillshadeShadowColor =
-      validFlavor === 'dark'
-        ? '#121820'
-        : validFlavor === 'black'
-        ? '#000000'
-        : validFlavor === 'grayscale'
-        ? '#555555'
-        : validFlavor === 'white'
-        ? '#888888'
-        : '#473B24';
+    const hillshadeShadowColor = validFlavor === 'dark' ? '#121820' : '#473B24';
 
-    const hillshadeHighlightColor =
-      validFlavor === 'dark'
-        ? '#2f3a4b'
-        : validFlavor === 'black'
-        ? '#1f1f1f'
-        : validFlavor === 'grayscale' || validFlavor === 'white'
-        ? '#ffffff'
-        : '#FFFFFF';
+    const hillshadeHighlightColor = validFlavor === 'dark' ? '#2f3a4b' : '#FFFFFF';
 
-    const hillshadeExaggeration =
-      validFlavor === 'dark' || validFlavor === 'black' || validFlavor === 'grayscale' || validFlavor === 'white'
-        ? 0.35
-        : 0.45;
+    const hillshadeExaggeration = validFlavor === 'dark' ? 0.35 : 0.45;
 
     const hillshadeLayer = {
       id: 'hills',
@@ -1050,17 +1022,7 @@ const MapView = ({
           100% { box-shadow: 0 0 0 0 rgba(66, 133, 244, 0); }
         }
         .maplibregl-container {
-          background-color: ${
-            mapTheme === 'dark'
-              ? '#1f1f1f'
-              : mapTheme === 'black'
-              ? '#000000'
-              : mapTheme === 'white'
-              ? '#ffffff'
-              : mapTheme === 'grayscale'
-              ? '#f0f0f0'
-              : '#f8f9fa'
-          };
+          background-color: ${mapTheme === 'dark' ? '#1f1f1f' : '#f8f9fa'};
         }
         .maplibregl-ctrl-attrib {
           display: inline-flex !important;

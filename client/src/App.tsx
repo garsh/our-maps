@@ -64,7 +64,7 @@ export function MapEditor() {
 
   const [mapTheme, setMapTheme] = useState<MapTheme>(() => {
     const saved = localStorage.getItem('ourmaps_map_theme');
-    if (saved && ['light', 'dark', 'grayscale', 'white', 'black'].includes(saved)) {
+    if (saved && ['light', 'dark'].includes(saved)) {
       return saved as MapTheme;
     }
     return 'light';
