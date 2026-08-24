@@ -210,12 +210,12 @@ button:active {
   align-items: center;
   justify-content: center;
   cursor: grab;
-  background: white;
+  background: var(--surface-color);
   border-radius: 14px 14px 0 0;
   border-top: 1px solid var(--border-color);
   border-left: 1px solid var(--border-color);
   border-right: 1px solid var(--border-color);
-  box-shadow: 0 -4px 12px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-sm);
   position: absolute;
   top: -28px;
   left: 0;
@@ -232,8 +232,9 @@ button:active {
 .drag-pill {
   width: 24px;
   height: 4px;
-  background: var(--border-color);
+  background: var(--text-secondary);
   border-radius: 4px;
+  opacity: 0.75;
 }
 
 @keyframes colorCycle {
