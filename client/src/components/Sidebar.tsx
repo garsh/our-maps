@@ -718,7 +718,7 @@ const DefaultLayerHeader = ({
                 {collapsedLayerIds?.has(null) ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
             </div>
             <span style={{ fontWeight: '700', fontSize: '0.65rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                Default Layer <span style={{ fontWeight: 'normal', color: '#aaa', fontSize: '0.55rem', marginLeft: '2px' }}>({defaultPins.length})</span>
+                Default Layer <span style={{ fontWeight: 'normal', color: 'var(--text-secondary)', fontSize: '0.55rem', marginLeft: '2px' }}>({defaultPins.length})</span>
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '4px' }}>
@@ -913,7 +913,7 @@ const SortableLayer = ({
               {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
             </div>
             <span onDoubleClick={() => !readOnly && setIsEditingName(true)} style={{ fontWeight: '700', fontSize: '0.65rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {layer.name} <span style={{ fontWeight: 'normal', color: '#aaa', fontSize: '0.55rem', marginLeft: '2px' }}>({layerPins.length})</span>
+              {layer.name} <span style={{ fontWeight: 'normal', color: 'var(--text-secondary)', fontSize: '0.55rem', marginLeft: '2px' }}>({layerPins.length})</span>
             </span>
           </div>
           <div style={{ display: 'flex', gap: '2px', marginLeft: '4px', alignItems: 'center' }}>
@@ -1001,7 +1001,7 @@ const SortableLayer = ({
                 {layer.name && (
                   <button
                     onMouseDown={(e) => { e.preventDefault(); onUpdateLayer(layer.id, { name: '' }); }}
-                    style={{ position: 'absolute', right: '4px', background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0' }}
+                    style={{ position: 'absolute', right: '4px', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0' }}
                     title="Clear name"
                   >
                     <X size={11} />
