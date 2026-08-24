@@ -123,14 +123,15 @@ button:active {
   position: absolute;
   top: 64px;
   right: 16px;
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--surface-color);
   backdrop-filter: blur(8px);
   padding: 6px 14px;
   border-radius: 20px;
   font-size: 12px;
   font-weight: 600;
-  color: #2c3e50;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
   z-index: 1000;
   pointer-events: none;
   letter-spacing: 0.3px;

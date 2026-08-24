@@ -943,9 +943,9 @@ const MapView = ({
           width: '42px',
           height: '42px',
           borderRadius: '12px',
-          background: 'white',
-          border: 'none',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+          background: 'var(--surface-color)',
+          border: '1px solid var(--border-color)',
+          boxShadow: 'var(--shadow-md)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -954,8 +954,8 @@ const MapView = ({
           color: 'var(--primary-color)',
           transition: 'all 0.2s',
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = '#f8f9fa')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = 'white')}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface-color)')}
         title={`Heading: ${Math.round((bearing % 360 + 360) % 360)}°, Tilt: ${Math.round(pitch)}° (Click to reset)`}
         aria-label="Compass - Reset bearing to North"
       >
@@ -982,8 +982,8 @@ const MapView = ({
             <circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.6" />
             {/* North pointer (solid red) */}
             <polygon points="12,1 17,12 7,12" fill="#ea4335" />
-            {/* South pointer (solid dark grey) */}
-            <polygon points="12,23 17,12 7,12" fill="#374151" />
+            {/* South pointer */}
+            <polygon points="12,23 17,12 7,12" fill={mapTheme === 'dark' ? '#9ca3af' : '#374151'} />
           </g>
         </svg>
       </button>
@@ -997,9 +997,9 @@ const MapView = ({
           width: '42px',
           height: '42px',
           borderRadius: '12px',
-          background: 'white',
-          border: 'none',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+          background: 'var(--surface-color)',
+          border: '1px solid var(--border-color)',
+          boxShadow: 'var(--shadow-md)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -1008,8 +1008,8 @@ const MapView = ({
           color: 'var(--primary-color)',
           transition: 'all 0.2s',
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = '#f8f9fa')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = 'white')}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface-color)')}
         title="Find my location"
       >
         <Locate size={24} />
@@ -1029,6 +1029,17 @@ const MapView = ({
           flex-direction: row-reverse !important;
           align-items: center !important;
           margin: 0 60px 10px 0 !important;
+          background: var(--surface-color) !important;
+          color: var(--text-secondary) !important;
+          border: 1px solid var(--border-color) !important;
+          border-radius: 12px !important;
+          box-shadow: var(--shadow-sm) !important;
+        }
+        .maplibregl-ctrl-attrib a {
+          color: var(--text-secondary) !important;
+        }
+        .maplibregl-ctrl-attrib button {
+          background-color: var(--surface-color) !important;
         }
         .maplibregl-ctrl-attrib a.maplibregl-compact {
           order: 99 !important;
