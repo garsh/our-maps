@@ -1069,9 +1069,9 @@ export function MapEditor() {
       }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', minWidth: 0, flexShrink: 1, userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} onClick={() => navigate('/')}>
         <div style={{ display: 'flex', flexShrink: 0 }}>
-          <MapIcon size={18} />
+          <MapIcon size={18} color={mapTheme === 'dark' ? '#cbd5e1' : 'white'} />
         </div>
-        <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1 }}>{mapName || 'Untitled Map'}</h1>
+        <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1, color: mapTheme === 'dark' ? '#cbd5e1' : 'white' }}>{mapName || 'Untitled Map'}</h1>
       </div>
       
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
@@ -1091,7 +1091,7 @@ export function MapEditor() {
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            color: (isOffline || error) ? '#ffbdad' : (successMessage ? '#b8ffd1' : 'white'),
+            color: (isOffline || error) ? '#ffbdad' : (successMessage ? '#b8ffd1' : (mapTheme === 'dark' ? '#cbd5e1' : 'white')),
             fontWeight: '600',
             whiteSpace: 'nowrap',
             cursor: error ? 'pointer' : 'default',

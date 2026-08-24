@@ -155,8 +155,8 @@ export default function LandingPage() {
         boxShadow: 'var(--shadow-md)',
         marginBottom: '1rem'
       }}>
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: 0, fontSize: '1.5rem', fontWeight: 'bold', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}>
-          <MapIcon size={28} /> OurMaps
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: theme === 'dark' ? '#cbd5e1' : 'white', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}>
+          <MapIcon size={28} color={theme === 'dark' ? '#cbd5e1' : 'white'} /> OurMaps
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
           <div style={{ position: 'relative' }}>
