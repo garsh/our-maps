@@ -724,7 +724,16 @@ const DefaultLayerHeader = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '4px' }}>
             <button 
               onClick={(e) => { e.stopPropagation(); onToggleLayerVisibility?.(null); }}
-              style={{ background: 'transparent', border: 'none', color: hiddenLayerIds?.has(null) ? '#bbb' : 'var(--primary-color)', cursor: 'pointer', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
+              style={{ 
+                background: 'transparent', 
+                border: 'none', 
+                color: hiddenLayerIds?.has(null) ? 'var(--text-secondary)' : 'var(--primary-color)', 
+                opacity: hiddenLayerIds?.has(null) ? 0.45 : 1,
+                cursor: 'pointer', 
+                padding: '1px 3px', 
+                display: 'flex', 
+                alignItems: 'center' 
+              }}
               title={hiddenLayerIds?.has(null) ? "Show layer" : "Hide layer"}
             >
               {hiddenLayerIds?.has(null) ? <EyeOff size={11} /> : <Eye size={11} />}
@@ -910,7 +919,16 @@ const SortableLayer = ({
           <div style={{ display: 'flex', gap: '2px', marginLeft: '4px', alignItems: 'center' }}>
             <button 
               onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}
-              style={{ background: 'transparent', border: 'none', color: isHidden ? '#ccc' : '#555', cursor: 'pointer', padding: '1px 3px', display: 'flex', alignItems: 'center' }}
+              style={{ 
+                background: 'transparent', 
+                border: 'none', 
+                color: isHidden ? 'var(--text-secondary)' : 'var(--primary-color)', 
+                opacity: isHidden ? 0.45 : 1,
+                cursor: 'pointer', 
+                padding: '1px 3px', 
+                display: 'flex', 
+                alignItems: 'center' 
+              }}
               title={isHidden ? "Show layer on map" : "Hide layer on map"}
             >
               {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
