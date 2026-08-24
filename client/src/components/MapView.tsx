@@ -1040,10 +1040,18 @@ const MapView = ({
         }
         .maplibregl-ctrl-attrib button,
         .maplibregl-ctrl-attrib-button {
-          background-color: var(--surface-color) !important;
-          filter: ${mapTheme === 'dark' ? 'invert(0.75) opacity(0.85)' : 'none'} !important;
+          width: 24px !important;
+          height: 24px !important;
+          background-color: ${mapTheme === 'dark' ? '#121212' : 'var(--surface-color)'} !important;
+          background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='${mapTheme === 'dark' ? '%23cbd5e1' : '%2344474e'}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10' stroke='${mapTheme === 'dark' ? '%23cbd5e1' : '%2344474e'}' stroke-width='1.5' fill='none'/%3E%3Cline x1='12' y1='16' x2='12' y2='12' stroke='${mapTheme === 'dark' ? '%23cbd5e1' : '%2344474e'}' stroke-width='2'/%3E%3Cline x1='12' y1='8' x2='12.01' y2='8' stroke='${mapTheme === 'dark' ? '%23cbd5e1' : '%2344474e'}' stroke-width='2.5'/%3E%3C/svg%3E") !important;
+          background-repeat: no-repeat !important;
+          background-position: center !important;
+          background-size: 18px 18px !important;
           border-radius: 50% !important;
-          opacity: 0.9 !important;
+          border: 1px solid var(--border-color) !important;
+          box-shadow: var(--shadow-sm) !important;
+          opacity: 0.95 !important;
+          filter: none !important;
         }
         .maplibregl-ctrl-attrib a.maplibregl-compact {
           order: 99 !important;
