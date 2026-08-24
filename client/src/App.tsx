@@ -1163,17 +1163,20 @@ export function MapEditor() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: 'var(--surface-color)',
-              border: '1px solid var(--border-color)',
+              background: mapTheme === 'dark' ? '#1e1e1e' : 'white',
+              border: `1px solid ${mapTheme === 'dark' ? '#333333' : '#dee2e6'}`,
               borderLeft: 'none',
               borderRadius: '0 6px 6px 0',
+              boxShadow: 'var(--shadow-sm)',
             }}
           >
             <div style={{
               width: '4px',
               height: '28px',
               borderRadius: '4px',
-              background: (isResizing || isHoveringResizer) ? 'var(--primary-color)' : 'var(--border-color)',
+              background: (isResizing || isHoveringResizer) 
+                ? 'var(--primary-color)' 
+                : (mapTheme === 'dark' ? '#cbd5e1' : '#94a3b8'),
               transition: 'background 0.2s, transform 0.15s',
               transform: (isResizing || isHoveringResizer) ? 'scaleY(1.1)' : 'scaleY(1)',
             }} />
