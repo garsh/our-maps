@@ -978,8 +978,8 @@ const MapView = ({
               willChange: 'transform',
             }}
           >
-            {/* Thin outer ring around compass */}
-            <circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.6" />
+            {/* Outer ring around compass */}
+            <circle cx="12" cy="12" r="11" fill="none" stroke={mapTheme === 'dark' ? '#cbd5e1' : 'currentColor'} strokeWidth="1.5" opacity={mapTheme === 'dark' ? 0.95 : 0.8} />
             {/* North pointer (solid red) */}
             <polygon points="12,1 17,12 7,12" fill="#ea4335" />
             {/* South pointer */}
@@ -1038,8 +1038,12 @@ const MapView = ({
         .maplibregl-ctrl-attrib a {
           color: var(--text-secondary) !important;
         }
-        .maplibregl-ctrl-attrib button {
+        .maplibregl-ctrl-attrib button,
+        .maplibregl-ctrl-attrib-button {
           background-color: var(--surface-color) !important;
+          filter: ${mapTheme === 'dark' ? 'invert(1) brightness(1.4)' : 'none'} !important;
+          border-radius: 50% !important;
+          opacity: 0.9 !important;
         }
         .maplibregl-ctrl-attrib a.maplibregl-compact {
           order: 99 !important;
