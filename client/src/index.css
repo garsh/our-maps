@@ -113,16 +113,17 @@ button:active {
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: var(--bg-color);
 }
 ::-webkit-scrollbar-thumb {
-  background: #ccc;
+  background: var(--border-color);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #bbb;
+  background: var(--text-secondary);
 }
 
 /* Live Zoom Level Indicator Pill (Dev Server Only) */

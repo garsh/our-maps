@@ -1163,7 +1163,9 @@ export function MapEditor() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: 'white',
+              background: 'var(--surface-color)',
+              border: '1px solid var(--border-color)',
+              borderLeft: 'none',
               borderRadius: '0 6px 6px 0',
             }}
           >
