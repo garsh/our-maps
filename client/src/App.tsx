@@ -101,6 +101,16 @@ export function MapEditor() {
     localStorage.setItem('ourmaps_3d_buildings', String(enabled));
   };
 
+  const [showSatellite, setShowSatellite] = useState<boolean>(() => {
+    const saved = localStorage.getItem('ourmaps_satellite');
+    return saved !== null ? saved === 'true' : false;
+  });
+
+  const handleToggleSatellite = (enabled: boolean) => {
+    setShowSatellite(enabled);
+    localStorage.setItem('ourmaps_satellite', String(enabled));
+  };
+
   // Mobile layout states
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
 
@@ -1274,6 +1284,8 @@ export function MapEditor() {
             }}
             mapTheme={mapTheme}
             onThemeChange={handleThemeChange}
+            showSatellite={showSatellite}
+            onToggleSatellite={handleToggleSatellite}
             showHillshade={showHillshade}
             onToggleHillshade={handleToggleHillshade}
             show3DTerrain={show3DTerrain}
@@ -1318,6 +1330,7 @@ export function MapEditor() {
             bottomPadding={isMobile ? sheetHeight : 0}
             leftPadding={isMobile ? 0 : sidebarWidth}
             mapTheme={mapTheme}
+            showSatellite={showSatellite}
             showHillshade={showHillshade}
             show3DTerrain={show3DTerrain}
             show3DBuildings={show3DBuildings}

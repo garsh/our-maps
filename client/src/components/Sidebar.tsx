@@ -28,7 +28,8 @@ import {
   Mountain,
   Box,
   Sun,
-  Moon
+  Moon,
+  Globe
 } from 'lucide-react';
 import {
   DndContext, 
@@ -125,6 +126,8 @@ interface SidebarProps {
   isMobile?: boolean;
   mapTheme?: MapTheme;
   onThemeChange?: (theme: MapTheme) => void;
+  showSatellite?: boolean;
+  onToggleSatellite?: (enabled: boolean) => void;
   showHillshade?: boolean;
   onToggleHillshade?: (enabled: boolean) => void;
   show3DTerrain?: boolean;
@@ -1088,6 +1091,8 @@ const Sidebar = ({
   isMobile,
   mapTheme = 'light',
   onThemeChange,
+  showSatellite = false,
+  onToggleSatellite,
   showHillshade = true,
   onToggleHillshade,
   show3DTerrain = true,
@@ -1545,11 +1550,11 @@ class MouseSensor extends PointerSensor {
                         style={{ position: 'absolute', top: '100%', right: '-1px', left: 'auto', width: '240px', background: 'var(--surface-color)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '0 0 var(--radius-md) var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3100 }}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {/* Light/Dark mode toggle */}
+                        {/* Satellite mode toggle */}
                         <div
                           onClick={(e) => {
                             e.stopPropagation();
-                            onThemeChange?.(mapTheme === 'dark' ? 'light' : 'dark');
+                            onToggleSatellite?.(!showSatellite);
                           }}
                           style={{
                             padding: '10px 14px',
@@ -1558,7 +1563,7 @@ class MouseSensor extends PointerSensor {
                             alignItems: 'center',
                             justifyContent: 'space-between',
                             fontSize: '0.82rem',
-                            fontWeight: mapTheme === 'dark' ? '600' : '500',
+                            fontWeight: showSatellite ? '600' : '500',
                             color: 'var(--text-primary)',
                             borderBottom: '1px solid var(--border-color)',
                           }}
@@ -1566,7 +1571,63 @@ class MouseSensor extends PointerSensor {
                           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {mapTheme === 'dark' ? <Moon size={15} color="#3b82f6" /> : <Sun size={15} color="#64748b" />}
+                            <Globe size={15} color={showSatellite ? '#3b82f6' : '#64748b'} />
+                            <span>Satellite</span>
+                          </div>
+                          <div
+                            style={{
+                              width: '34px',
+                              height: '18px',
+                              borderRadius: '10px',
+                              background: showSatellite ? '#3b82f6' : '#e2e8f0',
+                              position: 'relative',
+                              transition: 'background 0.2s ease',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: '14px',
+                                height: '14px',
+                                borderRadius: '50%',
+                                background: 'white',
+                                position: 'absolute',
+                                top: '2px',
+                                left: showSatellite ? '18px' : '2px',
+                                transition: 'left 0.2s ease',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Light/Dark mode toggle */}
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!showSatellite) {
+                              onThemeChange?.(mapTheme === 'dark' ? 'light' : 'dark');
+                            }
+                          }}
+                          style={{
+                            padding: '10px 14px',
+                            cursor: showSatellite ? 'not-allowed' : 'pointer',
+                            opacity: showSatellite ? 0.45 : 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            fontSize: '0.82rem',
+                            fontWeight: mapTheme === 'dark' ? '600' : '500',
+                            color: 'var(--text-primary)',
+                            borderBottom: '1px solid var(--border-color)',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!showSatellite) e.currentTarget.style.background = 'var(--bg-color)';
+                          }}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {mapTheme === 'dark' ? <Moon size={15} color={showSatellite ? '#94a3b8' : '#3b82f6'} /> : <Sun size={15} color="#64748b" />}
                             <span>Dark Mode</span>
                           </div>
                           <div
@@ -1574,7 +1635,7 @@ class MouseSensor extends PointerSensor {
                               width: '34px',
                               height: '18px',
                               borderRadius: '10px',
-                              background: mapTheme === 'dark' ? '#3b82f6' : '#e2e8f0',
+                              background: mapTheme === 'dark' ? (showSatellite ? '#94a3b8' : '#3b82f6') : '#e2e8f0',
                               position: 'relative',
                               transition: 'background 0.2s ease',
                               flexShrink: 0,
@@ -1602,11 +1663,14 @@ class MouseSensor extends PointerSensor {
                           <div
                             onClick={(e) => {
                               e.stopPropagation();
-                              onToggleHillshade?.(!showHillshade);
+                              if (!showSatellite) {
+                                onToggleHillshade?.(!showHillshade);
+                              }
                             }}
                             style={{
                               padding: '10px 14px',
-                              cursor: 'pointer',
+                              cursor: showSatellite ? 'not-allowed' : 'pointer',
+                              opacity: showSatellite ? 0.45 : 1,
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'space-between',
@@ -1614,13 +1678,15 @@ class MouseSensor extends PointerSensor {
                               fontWeight: showHillshade ? '600' : '500',
                               color: 'var(--text-primary)',
                             }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                            onMouseEnter={(e) => {
+                              if (!showSatellite) e.currentTarget.style.background = 'var(--bg-color)';
+                            }}
                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={showHillshade ? '#1d4ed8' : '#64748b'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={showHillshade ? (showSatellite ? '#94a3b8' : '#1d4ed8') : '#64748b'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="m8 3 4 8 5-5 5 15H2L8 3z" />
-                                <path d="M12 11l5 10H12V11z" fill={showHillshade ? '#1d4ed8' : '#64748b'} opacity="0.4" stroke="none" />
+                                <path d="M12 11l5 10H12V11z" fill={showHillshade ? (showSatellite ? '#94a3b8' : '#1d4ed8') : '#64748b'} opacity="0.4" stroke="none" />
                               </svg>
                               <span>Hillshading</span>
                             </div>
@@ -1629,7 +1695,7 @@ class MouseSensor extends PointerSensor {
                                 width: '34px',
                                 height: '18px',
                                 borderRadius: '10px',
-                                background: showHillshade ? '#3b82f6' : '#e2e8f0',
+                                background: showHillshade ? (showSatellite ? '#94a3b8' : '#3b82f6') : '#e2e8f0',
                                 position: 'relative',
                                 transition: 'background 0.2s ease',
                                 flexShrink: 0,

@@ -320,6 +320,67 @@ describe('Sidebar', () => {
     expect(screen.getByText('Hillshading')).toBeInTheDocument();
   });
 
+  it('allows toggling satellite mode in appearance menu', () => {
+    const onToggleSatellite = vi.fn();
+    render(<TestWrapper handlers={{ onToggleSatellite, showSatellite: false }} />);
+
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+
+    const appearanceOption = screen.getByText('Appearance');
+    fireEvent.click(appearanceOption);
+
+    const satelliteOption = screen.getByText('Satellite');
+    expect(satelliteOption).toBeInTheDocument();
+
+    fireEvent.click(satelliteOption);
+    expect(onToggleSatellite).toHaveBeenCalledWith(true);
+  });
+
+  it('greys out and disables dark mode and hillshading when satellite mode is active', () => {
+    const onThemeChange = vi.fn();
+    const onToggleHillshade = vi.fn();
+    render(<TestWrapper handlers={{ onThemeChange, onToggleHillshade, showSatellite: true, mapTheme: 'light', showHillshade: true }} />);
+
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+
+    const appearanceOption = screen.getByText('Appearance');
+    fireEvent.click(appearanceOption);
+
+    const darkModeOption = screen.getByText('Dark Mode');
+    const hillshadeOption = screen.getByText('Hillshading');
+
+    fireEvent.click(darkModeOption);
+    expect(onThemeChange).not.toHaveBeenCalled();
+
+    fireEvent.click(hillshadeOption);
+    expect(onToggleHillshade).not.toHaveBeenCalled();
+  });
+
+  it('defaults Satellite mode and Dark mode to OFF for new users', () => {
+    render(<TestWrapper handlers={{}} />);
+
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+
+    const appearanceOption = screen.getByText('Appearance');
+    fireEvent.click(appearanceOption);
+
+    const satelliteOption = screen.getByText('Satellite');
+    const darkModeOption = screen.getByText('Dark Mode');
+
+    expect(satelliteOption).toBeInTheDocument();
+    expect(darkModeOption).toBeInTheDocument();
+
+    // Verify switch elements are in OFF state by checking background styles or text styles
+    const satelliteContainer = satelliteOption.closest('div[style*="padding"]');
+    const darkModeContainer = darkModeOption.closest('div[style*="padding"]');
+
+    expect(satelliteContainer?.textContent).toContain('Satellite');
+    expect(darkModeContainer?.textContent).toContain('Dark Mode');
+  });
+
   it('hides edit menu items and edit buttons when isOffline is true', () => {
     const pins = [{ id: 'p1', lat: 0, lng: 0, label: 'Pin 1', position: 0 }];
     render(<TestWrapper handlers={{ isOffline: true, pins }} />);
