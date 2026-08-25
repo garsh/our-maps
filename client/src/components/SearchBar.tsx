@@ -58,14 +58,36 @@ const SearchBar = ({ onResultSelect: _onResultSelect, onAddPin, onSelectPin: _on
   const [globalResults, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Initialize Fuse for fuzzy search on local pins
+  // Filter local pins by mapBounds (strictly within current map view)
+  const boundedPins = useMemo(() => {
+    if (!mapBounds) return pins;
+    const parts = mapBounds.split(',').map(Number);
+    if (parts.length === 4 && parts.every((n) => !isNaN(n))) {
+      const [west, north, east, south] = parts;
+      const minLat = Math.min(north, south);
+      const maxLat = Math.max(north, south);
+      const minLng = Math.min(west, east);
+      const maxLng = Math.max(west, east);
+
+      return pins.filter(
+        (pin) =>
+          pin.lat >= minLat &&
+          pin.lat <= maxLat &&
+          pin.lng >= minLng &&
+          pin.lng <= maxLng
+      );
+    }
+    return pins;
+  }, [pins, mapBounds]);
+
+  // Initialize Fuse for fuzzy search on bounded local pins
   const fuse = useMemo(() => {
-    return new Fuse(pins, {
+    return new Fuse(boundedPins, {
       keys: ['label', 'description'],
       threshold: 0.4,
       includeScore: true,
     });
-  }, [pins]);
+  }, [boundedPins]);
 
   const localResults = useMemo((): SearchResult[] => {
     if (!query.trim()) return [];
@@ -78,7 +100,7 @@ const SearchBar = ({ onResultSelect: _onResultSelect, onAddPin, onSelectPin: _on
         address: address,
         lat: result.item.lat.toString(),
         lon: result.item.lng.toString(),
-        type: 'local',
+        type: 'local' as const,
         pinId: result.item.id
       };
     });

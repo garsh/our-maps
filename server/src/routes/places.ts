@@ -35,27 +35,26 @@ router.get('/search', async (req: AuthRequest, res) => {
     console.warn('[Places API] GOOGLE_MAPS_API_KEY is not set or empty. Falling back to Nominatim.');
     try {
       let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=30&addressdetails=1`;
-      let centerLat: number | null = null;
-      let centerLng: number | null = null;
+      let boundWest = -180, boundEast = 180, boundNorth = 90, boundSouth = -90;
+      let hasBounds = false;
       
       if (bounds) {
         const parts = bounds.split(',').map(Number);
         if (parts.length === 4 && parts.every(n => !isNaN(n))) {
           const [west, north, east, south] = parts;
-          centerLat = (north + south) / 2;
-          centerLng = (west + east) / 2;
+          const minLat = Math.min(north, south);
+          const maxLat = Math.max(north, south);
+          const minLng = Math.min(west, east);
+          const maxLng = Math.max(west, east);
           
-          const width = Math.abs(east - west);
-          const height = Math.abs(north - south);
+          boundWest = Math.max(-180, minLng);
+          boundEast = Math.min(180, maxLng);
+          boundNorth = Math.min(90, maxLat);
+          boundSouth = Math.max(-90, minLat);
+          hasBounds = true;
           
-          // Expand by 50% on each side
-          const expWest = west - (width * 0.5);
-          const expEast = east + (width * 0.5);
-          const expNorth = north + (height * 0.5);
-          const expSouth = south - (height * 0.5);
-          
-          const expandedBounds = `${expWest},${expNorth},${expEast},${expSouth}`;
-          url += `&viewbox=${encodeURIComponent(expandedBounds)}&bounded=1`;
+          const boundedViewbox = `${boundWest},${boundNorth},${boundEast},${boundSouth}`;
+          url += `&viewbox=${encodeURIComponent(boundedViewbox)}&bounded=1`;
         } else {
           url += `&viewbox=${encodeURIComponent(bounds)}&bounded=1`;
         }
@@ -100,11 +99,12 @@ router.get('/search', async (req: AuthRequest, res) => {
         };
       });
 
-      if (centerLat !== null && centerLng !== null) {
-        formatted.sort((a: any, b: any) => {
-          const distA = Math.pow(parseFloat(a.lat) - centerLat!, 2) + Math.pow(parseFloat(a.lon) - centerLng!, 2);
-          const distB = Math.pow(parseFloat(b.lat) - centerLat!, 2) + Math.pow(parseFloat(b.lon) - centerLng!, 2);
-          return distA - distB;
+      if (hasBounds) {
+        formatted = formatted.filter((item: any) => {
+          const lat = parseFloat(item.lat);
+          const lon = parseFloat(item.lon);
+          if (isNaN(lat) || isNaN(lon)) return true;
+          return lat >= boundSouth && lat <= boundNorth && lon >= boundWest && lon <= boundEast;
         });
       }
 
@@ -123,22 +123,45 @@ router.get('/search', async (req: AuthRequest, res) => {
       maxResultCount: 10
     };
 
+    let boundWest = -180, boundEast = 180, boundNorth = 90, boundSouth = -90;
+    let hasBounds = false;
+
     if (bounds) {
       // bounds: west,north,east,south
       const parts = bounds.split(',').map(Number);
       if (parts.length === 4 && parts.every((n) => !isNaN(n))) {
         const [west, north, east, south] = parts;
-        const centerLat = (north + south) / 2;
-        const centerLng = (west + east) / 2;
-        // Simple radius calculation in meters (rough estimate)
-        const latDiff = Math.abs(north - south);
-        const radius = Math.max(500, Math.min(50000, Math.round(latDiff * 111000)));
-        body.locationBias = {
-          circle: {
-            center: { latitude: centerLat, longitude: centerLng },
-            radius
-          }
-        };
+        const minLat = Math.min(north, south);
+        const maxLat = Math.max(north, south);
+        const minLng = Math.min(west, east);
+        const maxLng = Math.max(west, east);
+
+        const height = Math.abs(maxLat - minLat);
+
+        boundWest = Math.max(-180, minLng);
+        boundEast = Math.min(180, maxLng);
+        boundNorth = Math.min(90, maxLat);
+        boundSouth = Math.max(-90, minLat);
+        hasBounds = true;
+
+        if (boundEast - boundWest <= 180 && boundSouth <= boundNorth) {
+          body.locationRestriction = {
+            rectangle: {
+              low: { latitude: boundSouth, longitude: boundWest },
+              high: { latitude: boundNorth, longitude: boundEast }
+            }
+          };
+        } else {
+          const centerLat = (minLat + maxLat) / 2;
+          const centerLng = (minLng + maxLng) / 2;
+          const radius = Math.max(500, Math.min(50000, Math.round(height * 111000)));
+          body.locationBias = {
+            circle: {
+              center: { latitude: centerLat, longitude: centerLng },
+              radius
+            }
+          };
+        }
       }
     }
 
@@ -159,7 +182,7 @@ router.get('/search', async (req: AuthRequest, res) => {
     }
 
     const results = data.places || [];
-    const formatted = results.map((item: any) => {
+    let formatted = results.map((item: any) => {
       let formattedAddress = item.formattedAddress || '';
       formattedAddress = formattedAddress.replace(/,\s*(USA|United States|United States of America)$/i, '');
       return {
@@ -172,7 +195,16 @@ router.get('/search', async (req: AuthRequest, res) => {
       };
     });
 
-    return res.json(formatted);
+    if (hasBounds) {
+      formatted = formatted.filter((item: any) => {
+        const lat = parseFloat(item.lat);
+        const lon = parseFloat(item.lon);
+        if (isNaN(lat) || isNaN(lon)) return true;
+        return lat >= boundSouth && lat <= boundNorth && lon >= boundWest && lon <= boundEast;
+      });
+    }
+
+    return res.json(formatted.slice(0, 10));
   } catch (err: any) {
     console.error('[Places API] Google search failed:', err);
     return res.status(502).json({ error: 'Search failed' });

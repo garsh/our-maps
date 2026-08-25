@@ -711,6 +711,7 @@ const MapView = ({
   const updateBounds = useCallback(() => {
     if (!mapRef.current) return;
     const map = mapRef.current.getMap();
+    if (!map) return;
     const b = map.getBearing();
     const p = map.getPitch();
 
@@ -725,11 +726,18 @@ const MapView = ({
       compassGroupRef.current.style.transform = `rotate(${-b}deg)`;
     }
 
-    const bounds = map.getBounds();
-    const nw = bounds.getNorthWest();
-    const se = bounds.getSouthEast();
-
-    onBoundsChange(`${nw.lng},${nw.lat},${se.lng},${se.lat}`);
+    try {
+      const bounds = map.getBounds();
+      if (bounds) {
+        const west = bounds.getWest();
+        const north = bounds.getNorth();
+        const east = bounds.getEast();
+        const south = bounds.getSouth();
+        onBoundsChange(`${west},${north},${east},${south}`);
+      }
+    } catch (e) {
+      console.warn('Failed to get map bounds:', e);
+    }
   }, [onBoundsChange]);
 
   const handleCombinedCompassTilt = () => {
@@ -830,6 +838,13 @@ const MapView = ({
     }
   }, [boundsToFit, isMapLoaded, applyBoundsToFit]);
 
+  // Update bounds when map is loaded
+  useEffect(() => {
+    if (isMapLoaded) {
+      updateBounds();
+    }
+  }, [isMapLoaded, updateBounds]);
+
   const handleMyLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -894,7 +909,10 @@ const MapView = ({
               setBearing(m.getBearing());
               setPitch(m.getPitch());
             }
+            updateBounds();
           }}
+          onIdle={updateBounds}
+          onZoomEnd={updateBounds}
           onMove={() => {
             if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
             touchStartRef.current = null;

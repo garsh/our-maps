@@ -46,9 +46,15 @@ describe('Places API Proxy Endpoints', () => {
     const mockNominatimResults = [
       {
         place_id: 12345,
-        display_name: 'Mock Nominatim Place, Country',
-        lat: '12.34',
-        lon: '56.78'
+        display_name: 'Mock In-Bounds Place, Country',
+        lat: '5.5',
+        lon: '0.0'
+      },
+      {
+        place_id: 99999,
+        display_name: 'Mock Out-Of-Bounds Place, Country',
+        lat: '50.0',
+        lon: '50.0'
       }
     ];
 
@@ -69,9 +75,9 @@ describe('Places API Proxy Endpoints', () => {
       {
         place_id: 12345,
         title: '',
-        address: 'Mock Nominatim Place, Country',
-        lat: '12.34',
-        lon: '56.78',
+        address: 'Mock In-Bounds Place, Country',
+        lat: '5.5',
+        lon: '0.0',
         type: 'global'
       }
     ]);
@@ -79,15 +85,33 @@ describe('Places API Proxy Endpoints', () => {
     process.env.GOOGLE_MAPS_API_KEY = originalKey;
   });
 
-  it('should use Google Places API (New) when API key is present', async () => {
+  it('should use Google Places API (New) when API key is present and preserve best match order', async () => {
     process.env.GOOGLE_MAPS_API_KEY = 'mock-google-key-value';
 
     const mockGoogleResults = {
       places: [
         {
           id: 'google-place-id-1',
-          displayName: { text: 'Google Starbucks', languageCode: 'en' },
-          formattedAddress: '123 Coffee Lane',
+          displayName: { text: 'Best Match Starbucks', languageCode: 'en' },
+          formattedAddress: '999 Best Match Lane',
+          location: {
+            latitude: 6.0,
+            longitude: 1.0
+          }
+        },
+        {
+          id: 'google-place-id-2',
+          displayName: { text: 'Second Match Starbucks', languageCode: 'en' },
+          formattedAddress: '123 Second Match Lane',
+          location: {
+            latitude: 5.5,
+            longitude: 0.0
+          }
+        },
+        {
+          id: 'google-place-id-far',
+          displayName: { text: 'Far Away Starbucks', languageCode: 'en' },
+          formattedAddress: '999 Far Away Lane',
           location: {
             latitude: 44.5,
             longitude: -80.2
@@ -104,8 +128,10 @@ describe('Places API Proxy Endpoints', () => {
       expect(headers['X-Goog-FieldMask']).toContain('places.id');
       const body = JSON.parse(options?.body as string);
       expect(body.textQuery).toBe('starbucks');
-      expect(body.locationBias.circle.center.latitude).toBeCloseTo(5.5);
-      expect(body.locationBias.circle.center.longitude).toBeCloseTo(0);
+      expect(body.locationRestriction.rectangle.low.latitude).toBeCloseTo(5.0);
+      expect(body.locationRestriction.rectangle.low.longitude).toBeCloseTo(-1.0);
+      expect(body.locationRestriction.rectangle.high.latitude).toBeCloseTo(6.0);
+      expect(body.locationRestriction.rectangle.high.longitude).toBeCloseTo(1.0);
       return {
         json: async () => mockGoogleResults
       } as Response;
@@ -117,13 +143,22 @@ describe('Places API Proxy Endpoints', () => {
 
     expect(res.status).toBe(200);
     expect(fetchSpy).toHaveBeenCalled();
+    // Preserves best match order while filtering out the out-of-bounds result
     expect(res.body).toEqual([
       {
         place_id: 'google-place-id-1',
-        lat: '44.5',
-        lon: '-80.2',
-        title: 'Google Starbucks',
-        address: '123 Coffee Lane',
+        lat: '6',
+        lon: '1',
+        title: 'Best Match Starbucks',
+        address: '999 Best Match Lane',
+        type: 'global'
+      },
+      {
+        place_id: 'google-place-id-2',
+        lat: '5.5',
+        lon: '0',
+        title: 'Second Match Starbucks',
+        address: '123 Second Match Lane',
         type: 'global'
       }
     ]);

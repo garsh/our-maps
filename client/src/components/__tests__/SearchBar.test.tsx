@@ -66,6 +66,34 @@ describe('SearchBar', () => {
     expect(mockOnHoverPin).toHaveBeenCalledWith('1');
   });
 
+  it('filters local pins by mapBounds while preserving best match order', async () => {
+    const mixedPins = [
+      { id: '1', lat: 10.8, lng: 20.8, label: 'Coffee Spot', description: 'Best match in bounds', position: 0 },
+      { id: '2', lat: 10.0, lng: 20.0, label: 'Nice Place with Coffee', description: 'Secondary match in bounds', position: 1 },
+      { id: '3', lat: 11.3, lng: 20.0, label: 'Coffee Outside', description: 'Slightly outside bounds', position: 2 },
+      { id: '4', lat: 50.0, lng: 80.0, label: 'Distant Coffee', description: 'Out of bounds', position: 3 }
+    ];
+
+    // Bounds around lat: 10, lng: 20 -> west: 19, north: 11, east: 21, south: 9.
+    render(
+      <SearchBar 
+        onResultSelect={mockOnResultSelect} 
+        onAddPin={mockOnAddPin} 
+        pins={mixedPins} 
+        mapBounds="19,11,21,9" 
+      />
+    );
+    
+    const input = screen.getByPlaceholderText(/Search.../i);
+    fireEvent.change(input, { target: { value: 'Coffee Spot' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Coffee Spot')).toBeInTheDocument();
+      expect(screen.queryByText('Coffee Outside')).not.toBeInTheDocument();
+      expect(screen.queryByText('Distant Coffee')).not.toBeInTheDocument();
+    });
+  });
+
   it('calls onAddPin when + Add to Map is clicked', async () => {
     const mockResults = [
       { place_id: 1, address: 'New York, USA', title: '', lat: '40', lon: '-74' }
