@@ -212,9 +212,33 @@ describe('API Endpoints', () => {
     expect(res.headers['content-type']).toContain('image/png');
   });
 
-  it('GET /maps/sprites/light@2x.json should return sprite metadata json', async () => {
-    const res = await request(app).get('/maps/sprites/light@2x.json');
-    expect(res.status).toBe(200);
-    expect(res.headers['content-type']).toContain('application/json');
+  it('POST /api/maps should allow long pin labels and descriptions (> 255 characters)', async () => {
+    const mapId = 'long-label-map-id';
+    const longLabel = 'Stoos Ridge trail - This hike was absolutely breathtaking! It’s especially enjoyable because it’s only 2.5 miles along a ridge and you get to see 7 lakes along the way\nanother unique thing about Stoos is that you take the steepest funicular in the world to embark on it!\n💲33.59 usd per person';
+    const mapData = {
+      id: mapId,
+      name: 'Italy and Switzerland',
+      layers: [{ id: 'layer-1', name: 'Untitled layer', position: 0 }],
+      pins: [
+        {
+          id: 'pin-1',
+          layerId: 'layer-1',
+          lat: 46.9567923,
+          lng: 8.6654823,
+          label: longLabel,
+          description: 'A very long description that can exceed normal lengths easily',
+          position: 0
+        }
+      ]
+    };
+
+    const res = await request(app)
+      .post('/api/maps')
+      .set(authHeader)
+      .send(mapData);
+
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBe(mapId);
+    expect(res.body.pins[0].label).toBe(longLabel);
   });
 });

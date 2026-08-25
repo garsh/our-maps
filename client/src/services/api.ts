@@ -14,7 +14,7 @@ const getHeaders = () => {
 const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 3): Promise<Response> => {
   try {
     const res = await fetch(url, options);
-    if (!res.ok && retries > 0 && res.status !== 401 && res.status !== 403 && res.status !== 404) {
+    if (!res.ok && retries > 0 && res.status >= 500) {
       console.warn(`Fetch status ${res.status} for ${url}, retrying... (${retries} left)`);
       await new Promise(resolve => setTimeout(resolve, 1000));
       return fetchWithRetry(url, options, retries - 1);
