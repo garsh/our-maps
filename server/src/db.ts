@@ -61,8 +61,6 @@ export async function getDb() {
   await db.run('PRAGMA journal_mode = WAL;');
   await db.run('PRAGMA busy_timeout = 5000;');
 
-  await db.exec('PRAGMA busy_timeout = 5000');
-
   const tables = await db.all("SELECT name FROM sqlite_master WHERE type='table'");
   const tableNames = tables.map((t: any) => t.name);
   

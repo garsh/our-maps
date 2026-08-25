@@ -4,7 +4,20 @@ import { test, expect } from '@playwright/test';
 async function login(page: any) {
   page.on('console', (msg: any) => {
     const text = msg.text();
-    if (text.includes('Unable to load glyph range') || text.includes('GL Driver Message') || text.includes('could not be loaded')) {
+    if (
+      text.includes('Unable to load glyph range') ||
+      text.includes('GL Driver Message') ||
+      text.includes('could not be loaded') ||
+      text.includes('[vite]') ||
+      text.includes('React DevTools') ||
+      text.includes('Geolocation error') ||
+      text.includes('[SOCKET]') ||
+      text.includes('WebSocket') ||
+      text.includes('websocket') ||
+      text.includes('elevation-tiles-prod') ||
+      text.includes('AJAXError') ||
+      text.trim() === 'TypeError: Failed to fetch'
+    ) {
       return;
     }
     if (msg.type() === 'error') console.log(`BROWSER ERROR: ${text}`);

@@ -1,4 +1,5 @@
 import type { Pin, PinLayer } from '@shared/interfaces';
+import { generateId } from './fileUtils';
 
 /**
  * Manually parses KML DOM to extract Folders and Placemarks, preserving hierarchy.
@@ -8,13 +9,6 @@ export const parseKmlHierarchy = (kmlDoc: Document): { pins: Pin[], layers: PinL
   const layers: PinLayer[] = [];
   const layerMap = new Map<string, string>(); // name -> id
 
-  const generateId = (): string => {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
-  };
 
   const getOrCreateLayerId = (folderName: string): string => {
     if (layerMap.has(folderName)) {
