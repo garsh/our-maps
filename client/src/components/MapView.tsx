@@ -316,10 +316,12 @@ const MapView = ({
       }
     };
 
-    if (map.isStyleLoaded() && !map.isMoving()) {
+    if (typeof map.isStyleLoaded === 'function' && map.isStyleLoaded() && (typeof map.isMoving !== 'function' || !map.isMoving())) {
       syncTerrain();
-    } else {
+    } else if (typeof map.once === 'function') {
       map.once('idle', syncTerrain);
+    } else {
+      syncTerrain();
     }
   }, [mapTheme, show3DTerrain, showSatellite]);
 
@@ -594,7 +596,7 @@ const MapView = ({
     const hillshadeLayer = {
       id: 'hills',
       type: 'hillshade',
-      source: 'terrainElevation',
+      source: 'hillshadeDem',
       layout: {
         visibility: (showHillshade && !showSatellite) ? 'visible' : 'none',
       },
@@ -634,6 +636,14 @@ const MapView = ({
           attribution: '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
         },
         terrainElevation: {
+          type: 'raster-dem',
+          tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+          encoding: 'terrarium',
+          tileSize: 256,
+          maxzoom: 15,
+          attribution: '&copy; <a href="https://github.com/tilezen/joerd" target="_blank" rel="noopener">Mapzen / AWS Elevation</a>',
+        },
+        hillshadeDem: {
           type: 'raster-dem',
           tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
           encoding: 'terrarium',
