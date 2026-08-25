@@ -81,6 +81,21 @@ export default defineConfig({
       }
     })
   ],
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/maplibre-gl') || id.includes('node_modules/react-map-gl') || id.includes('node_modules/@vis.gl')) {
+            return 'maplibre';
+          }
+          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router-dom/')) {
+            return 'vendor';
+          }
+        },
+      },
+    },
+  },
   optimizeDeps: {
     exclude: ['maplibre-gl'],
   },

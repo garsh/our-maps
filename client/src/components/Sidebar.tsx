@@ -1505,7 +1505,7 @@ class MouseSensor extends PointerSensor {
               <button 
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                 aria-label="More options"
-                style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', padding: '3px' }}
+                style={{ background: 'none', border: 'none', color: mapTheme === 'dark' ? '#cbd5e1' : 'white', cursor: 'pointer', display: 'flex', padding: '3px' }}
               >
                 <MoreVertical size={20} />
               </button>
