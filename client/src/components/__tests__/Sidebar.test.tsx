@@ -337,7 +337,7 @@ describe('Sidebar', () => {
     expect(onToggleSatellite).toHaveBeenCalledWith(true);
   });
 
-  it('greys out and disables dark mode and hillshading when satellite mode is active', () => {
+  it('allows dark mode toggle but greys out and disables hillshading when satellite mode is active', () => {
     const onThemeChange = vi.fn();
     const onToggleHillshade = vi.fn();
     render(<TestWrapper handlers={{ onThemeChange, onToggleHillshade, showSatellite: true, mapTheme: 'light', showHillshade: true }} />);
@@ -352,7 +352,7 @@ describe('Sidebar', () => {
     const hillshadeOption = screen.getByText('Hillshading');
 
     fireEvent.click(darkModeOption);
-    expect(onThemeChange).not.toHaveBeenCalled();
+    expect(onThemeChange).toHaveBeenCalledWith('dark');
 
     fireEvent.click(hillshadeOption);
     expect(onToggleHillshade).not.toHaveBeenCalled();

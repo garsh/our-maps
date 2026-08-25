@@ -1605,14 +1605,11 @@ class MouseSensor extends PointerSensor {
                         <div
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (!showSatellite) {
-                              onThemeChange?.(mapTheme === 'dark' ? 'light' : 'dark');
-                            }
+                            onThemeChange?.(mapTheme === 'dark' ? 'light' : 'dark');
                           }}
                           style={{
                             padding: '10px 14px',
-                            cursor: showSatellite ? 'not-allowed' : 'pointer',
-                            opacity: showSatellite ? 0.45 : 1,
+                            cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
@@ -1622,12 +1619,12 @@ class MouseSensor extends PointerSensor {
                             borderBottom: '1px solid var(--border-color)',
                           }}
                           onMouseEnter={(e) => {
-                            if (!showSatellite) e.currentTarget.style.background = 'var(--bg-color)';
+                            e.currentTarget.style.background = 'var(--bg-color)';
                           }}
                           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {mapTheme === 'dark' ? <Moon size={15} color={showSatellite ? '#94a3b8' : '#3b82f6'} /> : <Sun size={15} color="#64748b" />}
+                            {mapTheme === 'dark' ? <Moon size={15} color="#3b82f6" /> : <Sun size={15} color="#64748b" />}
                             <span>Dark Mode</span>
                           </div>
                           <div
@@ -1635,7 +1632,7 @@ class MouseSensor extends PointerSensor {
                               width: '34px',
                               height: '18px',
                               borderRadius: '10px',
-                              background: mapTheme === 'dark' ? (showSatellite ? '#94a3b8' : '#3b82f6') : '#e2e8f0',
+                              background: mapTheme === 'dark' ? '#3b82f6' : '#e2e8f0',
                               position: 'relative',
                               transition: 'background 0.2s ease',
                               flexShrink: 0,
