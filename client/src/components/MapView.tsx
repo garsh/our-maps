@@ -293,48 +293,36 @@ const MapView = ({
     touchStartRef.current = null;
   }, []);
 
-  // Flush MapLibre terrain tile cache when map theme changes while 3D terrain is active
-  const isInitialThemeMount = useRef(true);
+  // Ensure MapLibre terrain state stays in sync across theme and layer changes without tearing down terrain
   useEffect(() => {
-    if (isInitialThemeMount.current) {
-      isInitialThemeMount.current = false;
-      return;
-    }
     if (!mapRef.current) return;
     const map = mapRef.current.getMap();
     if (!map) return;
 
-    const refreshTerrain = () => {
+    const syncTerrain = () => {
       if (!mapRef.current) return;
       const m = mapRef.current.getMap();
       if (!m) return;
 
-      if (show3DTerrain) {
-        try {
+      try {
+        if (show3DTerrain) {
+          m.setTerrain({ source: 'terrainElevation', exaggeration: 1.0 });
+        } else {
           m.setTerrain(null);
-          requestAnimationFrame(() => {
-            if (mapRef.current) {
-              const m2 = mapRef.current.getMap();
-              if (m2) {
-                m2.setTerrain({ source: 'terrainElevation', exaggeration: 1.0 });
-                m2.triggerRepaint();
-              }
-            }
-          });
-        } catch {
-          m.triggerRepaint();
         }
-      } else {
+        m.triggerRepaint();
+      } catch {
         m.triggerRepaint();
       }
     };
 
     if (map.isStyleLoaded() && !map.isMoving()) {
-      refreshTerrain();
+      syncTerrain();
     } else {
-      map.once('idle', refreshTerrain);
+      map.once('idle', syncTerrain);
     }
   }, [mapTheme, show3DTerrain, showSatellite]);
+
 
   const mapStyle = useMemo<any>(() => {
     const pmtilesUrl = `${window.location.origin}/maps/planet.pmtiles`;
@@ -357,19 +345,19 @@ const MapView = ({
         // Land & Water
         if (l.id === 'background') {
           l.paint['background-color'] = '#fcfbfa';
-          l.paint['background-opacity'] = showSatellite ? 0 : 1;
+          l.paint['background-opacity'] = 1;
         }
         if (l.id === 'earth') {
           l.paint['fill-color'] = '#f8f7f4';
-          l.paint['fill-opacity'] = showSatellite ? 0 : 1;
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id === 'landcover') {
           l.paint['fill-color'] = '#f8f7f4';
-          l.paint['fill-opacity'] = showSatellite ? 0 : 1;
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id === 'water') {
-          l.paint['fill-color'] = showSatellite ? '#1d4ed8' : '#a0c8f0';
-          l.paint['fill-opacity'] = showSatellite ? 0.25 : 1;
+          l.paint['fill-color'] = '#a0c8f0';
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id.includes('water_river') || l.id.includes('water_stream')) {
           l.paint['line-color'] = showSatellite ? '#60a5fa' : '#a0c8f0';
@@ -377,7 +365,7 @@ const MapView = ({
         }
         if (l.id === 'landuse_park' || l.id === 'landuse_urban_green') {
           l.paint['fill-color'] = '#d8ebd2';
-          l.paint['fill-opacity'] = showSatellite ? 0 : 1;
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id === 'buildings' && !show3DBuildings) {
           l.paint['fill-color'] = showSatellite ? '#ffffff' : '#e8e4dc';
@@ -385,19 +373,19 @@ const MapView = ({
         }
         if (l.id === 'landuse_school') {
           l.paint['fill-color'] = '#fbf3d5';
-          l.paint['fill-opacity'] = showSatellite ? 0 : 1;
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id === 'landuse_hospital') {
           l.paint['fill-color'] = '#f6e5e5';
-          l.paint['fill-opacity'] = showSatellite ? 0 : 1;
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id === 'landuse_industrial') {
           l.paint['fill-color'] = '#eceeef';
-          l.paint['fill-opacity'] = showSatellite ? 0 : 1;
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id === 'landuse_aerodrome' || l.id === 'landuse_pedestrian' || l.id === 'landuse_zoo' || l.id === 'landuse_beach' || l.id === 'landuse_pier' || l.id === 'landuse_runway') {
           l.paint['fill-color'] = '#f8f7f4';
-          l.paint['fill-opacity'] = showSatellite ? 0 : 1;
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id.includes('boundaries')) {
           l.paint['line-color'] = showSatellite ? '#ffffff' : '#8a8a8a';
@@ -443,19 +431,19 @@ const MapView = ({
         // Land & Water (Google Maps Android Dark Mode)
         if (l.id === 'background') {
           l.paint['background-color'] = '#202a3a';
-          l.paint['background-opacity'] = showSatellite ? 0 : 1;
+          l.paint['background-opacity'] = 1;
         }
         if (l.id === 'earth') {
           l.paint['fill-color'] = '#202a3a';
-          l.paint['fill-opacity'] = showSatellite ? 0 : 1;
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id === 'landcover') {
           l.paint['fill-color'] = '#202a3a';
-          l.paint['fill-opacity'] = showSatellite ? 0 : 1;
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id === 'water') {
-          l.paint['fill-color'] = showSatellite ? '#1d4ed8' : '#141f2d';
-          l.paint['fill-opacity'] = showSatellite ? 0.25 : 1;
+          l.paint['fill-color'] = '#141f2d';
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id.includes('water_river') || l.id.includes('water_stream')) {
           l.paint['line-color'] = showSatellite ? '#60a5fa' : '#141f2d';
@@ -463,7 +451,7 @@ const MapView = ({
         }
         if (l.id === 'landuse_park' || l.id === 'landuse_urban_green') {
           l.paint['fill-color'] = '#1a3d3c';
-          l.paint['fill-opacity'] = showSatellite ? 0 : 1;
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id === 'buildings' && !show3DBuildings) {
           l.paint['fill-color'] = showSatellite ? '#ffffff' : '#2e3848';
@@ -471,19 +459,19 @@ const MapView = ({
         }
         if (l.id === 'landuse_school') {
           l.paint['fill-color'] = '#2a3342';
-          l.paint['fill-opacity'] = showSatellite ? 0 : 1;
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id === 'landuse_hospital') {
           l.paint['fill-color'] = '#3c2d38';
-          l.paint['fill-opacity'] = showSatellite ? 0 : 1;
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id === 'landuse_industrial') {
           l.paint['fill-color'] = '#283240';
-          l.paint['fill-opacity'] = showSatellite ? 0 : 1;
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id === 'landuse_aerodrome' || l.id === 'landuse_pedestrian' || l.id === 'landuse_zoo' || l.id === 'landuse_beach' || l.id === 'landuse_pier' || l.id === 'landuse_runway') {
           l.paint['fill-color'] = '#202a3a';
-          l.paint['fill-opacity'] = showSatellite ? 0 : 1;
+          l.paint['fill-opacity'] = 1;
         }
         if (l.id.includes('boundaries')) {
           l.paint['line-color'] = showSatellite ? '#ffffff' : '#4e5d6c';
@@ -555,7 +543,20 @@ const MapView = ({
         visibility: showSatellite ? 'visible' : 'none',
       },
     };
-    customLayers.unshift(esriSatelliteLayer);
+
+    const roadIndex = customLayers.findIndex(
+      (l: any) =>
+        l.id?.startsWith('roads_tunnels') ||
+        l.id === 'buildings' ||
+        (l.id?.startsWith('roads_') && !l.id?.includes('runway') && !l.id?.includes('taxiway')) ||
+        l.id?.includes('boundaries') ||
+        l.type === 'symbol'
+    );
+    if (roadIndex !== -1) {
+      customLayers.splice(roadIndex, 0, esriSatelliteLayer);
+    } else {
+      customLayers.push(esriSatelliteLayer);
+    }
 
     // 3D Extruded Buildings layer (active when show3D is toggled on)
     const building3DColor = validFlavor === 'dark' ? '#2c3847' : '#e0ded7';
@@ -593,7 +594,7 @@ const MapView = ({
     const hillshadeLayer = {
       id: 'hills',
       type: 'hillshade',
-      source: 'hillshadeDem',
+      source: 'terrainElevation',
       layout: {
         visibility: (showHillshade && !showSatellite) ? 'visible' : 'none',
       },
@@ -633,14 +634,6 @@ const MapView = ({
           attribution: '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
         },
         terrainElevation: {
-          type: 'raster-dem',
-          tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-          encoding: 'terrarium',
-          tileSize: 256,
-          maxzoom: 15,
-          attribution: '&copy; <a href="https://github.com/tilezen/joerd" target="_blank" rel="noopener">Mapzen / AWS Elevation</a>',
-        },
-        hillshadeDem: {
           type: 'raster-dem',
           tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
           encoding: 'terrarium',
