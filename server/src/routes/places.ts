@@ -17,6 +17,25 @@ const STATE_ABBREVIATIONS: Record<string, string> = {
 
 const router = Router();
 
+// Rate pacing queue for upstream OSM Nominatim fallback (max 1 req/sec)
+let nominatimQueue: Promise<void> = Promise.resolve();
+let lastNominatimRequestTime = 0;
+const NOMINATIM_MIN_INTERVAL = 1000;
+
+async function throttleNominatim(): Promise<void> {
+  return new Promise((resolve) => {
+    nominatimQueue = nominatimQueue.then(async () => {
+      const now = Date.now();
+      const timeSince = now - lastNominatimRequestTime;
+      if (timeSince < NOMINATIM_MIN_INTERVAL && process.env.NODE_ENV !== 'test') {
+        await new Promise((r) => setTimeout(r, NOMINATIM_MIN_INTERVAL - timeSince));
+      }
+      lastNominatimRequestTime = Date.now();
+      resolve();
+    });
+  });
+}
+
 // Apply auth middleware to require login for proxy requests
 router.use(authMiddleware);
 
@@ -34,6 +53,7 @@ router.get('/search', async (req: AuthRequest, res) => {
   if (!apiKey) {
     console.warn('[Places API] GOOGLE_MAPS_API_KEY is not set or empty. Falling back to Nominatim.');
     try {
+      await throttleNominatim();
       let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=30&addressdetails=1`;
       let boundWest = -180, boundEast = 180, boundNorth = 90, boundSouth = -90;
       let hasBounds = false;
@@ -225,6 +245,7 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
   if (!apiKey) {
     console.warn('[Places API] GOOGLE_MAPS_API_KEY not set. Falling back to Nominatim.');
     try {
+      await throttleNominatim();
       const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
       const response = await fetch(url, {
         headers: { 'User-Agent': 'OurMaps-App/1.0' }

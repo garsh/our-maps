@@ -3,17 +3,15 @@ import { reverseGeocode, resetGeocodingState } from '../geocoding';
 
 describe('reverseGeocode', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
     global.fetch = vi.fn();
     resetGeocodingState();
   });
 
   afterEach(() => {
-    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  it('calls Nominatim API directly', async () => {
+  it('calls reverse-geocode API directly', async () => {
     const fetchMock = global.fetch as any;
     fetchMock.mockResolvedValue({
       ok: true,
@@ -29,7 +27,7 @@ describe('reverseGeocode', () => {
     expect(result).toBe('Direct Address');
   });
 
-  it('serializes concurrent requests with spacing', async () => {
+  it('executes concurrent requests immediately without artificial serialization delay', async () => {
     const fetchMock = global.fetch as any;
     fetchMock.mockResolvedValue({
       ok: true,
@@ -39,13 +37,9 @@ describe('reverseGeocode', () => {
     const p1 = reverseGeocode(1, 1);
     const p2 = reverseGeocode(2, 2);
 
-    await Promise.resolve();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(1200);
-    await Promise.resolve();
+    const [r1, r2] = await Promise.all([p1, p2]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-
-    await Promise.all([p1, p2]);
+    expect(r1).toBe('Test');
+    expect(r2).toBe('Test');
   });
 });
