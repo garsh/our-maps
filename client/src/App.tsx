@@ -30,6 +30,8 @@ import type { DragEndEvent } from '@dnd-kit/core'
 import { Loader2, Map as MapIcon, LogOut } from 'lucide-react';
 import { reorderPins, reorderLayers, isSameLayer, comparePinPositions } from './utils/reorderUtils';
 import { generateId } from './utils/fileUtils';
+import { getManifestStats } from './utils/tileUtils';
+import { tileWorkerManager } from './utils/tileWorkerManager';
 import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
@@ -58,6 +60,7 @@ export function MapEditor() {
   const [boundsToFit, setBoundsToFit] = useState<[[number, number], [number, number]] | null>(null);
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
   const [mapBounds, setMapBounds] = useState<string | null>(null);
+  const [hasOfflineTiles, setHasOfflineTiles] = useState(false);
   const [previewLocation, setPreviewLocation] = useState<{lat: number, lng: number} | null>(null);
   const DEFAULT_SIDEBAR_WIDTH = 400;
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
@@ -308,6 +311,28 @@ export function MapEditor() {
   useEffect(() => {
     localStorage.setItem('customColors', JSON.stringify(customColors));
   }, [customColors]);
+
+  // Track offline tile status for the currently open map
+  useEffect(() => {
+    if (!mapId) {
+      setHasOfflineTiles(false);
+      return;
+    }
+
+    getManifestStats(mapId).then((stats) => {
+      setHasOfflineTiles(stats.completed > 0);
+    });
+
+    const unsubscribe = tileWorkerManager.subscribe((state) => {
+      if (state.mapId === mapId) {
+        setHasOfflineTiles(state.isDownloaded || state.hasPartialDownload || (state.tileStats?.completed || 0) > 0);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [mapId]);
 
   const addCustomColor = (color: string) => {
     if (!customColors.includes(color)) {
@@ -1334,6 +1359,7 @@ export function MapEditor() {
             showHillshade={showHillshade}
             show3DTerrain={show3DTerrain}
             show3DBuildings={show3DBuildings}
+            hasOfflineTiles={hasOfflineTiles}
           />
         </div>
       </main>

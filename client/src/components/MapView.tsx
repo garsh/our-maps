@@ -16,12 +16,24 @@ import type { MapTheme } from './Sidebar';
 import { getTile } from '../utils/tileUtils';
 
 let globalPMTilesProtocol: Protocol | null = null;
+let currentMapHasOfflineTiles = false;
+
+export function setCurrentMapHasOfflineTiles(hasOffline: boolean) {
+  currentMapHasOfflineTiles = hasOffline;
+}
+
 function setupPMTilesProtocol() {
   if (!globalPMTilesProtocol) {
     globalPMTilesProtocol = new Protocol();
     const offlineTileHandler: maplibregl.AddProtocolAction = async (params, abortController) => {
       const match = params.url.match(/pmtiles:\/\/(.+)\/(\d+)\/(\d+)\/(\d+)/);
       if (match) {
+        // Fast-path: If current open map has no offline tiles and browser is online,
+        // bypass IndexedDB transactions completely and fetch directly via PMTiles.
+        if (!currentMapHasOfflineTiles && navigator.onLine) {
+          return await globalPMTilesProtocol!.tilev4(params, abortController);
+        }
+
         const [, , z, x, y] = match;
         const tileUrl = `${window.location.origin}/maps/tile/${z}/${x}/${y}.mvt`;
         try {
@@ -99,6 +111,7 @@ interface MapViewProps {
   show3DTerrain?: boolean;
   show3DBuildings?: boolean;
   isOffline?: boolean;
+  hasOfflineTiles?: boolean;
 }
 
 const UserLocationMarker = () => {
@@ -232,7 +245,12 @@ const MapView = ({
   show3DTerrain = true,
   show3DBuildings = true,
   isOffline = false,
+  hasOfflineTiles = false,
 }: MapViewProps) => {
+  useEffect(() => {
+    currentMapHasOfflineTiles = !!hasOfflineTiles;
+  }, [hasOfflineTiles]);
+
   const mapRef = useRef<MapRef | null>(null);
   const readOnly = userRole === 'view' || isOffline;
   const lastTarget = useRef<[number, number] | null>(null);
