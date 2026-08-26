@@ -80,8 +80,8 @@ router.get('/:id', async (req: AuthRequest, res) => {
     ON CONFLICT(user_id, map_id) DO UPDATE SET last_accessed_at = CURRENT_TIMESTAMP
   `, userId, mapId);
 
-  const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ? ORDER BY position', mapId);
-  const pins = await db.all('SELECT * FROM pins WHERE map_id = ? ORDER BY position', mapId);
+  const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ? ORDER BY position ASC, id ASC', mapId);
+  const pins = await db.all('SELECT * FROM pins WHERE map_id = ? ORDER BY position ASC, id ASC', mapId);
   
   // Get permissions for all users who have access
   let permissions: MapPermission[] = [];
@@ -353,6 +353,12 @@ router.put('/:id', async (req: AuthRequest, res) => {
       }
 
       await db.run('COMMIT');
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`map:${mapId}`).emit('map-reloaded', { mapId });
+      }
+
       res.json({ message: 'Map updated successfully' });
     } catch (error) {
       await db.run('ROLLBACK');
@@ -461,6 +467,12 @@ router.delete('/:id', async (req: AuthRequest, res) => {
     if (map.owner_id !== userId) return res.status(403).json({ error: 'Only owner can delete the map' });
 
     await db.run('DELETE FROM maps WHERE id = ?', mapId);
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`map:${mapId}`).emit('map-deleted', { mapId });
+    }
+
     res.json({ message: 'Map deleted' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

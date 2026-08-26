@@ -102,6 +102,7 @@ interface SidebarProps {
   onPinClick: (pin: Pin) => void;
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
   onDragEnd: (event: DragEndEvent) => void;
+  onDragCancel?: () => void;
   onDragOver?: (event: DragOverEvent) => void;
   onDragStart?: (event: DragStartEvent) => void;
   userRole?: 'owner' | 'edit' | 'view';
@@ -330,12 +331,59 @@ const SortablePin = ({
   });
 
   const [isFetchingAddress, setIsFetchingAddress] = useState(false);
+  const fetchingCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  const [localLabel, setLocalLabel] = useState(pin.label || '');
+  const [localAddress, setLocalAddress] = useState(pin.address || '');
+  const [localDescription, setLocalDescription] = useState(pin.description || '');
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (editingPinId !== pin.id) {
+      setLocalLabel(pin.label || '');
+      setLocalAddress(pin.address || '');
+      setLocalDescription(pin.description || '');
+    }
+  }, [pin.label, pin.address, pin.description, editingPinId, pin.id]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleFieldChange = (field: 'label' | 'address' | 'description', value: string) => {
+    if (field === 'label') setLocalLabel(value);
+    if (field === 'address') setLocalAddress(value);
+    if (field === 'description') setLocalDescription(value);
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      onUpdatePin(pin.id, { [field]: value });
+    }, 250);
+  };
+
+  const handleFieldBlur = (field: 'label' | 'address' | 'description') => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    const val = field === 'label' ? localLabel : field === 'address' ? localAddress : localDescription;
+    onUpdatePin(pin.id, { [field]: val });
+  };
 
   useEffect(() => {
     if (targetPinId === pin.id && !pin.address && !isFetchingAddress) {
       setIsFetchingAddress(true);
-      reverseGeocode(pin.lat, pin.lng).then(addr => {
-        if (addr) {
+      const reqLat = pin.lat;
+      const reqLng = pin.lng;
+      fetchingCoordsRef.current = { lat: reqLat, lng: reqLng };
+      reverseGeocode(reqLat, reqLng).then(addr => {
+        if (addr && fetchingCoordsRef.current?.lat === reqLat && fetchingCoordsRef.current?.lng === reqLng) {
           onUpdatePin(pin.id, { address: addr });
         }
       }).finally(() => {
@@ -539,8 +587,9 @@ const SortablePin = ({
             <input 
               id={`label-${pin.id}`}
               type="text" 
-              value={pin.label || ''} 
-              onChange={(e) => onUpdatePin(pin.id, { label: e.target.value })}
+              value={localLabel} 
+              onChange={(e) => handleFieldChange('label', e.target.value)}
+              onBlur={() => handleFieldBlur('label')}
               className="input-field"
               style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit' }}
             />
@@ -550,8 +599,9 @@ const SortablePin = ({
             <label htmlFor={`address-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Address</label>
             <textarea 
               id={`address-${pin.id}`}
-              value={pin.address || ''} 
-              onChange={(e) => onUpdatePin(pin.id, { address: e.target.value })}
+              value={localAddress} 
+              onChange={(e) => handleFieldChange('address', e.target.value)}
+              onBlur={() => handleFieldBlur('address')}
               className="input-field"
               style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit', minHeight: '30px', resize: 'vertical' }}
               placeholder="Fetch address from map or type here..."
@@ -644,8 +694,9 @@ const SortablePin = ({
             <label htmlFor={`desc-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Description</label>
             <textarea 
               id={`desc-${pin.id}`}
-              value={pin.description || ''} 
-              onChange={(e) => onUpdatePin(pin.id, { description: e.target.value })}
+              value={localDescription} 
+              onChange={(e) => handleFieldChange('description', e.target.value)}
+              onBlur={() => handleFieldBlur('description')}
               className="input-field"
               style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit', minHeight: '30px', resize: 'vertical' }}
             />
@@ -839,6 +890,41 @@ const SortableLayer = ({
     setLocalIsEditingName(nextVal);
   };
 
+  const [localLayerName, setLocalLayerName] = useState(layer.name);
+  const layerDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!isEditingName) {
+      setLocalLayerName(layer.name);
+    }
+  }, [layer.name, isEditingName]);
+
+  useEffect(() => {
+    return () => {
+      if (layerDebounceTimerRef.current) {
+        clearTimeout(layerDebounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleLayerNameChange = (val: string) => {
+    setLocalLayerName(val);
+    if (layerDebounceTimerRef.current) {
+      clearTimeout(layerDebounceTimerRef.current);
+    }
+    layerDebounceTimerRef.current = setTimeout(() => {
+      onUpdateLayer(layer.id, { name: val });
+    }, 250);
+  };
+
+  const handleLayerNameBlur = () => {
+    if (layerDebounceTimerRef.current) {
+      clearTimeout(layerDebounceTimerRef.current);
+      layerDebounceTimerRef.current = null;
+    }
+    onUpdateLayer(layer.id, { name: localLayerName });
+  };
+
   const layerNameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -989,11 +1075,13 @@ const SortableLayer = ({
                   ref={layerNameInputRef}
                   id={`label-${layer.id}`}
                   type="text" 
-                  value={layer.name} 
-                  onChange={(e) => onUpdateLayer(layer.id, { name: e.target.value })}
+                  value={localLayerName} 
+                  onChange={(e) => handleLayerNameChange(e.target.value)}
+                  onBlur={handleLayerNameBlur}
                   onFocus={(e) => e.target.select()}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && layer.name.trim()) {
+                    if (e.key === 'Enter' && localLayerName.trim()) {
+                      handleLayerNameBlur();
                       setIsEditingName(false);
                     }
                   }}
@@ -1001,9 +1089,14 @@ const SortableLayer = ({
                   style={{ padding: '2px 24px 2px 4px', fontSize: '0.7rem', width: '100%' }}
                   autoFocus
                 />
-                {layer.name && (
+                {localLayerName && (
                   <button
-                    onMouseDown={(e) => { e.preventDefault(); onUpdateLayer(layer.id, { name: '' }); }}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setLocalLayerName('');
+                      if (layerDebounceTimerRef.current) clearTimeout(layerDebounceTimerRef.current);
+                      onUpdateLayer(layer.id, { name: '' });
+                    }}
                     style={{ position: 'absolute', right: '4px', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0' }}
                     title="Clear name"
                   >
@@ -1067,6 +1160,7 @@ const Sidebar = ({
   onPinClick,
   onUpdatePin,
   onDragEnd,
+  onDragCancel,
   onDragOver,
   onDragStart,
   userRole = 'owner',
@@ -1450,6 +1544,12 @@ class MouseSensor extends PointerSensor {
     onDragEnd(event);
   };
 
+  const handleDragCancelInternal = () => {
+    setActivePin(null);
+    setActiveLayer(null);
+    onDragCancel?.();
+  };
+
   const activePinId = activePin?.id;
   const isAnySelectedDragging = !!(activePinId && selectedNavIds?.has(activePinId));
   const isDragActive = !!(activePinId || activeLayer);
@@ -1485,6 +1585,7 @@ class MouseSensor extends PointerSensor {
         onDragStart={handleDragStart}
         onDragOver={onDragOver}
         onDragEnd={handleDragEndInternal}
+        onDragCancel={handleDragCancelInternal}
         autoScroll={false}
       >
         <input 

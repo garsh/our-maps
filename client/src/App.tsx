@@ -345,6 +345,7 @@ export function MapEditor() {
   const isInitialLoadRef = useRef(false);
   const hasLoadedRef = useRef(false);
   const dragStartLayersRef = useRef<Map<string, string | undefined>>(new Map());
+  const dragStartPinsRef = useRef<Pin[] | null>(null);
 
   useEffect(() => {
     if (id && id !== 'new') {
@@ -389,7 +390,6 @@ export function MapEditor() {
           return [...prev, data.pin];
         });
         setIsDirty(false);
-        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
       });
 
       socket.on('pin-update', (data: PinUpdatePayload) => {
@@ -401,7 +401,6 @@ export function MapEditor() {
           return { ...p, ...data.updates, layerId: updatedLayerId };
         }));
         setIsDirty(false);
-        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
       });
 
       socket.on('pin-delete', (data: PinDeletePayload) => {
@@ -409,7 +408,6 @@ export function MapEditor() {
         isRemoteUpdateRef.current = true;
         setPins(prev => prev.filter(p => p.id !== data.pinId));
         setIsDirty(false);
-        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
       });
 
       socket.on('pins-reorder', (data: PinsReorderPayload) => {
@@ -433,7 +431,6 @@ export function MapEditor() {
           return [...reordered, ...Array.from(pinMap.values())];
         });
         setIsDirty(false);
-        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
       });
 
       socket.on('layer-create', (data: LayerCreatePayload) => {
@@ -444,7 +441,6 @@ export function MapEditor() {
           return [...prev, data.layer];
         });
         setIsDirty(false);
-        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
       });
 
       socket.on('layer-update', (data: LayerUpdatePayload) => {
@@ -452,7 +448,6 @@ export function MapEditor() {
         isRemoteUpdateRef.current = true;
         setLayers(prev => prev.map(l => l.id === data.layerId ? { ...l, ...data.updates } : l));
         setIsDirty(false);
-        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
       });
 
       socket.on('layer-delete', (data: LayerDeletePayload) => {
@@ -473,7 +468,6 @@ export function MapEditor() {
           });
         });
         setIsDirty(false);
-        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
       });
 
       socket.on('layers-reorder', (data: LayersReorderPayload) => {
@@ -492,7 +486,6 @@ export function MapEditor() {
           return [...reordered, ...Array.from(layerMap.values())];
         });
         setIsDirty(false);
-        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
       });
 
       socket.on('map-name-update', (data: MapNameUpdatePayload) => {
@@ -500,7 +493,16 @@ export function MapEditor() {
         isRemoteUpdateRef.current = true;
         setMapName(data.name);
         setIsDirty(false);
-        setTimeout(() => { isRemoteUpdateRef.current = false; }, 2000);
+      });
+
+      socket.on('map-reloaded', (data: { mapId: string }) => {
+        if (data.mapId !== id) return;
+        loadMap(id, true);
+      });
+
+      socket.on('map-deleted', (data: { mapId: string }) => {
+        if (data.mapId !== id) return;
+        navigate('/', { replace: true });
       });
 
       return () => {
@@ -525,7 +527,8 @@ export function MapEditor() {
     if (userRole === 'view' || isMapLoading) return;
     
     if (isRemoteUpdateRef.current) {
-        return;
+      isRemoteUpdateRef.current = false;
+      return;
     }
 
     if (isInitialLoadRef.current) {
@@ -776,10 +779,16 @@ export function MapEditor() {
     if (!address) {
       const fetchedAddress = await reverseGeocode(lat, lng);
       if (fetchedAddress) {
-        setPins(prev => prev.map(p => p.id === idVal ? { ...p, address: fetchedAddress } : p));
-        if (mapId) {
-          socketRef.current?.emit('pin-update', { mapId, pinId: idVal, updates: { address: fetchedAddress } });
-        }
+        setPins(prev => {
+          const existing = prev.find(p => p.id === idVal);
+          if (!existing || existing.address || existing.lat !== lat || existing.lng !== lng) {
+            return prev;
+          }
+          if (mapId) {
+            socketRef.current?.emit('pin-update', { mapId, pinId: idVal, updates: { address: fetchedAddress } });
+          }
+          return prev.map(p => p.id === idVal ? { ...p, address: fetchedAddress } : p);
+        });
       }
     }
   };
@@ -977,6 +986,7 @@ export function MapEditor() {
 
   const handleDragStart = (event: any) => {
     if (userRole === 'view' || isOffline) return;
+    dragStartPinsRef.current = pins;
     const { active } = event;
     if (active.data.current?.type === 'pin') {
       const activeId = active.id as string;
@@ -993,11 +1003,25 @@ export function MapEditor() {
     }
   };
 
+  const handleDragCancel = () => {
+    if (dragStartPinsRef.current) {
+      setPins(dragStartPinsRef.current);
+      dragStartPinsRef.current = null;
+    }
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     if (userRole === 'view' || isOffline) return;
     const { active, over } = event;
     
-    if (!over) return;
+    if (!over) {
+      if (dragStartPinsRef.current) {
+        setPins(dragStartPinsRef.current);
+        dragStartPinsRef.current = null;
+      }
+      return;
+    }
+    dragStartPinsRef.current = null;
 
     if (active.data.current?.type === 'layer') {
       const overData = over.data.current;
@@ -1288,6 +1312,7 @@ export function MapEditor() {
             }}
             onUpdatePin={updatePin}
             onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
             onDragOver={handleDragOver}
             onDragStart={handleDragStart}
             userRole={userRole}

@@ -175,16 +175,26 @@ const PinMarker = memo(({
   const colorCode = isHex ? pin.color : (COLOR_CODES[pin.color as PinColor] || COLOR_CODES.blue);
   const iconPath = pin.icon && pin.icon !== 'default' ? ICON_SVG_PATHS[pin.icon as Exclude<PinIcon, 'default'>] : null;
 
+  const lastGeocodeCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+
   const handleDragEnd = useCallback(async (e: any) => {
     const newLat = e.lngLat.lat;
     const newLng = e.lngLat.lng;
-    const newAddress = await reverseGeocode(newLat, newLng);
+    lastGeocodeCoordsRef.current = { lat: newLat, lng: newLng };
 
+    // 1. Immediately update lat/lng so pin position moves optimistically and syncs over socket
     onUpdatePin(pin.id, {
       lat: newLat,
       lng: newLng,
-      address: newAddress || undefined,
     });
+
+    // 2. Fetch address in background and guard against coordinate mismatch
+    const newAddress = await reverseGeocode(newLat, newLng);
+    if (newAddress && lastGeocodeCoordsRef.current?.lat === newLat && lastGeocodeCoordsRef.current?.lng === newLng) {
+      onUpdatePin(pin.id, {
+        address: newAddress,
+      });
+    }
   }, [pin.id, onUpdatePin]);
 
   const handleClick = useCallback((e: React.MouseEvent) => {

@@ -117,11 +117,18 @@ export async function handlePinsReorder(data: PinsReorderPayload) {
   const { mapId, pinOrder } = data;
   if (!mapId || !Array.isArray(pinOrder)) return;
 
-  const stmt = await db.prepare('UPDATE pins SET position = ? WHERE id = ? AND map_id = ?');
-  for (let i = 0; i < pinOrder.length; i++) {
-    await stmt.run(i, pinOrder[i], mapId);
+  await db.run('BEGIN TRANSACTION');
+  try {
+    const stmt = await db.prepare('UPDATE pins SET position = ? WHERE id = ? AND map_id = ?');
+    for (let i = 0; i < pinOrder.length; i++) {
+      await stmt.run(i, pinOrder[i], mapId);
+    }
+    await stmt.finalize();
+    await db.run('COMMIT');
+  } catch (error) {
+    await db.run('ROLLBACK');
+    throw error;
   }
-  await stmt.finalize();
 }
 
 export async function handleLayerCreate(data: LayerCreatePayload) {
@@ -174,20 +181,29 @@ export async function handleLayerDelete(data: LayerDeletePayload) {
   const { mapId, layerId } = data;
   if (!mapId || !layerId) return;
 
-  // Get max position of existing Default Layer pins
-  const maxRow = await db.get('SELECT MAX(position) as maxPos FROM pins WHERE (layer_id IS NULL OR layer_id = \'\') AND map_id = ?', mapId);
-  let currentPos = (maxRow && maxRow.maxPos !== null && maxRow.maxPos !== undefined) ? maxRow.maxPos + 1 : 0;
+  await db.run('BEGIN TRANSACTION');
+  try {
+    // Get max position of existing Default Layer pins
+    const maxRow = await db.get('SELECT MAX(position) as maxPos FROM pins WHERE (layer_id IS NULL OR layer_id = \'\') AND map_id = ?', mapId);
+    let currentPos = (maxRow && maxRow.maxPos !== null && maxRow.maxPos !== undefined) ? maxRow.maxPos + 1 : 0;
 
-  const pinsToMove = await db.all('SELECT id FROM pins WHERE layer_id = ? AND map_id = ? ORDER BY position ASC, id ASC', layerId, mapId);
+    const pinsToMove = await db.all('SELECT id FROM pins WHERE layer_id = ? AND map_id = ? ORDER BY position ASC, id ASC', layerId, mapId);
 
-  const stmt = await db.prepare('UPDATE pins SET layer_id = NULL, position = ? WHERE id = ? AND map_id = ?');
-  for (const pin of pinsToMove) {
-    await stmt.run(currentPos, pin.id, mapId);
-    currentPos += 1;
+    if (pinsToMove.length > 0) {
+      const stmt = await db.prepare('UPDATE pins SET layer_id = NULL, position = ? WHERE id = ? AND map_id = ?');
+      for (const pin of pinsToMove) {
+        await stmt.run(currentPos, pin.id, mapId);
+        currentPos += 1;
+      }
+      await stmt.finalize();
+    }
+
+    await db.run('DELETE FROM pin_layers WHERE id = ? AND map_id = ?', layerId, mapId);
+    await db.run('COMMIT');
+  } catch (error) {
+    await db.run('ROLLBACK');
+    throw error;
   }
-  await stmt.finalize();
-
-  await db.run('DELETE FROM pin_layers WHERE id = ? AND map_id = ?', layerId, mapId);
 }
 
 export async function handleLayersReorder(data: LayersReorderPayload) {
@@ -195,11 +211,18 @@ export async function handleLayersReorder(data: LayersReorderPayload) {
   const { mapId, layerOrder } = data;
   if (!mapId || !Array.isArray(layerOrder)) return;
 
-  const stmt = await db.prepare('UPDATE pin_layers SET position = ? WHERE id = ? AND map_id = ?');
-  for (let i = 0; i < layerOrder.length; i++) {
-    await stmt.run(i, layerOrder[i], mapId);
+  await db.run('BEGIN TRANSACTION');
+  try {
+    const stmt = await db.prepare('UPDATE pin_layers SET position = ? WHERE id = ? AND map_id = ?');
+    for (let i = 0; i < layerOrder.length; i++) {
+      await stmt.run(i, layerOrder[i], mapId);
+    }
+    await stmt.finalize();
+    await db.run('COMMIT');
+  } catch (error) {
+    await db.run('ROLLBACK');
+    throw error;
   }
-  await stmt.finalize();
 }
 
 export async function handleMapNameUpdate(data: MapNameUpdatePayload) {

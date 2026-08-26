@@ -103,6 +103,7 @@ describe('Sidebar', () => {
     const textarea = screen.getByLabelText(/description/i);
     
     fireEvent.change(textarea, { target: { value: 'New description' } });
+    fireEvent.blur(textarea);
     
     expect(onUpdatePin).toHaveBeenCalledWith('1', { description: 'New description' });
   });

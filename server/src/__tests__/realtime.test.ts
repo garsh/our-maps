@@ -112,4 +112,21 @@ describe('Realtime Delta Handlers', () => {
     const map = await db.get('SELECT name FROM maps WHERE id = ?', mapId);
     expect(map.name).toBe('Renamed Map');
   });
+
+  it('handleLayerDelete executes atomically in a transaction', async () => {
+    const db = await getDb();
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-tx', name: 'TX Layer', position: 0 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'pin-tx-1', layerId: 'layer-tx', lat: 10, lng: 20, label: 'TX Pin 1', position: 0 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'pin-tx-2', layerId: 'layer-tx', lat: 11, lng: 21, label: 'TX Pin 2', position: 1 } });
+
+    await realtime.handleLayerDelete({ mapId, layerId: 'layer-tx' });
+
+    const deletedLayer = await db.get('SELECT * FROM pin_layers WHERE id = ?', 'layer-tx');
+    expect(deletedLayer).toBeUndefined();
+
+    const pins = await db.all('SELECT * FROM pins WHERE map_id = ? ORDER BY position ASC, id ASC', mapId);
+    expect(pins.length).toBe(2);
+    expect(pins[0].layer_id).toBeNull();
+    expect(pins[1].layer_id).toBeNull();
+  });
 });

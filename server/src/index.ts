@@ -38,6 +38,7 @@ const io = new Server(server, {
     methods: ['GET', 'POST']
   }
 });
+app.set('io', io);
 
 
 const port = process.env.PORT || 3001;
