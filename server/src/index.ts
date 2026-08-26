@@ -115,6 +115,7 @@ io.on('connection', (socket: Socket) => {
     'pin-update': realtime.handlePinUpdate,
     'pin-delete': realtime.handlePinDelete,
     'pins-reorder': realtime.handlePinsReorder,
+    'pin-move-layer': realtime.handlePinMoveLayer,
     'layer-create': realtime.handleLayerCreate,
     'layer-update': realtime.handleLayerUpdate,
     'layer-delete': realtime.handleLayerDelete,

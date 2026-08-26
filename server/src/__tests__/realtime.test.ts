@@ -129,4 +129,31 @@ describe('Realtime Delta Handlers', () => {
     expect(pins[0].layer_id).toBeNull();
     expect(pins[1].layer_id).toBeNull();
   });
+
+  it('handlePinMoveLayer moves pins across layers atomically with position reordering', async () => {
+    const db = await getDb();
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-src', name: 'Source Layer', position: 0 } });
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-dst', name: 'Dest Layer', position: 1 } });
+
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-1', layerId: 'layer-src', lat: 1, lng: 1, label: 'Src 1', position: 0 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-2', layerId: 'layer-src', lat: 2, lng: 2, label: 'Src 2', position: 1 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-dst-1', layerId: 'layer-dst', lat: 3, lng: 3, label: 'Dst 1', position: 0 } });
+
+    await realtime.handlePinMoveLayer({
+      mapId,
+      pinIds: ['p-src-1'],
+      targetLayerId: 'layer-dst',
+      destPinOrder: ['p-dst-1', 'p-src-1'],
+      sourceLayerId: 'layer-src',
+      sourcePinOrder: ['p-src-2']
+    });
+
+    const movedPin = await db.get('SELECT layer_id, position FROM pins WHERE id = ?', 'p-src-1');
+    expect(movedPin.layer_id).toBe('layer-dst');
+    expect(movedPin.position).toBe(1);
+
+    const remainingSrc = await db.get('SELECT layer_id, position FROM pins WHERE id = ?', 'p-src-2');
+    expect(remainingSrc.layer_id).toBe('layer-src');
+    expect(remainingSrc.position).toBe(0);
+  });
 });

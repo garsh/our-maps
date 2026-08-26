@@ -19,6 +19,7 @@ import type {
   PinUpdatePayload,
   PinDeletePayload,
   PinsReorderPayload,
+  PinMoveLayerPayload,
   LayerCreatePayload,
   LayerUpdatePayload,
   LayerDeletePayload,
@@ -373,11 +374,7 @@ export function MapEditor() {
             isInitialConnect = false;
             return;
           }
-          if (isDirtyRef.current) {
-            handleSaveRef.current();
-          } else {
-            loadMap(id, true);
-          }
+          reconcileOnReconnect(id);
         }
       });
 
@@ -429,6 +426,47 @@ export function MapEditor() {
             }
           });
           return [...reordered, ...Array.from(pinMap.values())];
+        });
+        setIsDirty(false);
+      });
+
+      socket.on('pin-move-layer', (data: PinMoveLayerPayload) => {
+        if (data.mapId !== id) return;
+        isRemoteUpdateRef.current = true;
+        const targetLayerId = data.targetLayerId === null ? undefined : data.targetLayerId;
+        const sourceLayerId = data.sourceLayerId === null ? undefined : data.sourceLayerId;
+
+        setPins(prev => {
+          const pinMap = new Map(prev.map(p => [p.id, p]));
+          // 1. Move the pins
+          data.pinIds.forEach(pId => {
+            const pin = pinMap.get(pId);
+            if (pin) {
+              pinMap.set(pId, { ...pin, layerId: targetLayerId });
+            }
+          });
+
+          // 2. Apply destination ordering
+          if (Array.isArray(data.destPinOrder)) {
+            data.destPinOrder.forEach((pId, idx) => {
+              const pin = pinMap.get(pId);
+              if (pin) {
+                pinMap.set(pId, { ...pin, layerId: targetLayerId, position: idx });
+              }
+            });
+          }
+
+          // 3. Apply source ordering
+          if (Array.isArray(data.sourcePinOrder)) {
+            data.sourcePinOrder.forEach((pId, idx) => {
+              const pin = pinMap.get(pId);
+              if (pin) {
+                pinMap.set(pId, { ...pin, layerId: sourceLayerId, position: idx });
+              }
+            });
+          }
+
+          return Array.from(pinMap.values());
         });
         setIsDirty(false);
       });
@@ -589,6 +627,91 @@ export function MapEditor() {
       }
     };
   }, []); // empty deps — cleanup only runs on unmount
+
+  const reconcileOnReconnect = async (currentMapId: string) => {
+    try {
+      const serverData = await apiService.getMap(currentMapId);
+      if (!isDirtyRef.current) {
+        setOwner({ id: serverData.ownerId, name: serverData.ownerName, email: serverData.ownerEmail, picture: serverData.ownerPicture });
+        setLayers(serverData.layers || []);
+        setPins(serverData.pins || []);
+        setUserRole(serverData.userRole || 'view');
+        setPermissions(serverData.permissions || []);
+        setIsDirty(false);
+        return;
+      }
+
+      // Merge offline local edits with server state without resurrecting deleted pins
+      setPins(currentLocalPins => {
+        const serverPinMap = new Map((serverData.pins || []).map(p => [p.id, p]));
+        const localPinMap = new Map(currentLocalPins.map(p => [p.id, p]));
+        const mergedPins: Pin[] = [];
+
+        // 1. Keep server pins, applying local updates if modified while offline
+        serverPinMap.forEach((serverPin, pinId) => {
+          const localPin = localPinMap.get(pinId);
+          if (localPin) {
+            const isModified = JSON.stringify(localPin) !== JSON.stringify(serverPin);
+            if (isModified) {
+              mergedPins.push(localPin);
+              socketRef.current?.emit('pin-update', { mapId: currentMapId, pinId, updates: localPin });
+            } else {
+              mergedPins.push(serverPin);
+            }
+            localPinMap.delete(pinId);
+          } else {
+            // Pin added by collaborator while offline
+            mergedPins.push(serverPin);
+          }
+        });
+
+        // 2. Any remaining pins in localPinMap were created locally while offline
+        localPinMap.forEach((newLocalPin) => {
+          mergedPins.push(newLocalPin);
+          socketRef.current?.emit('pin-create', { 
+            mapId: currentMapId, 
+            layerId: newLocalPin.layerId === undefined ? null : newLocalPin.layerId, 
+            pin: newLocalPin 
+          });
+        });
+
+        return mergedPins;
+      });
+
+      // Merge layers
+      setLayers(currentLocalLayers => {
+        const serverLayerMap = new Map((serverData.layers || []).map(l => [l.id, l]));
+        const localLayerMap = new Map(currentLocalLayers.map(l => [l.id, l]));
+        const mergedLayers: PinLayer[] = [];
+
+        serverLayerMap.forEach((serverLayer, layerId) => {
+          const localLayer = localLayerMap.get(layerId);
+          if (localLayer) {
+            if (localLayer.name !== serverLayer.name || localLayer.position !== serverLayer.position) {
+              mergedLayers.push(localLayer);
+              socketRef.current?.emit('layer-update', { mapId: currentMapId, layerId, updates: localLayer });
+            } else {
+              mergedLayers.push(serverLayer);
+            }
+            localLayerMap.delete(layerId);
+          } else {
+            mergedLayers.push(serverLayer);
+          }
+        });
+
+        localLayerMap.forEach((newLocalLayer) => {
+          mergedLayers.push(newLocalLayer);
+          socketRef.current?.emit('layer-create', { mapId: currentMapId, layer: newLocalLayer });
+        });
+
+        return mergedLayers;
+      });
+
+      setIsDirty(false);
+    } catch (err) {
+      console.error('[SOCKET] Reconnect reconciliation failed:', err);
+    }
+  };
 
   const loadMap = async (mapId: string, silent = false) => {
     if (!silent) {
@@ -837,33 +960,25 @@ export function MapEditor() {
     setPins(prev => prev.map(p => p.id === targetId ? { ...p, ...computedUpdates } : p));
 
     if (mapId) {
-      const socketUpdates: any = { ...computedUpdates };
-      if ('layerId' in socketUpdates && socketUpdates.layerId === undefined) {
-        socketUpdates.layerId = null;
-      }
-      socketRef.current?.emit('pin-update', { mapId, pinId: targetId, updates: socketUpdates });
-
       if ('layerId' in updates) {
         const targetLayerId = updates.layerId;
         const updatedPins = pins.map(p => p.id === targetId ? { ...p, ...computedUpdates } : p);
         
-        // Destination layer reorder
         const destLayerPins = updatedPins.filter(p => isSameLayer(p.layerId, targetLayerId)).sort(comparePinPositions);
-        socketRef.current?.emit('pins-reorder', { 
-          mapId, 
-          layerId: targetLayerId === undefined ? null : targetLayerId, 
-          pinOrder: destLayerPins.map(p => p.id) 
-        });
+        const sourceLayerPins = !isSameLayer(originalLayerId, targetLayerId)
+          ? updatedPins.filter(p => isSameLayer(p.layerId, originalLayerId)).sort(comparePinPositions)
+          : undefined;
 
-        // Source layer reorder if layer changed
-        if (!isSameLayer(originalLayerId, targetLayerId)) {
-          const sourceLayerPins = updatedPins.filter(p => isSameLayer(p.layerId, originalLayerId)).sort(comparePinPositions);
-          socketRef.current?.emit('pins-reorder', { 
-            mapId, 
-            layerId: originalLayerId === undefined ? null : originalLayerId, 
-            pinOrder: sourceLayerPins.map(p => p.id) 
-          });
-        }
+        socketRef.current?.emit('pin-move-layer', {
+          mapId,
+          pinIds: [targetId],
+          targetLayerId: targetLayerId === undefined ? null : targetLayerId,
+          destPinOrder: destLayerPins.map(p => p.id),
+          sourceLayerId: originalLayerId === undefined ? null : originalLayerId,
+          sourcePinOrder: sourceLayerPins?.map(p => p.id),
+        });
+      } else {
+        socketRef.current?.emit('pin-update', { mapId, pinId: targetId, updates: computedUpdates });
       }
     }
   };
@@ -1070,30 +1185,28 @@ export function MapEditor() {
           selectedNavIds
         );
         if (mapId) {
-          pinsToMoveIds.forEach(pId => {
-            const startLayerId = startLayersMap.get(pId);
-            if (!isSameLayer(startLayerId, overLayerId)) {
-              socketRef.current?.emit('pin-update', { 
-                mapId, 
-                pinId: pId, 
-                updates: { layerId: overLayerId === undefined ? null : overLayerId } 
-              });
-            }
-          });
-
+          const changedLayerPins = pinsToMoveIds.filter(pId => !isSameLayer(startLayersMap.get(pId), overLayerId));
           const destLayerPins = next.filter(p => isSameLayer(p.layerId, overLayerId));
-          socketRef.current?.emit('pins-reorder', { 
-            mapId, 
-            layerId: overLayerId === undefined ? null : overLayerId, 
-            pinOrder: destLayerPins.map(p => p.id) 
-          });
 
-          if (originalLayerId !== undefined && !isSameLayer(originalLayerId, overLayerId)) {
-            const sourceLayerPins = next.filter(p => isSameLayer(p.layerId, originalLayerId));
+          if (changedLayerPins.length > 0) {
+            const sourceLayerPins = originalLayerId !== undefined && !isSameLayer(originalLayerId, overLayerId)
+              ? next.filter(p => isSameLayer(p.layerId, originalLayerId))
+              : undefined;
+
+            socketRef.current?.emit('pin-move-layer', {
+              mapId,
+              pinIds: changedLayerPins,
+              targetLayerId: overLayerId === undefined ? null : overLayerId,
+              destPinOrder: destLayerPins.map(p => p.id),
+              sourceLayerId: originalLayerId === undefined ? null : originalLayerId,
+              sourcePinOrder: sourceLayerPins?.map(p => p.id),
+            });
+          } else {
+            // Same-layer reorder only
             socketRef.current?.emit('pins-reorder', { 
               mapId, 
-              layerId: originalLayerId === undefined ? null : originalLayerId, 
-              pinOrder: sourceLayerPins.map(p => p.id) 
+              layerId: overLayerId === undefined ? null : overLayerId, 
+              pinOrder: destLayerPins.map(p => p.id) 
             });
           }
         }

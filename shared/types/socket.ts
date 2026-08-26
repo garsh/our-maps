@@ -23,6 +23,15 @@ export interface PinsReorderPayload {
   pinOrder: string[];
 }
 
+export interface PinMoveLayerPayload {
+  mapId: string;
+  pinIds: string[];
+  targetLayerId?: string | null;
+  destPinOrder?: string[];
+  sourceLayerId?: string | null;
+  sourcePinOrder?: string[];
+}
+
 export interface LayerCreatePayload {
   mapId: string;
   layer: PinLayer;

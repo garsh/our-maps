@@ -4,6 +4,7 @@ import type {
   PinUpdatePayload,
   PinDeletePayload,
   PinsReorderPayload,
+  PinMoveLayerPayload,
   LayerCreatePayload,
   LayerUpdatePayload,
   LayerDeletePayload,
@@ -124,6 +125,43 @@ export async function handlePinsReorder(data: PinsReorderPayload) {
       await stmt.run(i, pinOrder[i], mapId);
     }
     await stmt.finalize();
+    await db.run('COMMIT');
+  } catch (error) {
+    await db.run('ROLLBACK');
+    throw error;
+  }
+}
+
+export async function handlePinMoveLayer(data: PinMoveLayerPayload) {
+  const db = await getDb();
+  const { mapId, pinIds, targetLayerId, destPinOrder, sourcePinOrder } = data;
+  if (!mapId || !Array.isArray(pinIds) || pinIds.length === 0) return;
+
+  await db.run('BEGIN TRANSACTION');
+  try {
+    const targetLayer = targetLayerId || null;
+    const updateLayerStmt = await db.prepare('UPDATE pins SET layer_id = ? WHERE id = ? AND map_id = ?');
+    for (const pinId of pinIds) {
+      await updateLayerStmt.run(targetLayer, pinId, mapId);
+    }
+    await updateLayerStmt.finalize();
+
+    if (Array.isArray(destPinOrder) && destPinOrder.length > 0) {
+      const destOrderStmt = await db.prepare('UPDATE pins SET position = ? WHERE id = ? AND map_id = ?');
+      for (let i = 0; i < destPinOrder.length; i++) {
+        await destOrderStmt.run(i, destPinOrder[i], mapId);
+      }
+      await destOrderStmt.finalize();
+    }
+
+    if (Array.isArray(sourcePinOrder) && sourcePinOrder.length > 0) {
+      const srcOrderStmt = await db.prepare('UPDATE pins SET position = ? WHERE id = ? AND map_id = ?');
+      for (let i = 0; i < sourcePinOrder.length; i++) {
+        await srcOrderStmt.run(i, sourcePinOrder[i], mapId);
+      }
+      await srcOrderStmt.finalize();
+    }
+
     await db.run('COMMIT');
   } catch (error) {
     await db.run('ROLLBACK');
