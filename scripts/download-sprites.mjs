@@ -63,7 +63,7 @@ function downloadFile(url, dest) {
   });
 }
 
-function ensureSymlink(targetDir, linkPath) {
+function ensureSymlink(targetDir, linkPath, verbose = true) {
   try {
     try {
       const stat = fs.lstatSync(linkPath);
@@ -78,18 +78,21 @@ function ensureSymlink(targetDir, linkPath) {
 
     const relativeTarget = path.relative(path.dirname(linkPath), targetDir);
     fs.symlinkSync(relativeTarget, linkPath);
-    console.log(`Relative symlink verified at ${linkPath} -> ${relativeTarget}`);
+    if (verbose) {
+      console.log(`Relative symlink verified at ${linkPath} -> ${relativeTarget}`);
+    }
+    return true;
   } catch (err) {
     console.warn(`Could not update sprite symlink at ${linkPath}: ${err.message}`);
+    return false;
   }
 }
 
 async function setupSprites() {
   const missingFiles = SPRITE_FILES.filter(f => !fs.existsSync(path.join(dataSpritesDir, f)) || fs.statSync(path.join(dataSpritesDir, f)).size === 0);
+  const alreadyExisted = missingFiles.length === 0 && !isForce;
 
-  if (missingFiles.length === 0 && !isForce) {
-    console.log(`Sprite assets already exist at ${dataSpritesDir}. (Pass --force to re-download).`);
-  } else {
+  if (!alreadyExisted) {
     console.log(`Downloading Protomaps sprite assets to ${dataSpritesDir}...`);
     for (const file of SPRITE_FILES) {
       const url = `${BASE_URL}${file}`;
@@ -107,8 +110,12 @@ async function setupSprites() {
   }
 
   // Create symlinks server/public/maps/sprites and client/public/maps/sprites -> data/sprites
-  ensureSymlink(dataSpritesDir, serverMapsSpritesDir);
-  ensureSymlink(dataSpritesDir, clientMapsSpritesDir);
+  const serverOk = ensureSymlink(dataSpritesDir, serverMapsSpritesDir, !alreadyExisted);
+  const clientOk = ensureSymlink(dataSpritesDir, clientMapsSpritesDir, !alreadyExisted);
+
+  if (alreadyExisted && serverOk && clientOk) {
+    console.log('Sprites already exist and are symlinked correctly.');
+  }
 }
 
 setupSprites();

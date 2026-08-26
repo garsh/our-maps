@@ -336,15 +336,26 @@ const SortablePin = ({
   const [localLabel, setLocalLabel] = useState(pin.label || '');
   const [localAddress, setLocalAddress] = useState(pin.address || '');
   const [localDescription, setLocalDescription] = useState(pin.description || '');
+  const focusedFieldRef = useRef<'label' | 'address' | 'description' | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (editingPinId !== pin.id) {
+    if (focusedFieldRef.current !== 'label') {
       setLocalLabel(pin.label || '');
+    }
+  }, [pin.label]);
+
+  useEffect(() => {
+    if (focusedFieldRef.current !== 'address') {
       setLocalAddress(pin.address || '');
+    }
+  }, [pin.address]);
+
+  useEffect(() => {
+    if (focusedFieldRef.current !== 'description') {
       setLocalDescription(pin.description || '');
     }
-  }, [pin.label, pin.address, pin.description, editingPinId, pin.id]);
+  }, [pin.description]);
 
   useEffect(() => {
     return () => {
@@ -368,6 +379,9 @@ const SortablePin = ({
   };
 
   const handleFieldBlur = (field: 'label' | 'address' | 'description') => {
+    if (focusedFieldRef.current === field) {
+      focusedFieldRef.current = null;
+    }
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = null;
@@ -588,6 +602,7 @@ const SortablePin = ({
               id={`label-${pin.id}`}
               type="text" 
               value={localLabel} 
+              onFocus={() => { focusedFieldRef.current = 'label'; }}
               onChange={(e) => handleFieldChange('label', e.target.value)}
               onBlur={() => handleFieldBlur('label')}
               className="input-field"
@@ -600,6 +615,7 @@ const SortablePin = ({
             <textarea 
               id={`address-${pin.id}`}
               value={localAddress} 
+              onFocus={() => { focusedFieldRef.current = 'address'; }}
               onChange={(e) => handleFieldChange('address', e.target.value)}
               onBlur={() => handleFieldBlur('address')}
               className="input-field"
@@ -695,6 +711,7 @@ const SortablePin = ({
             <textarea 
               id={`desc-${pin.id}`}
               value={localDescription} 
+              onFocus={() => { focusedFieldRef.current = 'description'; }}
               onChange={(e) => handleFieldChange('description', e.target.value)}
               onBlur={() => handleFieldBlur('description')}
               className="input-field"

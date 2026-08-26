@@ -437,4 +437,20 @@ describe('Sidebar', () => {
 
     confirmSpy.mockRestore();
   });
+
+  it('updates address in edit dialog when pin address arrives while editing', () => {
+    const initialPins = [{ id: '1', lat: 10, lng: 20, label: 'Pin 1', address: '', position: 0 }];
+    const { rerender } = render(<TestWrapper pins={initialPins} />);
+
+    // Open edit dialog
+    fireEvent.click(screen.getByLabelText('Edit'));
+    const addressInput = screen.getByLabelText(/address/i) as HTMLTextAreaElement;
+    expect(addressInput.value).toBe('');
+
+    // Async reverse geocode resolves and updates pin address in parent
+    const updatedPins = [{ id: '1', lat: 10, lng: 20, label: 'Pin 1', address: '123 Main St', position: 0 }];
+    rerender(<TestWrapper pins={updatedPins} />);
+
+    expect(addressInput.value).toBe('123 Main St');
+  });
 });
