@@ -724,6 +724,10 @@ const MapView = ({
           maxzoom: 19,
           attribution: '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
         },
+        // Note: terrainElevation (3D mesh extrusion via map.setTerrain) and hillshadeDem
+        // (2D shaded relief via hillshade layer) must remain separate raster-dem sources.
+        // MapLibre's internal terrain manager and hillshade tile pipeline conflict when sharing
+        // a single raster-dem source, causing tile decode collisions and rendering errors.
         terrainElevation: {
           type: 'raster-dem',
           tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
