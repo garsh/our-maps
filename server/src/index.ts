@@ -42,24 +42,6 @@ const io = new Server(server, {
 
 const port = process.env.PORT || 3001;
 
-// VERY TOP LEVEL DEBUG LOGGING
-app.use((req, res, next) => {
-  const start = Date.now();
-  const requestId = Math.random().toString(36).substring(7);
-  console.log(`[REQ ${requestId}] ${req.method} ${req.originalUrl} Origin: ${req.headers.origin || 'none'}`);
-  console.log(`[REQ ${requestId}] Headers:`, JSON.stringify(req.headers));
-
-  // Intercept response finish to log status
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    console.log(`[RES ${requestId}] ${req.method} ${req.originalUrl} -> STATUS ${res.statusCode} (${duration}ms)`);
-    if (res.statusCode >= 400) {
-      console.log(`[RES ${requestId}] Headers Sent:`, JSON.stringify(res.getHeaders()));
-    }
-  });
-  next();
-});
-
 // Security: Use helmet for secure headers
 app.use(helmet({
   contentSecurityPolicy: {
@@ -251,8 +233,6 @@ app.get('/maps/:filename(*)', (req, res, next) => {
     const total = stat.size;
     const range = req.headers.range;
 
-    console.log(`[MAPS SERVE] File: ${foundFilePath}, Size: ${total}, Range: ${range || 'none'}`);
-
     // Set CORS and Expose headers explicitly for every response
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
@@ -283,7 +263,6 @@ app.get('/maps/:filename(*)', (req, res, next) => {
       }
 
       const chunksize = (end - start) + 1;
-      console.log(`[MAPS 206] Sending range: ${start}-${end} (${chunksize} bytes)`);
 
       res.status(206);
       res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
@@ -298,7 +277,6 @@ app.get('/maps/:filename(*)', (req, res, next) => {
         if (!res.headersSent) res.status(500).end('Stream error');
       });
     } else {
-      console.log(`[MAPS 200] Sending full file: ${total} bytes`);
       res.setHeader('Content-Length', total);
       res.status(200);
       
