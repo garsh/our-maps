@@ -44,6 +44,8 @@ export function MapEditor() {
   const socketRef = useRef<Socket | null>(null);
   
   const [pins, setPins] = useState<Pin[]>([])
+  const pinsRef = useRef(pins);
+  pinsRef.current = pins;
   const [layers, setLayers] = useState<PinLayer[]>([])
   const [mapId, setMapId] = useState<string | null>(id && id !== 'new' ? id : null);
   const [mapName, setMapName] = useState(id === 'new' ? 'My Map' : '');
@@ -809,16 +811,13 @@ export function MapEditor() {
     setPermissions(prev => prev.filter(p => p.userId !== userId));
   };
 
-  const handlePinSelect = (pinId: string) => {
+  const handlePinSelect = useCallback((pinId: string) => {
     if (Date.now() < ignoreMapClickUntil.current) return;
     // Clear stuck hover states on mobile/touch, or if a different pin was clicked
-    if (window.matchMedia('(hover: none)').matches || (hoveredPinId && hoveredPinId !== pinId)) {
-      setHoveredPinId(null);
-    }
     setHoveredPinId(null);
 
     // Expand the collapsed layer containing this pin so the pin element is in the DOM
-    const pin = pins.find(p => p.id === pinId);
+    const pin = pinsRef.current.find(p => p.id === pinId);
     if (pin) {
       const layerKey = pin.layerId || null;
       setCollapsedLayerIds(prev => {
@@ -832,20 +831,24 @@ export function MapEditor() {
     }
 
     setTargetPinId(prev => prev === pinId ? null : pinId);
-  };
+  }, []);
 
-  const handleSetEditingPinId = (id: string | null) => {
+  const handlePinClick = useCallback((pin: Pin) => {
+    handlePinSelect(pin.id);
+  }, [handlePinSelect]);
+
+  const handleSetEditingPinId = useCallback((id: string | null) => {
     setEditingPinId(id);
     if (id !== null) {
       setTargetPinId(id);
     } else {
       setTargetPinId(null);
     }
-  };
+  }, []);
 
-  const handleEditPin = (pin: Pin) => {
+  const handleEditPin = useCallback((pin: Pin) => {
     handleSetEditingPinId(pin.id);
-  };
+  }, [handleSetEditingPinId]);
 
   const handleHoverPin = useCallback((id: string | null, leavingPinId?: string) => {
     if (id === null) {
@@ -875,11 +878,12 @@ export function MapEditor() {
     return layerPins.length > 0 ? Math.max(...layerPins.map(p => p.position)) + 1 : 0;
   };
 
-  const addPinAtLocation = async (lat: number, lng: number, label?: string, address?: string, autoEdit = false) => {
+  const addPinAtLocation = useCallback(async (lat: number, lng: number, label?: string, address?: string, autoEdit = false) => {
     if (userRole === 'view' || isOffline) return;
+    const currentPins = pinsRef.current;
     const idVal = generateId();
-    const nextPosition = getNextPinPosition(pins, undefined);
-    const pinLabel = label || `Pin ${pins.length + 1}`;
+    const nextPosition = getNextPinPosition(currentPins, undefined);
+    const pinLabel = label || `Pin ${currentPins.length + 1}`;
     const newPin: Pin = {
       id: idVal,
       lat,
@@ -914,19 +918,20 @@ export function MapEditor() {
         });
       }
     }
-  };
+  }, [userRole, isOffline, mapId, handleEditPin, handlePinSelect]);
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
     if (Date.now() < ignoreMapClickUntil.current || userRole === 'view' || isOffline) return;
     addPinAtLocation(lat, lng, undefined, undefined, true);
-  }, [pins, userRole, isOffline, mapId]);
+  }, [userRole, isOffline, addPinAtLocation]);
 
-  const removePin = (targetId: string) => {
+  const removePin = useCallback((targetId: string) => {
     if (userRole === 'view' || isOffline) return;
-    const targetPin = pins.find(p => p.id === targetId);
+    const currentPins = pinsRef.current;
+    const targetPin = currentPins.find(p => p.id === targetId);
     const targetLayerId = targetPin?.layerId;
 
-    const remainingPins = pins.filter(p => p.id !== targetId);
+    const remainingPins = currentPins.filter(p => p.id !== targetId);
     setPins(remainingPins);
 
     if (mapId) {
@@ -941,18 +946,19 @@ export function MapEditor() {
         pinOrder: layerPins.map(p => p.id) 
       });
     }
-  };
+  }, [userRole, isOffline, mapId]);
 
-  const updatePin = (targetId: string, updates: Partial<Pin>) => {
+  const updatePin = useCallback((targetId: string, updates: Partial<Pin>) => {
     if (userRole === 'view' || isOffline) return;
     
-    const targetPin = pins.find(p => p.id === targetId);
+    const currentPins = pinsRef.current;
+    const targetPin = currentPins.find(p => p.id === targetId);
     const originalLayerId = targetPin?.layerId;
     let computedUpdates = { ...updates };
 
     if ('layerId' in updates) {
       const targetLayerId = updates.layerId; // undefined = Default Layer
-      const pinsInTargetLayer = pins.filter(p => p.id !== targetId && isSameLayer(p.layerId, targetLayerId));
+      const pinsInTargetLayer = currentPins.filter(p => p.id !== targetId && isSameLayer(p.layerId, targetLayerId));
       const endPosition = getNextPinPosition(pinsInTargetLayer, targetLayerId);
       computedUpdates = { ...updates, position: endPosition };
     }
@@ -962,7 +968,7 @@ export function MapEditor() {
     if (mapId) {
       if ('layerId' in updates) {
         const targetLayerId = updates.layerId;
-        const updatedPins = pins.map(p => p.id === targetId ? { ...p, ...computedUpdates } : p);
+        const updatedPins = currentPins.map(p => p.id === targetId ? { ...p, ...computedUpdates } : p);
         
         const destLayerPins = updatedPins.filter(p => isSameLayer(p.layerId, targetLayerId)).sort(comparePinPositions);
         const sourceLayerPins = !isSameLayer(originalLayerId, targetLayerId)
@@ -981,7 +987,7 @@ export function MapEditor() {
         socketRef.current?.emit('pin-update', { mapId, pinId: targetId, updates: computedUpdates });
       }
     }
-  };
+  }, [userRole, isOffline, mapId]);
 
   const addLayer = useCallback((): PinLayer | undefined => {
     if (userRole === 'view' || isOffline) return;
@@ -1514,7 +1520,7 @@ export function MapEditor() {
         <MapView 
             pins={pins} 
             onMapClick={handleMapClick} 
-            onPinClick={(pin) => handlePinSelect(pin.id)}
+            onPinClick={handlePinClick}
             onUpdatePin={updatePin}
             targetLocation={targetLocation} 
             targetPinId={targetPinId}
