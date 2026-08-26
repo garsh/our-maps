@@ -123,6 +123,12 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!isOpen) {
+      setFilteredContacts([]);
+      setShowDropdown(false);
+      return;
+    }
+
     if (contacts && email) {
       const lower = email.toLowerCase();
       setFilteredContacts(contacts.filter(c => c.name.toLowerCase().includes(lower) || c.email.toLowerCase().includes(lower)));
@@ -138,15 +144,18 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
               setShowDropdown(true);
             }
           }
-        } catch (e) {
-          console.error('Failed to search users', e);
+        } catch (e: any) {
+          if (e?.name !== 'AbortError') {
+            console.error('Failed to search users', e);
+          }
         }
       }, 300);
       return () => clearTimeout(searchTimer);
     }
-  }, [email, contacts]);
+  }, [isOpen, email, contacts]);
 
   useEffect(() => {
+    if (!isOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setShowDropdown(false);
@@ -154,7 +163,7 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [isOpen]);
 
   const hasClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID && import.meta.env.VITE_GOOGLE_CLIENT_ID !== 'MOCK_CLIENT_ID';
   const forceMock = import.meta.env.VITE_MOCK_AUTH === 'true';

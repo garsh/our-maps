@@ -43,8 +43,6 @@ router.get('/:id', async (req: AuthRequest, res) => {
   const userId = req.user!.id;
   const mapId = req.params.id;
   const db = await getDb();
-  
-  console.log(`[SERVER] GET /api/maps/${mapId} requested by user ${userId}`);
 
   const map = await db.get(`
     SELECT m.*, u.name as owner_name, u.email as owner_email, u.picture as owner_picture 
@@ -54,14 +52,11 @@ router.get('/:id', async (req: AuthRequest, res) => {
   `, mapId);
   
   if (!map) {
-    console.warn(`[SERVER] Map ${mapId} not found in database`);
     return res.status(404).json({ error: 'Map not found' });
   }
 
   // Check Permissions
   let role: 'owner' | 'edit' | 'view' | null = null;
-  
-  console.log(`[SERVER] Map owner: ${map.owner_id}, Current user: ${userId}`);
 
   // Determine role with legacy fallbacks
   const isLegacyOwner = map.owner_id === 'mock-user-id';
@@ -75,11 +70,8 @@ router.get('/:id', async (req: AuthRequest, res) => {
   }
 
   if (!role) {
-    console.error(`[SERVER] Access denied for user ${userId} to map ${mapId}`);
     return res.status(403).json({ error: 'Access denied' });
   }
-
-  console.log(`[SERVER] Access granted! Role: ${role}`);
 
   // Update Last Accessed
   await db.run(`

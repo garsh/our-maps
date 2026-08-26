@@ -1384,15 +1384,17 @@ export function MapEditor() {
         </div>
       </main>
 
-      <ShareDialog 
-        isOpen={isSharing}
-        onClose={() => setIsSharing(false)}
-        onShare={handleShare}
-        onRemoveShare={handleRemoveShare}
-        permissions={permissions}
-        owner={owner}
-        currentUserId={user?.id || ''}
-      />
+      {isSharing && (
+        <ShareDialog 
+          isOpen={isSharing}
+          onClose={() => setIsSharing(false)}
+          onShare={handleShare}
+          onRemoveShare={handleRemoveShare}
+          permissions={permissions}
+          owner={owner}
+          currentUserId={user?.id || ''}
+        />
+      )}
 
       {showSignOutDialog && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(4px)' }} onClick={() => setShowSignOutDialog(false)}>

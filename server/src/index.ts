@@ -171,14 +171,18 @@ const candidateMapsDirs = [
 
 const mapsDir = candidateMapsDirs.find((d) => fs.existsSync(d)) || candidateMapsDirs[0];
 
-console.log(`[MAPS DIR] Serving vector tiles from: ${mapsDir}`);
+if (process.env.NODE_ENV !== 'test') {
+  console.log(`[MAPS DIR] Serving vector tiles from: ${mapsDir}`);
+}
 
 try {
   if (!fs.existsSync(mapsDir)) {
     fs.mkdirSync(mapsDir, { recursive: true });
   }
 } catch (err) {
-  console.warn(`[MAPS DIR] Could not create maps directory (${mapsDir}):`, err);
+  if (process.env.NODE_ENV !== 'test') {
+    console.warn(`[MAPS DIR] Could not create maps directory (${mapsDir}):`, err);
+  }
 }
 
 const resolvedMapFilePathCache = new Map<string, string>();

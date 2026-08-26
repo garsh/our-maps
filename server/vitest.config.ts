@@ -5,5 +5,9 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     exclude: ['**/node_modules/**', '**/dist/**'],
+    silent: true,
+    env: {
+      NODE_ENV: 'test',
+    },
   },
 })

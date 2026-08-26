@@ -51,7 +51,9 @@ router.get('/search', async (req: AuthRequest, res) => {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY?.trim();
 
   if (!apiKey) {
-    console.warn('[Places API] GOOGLE_MAPS_API_KEY is not set or empty. Falling back to Nominatim.');
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn('[Places API] GOOGLE_MAPS_API_KEY is not set or empty. Falling back to Nominatim.');
+    }
     try {
       await throttleNominatim();
       let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=30&addressdetails=1`;
@@ -243,7 +245,9 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
 
   if (!apiKey) {
-    console.warn('[Places API] GOOGLE_MAPS_API_KEY not set. Falling back to Nominatim.');
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn('[Places API] GOOGLE_MAPS_API_KEY not set. Falling back to Nominatim.');
+    }
     try {
       await throttleNominatim();
       const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;

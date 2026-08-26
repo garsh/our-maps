@@ -34,9 +34,6 @@ describe('parseKmlHierarchy Reproduction', () => {
     // 2 Groups: "Outer Folder", "Inner Folder"
     // 2 Pins: "Outer Pin" (in Outer Folder), "Inner Pin" (in Inner Folder)
 
-    console.log('Groups:', layers.map(g => g.name));
-    console.log('Pins:', pins.map(p => `${p.label} (Layer: ${layers.find(g => g.id === p.layerId)?.name})`));
-
     // Check for duplicates
     const innerPinCount = pins.filter(p => p.label === 'Inner Pin').length;
     expect(innerPinCount).toBe(1); // Fails if 2
