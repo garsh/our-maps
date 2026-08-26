@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import SearchBar, { type SearchAreaState } from './SearchBar';
 import { reverseGeocode } from '../utils/geocoding';
@@ -337,58 +337,96 @@ const SortablePin = ({
   const [localLabel, setLocalLabel] = useState(pin.label || '');
   const [localAddress, setLocalAddress] = useState(pin.address || '');
   const [localDescription, setLocalDescription] = useState(pin.description || '');
+  const localLabelRef = useRef(pin.label || '');
+  const localAddressRef = useRef(pin.address || '');
+  const localDescriptionRef = useRef(pin.description || '');
   const focusedFieldRef = useRef<'label' | 'address' | 'description' | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (focusedFieldRef.current !== 'label') {
       setLocalLabel(pin.label || '');
+      localLabelRef.current = pin.label || '';
     }
   }, [pin.label]);
 
   useEffect(() => {
     if (focusedFieldRef.current !== 'address') {
       setLocalAddress(pin.address || '');
+      localAddressRef.current = pin.address || '';
     }
   }, [pin.address]);
 
   useEffect(() => {
     if (focusedFieldRef.current !== 'description') {
       setLocalDescription(pin.description || '');
+      localDescriptionRef.current = pin.description || '';
     }
   }, [pin.description]);
+
+  const flushField = useCallback((field: 'label' | 'address' | 'description') => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    const val = field === 'label' ? localLabelRef.current : field === 'address' ? localAddressRef.current : localDescriptionRef.current;
+    const originalVal = (field === 'label' ? pin.label : field === 'address' ? pin.address : pin.description) || '';
+    if (val !== originalVal) {
+      onUpdatePin(pin.id, { [field]: val });
+    }
+  }, [pin.id, pin.label, pin.address, pin.description, onUpdatePin]);
 
   useEffect(() => {
     return () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      if (localLabelRef.current !== (pin.label || '')) {
+        onUpdatePin(pin.id, { label: localLabelRef.current });
+      }
+      if (localAddressRef.current !== (pin.address || '')) {
+        onUpdatePin(pin.id, { address: localAddressRef.current });
+      }
+      if (localDescriptionRef.current !== (pin.description || '')) {
+        onUpdatePin(pin.id, { description: localDescriptionRef.current });
       }
     };
-  }, []);
+  }, [pin.id, pin.label, pin.address, pin.description, onUpdatePin]);
 
   const handleFieldChange = (field: 'label' | 'address' | 'description', value: string) => {
-    if (field === 'label') setLocalLabel(value);
-    if (field === 'address') setLocalAddress(value);
-    if (field === 'description') setLocalDescription(value);
+    if (field === 'label') {
+      setLocalLabel(value);
+      localLabelRef.current = value;
+    } else if (field === 'address') {
+      setLocalAddress(value);
+      localAddressRef.current = value;
+    } else {
+      setLocalDescription(value);
+      localDescriptionRef.current = value;
+    }
 
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
     debounceTimerRef.current = setTimeout(() => {
-      onUpdatePin(pin.id, { [field]: value });
-    }, 250);
+      flushField(field);
+    }, 1000);
   };
 
   const handleFieldBlur = (field: 'label' | 'address' | 'description') => {
     if (focusedFieldRef.current === field) {
       focusedFieldRef.current = null;
     }
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
+    flushField(field);
+  };
+
+  const handleFieldKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>, field: 'label' | 'address' | 'description') => {
+    if (e.key === 'Enter' && field !== 'description') {
+      e.preventDefault();
+      flushField(field);
+      e.currentTarget.blur();
     }
-    const val = field === 'label' ? localLabel : field === 'address' ? localAddress : localDescription;
-    onUpdatePin(pin.id, { [field]: val });
   };
 
   useEffect(() => {
@@ -605,6 +643,7 @@ const SortablePin = ({
               value={localLabel} 
               onFocus={() => { focusedFieldRef.current = 'label'; }}
               onChange={(e) => handleFieldChange('label', e.target.value)}
+              onKeyDown={(e) => handleFieldKeyDown(e, 'label')}
               onBlur={() => handleFieldBlur('label')}
               className="input-field"
               style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit' }}
@@ -618,6 +657,7 @@ const SortablePin = ({
               value={localAddress} 
               onFocus={() => { focusedFieldRef.current = 'address'; }}
               onChange={(e) => handleFieldChange('address', e.target.value)}
+              onKeyDown={(e) => handleFieldKeyDown(e, 'address')}
               onBlur={() => handleFieldBlur('address')}
               className="input-field"
               style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit', minHeight: '30px', resize: 'vertical' }}

@@ -108,6 +108,34 @@ describe('Sidebar', () => {
     expect(onUpdatePin).toHaveBeenCalledWith('1', { description: 'New description' });
   });
 
+  it('flushes pin name edit on Enter key press without waiting for debounce', () => {
+    const onUpdatePin = vi.fn();
+    render(<TestWrapper handlers={{ onUpdatePin }} />);
+    
+    fireEvent.click(screen.getByLabelText('Edit'));
+    const nameInput = screen.getByLabelText(/^Name$/i);
+    
+    fireEvent.change(nameInput, { target: { value: 'Updated Pin Name' } });
+    expect(onUpdatePin).not.toHaveBeenCalled();
+    
+    fireEvent.keyDown(nameInput, { key: 'Enter' });
+    expect(onUpdatePin).toHaveBeenCalledWith('1', { label: 'Updated Pin Name' });
+  });
+
+  it('flushes pending edits when pin component is unmounted', () => {
+    const onUpdatePin = vi.fn();
+    const { unmount } = render(<TestWrapper handlers={{ onUpdatePin }} />);
+    
+    fireEvent.click(screen.getByLabelText('Edit'));
+    const nameInput = screen.getByLabelText(/^Name$/i);
+    
+    fireEvent.change(nameInput, { target: { value: 'Unsaved Name' } });
+    expect(onUpdatePin).not.toHaveBeenCalled();
+    
+    unmount();
+    expect(onUpdatePin).toHaveBeenCalledWith('1', { label: 'Unsaved Name' });
+  });
+
   it('calls onUpdatePin when a color is selected', () => {
     const onUpdatePin = vi.fn();
     render(<TestWrapper handlers={{ onUpdatePin }} />);
