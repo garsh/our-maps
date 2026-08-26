@@ -127,4 +127,64 @@ describe('MapView Compass and Tilt Indicator', () => {
     fireEvent.mouseLeave(pinElement!);
     expect(mockOnHoverPin).toHaveBeenCalledWith(null, 'pin-1');
   });
+
+  it('does not start location tracking on initial mount', () => {
+    const mockWatchPosition = vi.fn();
+    Object.defineProperty(global.navigator, 'geolocation', {
+      value: {
+        watchPosition: mockWatchPosition,
+        clearWatch: vi.fn(),
+      },
+      writable: true,
+      configurable: true,
+    });
+
+    render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        onBoundsChange={vi.fn()}
+      />
+    );
+
+    expect(mockWatchPosition).not.toHaveBeenCalled();
+  });
+
+  it('toggles location tracking on and off when location button is clicked', () => {
+    const mockWatchPosition = vi.fn().mockReturnValue(12345);
+    const mockClearWatch = vi.fn();
+    Object.defineProperty(global.navigator, 'geolocation', {
+      value: {
+        watchPosition: mockWatchPosition,
+        clearWatch: mockClearWatch,
+      },
+      writable: true,
+      configurable: true,
+    });
+
+    render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        onBoundsChange={vi.fn()}
+      />
+    );
+
+    const locatorButton = screen.getByRole('button', { name: /Find my location/i });
+    expect(locatorButton).toHaveAttribute('aria-pressed', 'false');
+
+    // Turn tracking ON
+    fireEvent.click(locatorButton);
+
+    expect(mockWatchPosition).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: /Stop location tracking/i })).toHaveAttribute('aria-pressed', 'true');
+
+    // Turn tracking OFF
+    fireEvent.click(screen.getByRole('button', { name: /Stop location tracking/i }));
+
+    expect(mockClearWatch).toHaveBeenCalledWith(12345);
+    expect(screen.getByRole('button', { name: /Find my location/i })).toHaveAttribute('aria-pressed', 'false');
+  });
 });

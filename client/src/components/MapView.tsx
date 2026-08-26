@@ -114,27 +114,7 @@ interface MapViewProps {
   hasOfflineTiles?: boolean;
 }
 
-const UserLocationMarker = () => {
-  const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
-
-  useEffect(() => {
-    if (navigator.geolocation) {
-      const watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          setPosition({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-          });
-        },
-        (err) => console.warn('Geolocation error:', err),
-        { enableHighAccuracy: true }
-      );
-      return () => navigator.geolocation.clearWatch(watchId);
-    }
-  }, []);
-
-  if (!position) return null;
-
+const UserLocationMarker = ({ position }: { position: { lat: number; lng: number } }) => {
   return (
     <Marker longitude={position.lng} latitude={position.lat} anchor="center">
       <div
@@ -1038,21 +1018,58 @@ const MapView = ({
     }
   }, [isMapLoaded, updateBounds]);
 
-  const handleMyLocation = () => {
+  const [isTrackingLocation, setIsTrackingLocation] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isTrackingLocation) {
+      if (watchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      setUserLocation(null);
+      return;
+    }
+
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
+      let isFirstLock = true;
+      const watchId = navigator.geolocation.watchPosition(
         (pos) => {
-          mapRef.current?.flyTo({
-            center: [pos.coords.longitude, pos.coords.latitude],
-            zoom: 16,
-            duration: 1500,
-          });
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          setUserLocation({ lat, lng });
+
+          if (isFirstLock) {
+            isFirstLock = false;
+            mapRef.current?.flyTo({
+              center: [lng, lat],
+              zoom: 16,
+              duration: 1500,
+            });
+          }
         },
-        (err) => console.warn('Location lookup failed:', err),
+        (err) => {
+          console.warn('Geolocation error:', err);
+          setIsTrackingLocation(false);
+        },
         { enableHighAccuracy: true }
       );
+      watchIdRef.current = watchId;
+
+      return () => {
+        if (navigator.geolocation && watchId !== null) {
+          navigator.geolocation.clearWatch(watchId);
+        }
+      };
+    } else {
+      setIsTrackingLocation(false);
     }
-  };
+  }, [isTrackingLocation]);
+
+  const handleToggleLocationTracking = useCallback(() => {
+    setIsTrackingLocation((prev) => !prev);
+  }, []);
 
   const previewMarker = previewLocation ? getPreviewMarkerHTML() : null;
 
@@ -1143,7 +1160,9 @@ const MapView = ({
           }}
         >
           <AttributionControl compact={true} customAttribution={`OurMaps v.${import.meta.env.VITE_APP_BUILD_TIME || 'dev'}`} />
-          <UserLocationMarker />
+          {isTrackingLocation && userLocation && (
+            <UserLocationMarker position={userLocation} />
+          )}
           {visiblePins.map((pin) => {
             const isSelected = hoveredPinId === pin.id || targetPinId === pin.id || editingPinId === pin.id;
             const isEditing = !readOnly && editingPinId === pin.id;
@@ -1307,7 +1326,7 @@ const MapView = ({
       </button>
 
       <button
-        onClick={handleMyLocation}
+        onClick={handleToggleLocationTracking}
         style={{
           position: 'absolute',
           bottom: '10px',
@@ -1316,21 +1335,36 @@ const MapView = ({
           height: '42px',
           borderRadius: '12px',
           background: 'var(--surface-color)',
-          border: '1px solid var(--border-color)',
+          border: isTrackingLocation ? '2px solid #4285F4' : '1px solid var(--border-color)',
           boxShadow: 'var(--shadow-md)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           cursor: 'pointer',
           zIndex: 1000,
-          color: mapTheme === 'dark' ? '#cbd5e1' : 'var(--primary-color)',
+          color: isTrackingLocation ? '#4285F4' : (mapTheme === 'dark' ? '#cbd5e1' : 'var(--primary-color)'),
           transition: 'all 0.2s',
         }}
         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface-color)')}
-        title="Find my location"
+        title={isTrackingLocation ? "Stop location tracking" : "Find my location"}
+        aria-label={isTrackingLocation ? "Stop location tracking" : "Find my location"}
+        aria-pressed={isTrackingLocation}
       >
-        <Locate size={24} />
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Locate size={24} />
+          {isTrackingLocation && (
+            <div
+              style={{
+                position: 'absolute',
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: '#4285F4',
+              }}
+            />
+          )}
+        </div>
       </button>
 
       <style>{`
