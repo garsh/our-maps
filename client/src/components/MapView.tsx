@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import Map, { Marker, AttributionControl, type MapRef } from 'react-map-gl/maplibre';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -139,29 +139,28 @@ const UserLocationMarker = () => {
   );
 };
 
-const PinMarker = ({
-  pin,
-  onUpdatePin,
-  onHoverPin,
-  onPinClick,
-  hoveredPinId,
-  targetPinId,
-  editingPinId,
-  readOnly,
-}: {
+interface PinMarkerProps {
   pin: Pin;
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
   onHoverPin?: (id: string | null) => void;
   onPinClick?: (pin: Pin) => void;
-  hoveredPinId?: string | null;
-  targetPinId?: string | null;
-  editingPinId?: string | null;
+  isSelected: boolean;
+  isEditing: boolean;
   readOnly: boolean;
-}) => {
-  const isSelected = hoveredPinId === pin.id || targetPinId === pin.id || editingPinId === pin.id;
+}
+
+const PinMarker = memo(({
+  pin,
+  onUpdatePin,
+  onHoverPin,
+  onPinClick,
+  isSelected,
+  isEditing,
+  readOnly,
+}: PinMarkerProps) => {
   const { html, className } = getMarkerHTML(pin.color, pin.icon, isSelected);
 
-  const handleDragEnd = async (e: any) => {
+  const handleDragEnd = useCallback(async (e: any) => {
     const newLat = e.lngLat.lat;
     const newLng = e.lngLat.lng;
     const newAddress = await reverseGeocode(newLat, newLng);
@@ -171,31 +170,41 @@ const PinMarker = ({
       lng: newLng,
       address: newAddress || undefined,
     });
-  };
+  }, [pin.id, onUpdatePin]);
+
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onPinClick?.(pin);
+  }, [onPinClick, pin]);
+
+  const handleMouseEnter = useCallback(() => {
+    onHoverPin?.(pin.id);
+  }, [onHoverPin, pin.id]);
+
+  const handleMouseLeave = useCallback(() => {
+    onHoverPin?.(null);
+  }, [onHoverPin]);
 
   return (
     <Marker
       longitude={pin.lng}
       latitude={pin.lat}
       anchor="bottom"
-      draggable={!readOnly && editingPinId === pin.id}
+      draggable={!readOnly && isEditing}
       onDragEnd={handleDragEnd}
       style={{ zIndex: isSelected ? 1000 : 1 }}
     >
       <div
         className={className}
         style={{ cursor: 'pointer' }}
-        onClick={(e) => {
-          e.stopPropagation();
-          onPinClick?.(pin);
-        }}
-        onMouseEnter={() => onHoverPin?.(pin.id)}
-        onMouseLeave={() => onHoverPin?.(null)}
+        onClick={handleClick}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </Marker>
   );
-};
+});
 
 const MapView = ({
   center = [20, 0], // default [lat, lng]
@@ -708,6 +717,21 @@ const MapView = ({
     return { longitude: center[1], latitude: center[0], zoom };
   }, [boundsToFit, visiblePins, pins, targetLocation, center, zoom, bottomPadding, leftPadding]);
 
+  const updateCompassDirect = useCallback(() => {
+    if (!mapRef.current) return;
+    const map = mapRef.current.getMap();
+    if (!map) return;
+    const b = map.getBearing();
+    const p = map.getPitch();
+
+    if (compassSvgRef.current) {
+      compassSvgRef.current.style.transform = `perspective(60px) rotateX(${Math.min(p, 70)}deg)`;
+    }
+    if (compassGroupRef.current) {
+      compassGroupRef.current.style.transform = `rotate(${-b}deg)`;
+    }
+  }, []);
+
   const updateBounds = useCallback(() => {
     if (!mapRef.current) return;
     const map = mapRef.current.getMap();
@@ -739,6 +763,11 @@ const MapView = ({
       console.warn('Failed to get map bounds:', e);
     }
   }, [onBoundsChange]);
+
+  const handlePinClickStable = useCallback((clickedPin: Pin) => {
+    setPendingContextLocation(null);
+    onPinClick?.(clickedPin);
+  }, [onPinClick]);
 
   const handleCombinedCompassTilt = () => {
     if (!mapRef.current) return;
@@ -916,11 +945,13 @@ const MapView = ({
           onMove={() => {
             if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
             touchStartRef.current = null;
-            updateBounds();
+            updateCompassDirect();
           }}
-          onRotate={updateBounds}
-          onPitch={updateBounds}
+          onRotate={updateCompassDirect}
+          onPitch={updateCompassDirect}
           onMoveEnd={updateBounds}
+          onRotateEnd={updateBounds}
+          onPitchEnd={updateBounds}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
@@ -942,22 +973,22 @@ const MapView = ({
         >
           <AttributionControl compact={true} customAttribution={`OurMaps v.${import.meta.env.VITE_APP_BUILD_TIME || 'dev'}`} />
           <UserLocationMarker />
-          {visiblePins.map((pin) => (
-            <PinMarker
-              key={pin.id}
-              pin={pin}
-              onUpdatePin={onUpdatePin}
-              onHoverPin={onHoverPin}
-              onPinClick={(clickedPin) => {
-                setPendingContextLocation(null);
-                onPinClick?.(clickedPin);
-              }}
-              hoveredPinId={hoveredPinId}
-              targetPinId={targetPinId}
-              editingPinId={editingPinId}
-              readOnly={readOnly}
-            />
-          ))}
+          {visiblePins.map((pin) => {
+            const isSelected = hoveredPinId === pin.id || targetPinId === pin.id || editingPinId === pin.id;
+            const isEditing = !readOnly && editingPinId === pin.id;
+            return (
+              <PinMarker
+                key={pin.id}
+                pin={pin}
+                onUpdatePin={onUpdatePin}
+                onHoverPin={onHoverPin}
+                onPinClick={handlePinClickStable}
+                isSelected={isSelected}
+                isEditing={isEditing}
+                readOnly={readOnly}
+              />
+            );
+          })}
 
           {pendingContextLocation && !readOnly && (
             <Marker

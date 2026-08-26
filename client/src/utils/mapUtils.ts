@@ -27,7 +27,13 @@ const ICON_SVG_PATHS: Record<Exclude<PinIcon, 'default'>, string> = {
   train: '<path d="M 20 16 h 1 c 1 0 2 -0.5 2 -2 v -3 c 0 -1.5 -0.5 -2 -2 -2 h -1 v -3 c 0 -1 -1 -2 -2 -2 h -2 c -1 0 -2 1 -2 2 v 3 h -4 v -4 c 0 -1.5 -1 -3 -3 -3 h -2 c -1.5 0 -3 1.5 -3 3 v 9 c 0 1.5 1 2 2 2 M 10 16 h 4"/><circle cx="7" cy="16" r="3"/><circle cx="17" cy="16" r="3"/>'
 };
 
+const markerHtmlCache = new Map<string, { html: string; className: string; width: number; height: number }>();
+
 export function getMarkerHTML(color: PinColor = 'blue', icon: PinIcon = 'default', isHovered = false) {
+  const cacheKey = `${color}_${icon}_${isHovered ? '1' : '0'}`;
+  const cached = markerHtmlCache.get(cacheKey);
+  if (cached) return cached;
+
   const isHex = color.startsWith('#');
   const colorCode = isHex ? color : (COLOR_CODES[color] || COLOR_CODES.blue);
 
@@ -76,7 +82,9 @@ export function getMarkerHTML(color: PinColor = 'blue', icon: PinIcon = 'default
   `;
 
   const className = isHovered ? 'leaflet-marker-icon custom-pin-modern hovered' : 'leaflet-marker-icon custom-pin-modern';
-  return { html, className, width, height };
+  const result = { html, className, width, height };
+  markerHtmlCache.set(cacheKey, result);
+  return result;
 }
 
 export function getPreviewMarkerHTML() {

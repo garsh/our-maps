@@ -58,40 +58,39 @@ const SearchBar = ({ onResultSelect: _onResultSelect, onAddPin, onSelectPin: _on
   const [globalResults, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Filter local pins by mapBounds (strictly within current map view)
-  const boundedPins = useMemo(() => {
-    if (!mapBounds) return pins;
-    const parts = mapBounds.split(',').map(Number);
-    if (parts.length === 4 && parts.every((n) => !isNaN(n))) {
-      const [west, north, east, south] = parts;
-      const minLat = Math.min(north, south);
-      const maxLat = Math.max(north, south);
-      const minLng = Math.min(west, east);
-      const maxLng = Math.max(west, east);
-
-      return pins.filter(
-        (pin) =>
-          pin.lat >= minLat &&
-          pin.lat <= maxLat &&
-          pin.lng >= minLng &&
-          pin.lng <= maxLng
-      );
-    }
-    return pins;
-  }, [pins, mapBounds]);
-
-  // Initialize Fuse for fuzzy search on bounded local pins
+  // Initialize Fuse for fuzzy search on local pins (memoized on pins array only)
   const fuse = useMemo(() => {
-    return new Fuse(boundedPins, {
+    return new Fuse(pins, {
       keys: ['label', 'description'],
       threshold: 0.4,
       includeScore: true,
     });
-  }, [boundedPins]);
+  }, [pins]);
 
   const localResults = useMemo((): SearchResult[] => {
     if (!query.trim()) return [];
-    return fuse.search(query).slice(0, 5).map(result => {
+    let searchResults = fuse.search(query);
+
+    if (mapBounds) {
+      const parts = mapBounds.split(',').map(Number);
+      if (parts.length === 4 && parts.every((n) => !isNaN(n))) {
+        const [west, north, east, south] = parts;
+        const minLat = Math.min(north, south);
+        const maxLat = Math.max(north, south);
+        const minLng = Math.min(west, east);
+        const maxLng = Math.max(west, east);
+
+        searchResults = searchResults.filter(
+          (result) =>
+            result.item.lat >= minLat &&
+            result.item.lat <= maxLat &&
+            result.item.lng >= minLng &&
+            result.item.lng <= maxLng
+        );
+      }
+    }
+
+    return searchResults.slice(0, 5).map(result => {
       const label = result.item.label || 'Unnamed Pin';
       const address = result.item.address || '';
       return {
@@ -104,7 +103,7 @@ const SearchBar = ({ onResultSelect: _onResultSelect, onAddPin, onSelectPin: _on
         pinId: result.item.id
       };
     });
-  }, [query, fuse]);
+  }, [query, fuse, mapBounds]);
 
   // Debounced global search
   useEffect(() => {
