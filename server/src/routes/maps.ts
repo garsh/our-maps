@@ -127,6 +127,39 @@ router.get('/:id', async (req: AuthRequest, res) => {
   res.json(response);
 });
 
+// Helper to batch-query existing entity IDs in chunks (eliminates sequential N+1 round-trips)
+async function getExistingIds(
+  db: any,
+  table: 'pins' | 'pin_layers',
+  ids: (string | undefined | null)[],
+  mapIdFilter?: { mapId: string; notEqual: boolean }
+): Promise<Set<string>> {
+  const validIds = ids.filter((id): id is string => Boolean(id));
+  if (validIds.length === 0) return new Set();
+
+  const existingSet = new Set<string>();
+  const chunkSize = 500;
+
+  for (let i = 0; i < validIds.length; i += chunkSize) {
+    const chunk = validIds.slice(i, i + chunkSize);
+    const placeholders = chunk.map(() => '?').join(',');
+    let query = `SELECT id FROM ${table} WHERE id IN (${placeholders})`;
+    const params: any[] = [...chunk];
+
+    if (mapIdFilter) {
+      query += mapIdFilter.notEqual ? ' AND map_id != ?' : ' AND map_id = ?';
+      params.push(mapIdFilter.mapId);
+    }
+
+    const rows = await db.all(query, ...params);
+    for (const row of rows) {
+      existingSet.add(row.id);
+    }
+  }
+
+  return existingSet;
+}
+
 // POST new map
 router.post('/', async (req: AuthRequest, res) => {
   try {
@@ -145,10 +178,10 @@ router.post('/', async (req: AuthRequest, res) => {
       const processedLayerIds = new Set<string>();
 
       if (layers && layers.length > 0) {
+        const existingLayerIds = await getExistingIds(db, 'pin_layers', layers.map(l => l.id));
         for (const layer of layers) {
           let layerId = layer.id;
-          const existingLayer = layerId ? await db.get('SELECT id FROM pin_layers WHERE id = ?', layerId) : null;
-          if (!layerId || processedLayerIds.has(layerId) || existingLayer) {
+          if (!layerId || processedLayerIds.has(layerId) || existingLayerIds.has(layerId)) {
             const newLayerId = crypto.randomUUID();
             if (layerId) layerIdMap.set(layerId, newLayerId);
             layerId = newLayerId;
@@ -167,10 +200,10 @@ router.post('/', async (req: AuthRequest, res) => {
       const finalPins: Pin[] = [];
       if (pins && pins.length > 0) {
         const processedPinIds = new Set<string>();
+        const existingPinIds = await getExistingIds(db, 'pins', pins.map(p => p.id));
         for (const pin of pins) {
           let pinId = pin.id;
-          const existingPin = pinId ? await db.get('SELECT id FROM pins WHERE id = ?', pinId) : null;
-          if (!pinId || processedPinIds.has(pinId) || existingPin) {
+          if (!pinId || processedPinIds.has(pinId) || existingPinIds.has(pinId)) {
             pinId = crypto.randomUUID();
           }
           processedPinIds.add(pinId);
@@ -253,11 +286,11 @@ router.put('/:id', async (req: AuthRequest, res) => {
       if (layers !== undefined) {
         const finalGroups: PinLayer[] = [];
         const processedLayerIds = new Set<string>();
+        const otherMapLayerIds = await getExistingIds(db, 'pin_layers', layers.map(l => l.id), { mapId, notEqual: true });
 
         for (const layer of layers) {
           let layerId = layer.id;
-          const existingOtherLayer = layerId ? await db.get('SELECT map_id FROM pin_layers WHERE id = ? AND map_id != ?', layerId, mapId) : null;
-          if (!layerId || processedLayerIds.has(layerId) || existingOtherLayer) {
+          if (!layerId || processedLayerIds.has(layerId) || otherMapLayerIds.has(layerId)) {
             const newLayerId = crypto.randomUUID();
             if (layerId) layerIdMap.set(layerId, newLayerId);
             layerId = newLayerId;
@@ -266,9 +299,6 @@ router.put('/:id', async (req: AuthRequest, res) => {
           finalGroups.push({ ...layer, id: layerId });
         }
 
-        const providedLayerIds = finalGroups.map(g => g.id);
-        
-        // Upsert provided layers
         const layerStmt = await db.prepare(`
           INSERT INTO pin_layers (id, map_id, name, position) 
           VALUES (?, ?, ?, ?)
@@ -287,11 +317,11 @@ router.put('/:id', async (req: AuthRequest, res) => {
       if (pins !== undefined) {
         const finalPins: Pin[] = [];
         const processedPinIds = new Set<string>();
+        const otherMapPinIds = await getExistingIds(db, 'pins', pins.map(p => p.id), { mapId, notEqual: true });
 
         for (const pin of pins) {
           let pinId = pin.id;
-          const existingOtherPin = pinId ? await db.get('SELECT map_id FROM pins WHERE id = ? AND map_id != ?', pinId, mapId) : null;
-          if (!pinId || processedPinIds.has(pinId) || existingOtherPin) {
+          if (!pinId || processedPinIds.has(pinId) || otherMapPinIds.has(pinId)) {
             pinId = crypto.randomUUID();
           }
           processedPinIds.add(pinId);
@@ -304,7 +334,6 @@ router.put('/:id', async (req: AuthRequest, res) => {
         }
 
         // Upsert provided pins
-
         const pinStmt = await db.prepare(`
           INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, image_url, color, icon, position) 
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
