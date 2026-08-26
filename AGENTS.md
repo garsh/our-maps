@@ -11,8 +11,8 @@ Welcome! This file provides essential context, rules, and workflows for the Our 
 We use Vitest for unit/integration tests and Playwright for E2E tests.
 Only run these tests when the user requests it.
 If you think a test would be useful to confirm a particular change, ask the user to run it and print out the command to be run.
-- **Client Tests**: `cd client && npm run test`
-- **Server Tests**: `cd server && npm run test`
+- **Client Tests**: `cd client && npm run test && cd ..`
+- **Server Tests**: `cd server && npm run test && cd ..`
 - **E2E Tests**: `npx playwright test` (from the project root)
 
 ## Deployment Workflow

@@ -361,15 +361,21 @@ export function MapEditor() {
 
       socket.emit('join-map', id);
 
+      let isInitialConnect = true;
+
       // Reconnect re-sync handler
       socket.on('connect', () => {
         console.log('[SOCKET] Connected to server, re-syncing map data');
         if (id) {
           socket.emit('join-map', id);
+          if (isInitialConnect) {
+            isInitialConnect = false;
+            return;
+          }
           if (isDirtyRef.current) {
             handleSaveRef.current();
           } else {
-            loadMap(id);
+            loadMap(id, true);
           }
         }
       });
@@ -581,8 +587,10 @@ export function MapEditor() {
     };
   }, []); // empty deps — cleanup only runs on unmount
 
-  const loadMap = async (mapId: string) => {
-    setIsMapLoading(true);
+  const loadMap = async (mapId: string, silent = false) => {
+    if (!silent) {
+      setIsMapLoading(true);
+    }
     hasLoadedRef.current = true;
     setSelectedNavIds(new Set());
     try {
@@ -593,7 +601,7 @@ export function MapEditor() {
       setOwner({ id: data.ownerId, name: data.ownerName, email: data.ownerEmail, picture: data.ownerPicture });
       setLayers(data.layers || []);
       setPins(data.pins);
-      if (data.pins && data.pins.length > 0) {
+      if (data.pins && data.pins.length > 0 && !silent) {
         const lats = data.pins.map(p => p.lat);
         const lngs = data.pins.map(p => p.lng);
         const bounds: [[number, number], [number, number]] = [
@@ -611,7 +619,9 @@ export function MapEditor() {
       setError('Map not found or access denied');
       setTimeout(() => navigate('/'), 2000);
     } finally {
-      setIsMapLoading(false);
+      if (!silent) {
+        setIsMapLoading(false);
+      }
     }
   };
 
