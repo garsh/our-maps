@@ -448,7 +448,7 @@ const MapView = ({
         }
         if (l.id === 'water') {
           l.paint['fill-color'] = '#a0c8f0';
-          l.paint['fill-opacity'] = 1;
+          l.paint['fill-opacity'] = 0.88;
         }
         if (l.id.includes('water_river') || l.id.includes('water_stream')) {
           l.paint['line-color'] = showSatellite ? '#60a5fa' : '#a0c8f0';
@@ -534,7 +534,7 @@ const MapView = ({
         }
         if (l.id === 'water') {
           l.paint['fill-color'] = '#141f2d';
-          l.paint['fill-opacity'] = 1;
+          l.paint['fill-opacity'] = 0.88;
         }
         if (l.id.includes('water_river') || l.id.includes('water_stream')) {
           l.paint['line-color'] = showSatellite ? '#60a5fa' : '#141f2d';
