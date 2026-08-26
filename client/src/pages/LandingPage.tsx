@@ -40,9 +40,10 @@ export default function LandingPage() {
     navigate(`/map/${mapId}`);
   };
 
-  const fetchDownloadedMapStatuses = async () => {
+  const fetchDownloadedMapStatuses = async (mapList?: { id: string }[]) => {
     try {
-      const statusMap = await getMapDownloadStatuses();
+      const mapIds = mapList ? mapList.map(m => m.id) : maps.map(m => m.id);
+      const statusMap = await getMapDownloadStatuses(mapIds.length > 0 ? mapIds : undefined);
       setDownloadStatuses(statusMap);
     } catch (err) {
       console.error('Failed to load downloaded map statuses', err);
@@ -51,12 +52,12 @@ export default function LandingPage() {
 
   const fetchMaps = async () => {
     setLoading(true);
-    fetchDownloadedMapStatuses();
     try {
       const data = await apiService.getMaps();
       setMaps(data);
       setIsOffline(false);
       localStorage.setItem('cached_maps', JSON.stringify(data));
+      fetchDownloadedMapStatuses(data);
     } catch (error: any) {
       console.error('Failed to fetch maps', error);
       if (error?.message?.includes('Unauthorized')) {
@@ -66,7 +67,11 @@ export default function LandingPage() {
       setIsOffline(true);
       const cached = localStorage.getItem('cached_maps');
       if (cached) {
-        setMaps(JSON.parse(cached));
+        const cachedData = JSON.parse(cached);
+        setMaps(cachedData);
+        fetchDownloadedMapStatuses(cachedData);
+      } else {
+        fetchDownloadedMapStatuses();
       }
     } finally {
       setLoading(false);

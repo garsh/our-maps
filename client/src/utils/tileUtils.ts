@@ -206,10 +206,47 @@ export interface MapDownloadStatus {
     isPartial: boolean;
 }
 
-export async function getMapDownloadStatuses(): Promise<Map<string, MapDownloadStatus>> {
+export async function getMapDownloadStatuses(mapIds?: string[]): Promise<Map<string, MapDownloadStatus>> {
     if (typeof indexedDB === 'undefined') return new Map();
     try {
         const db = await openDB();
+        const resultMap = new Map<string, MapDownloadStatus>();
+
+        if (mapIds && mapIds.length > 0) {
+            return new Promise((resolve) => {
+                const transaction = db.transaction(MANIFEST_STORE, 'readonly');
+                const store = transaction.objectStore(MANIFEST_STORE);
+                const index = store.index('mapId');
+                let pending = mapIds.length;
+
+                for (const mapId of mapIds) {
+                    if (!mapId) {
+                        pending--;
+                        if (pending === 0) resolve(resultMap);
+                        continue;
+                    }
+                    const req = index.getAll(IDBKeyRange.only(mapId));
+                    req.onsuccess = () => {
+                        const entries = req.result as ManifestEntry[];
+                        if (entries && entries.length > 0) {
+                            const total = entries.length;
+                            const completed = entries.filter(e => e.status === 'completed').length;
+                            resultMap.set(mapId, {
+                                isComplete: completed === total && total > 0,
+                                isPartial: completed > 0 && completed < total
+                            });
+                        }
+                        pending--;
+                        if (pending === 0) resolve(resultMap);
+                    };
+                    req.onerror = () => {
+                        pending--;
+                        if (pending === 0) resolve(resultMap);
+                    };
+                }
+            });
+        }
+
         return new Promise((resolve, reject) => {
             const transaction = db.transaction(MANIFEST_STORE, 'readonly');
             const store = transaction.objectStore(MANIFEST_STORE);
@@ -228,12 +265,11 @@ export async function getMapDownloadStatuses(): Promise<Map<string, MapDownloadS
                     mapStats.set(entry.mapId, current);
                 });
 
-                const resultMap = new Map<string, MapDownloadStatus>();
                 mapStats.forEach((stats, mapId) => {
                     if (stats.total > 0) {
                         resultMap.set(mapId, {
                             isComplete: stats.completed === stats.total,
-                            isPartial: stats.completed < stats.total
+                            isPartial: stats.completed > 0 && stats.completed < stats.total
                         });
                     }
                 });
