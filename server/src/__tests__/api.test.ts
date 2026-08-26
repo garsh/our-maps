@@ -241,4 +241,42 @@ describe('API Endpoints', () => {
     expect(res.body.id).toBe(mapId);
     expect(res.body.pins[0].label).toBe(longLabel);
   });
+
+  it('GET /api/maps/:id/permissions should return owner, permissions, and userRole without pins or layers', async () => {
+    const mapId = 'permissions-test-map';
+    const mapData = {
+      id: mapId,
+      name: 'Permissions Map',
+      layers: [{ id: 'layer-1', name: 'Layer', position: 0 }],
+      pins: [{ id: 'pin-1', layerId: 'layer-1', lat: 10, lng: 20, label: 'Pin 1', position: 0 }]
+    };
+
+    // Create map
+    await request(app).post('/api/maps').set(authHeader).send(mapData);
+
+    // Create a collaborator
+    const db = await getDb();
+    const collabId = 'collab-user-id';
+    await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', collabId, 'collab@example.com', 'Collab User');
+    await db.run('INSERT INTO map_permissions (map_id, user_id, role) VALUES (?, ?, ?)', mapId, collabId, 'edit');
+
+    const res = await request(app)
+      .get(`/api/maps/${mapId}/permissions`)
+      .set(authHeader);
+
+    expect(res.status).toBe(200);
+    expect(res.body.owner.id).toBe(mockUser.id);
+    expect(res.body.userRole).toBe('owner');
+    expect(res.body.permissions).toHaveLength(1);
+    expect(res.body.permissions[0]).toEqual({
+      userId: collabId,
+      userEmail: 'collab@example.com',
+      userName: 'Collab User',
+      userPicture: null,
+      role: 'edit'
+    });
+    // Ensure pins and layers are NOT transferred
+    expect(res.body.pins).toBeUndefined();
+    expect(res.body.layers).toBeUndefined();
+  });
 });

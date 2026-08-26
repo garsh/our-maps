@@ -119,6 +119,66 @@ router.get('/:id', async (req: AuthRequest, res) => {
   res.json(response);
 });
 
+// GET map permissions and owner info without transferring pins or layers
+router.get('/:id/permissions', async (req: AuthRequest, res) => {
+  const userId = req.user!.id;
+  const mapId = req.params.id;
+  const db = await getDb();
+
+  const map = await db.get(`
+    SELECT m.id, m.owner_id, u.name as owner_name, u.email as owner_email, u.picture as owner_picture 
+    FROM maps m 
+    LEFT JOIN users u ON m.owner_id = u.id 
+    WHERE m.id = ?
+  `, mapId);
+
+  if (!map) {
+    return res.status(404).json({ error: 'Map not found' });
+  }
+
+  // Check Permissions
+  let role: 'owner' | 'edit' | 'view' | null = null;
+  const isLegacyOwner = map.owner_id === 'mock-user-id';
+  const isCurrentUserMock = userId === 'mock-user-id';
+
+  if (map.owner_id === userId || isLegacyOwner || (isCurrentUserMock && process.env.NODE_ENV !== 'production')) {
+    role = 'owner';
+  } else {
+    const perm = await db.get('SELECT role FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, userId);
+    if (perm) role = perm.role;
+  }
+
+  if (!role) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  const perms = await db.all(`
+    SELECT mp.user_id, mp.role, u.email, u.name, u.picture
+    FROM map_permissions mp
+    JOIN users u ON mp.user_id = u.id 
+    WHERE mp.map_id = ?
+  `, mapId);
+
+  const permissions: MapPermission[] = perms.map(p => ({
+    userId: p.user_id,
+    userEmail: p.email,
+    userName: p.name,
+    userPicture: p.picture,
+    role: p.role
+  }));
+
+  res.json({
+    owner: {
+      id: map.owner_id,
+      name: map.owner_name,
+      email: map.owner_email,
+      picture: map.owner_picture
+    },
+    permissions,
+    userRole: role
+  });
+});
+
 // Helper to batch-query existing entity IDs in chunks (eliminates sequential N+1 round-trips)
 async function getExistingIds(
   db: any,

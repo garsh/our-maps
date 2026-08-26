@@ -1,4 +1,4 @@
-import type { Pin, MapData } from '@shared/interfaces';
+import type { Pin, MapData, MapPermission } from '@shared/interfaces';
 import { getOfflineMap, saveMapOffline, isMapDownloaded } from '../utils/tileUtils';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -87,6 +87,15 @@ export const apiService = {
       }
       throw err;
     }
+  },
+
+  async getMapPermissions(id: string): Promise<{
+    owner: { id: string; name?: string; email?: string; picture?: string };
+    permissions: MapPermission[];
+    userRole?: 'owner' | 'edit' | 'view';
+  }> {
+    const res = await fetchWithRetry(`${API_BASE}/maps/${id}/permissions`, { headers: getHeaders() });
+    return handleResponse(res, this._logoutCallback, 'Failed to fetch map permissions');
   },
 
   async createMap(mapData: MapData): Promise<MapData> {

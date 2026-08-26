@@ -788,10 +788,10 @@ export function MapEditor() {
   // Refresh permissions when opening the share dialog to ensure we have the latest list
   useEffect(() => {
     if (isSharing && mapId) {
-      apiService.getMap(mapId)
+      apiService.getMapPermissions(mapId)
         .then(data => {
           setPermissions(data.permissions || []);
-          setOwner({ id: data.ownerId, name: data.ownerName, email: data.ownerEmail, picture: data.ownerPicture });
+          if (data.owner) setOwner(data.owner);
           if (data.userRole) setUserRole(data.userRole);
         })
         .catch(err => console.error('Failed to refresh permissions', err));
@@ -801,9 +801,9 @@ export function MapEditor() {
   const handleShare = async (email: string, role: 'view' | 'edit' | 'owner') => {
     if (!mapId) return;
     await apiService.shareMap(mapId, email, role);
-    const data = await apiService.getMap(mapId);
+    const data = await apiService.getMapPermissions(mapId);
     setPermissions(data.permissions || []);
-    setOwner({ id: data.ownerId, name: data.ownerName, email: data.ownerEmail, picture: data.ownerPicture });
+    if (data.owner) setOwner(data.owner);
     if (data.userRole) setUserRole(data.userRole);
   };
 
