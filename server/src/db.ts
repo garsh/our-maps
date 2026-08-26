@@ -137,6 +137,13 @@ export async function getDb() {
       FOREIGN KEY (map_id) REFERENCES maps(id) ON DELETE CASCADE,
       FOREIGN KEY (layer_id) REFERENCES pin_layers(id) ON DELETE SET NULL
     );
+
+    CREATE INDEX IF NOT EXISTS idx_pins_map_id ON pins(map_id);
+    CREATE INDEX IF NOT EXISTS idx_pins_layer_id ON pins(layer_id);
+    CREATE INDEX IF NOT EXISTS idx_pin_layers_map_id ON pin_layers(map_id);
+    CREATE INDEX IF NOT EXISTS idx_maps_owner_id ON maps(owner_id);
+    CREATE INDEX IF NOT EXISTS idx_map_permissions_user_id ON map_permissions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_user_map_access_map_id ON user_map_access(map_id);
   `);
 
   await migrate(db);
