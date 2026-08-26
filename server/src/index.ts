@@ -259,6 +259,7 @@ app.get('/maps/:filename(*)', (req, res, next) => {
     res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Authorization');
     res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges, Content-Type');
     res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
     if (foundFilePath.endsWith('.json')) {
       res.setHeader('Content-Type', 'application/json');
     } else if (foundFilePath.endsWith('.png')) {
