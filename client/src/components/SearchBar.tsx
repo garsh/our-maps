@@ -23,7 +23,7 @@ interface SearchBarProps {
   debounceMs?: number;
   mapBounds?: string | null;
   onHoverSearchResult?: (lat: number | null, lng: number | null) => void;
-  onHoverPin?: (id: string | null) => void;
+  onHoverPin?: (id: string | null, leavingPinId?: string) => void;
 }
 
 const renderAddressParts = (title: string, address: string = '') => {
@@ -203,7 +203,7 @@ const SearchBar = ({ onResultSelect: _onResultSelect, onAddPin, onSelectPin: _on
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background = 'transparent';
-                    onHoverPin?.(null);
+                    onHoverPin?.(null, result.pinId);
                   }}
                 >
                   <div style={{ 

@@ -101,4 +101,30 @@ describe('MapView Compass and Tilt Indicator', () => {
 
     expect(mockEaseTo).toHaveBeenCalledWith({ pitch: 60, duration: 300 });
   });
+
+  it('triggers onHoverPin with pin.id on mouse enter and (null, pin.id) on mouse leave', () => {
+    const mockOnHoverPin = vi.fn();
+    const mockPins = [
+      { id: 'pin-1', lat: 10, lng: 20, label: 'Test Pin', color: 'blue' as const, position: 0 }
+    ];
+
+    const { container } = render(
+      <MapView
+        pins={mockPins}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        onBoundsChange={vi.fn()}
+        onHoverPin={mockOnHoverPin}
+      />
+    );
+
+    const pinElement = container.querySelector('.leaflet-marker-icon');
+    expect(pinElement).toBeInTheDocument();
+
+    fireEvent.mouseEnter(pinElement!);
+    expect(mockOnHoverPin).toHaveBeenCalledWith('pin-1');
+
+    fireEvent.mouseLeave(pinElement!);
+    expect(mockOnHoverPin).toHaveBeenCalledWith(null, 'pin-1');
+  });
 });

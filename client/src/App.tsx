@@ -711,7 +711,15 @@ export function MapEditor() {
     handleSetEditingPinId(pin.id);
   };
 
-  const handleHoverPin = useCallback((id: string | null) => {
+  const handleHoverPin = useCallback((id: string | null, leavingPinId?: string) => {
+    if (id === null) {
+      if (leavingPinId) {
+        setHoveredPinId(prev => (prev === leavingPinId ? null : prev));
+      } else {
+        setHoveredPinId(null);
+      }
+      return;
+    }
     // If a card is open, don't allow other pins to be highlighted by hover
     if (targetPinId !== null || editingPinId !== null) {
       return;

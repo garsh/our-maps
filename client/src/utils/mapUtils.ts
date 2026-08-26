@@ -1,6 +1,6 @@
 import type { PinColor, PinIcon } from '@shared/interfaces';
 
-const COLOR_CODES: Record<PinColor, string> = {
+export const COLOR_CODES: Record<PinColor, string> = {
   black: '#000000',
   blue: '#2A81CB',
   red: '#CB2B3E',
@@ -14,7 +14,7 @@ const COLOR_CODES: Record<PinColor, string> = {
   brown: '#8B4513',
 };
 
-const ICON_SVG_PATHS: Record<Exclude<PinIcon, 'default'>, string> = {
+export const ICON_SVG_PATHS: Record<Exclude<PinIcon, 'default'>, string> = {
   hotel: '<path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/>',
   restaurant: '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
   airport: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>',

@@ -7,8 +7,8 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 maplibregl.setWorkerUrl(workerUrl);
 import { Protocol } from 'pmtiles';
 import { layers as protomapsLayers, namedFlavor } from '@protomaps/basemaps';
-import type { Pin } from '@shared/interfaces';
-import { getMarkerHTML, getPreviewMarkerHTML } from '../utils/mapUtils';
+import type { Pin, PinColor, PinIcon } from '@shared/interfaces';
+import { COLOR_CODES, ICON_SVG_PATHS, getPreviewMarkerHTML } from '../utils/mapUtils';
 import { Locate } from 'lucide-react';
 import { reverseGeocode } from '../utils/geocoding';
 import type { MapTheme } from './Sidebar';
@@ -98,7 +98,7 @@ interface MapViewProps {
   boundsToFit?: [[number, number], [number, number]] | null;
   userRole?: 'owner' | 'edit' | 'view';
   hoveredPinId?: string | null;
-  onHoverPin?: (id: string | null) => void;
+  onHoverPin?: (id: string | null, leavingPinId?: string) => void;
   hiddenLayerIds?: Set<string | null>;
   previewLocation?: { lat: number; lng: number } | null;
   bottomPadding?: number;
@@ -155,7 +155,7 @@ const UserLocationMarker = () => {
 interface PinMarkerProps {
   pin: Pin;
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
-  onHoverPin?: (id: string | null) => void;
+  onHoverPin?: (id: string | null, leavingPinId?: string) => void;
   onPinClick?: (pin: Pin) => void;
   isSelected: boolean;
   isEditing: boolean;
@@ -171,7 +171,9 @@ const PinMarker = memo(({
   isEditing,
   readOnly,
 }: PinMarkerProps) => {
-  const { html, className } = getMarkerHTML(pin.color, pin.icon, isSelected);
+  const isHex = pin.color?.startsWith('#');
+  const colorCode = isHex ? pin.color : (COLOR_CODES[pin.color as PinColor] || COLOR_CODES.blue);
+  const iconPath = pin.icon && pin.icon !== 'default' ? ICON_SVG_PATHS[pin.icon as Exclude<PinIcon, 'default'>] : null;
 
   const handleDragEnd = useCallback(async (e: any) => {
     const newLat = e.lngLat.lat;
@@ -195,8 +197,8 @@ const PinMarker = memo(({
   }, [onHoverPin, pin.id]);
 
   const handleMouseLeave = useCallback(() => {
-    onHoverPin?.(null);
-  }, [onHoverPin]);
+    onHoverPin?.(null, pin.id);
+  }, [onHoverPin, pin.id]);
 
   return (
     <Marker
@@ -208,13 +210,63 @@ const PinMarker = memo(({
       style={{ zIndex: isSelected ? 1000 : 1 }}
     >
       <div
-        className={className}
-        style={{ cursor: 'pointer' }}
+        className={`leaflet-marker-icon custom-pin-modern ${isSelected ? 'hovered' : ''}`}
+        style={{
+          position: 'relative',
+          width: '20px',
+          height: '28px',
+          cursor: 'pointer',
+        }}
         onClick={handleClick}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+      >
+        {isSelected && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '-20px',
+              left: '-20px',
+              width: '60px',
+              height: '60px',
+              background: `${colorCode}44`,
+              border: `3px solid ${colorCode}`,
+              borderRadius: '50%',
+              zIndex: -1,
+              animation: 'pulse 1.2s infinite',
+              boxShadow: `0 0 15px ${colorCode}66`,
+              pointerEvents: 'none',
+            }}
+          />
+        )}
+        <svg
+          width="20"
+          height="28"
+          viewBox="0 0 30 42"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          style={{ display: 'block', filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.4))', pointerEvents: 'none' }}
+        >
+          <path
+            d="M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z"
+            fill={colorCode}
+          />
+          {iconPath ? (
+            <g
+              transform="translate(4.5, 4.5) scale(0.85)"
+              stroke="white"
+              color="white"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
+              dangerouslySetInnerHTML={{ __html: iconPath }}
+            />
+          ) : (
+            <circle cx="15" cy="15" r="6" fill="white" fillOpacity="0.9" />
+          )}
+        </svg>
+      </div>
     </Marker>
   );
 });
@@ -959,11 +1011,18 @@ const MapView = ({
             updateBounds();
           }}
           onIdle={updateBounds}
+          onZoomStart={() => {
+            if (hoveredPinId) onHoverPin?.(null);
+          }}
           onZoomEnd={updateBounds}
+          onMoveStart={() => {
+            if (hoveredPinId) onHoverPin?.(null);
+          }}
           onMove={() => {
             if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
             touchStartRef.current = null;
             updateCompassDirect();
+            if (hoveredPinId) onHoverPin?.(null);
           }}
           onRotate={updateCompassDirect}
           onPitch={updateCompassDirect}

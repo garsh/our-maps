@@ -112,7 +112,7 @@ interface SidebarProps {
   onSetEditingPinId: (id: string | null) => void;
   hoveredPinId?: string | null;
   targetPinId?: string | null;
-  onHoverPin?: (id: string | null) => void;
+  onHoverPin?: (id: string | null, leavingPinId?: string) => void;
   customColors?: string[];
   onAddCustomColor?: (color: string) => void;
   selectedNavIds?: Set<string>;
@@ -307,7 +307,7 @@ const SortablePin = ({
   readOnly: boolean,
   targetPinId?: string | null,
   hoveredPinId?: string | null,
-  onHoverPin?: (id: string | null) => void,
+  onHoverPin?: (id: string | null, leavingPinId?: string) => void,
   onAddCustomColor?: (color: string) => void,
   isSelected?: boolean,
   onToggleSelect?: (id: string) => void,
@@ -410,7 +410,7 @@ const SortablePin = ({
         if (e.pointerType === 'mouse') onHoverPin?.(pin.id);
       }}
       onPointerLeave={(e) => {
-        if (e.pointerType === 'mouse') onHoverPin?.(null);
+        if (e.pointerType === 'mouse') onHoverPin?.(null, pin.id);
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -811,7 +811,7 @@ const SortableLayer = ({
   readOnly: boolean,
   targetPinId?: string | null,
   hoveredPinId?: string | null,
-  onHoverPin?: (id: string | null) => void,
+  onHoverPin?: (id: string | null, leavingPinId?: string) => void,
   customColors?: string[],
   onAddCustomColor?: (color: string) => void,
   selectedNavIds?: Set<string>,
