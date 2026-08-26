@@ -199,10 +199,12 @@ try {
   console.warn(`[MAPS DIR] Could not create maps directory (${mapsDir}):`, err);
 }
 
-app.get('/maps/:filename(*)', (req, res, next) => {
-  const filename = req.params.filename || 'planet.pmtiles';
-  
-  let foundFilePath: string | null = null;
+const resolvedMapFilePathCache = new Map<string, string>();
+
+function resolveMapFilePath(filename: string): string | null {
+  const cached = resolvedMapFilePathCache.get(filename);
+  if (cached) return cached;
+
   for (const dir of candidateMapsDirs) {
     if (!dir) continue;
 
@@ -210,8 +212,8 @@ app.get('/maps/:filename(*)', (req, res, next) => {
     const p = path.join(dir, filename);
     try {
       if (fs.existsSync(p) && !fs.statSync(p).isDirectory()) {
-        foundFilePath = p;
-        break;
+        resolvedMapFilePathCache.set(filename, p);
+        return p;
       }
     } catch {
       // Ignore filesystem permission read errors
@@ -223,14 +225,21 @@ app.get('/maps/:filename(*)', (req, res, next) => {
       const p2 = path.join(dir, trimmedFilename);
       try {
         if (fs.existsSync(p2) && !fs.statSync(p2).isDirectory()) {
-          foundFilePath = p2;
-          break;
+          resolvedMapFilePathCache.set(filename, p2);
+          return p2;
         }
       } catch {
         // Ignore
       }
     }
   }
+
+  return null;
+}
+
+app.get('/maps/:filename(*)', (req, res, next) => {
+  const filename = req.params.filename || 'planet.pmtiles';
+  const foundFilePath = resolveMapFilePath(filename);
 
   if (!foundFilePath) {
     console.warn(`[MAPS 404] Requested file "${filename}" not found in candidate directories:`, candidateMapsDirs);
