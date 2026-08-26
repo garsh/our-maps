@@ -366,7 +366,11 @@ export function MapEditor() {
         console.log('[SOCKET] Connected to server, re-syncing map data');
         if (id) {
           socket.emit('join-map', id);
-          loadMap(id);
+          if (isDirtyRef.current) {
+            handleSaveRef.current();
+          } else {
+            loadMap(id);
+          }
         }
       });
 
@@ -526,12 +530,28 @@ export function MapEditor() {
     // Don't auto-save empty new maps
     if (!mapId && pins.length === 0 && mapName === 'My Map') return;
 
-    // Mark as dirty immediately so the status pill updates before the debounce fires
+    // For brand new maps without an ID, create the initial map via POST /api/maps
+    if (!mapId) {
+      setIsDirty(true);
+      const timer = setTimeout(() => {
+        handleSave();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+
+    // When WebSocket is connected, mutations are already saved atomically to SQLite via realtime delta events.
+    // We avoid triggering full-array HTTP PUT requests to prevent collaborative overwrites.
+    const isSocketConnected = socketRef.current?.connected;
+    if (isSocketConnected) {
+      setIsDirty(false);
+      return;
+    }
+
+    // If socket is disconnected/offline, mark as dirty and debounce HTTP save fallback
     setIsDirty(true);
-    
     const timer = setTimeout(() => {
       handleSave();
-    }, 2000); // 2 second debounce for auto-save
+    }, 2000);
 
     return () => clearTimeout(timer);
   }, [mapName, pins, layers]);

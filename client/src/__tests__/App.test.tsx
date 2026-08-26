@@ -113,7 +113,7 @@ describe('App Components Error Handling', () => {
     // Wait for the debounced save to fail
     await waitFor(() => {
       expect(screen.getByText(/Changes NOT synced/i)).toBeInTheDocument();
-    }, { timeout: 5000 });
+    }, { timeout: 4000 });
 
-  });
+  }, 10000);
 });
