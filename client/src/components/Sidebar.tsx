@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import SearchBar from './SearchBar';
+import SearchBar, { type SearchAreaState } from './SearchBar';
 import { reverseGeocode } from '../utils/geocoding';
 import type { Pin, PinIcon, PinLayer } from '@shared/interfaces';
 import { 
@@ -136,6 +136,7 @@ interface SidebarProps {
   show3DBuildings?: boolean;
   onToggle3DBuildings?: (enabled: boolean) => void;
   isOffline?: boolean;
+  onSearchAreaStateChange?: (state: SearchAreaState | null) => void;
 }
 
 const COLORS = [
@@ -1210,7 +1211,8 @@ const Sidebar = ({
   onToggle3DTerrain,
   show3DBuildings = true,
   onToggle3DBuildings,
-  isOffline = false
+  isOffline = false,
+  onSearchAreaStateChange
 }: SidebarProps) => {
   const [localMapName, setLocalMapName] = useState(mapName);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -2071,6 +2073,7 @@ class MouseSensor extends PointerSensor {
                   mapBounds={mapBounds}
                   onHoverSearchResult={onHoverSearchResult}
                   onHoverPin={onHoverPin}
+                  onSearchAreaStateChange={onSearchAreaStateChange}
                 />
               </div>
             )}

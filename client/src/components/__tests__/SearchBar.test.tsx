@@ -113,4 +113,123 @@ describe('SearchBar', () => {
 
     expect(mockOnAddPin).toHaveBeenCalledWith(40, -74, 'New York', 'New York, USA');
   });
+
+  it('does not re-trigger global search when mapBounds changes without text changes', async () => {
+    const mockResults = [
+      { place_id: 1, address: 'Paris, France', title: 'Paris', lat: '48.85', lon: '2.35' }
+    ];
+    
+    (window.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => mockResults
+    });
+
+    const { rerender } = render(
+      <SearchBar 
+        onResultSelect={mockOnResultSelect} 
+        onAddPin={mockOnAddPin} 
+        pins={[]} 
+        debounceMs={10} 
+        mapBounds="2.2,48.9,2.4,48.8" 
+      />
+    );
+
+    const input = screen.getByPlaceholderText(/Search.../i);
+    fireEvent.change(input, { target: { value: 'Paris' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('France')).toBeInTheDocument();
+    });
+
+    const callCountAfterSearch = (window.fetch as any).mock.calls.length;
+
+    // Simulate panning the map (bounds change)
+    rerender(
+      <SearchBar 
+        onResultSelect={mockOnResultSelect} 
+        onAddPin={mockOnAddPin} 
+        pins={[]} 
+        debounceMs={10} 
+        mapBounds="10.0,50.0,12.0,49.0" 
+      />
+    );
+
+    // Wait and ensure no additional fetch calls were made
+    await new Promise(r => setTimeout(r, 50));
+    expect((window.fetch as any).mock.calls.length).toBe(callCountAfterSearch);
+  });
+
+  it('signals onSearchAreaStateChange when mapBounds changes after an initial search', async () => {
+    const mockOnSearchAreaStateChange = vi.fn();
+    const mockResults = [
+      { place_id: 1, address: 'Tokyo, Japan', title: 'Tokyo', lat: '35.6', lon: '139.6' }
+    ];
+    
+    (window.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => mockResults
+    });
+
+    const { rerender } = render(
+      <SearchBar 
+        onResultSelect={mockOnResultSelect} 
+        onAddPin={mockOnAddPin} 
+        pins={[]} 
+        debounceMs={10} 
+        mapBounds="139.0,36.0,140.0,35.0" 
+        onSearchAreaStateChange={mockOnSearchAreaStateChange}
+      />
+    );
+
+    const input = screen.getByPlaceholderText(/Search.../i);
+    fireEvent.change(input, { target: { value: 'Tokyo' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Japan')).toBeInTheDocument();
+    });
+
+    // Simulate panning the map
+    rerender(
+      <SearchBar 
+        onResultSelect={mockOnResultSelect} 
+        onAddPin={mockOnAddPin} 
+        pins={[]} 
+        debounceMs={10} 
+        mapBounds="138.0,37.0,139.0,36.0" 
+        onSearchAreaStateChange={mockOnSearchAreaStateChange}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockOnSearchAreaStateChange).toHaveBeenCalledWith(
+        expect.objectContaining({ showPill: true })
+      );
+    });
+  });
+
+  it('executes search immediately on Enter key press', async () => {
+    const mockResults = [
+      { place_id: 1, address: 'Berlin, Germany', title: 'Berlin', lat: '52.5', lon: '13.4' }
+    ];
+    
+    (window.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => mockResults
+    });
+
+    render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={[]} debounceMs={5000} />);
+    
+    const input = screen.getByPlaceholderText(/Search.../i);
+    fireEvent.change(input, { target: { value: 'Berlin' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(screen.getByText('Germany')).toBeInTheDocument();
+    });
+
+    expect(window.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('q=Berlin'),
+      expect.any(Object)
+    );
+  });
 });

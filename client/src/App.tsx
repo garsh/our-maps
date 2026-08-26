@@ -28,7 +28,8 @@ import type {
 } from '@shared/interfaces'
 
 import type { DragEndEvent } from '@dnd-kit/core'
-import { Loader2, Map as MapIcon, LogOut } from 'lucide-react';
+import { Loader2, Map as MapIcon, LogOut, RotateCw } from 'lucide-react';
+import type { SearchAreaState } from './components/SearchBar';
 import { reorderPins, reorderLayers, isSameLayer, comparePinPositions } from './utils/reorderUtils';
 import { generateId } from './utils/fileUtils';
 import { getManifestStats } from './utils/tileUtils';
@@ -53,6 +54,7 @@ export function MapEditor() {
   const [isMapLoading, setIsMapLoading] = useState(!!id && id !== 'new');
   const [userRole, setUserRole] = useState<'owner' | 'edit' | 'view'>('owner');
   const [permissions, setPermissions] = useState<MapPermission[]>([]);
+  const [searchAreaState, setSearchAreaState] = useState<SearchAreaState | null>(null);
   
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
@@ -1499,6 +1501,7 @@ export function MapEditor() {
             onToggle3DTerrain={handleToggle3DTerrain}
             show3DBuildings={show3DBuildings}
             onToggle3DBuildings={handleToggle3DBuildings}
+            onSearchAreaStateChange={setSearchAreaState}
           />
         </div>
       </div>
@@ -1508,6 +1511,45 @@ export function MapEditor() {
 
       <main style={{ flex: 1, position: 'relative', overflow: 'hidden', zIndex: 1 }}>
         <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '100vw', minWidth: '100%' }}>
+        {searchAreaState?.showPill && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '16px',
+              left: isMobile ? '50%' : `calc(${sidebarWidth}px + (100vw - ${sidebarWidth}px) / 2)`,
+              transform: 'translateX(-50%)',
+              zIndex: 1100,
+              pointerEvents: 'auto',
+            }}
+          >
+            <button
+              onClick={searchAreaState.onSearchThisArea}
+              disabled={searchAreaState.isSearching}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'var(--surface-color)',
+                color: 'var(--primary-color)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '50px',
+                padding: '8px 18px',
+                fontSize: '0.85rem',
+                fontWeight: '600',
+                boxShadow: '0 4px 14px rgba(0,0,0,0.18)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              {searchAreaState.isSearching ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <RotateCw size={14} />
+              )}
+              Search this area
+            </button>
+          </div>
+        )}
         {!isMobile && (
           <div 
             onClick={() => setShowSignOutDialog(true)}

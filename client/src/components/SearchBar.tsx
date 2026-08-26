@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { Pin } from '@shared/interfaces';
 import Fuse from 'fuse.js';
 import { Search, MapPin, Loader2, X, Plus } from 'lucide-react';
@@ -14,6 +14,12 @@ interface SearchResult {
   pinId?: string;
 }
 
+export interface SearchAreaState {
+  showPill: boolean;
+  onSearchThisArea: () => void;
+  isSearching: boolean;
+}
+
 interface SearchBarProps {
   onResultSelect: (lat: number, lng: number) => void;
   onAddPin: (lat: number, lng: number, label: string, address?: string) => void;
@@ -24,6 +30,7 @@ interface SearchBarProps {
   mapBounds?: string | null;
   onHoverSearchResult?: (lat: number | null, lng: number | null) => void;
   onHoverPin?: (id: string | null, leavingPinId?: string) => void;
+  onSearchAreaStateChange?: (state: SearchAreaState | null) => void;
 }
 
 const renderAddressParts = (title: string, address: string = '') => {
@@ -53,10 +60,14 @@ const renderAddressParts = (title: string, address: string = '') => {
   );
 };
 
-const SearchBar = ({ onResultSelect: _onResultSelect, onAddPin, onSelectPin: _onSelectPin, pins, disabled, debounceMs = 500, mapBounds, onHoverSearchResult, onHoverPin }: SearchBarProps) => {
+const SearchBar = ({ onResultSelect: _onResultSelect, onAddPin, onSelectPin: _onSelectPin, pins, disabled, debounceMs = 500, mapBounds, onHoverSearchResult, onHoverPin, onSearchAreaStateChange }: SearchBarProps) => {
   const [query, setQuery] = useState('');
   const [globalResults, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [lastSearchedBounds, setLastSearchedBounds] = useState<string | null>(null);
+
+  const mapBoundsRef = useRef(mapBounds);
+  mapBoundsRef.current = mapBounds;
 
   // Initialize Fuse for fuzzy search on local pins (memoized on pins array only)
   const fuse = useMemo(() => {
@@ -105,29 +116,73 @@ const SearchBar = ({ onResultSelect: _onResultSelect, onAddPin, onSelectPin: _on
     });
   }, [query, fuse, mapBounds]);
 
-  // Debounced global search
-  useEffect(() => {
-    if (query.length < 3) {
+  const executeGlobalSearch = useCallback(async (searchQuery: string, boundsToUse?: string | null) => {
+    if (searchQuery.trim().length < 3) {
       setResults([]);
       setIsSearching(false);
+      setLastSearchedBounds(null);
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const formatted = await apiService.search(searchQuery, boundsToUse);
+      setResults(formatted);
+      setLastSearchedBounds(boundsToUse || null);
+    } catch (error) {
+      console.error('Search failed:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  // Debounced global search triggered solely on query text changes
+  useEffect(() => {
+    if (query.trim().length < 3) {
+      setResults([]);
+      setIsSearching(false);
+      setLastSearchedBounds(null);
       return;
     }
 
-    const handler = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const formatted = await apiService.search(query, mapBounds);
-        
-        setResults(formatted);
-      } catch (error) {
-        console.error('Search failed:', error);
-      } finally {
-        setIsSearching(false);
-      }
+    const handler = setTimeout(() => {
+      executeGlobalSearch(query, mapBoundsRef.current);
     }, debounceMs);
 
     return () => clearTimeout(handler);
-  }, [query, debounceMs, mapBounds]);
+  }, [query, debounceMs, executeGlobalSearch]);
+
+  // Notify parent of "Search this area" pill availability when user pans/zooms after an initial search
+  useEffect(() => {
+    if (onSearchAreaStateChange) {
+      if (
+        query.trim().length >= 3 &&
+        mapBounds &&
+        lastSearchedBounds &&
+        mapBounds !== lastSearchedBounds
+      ) {
+        onSearchAreaStateChange({
+          showPill: true,
+          onSearchThisArea: () => executeGlobalSearch(query, mapBoundsRef.current),
+          isSearching,
+        });
+      } else {
+        onSearchAreaStateChange(null);
+      }
+    }
+  }, [query, mapBounds, lastSearchedBounds, isSearching, onSearchAreaStateChange, executeGlobalSearch]);
+
+  useEffect(() => {
+    return () => {
+      onSearchAreaStateChange?.(null);
+    };
+  }, [onSearchAreaStateChange]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && query.trim().length >= 3) {
+      e.preventDefault();
+      executeGlobalSearch(query, mapBoundsRef.current);
+    }
+  };
 
   // Show a hover preview pin without closing the search results (for tap/click)
   const handleResultPreview = (result: SearchResult) => {
@@ -148,6 +203,7 @@ const SearchBar = ({ onResultSelect: _onResultSelect, onAddPin, onSelectPin: _on
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder="Search..."
           disabled={disabled}
           className="input-field"
@@ -166,7 +222,11 @@ const SearchBar = ({ onResultSelect: _onResultSelect, onAddPin, onSelectPin: _on
         />
         {query && (
            <button 
-             onClick={() => setQuery('')}
+             onClick={() => {
+               setQuery('');
+               setResults([]);
+               setLastSearchedBounds(null);
+             }}
              style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', display: 'flex', padding: 0 }}
            >
              <X size={14} />
