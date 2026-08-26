@@ -148,26 +148,33 @@ const candidateMapsDirs = [
   // Relative to process.cwd()
   path.resolve(process.cwd(), 'data/maps'),
   path.resolve(process.cwd(), 'data/sprites'),
+  path.resolve(process.cwd(), 'data/fonts'),
   path.resolve(process.cwd(), 'data'),
   path.resolve(process.cwd(), 'server/public/maps'),
   path.resolve(process.cwd(), 'server/public/sprites'),
+  path.resolve(process.cwd(), 'server/public/fonts'),
   path.resolve(process.cwd(), 'server/public'),
   path.resolve(process.cwd(), 'public/maps'),
   path.resolve(process.cwd(), 'public/sprites'),
+  path.resolve(process.cwd(), 'public/fonts'),
   path.resolve(process.cwd(), 'public'),
 
   // Relative to __dirname (dev ts-node in src/ vs prod dist/server/src/)
   path.resolve(__dirname, '../../data/maps'),
   path.resolve(__dirname, '../../data/sprites'),
+  path.resolve(__dirname, '../../data/fonts'),
   path.resolve(__dirname, '../../data'),
   path.resolve(__dirname, '../public/maps'),
   path.resolve(__dirname, '../public/sprites'),
+  path.resolve(__dirname, '../public/fonts'),
   path.resolve(__dirname, '../public'),
   path.resolve(__dirname, '../../../data/maps'),
   path.resolve(__dirname, '../../../data/sprites'),
+  path.resolve(__dirname, '../../../data/fonts'),
   path.resolve(__dirname, '../../../data'),
   path.resolve(__dirname, '../../../public/maps'),
   path.resolve(__dirname, '../../../public/sprites'),
+  path.resolve(__dirname, '../../../public/fonts'),
   path.resolve(__dirname, '../../../public'),
 ].filter(Boolean) as string[];
 
@@ -220,14 +227,49 @@ function resolveMapFilePath(filename: string): string | null {
         // Ignore
       }
     }
+
+    // If candidate dir is a fonts dir and request starts with "fonts/"
+    if (filename.startsWith('fonts/')) {
+      const trimmedFilename = filename.replace(/^fonts\//, '');
+      const p2 = path.join(dir, trimmedFilename);
+      try {
+        if (fs.existsSync(p2) && !fs.statSync(p2).isDirectory()) {
+          resolvedMapFilePathCache.set(filename, p2);
+          return p2;
+        }
+      } catch {
+        // Ignore
+      }
+    }
   }
 
   return null;
 }
 
-app.get('/maps/:filename(*)', (req, res, next) => {
+app.get('/maps/:filename(*)', async (req, res, next) => {
   const filename = req.params.filename || 'planet.pmtiles';
-  const foundFilePath = resolveMapFilePath(filename);
+  let foundFilePath = resolveMapFilePath(filename);
+
+  // On-demand font download fallback if font file not yet on disk
+  if (!foundFilePath && filename.startsWith('fonts/') && filename.endsWith('.pbf')) {
+    try {
+      const upstreamUrl = `https://protomaps.github.io/basemaps-assets/${filename.split('/').map(encodeURIComponent).join('/')}`;
+      const targetDir = path.resolve(process.cwd(), 'data', path.dirname(filename));
+      const targetPath = path.resolve(process.cwd(), 'data', filename);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      const response = await fetch(upstreamUrl);
+      if (response.ok) {
+        const buffer = Buffer.from(await response.arrayBuffer());
+        fs.writeFileSync(targetPath, buffer);
+        resolvedMapFilePathCache.set(filename, targetPath);
+        foundFilePath = targetPath;
+      }
+    } catch (fetchErr) {
+      console.warn(`[MAPS FONTS FETCH] Failed to fetch on-demand font ${filename}:`, fetchErr);
+    }
+  }
 
   if (!foundFilePath) {
     console.warn(`[MAPS 404] Requested file "${filename}" not found in candidate directories:`, candidateMapsDirs);
@@ -250,6 +292,8 @@ app.get('/maps/:filename(*)', (req, res, next) => {
       res.setHeader('Content-Type', 'application/json');
     } else if (foundFilePath.endsWith('.png')) {
       res.setHeader('Content-Type', 'image/png');
+    } else if (foundFilePath.endsWith('.pbf')) {
+      res.setHeader('Content-Type', 'application/x-protobuf');
     } else {
       res.setHeader('Content-Type', 'application/octet-stream');
     }

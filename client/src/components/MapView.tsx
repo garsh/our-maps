@@ -788,7 +788,7 @@ const MapView = ({
 
     return {
       version: 8,
-      glyphs: 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf',
+      glyphs: `${window.location.origin}/maps/fonts/{fontstack}/{range}.pbf`,
       sprite: `${window.location.origin}/maps/sprites/${validFlavor}`,
       sources: {
         protomaps: {

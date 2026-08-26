@@ -38,12 +38,14 @@ COPY server/package.json server/package-lock.json ./server/
 # Install production dependencies
 RUN cd server && npm ci --omit=dev
 
-# Copy over the compiled code from the builder stages
+# Copy over the compiled code and static map assets from the builder stages
 COPY --from=builder /app/client/dist ./client/dist
 COPY --from=builder /app/server/dist ./server/dist
+COPY --from=builder /app/data/sprites ./data/sprites
+COPY --from=builder /app/data/fonts ./data/fonts
 
-# Set up the data and maps directories for SQLite and vector tiles
-RUN mkdir -p /data /app/data/maps /app/server/public/maps && chown -R node:node /data /app/data /app/server
+# Set up the data, fonts, and maps directories for SQLite and vector tiles
+RUN mkdir -p /data /app/data/maps /app/data/sprites /app/data/fonts /app/server/public/maps && chown -R node:node /data /app/data /app/server
 
 # Expose port 3000 for the app
 EXPOSE 3000

@@ -7,10 +7,11 @@
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",
     "install:all": "npm install && cd client && npm install && cd ../server && npm install",
+    "setup:fonts": "node scripts/download-fonts.mjs",
     "setup:sprites": "node scripts/download-sprites.mjs",
-    "setup:maps": "node scripts/download-map.js --sample && node scripts/download-sprites.mjs",
-    "setup:maps:full": "node scripts/download-map.js --full && node scripts/download-sprites.mjs",
-    "build": "npm run setup:sprites && cd client && npm run build && cd ../server && npm run build",
+    "setup:maps": "node scripts/download-map.js --sample && node scripts/download-sprites.mjs && node scripts/download-fonts.mjs",
+    "setup:maps:full": "node scripts/download-map.js --full && node scripts/download-sprites.mjs && node scripts/download-fonts.mjs",
+    "build": "npm run setup:sprites && npm run setup:fonts && cd client && npm run build && cd ../server && npm run build",
     "start": "cd server && npm run start"
   },
   "devDependencies": {

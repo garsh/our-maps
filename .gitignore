@@ -96,10 +96,11 @@ server/database.sqlite*
 *.sqlite-shm
 server/dist/
 
-# Map tiles & sprites
+# Map tiles, sprites & fonts
 *.pmtiles
 data/maps/
 data/sprites/
+data/fonts/
 server/public/maps/
 server/public/sprites/
 client/public/maps/
