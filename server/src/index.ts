@@ -43,6 +43,11 @@ app.set('io', io);
 
 const port = process.env.PORT || 3001;
 
+// Trust the first hop (Caddy) so rate limits use the real client IP
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // Security: Use helmet for secure headers
 app.use(helmet({
   contentSecurityPolicy: {
@@ -62,6 +67,16 @@ const apiLimiter = rateLimit({
   skip: (req) => process.env.NODE_ENV === 'test',
 });
 app.use('/api', apiLimiter);
+
+const placesLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many search requests, please try again later.' },
+  skip: (req) => process.env.NODE_ENV === 'test',
+});
+app.use('/api/places', placesLimiter);
 
 // CORS: exact origin match (comma-separated CORS_ORIGIN) plus LAN/dev hosts
 app.use(cors({

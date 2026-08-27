@@ -1,6 +1,6 @@
 {
-	# Tell Caddy to use the certificate for this IP when clients don't send SNI
-	default_sni 192.168.253.3
+	# Use the LAN hostname cert when clients don't send SNI
+	default_sni bird.lan
 
 	# Disable the HTTP-01 challenge globally (forces TLS-ALPN-01 over port 443)
     	cert_issuer acme {
