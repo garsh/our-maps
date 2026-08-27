@@ -35,29 +35,65 @@ const TILE_STORE = 'tiles';
 const MAP_STORE = 'maps';
 const DB_VERSION = 2;
 
-async function openDB(): Promise<IDBDatabase> {
+let dbPromise: Promise<IDBDatabase> | null = null;
+const tileMissCache = new Set<string>();
+const MAX_MISS_CACHE_SIZE = 10000;
+
+export function clearTileMissCache(): void {
+    tileMissCache.clear();
+}
+
+function recordTileMiss(url: string): void {
+    if (tileMissCache.size >= MAX_MISS_CACHE_SIZE) {
+        tileMissCache.clear();
+    }
+    tileMissCache.add(url);
+}
+
+export function resetDBForTesting(): void {
+    dbPromise = null;
+    tileMissCache.clear();
+}
+
+export async function openDB(): Promise<IDBDatabase> {
     if (typeof indexedDB === 'undefined') {
         return Promise.reject(new Error('IndexedDB is not supported in this environment'));
     }
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
-        request.onupgradeneeded = () => {
-            const db = request.result;
-            if (!db.objectStoreNames.contains(MANIFEST_STORE)) {
-                const manifest = db.createObjectStore(MANIFEST_STORE, { keyPath: 'url' });
-                manifest.createIndex('status', 'status', { unique: false });
-                manifest.createIndex('mapId', 'mapId', { unique: false });
-            }
-            if (!db.objectStoreNames.contains(TILE_STORE)) {
-                db.createObjectStore(TILE_STORE);
-            }
-            if (!db.objectStoreNames.contains(MAP_STORE)) {
-                db.createObjectStore(MAP_STORE, { keyPath: 'id' });
-            }
-        };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-    });
+    if (!dbPromise) {
+        dbPromise = new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onupgradeneeded = () => {
+                const db = request.result;
+                if (!db.objectStoreNames.contains(MANIFEST_STORE)) {
+                    const manifest = db.createObjectStore(MANIFEST_STORE, { keyPath: 'url' });
+                    manifest.createIndex('status', 'status', { unique: false });
+                    manifest.createIndex('mapId', 'mapId', { unique: false });
+                }
+                if (!db.objectStoreNames.contains(TILE_STORE)) {
+                    db.createObjectStore(TILE_STORE);
+                }
+                if (!db.objectStoreNames.contains(MAP_STORE)) {
+                    db.createObjectStore(MAP_STORE, { keyPath: 'id' });
+                }
+            };
+            request.onsuccess = () => {
+                const db = request.result;
+                db.onclose = () => {
+                    dbPromise = null;
+                };
+                db.onversionchange = () => {
+                    db.close();
+                    dbPromise = null;
+                };
+                resolve(db);
+            };
+            request.onerror = () => {
+                dbPromise = null;
+                reject(request.error);
+            };
+        });
+    }
+    return dbPromise;
 }
 
 export async function saveMapOffline(mapData: MapData): Promise<void> {
@@ -320,6 +356,7 @@ export async function getDownloadedMapIds(): Promise<string[]> {
 
 export async function removeMapDownload(mapId: string): Promise<void> {
     if (!mapId) return;
+    clearTileMissCache();
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction([MANIFEST_STORE, TILE_STORE, MAP_STORE], 'readwrite');
@@ -347,6 +384,19 @@ export async function removeMapDownload(mapId: string): Promise<void> {
 
 
 export async function saveTile(url: string, blob: Blob): Promise<void> {
+    tileMissCache.delete(url);
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        try {
+            const pathname = new URL(url).pathname;
+            tileMissCache.delete(pathname);
+        } catch {}
+    } else if (url.startsWith('/')) {
+        try {
+            const fullUrl = `${window.location.origin}${url}`;
+            tileMissCache.delete(fullUrl);
+        } catch {}
+    }
+
     const db = await openDB();
     const transaction = db.transaction([TILE_STORE, MANIFEST_STORE], 'readwrite');
     
@@ -377,36 +427,77 @@ export async function saveTile(url: string, blob: Blob): Promise<void> {
 }
 
 export async function getTile(url: string): Promise<Blob | null> {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction(TILE_STORE, 'readonly');
-        const store = transaction.objectStore(TILE_STORE);
-        const request = store.get(url);
-        request.onsuccess = () => {
-            if (request.result) {
-                resolve(request.result);
-                return;
-            }
-            try {
-                if (url.startsWith('http://') || url.startsWith('https://')) {
-                    const pathname = new URL(url).pathname;
-                    const pathReq = store.get(pathname);
-                    pathReq.onsuccess = () => resolve(pathReq.result || null);
-                    pathReq.onerror = () => resolve(null);
-                } else if (url.startsWith('/')) {
-                    const fullUrl = `${window.location.origin}${url}`;
-                    const fullReq = store.get(fullUrl);
-                    fullReq.onsuccess = () => resolve(fullReq.result || null);
-                    fullReq.onerror = () => resolve(null);
-                } else {
+    if (tileMissCache.has(url)) {
+        return null;
+    }
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(TILE_STORE, 'readonly');
+            const store = transaction.objectStore(TILE_STORE);
+            const request = store.get(url);
+            request.onsuccess = () => {
+                if (request.result) {
+                    resolve(request.result);
+                    return;
+                }
+                try {
+                    if (url.startsWith('http://') || url.startsWith('https://')) {
+                        const pathname = new URL(url).pathname;
+                        if (tileMissCache.has(pathname)) {
+                            recordTileMiss(url);
+                            resolve(null);
+                            return;
+                        }
+                        const pathReq = store.get(pathname);
+                        pathReq.onsuccess = () => {
+                            if (pathReq.result) {
+                                resolve(pathReq.result);
+                            } else {
+                                recordTileMiss(url);
+                                recordTileMiss(pathname);
+                                resolve(null);
+                            }
+                        };
+                        pathReq.onerror = () => {
+                            recordTileMiss(url);
+                            resolve(null);
+                        };
+                    } else if (url.startsWith('/')) {
+                        const fullUrl = `${window.location.origin}${url}`;
+                        if (tileMissCache.has(fullUrl)) {
+                            recordTileMiss(url);
+                            resolve(null);
+                            return;
+                        }
+                        const fullReq = store.get(fullUrl);
+                        fullReq.onsuccess = () => {
+                            if (fullReq.result) {
+                                resolve(fullReq.result);
+                            } else {
+                                recordTileMiss(url);
+                                recordTileMiss(fullUrl);
+                                resolve(null);
+                            }
+                        };
+                        fullReq.onerror = () => {
+                            recordTileMiss(url);
+                            resolve(null);
+                        };
+                    } else {
+                        recordTileMiss(url);
+                        resolve(null);
+                    }
+                } catch {
+                    recordTileMiss(url);
                     resolve(null);
                 }
-            } catch {
-                resolve(null);
-            }
-        };
-        request.onerror = () => reject(request.error);
-    });
+            };
+            request.onerror = () => reject(request.error);
+        });
+    } catch {
+        return null;
+    }
 }
 
 export function countTiles(box: BoundingBox, minZoom: number, maxZoom: number): number {

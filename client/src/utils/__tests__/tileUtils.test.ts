@@ -1,56 +1,59 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, saveMapOffline, getOfflineMap, removeOfflineMap, saveTile, getTile } from '../tileUtils';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, saveMapOffline, getOfflineMap, removeOfflineMap, saveTile, getTile, resetDBForTesting, openDB } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('tileUtils', () => {
+    let openSpy: any;
     beforeEach(() => {
+        resetDBForTesting();
         const store = new Map();
+        openSpy = vi.fn(() => {
+            const req: any = {
+                result: {
+                    objectStoreNames: { contains: () => true },
+                    transaction: () => {
+                        const tx: any = {
+                            objectStore: () => ({
+                                put: (val: any, key?: any) => {
+                                    store.set(key !== undefined ? key : (val?.id ?? val?.url), val);
+                                    const r: any = {};
+                                    setTimeout(() => r.onsuccess && r.onsuccess());
+                                    return r;
+                                },
+                                get: (id: string) => {
+                                    const r: any = {};
+                                    setTimeout(() => {
+                                        r.result = store.get(id);
+                                        r.onsuccess && r.onsuccess();
+                                    });
+                                    return r;
+                                },
+                                delete: (id: string) => {
+                                    store.delete(id);
+                                    const r: any = {};
+                                    setTimeout(() => r.onsuccess && r.onsuccess());
+                                    return r;
+                                }
+                            }),
+                            oncomplete: null,
+                            onerror: null
+                        };
+                        setTimeout(() => tx.oncomplete && tx.oncomplete(), 5);
+                        return tx;
+                    }
+                },
+                onsuccess: null,
+                onerror: null,
+                onupgradeneeded: null
+            };
+            setTimeout(() => {
+                if (req.onupgradeneeded) req.onupgradeneeded();
+                if (req.onsuccess) req.onsuccess();
+            });
+            return req;
+        });
         (global as any).indexedDB = {
-            open: () => {
-                const req: any = {
-                    result: {
-                        objectStoreNames: { contains: () => true },
-                        transaction: () => {
-                            const tx: any = {
-                                objectStore: () => ({
-                                    put: (val: any, key?: any) => {
-                                        store.set(key !== undefined ? key : (val?.id ?? val?.url), val);
-                                        const r: any = {};
-                                        setTimeout(() => r.onsuccess && r.onsuccess());
-                                        return r;
-                                    },
-                                    get: (id: string) => {
-                                        const r: any = {};
-                                        setTimeout(() => {
-                                            r.result = store.get(id);
-                                            r.onsuccess && r.onsuccess();
-                                        });
-                                        return r;
-                                    },
-                                    delete: (id: string) => {
-                                        store.delete(id);
-                                        const r: any = {};
-                                        setTimeout(() => r.onsuccess && r.onsuccess());
-                                        return r;
-                                    }
-                                }),
-                                oncomplete: null,
-                                onerror: null
-                            };
-                            setTimeout(() => tx.oncomplete && tx.oncomplete(), 5);
-                            return tx;
-                        }
-                    },
-                    onsuccess: null,
-                    onerror: null,
-                    onupgradeneeded: null
-                };
-                setTimeout(() => {
-                    if (req.onupgradeneeded) req.onupgradeneeded();
-                    if (req.onsuccess) req.onsuccess();
-                });
-                return req;
-            }
+            open: openSpy
         };
     });
 
@@ -139,5 +142,30 @@ describe('tileUtils', () => {
 
         const tileFromPathname = await getTile('/maps/tile/12/1234/2345.mvt');
         expect(tileFromPathname).not.toBeNull();
+    });
+
+    it('should reuse singleton IDBDatabase connection across multiple operations', async () => {
+        expect(openSpy).not.toHaveBeenCalled();
+        await openDB();
+        expect(openSpy).toHaveBeenCalledTimes(1);
+        await openDB();
+        await openDB();
+        expect(openSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should cache tile misses in memory and return null without repeated transactions', async () => {
+        const missingUrl = `${window.location.origin}/maps/tile/14/9999/9999.mvt`;
+        const firstAttempt = await getTile(missingUrl);
+        expect(firstAttempt).toBeNull();
+
+        // Second attempt should return null directly from in-memory miss cache
+        const secondAttempt = await getTile(missingUrl);
+        expect(secondAttempt).toBeNull();
+
+        // Saving the tile should invalidate the miss cache and return the new tile
+        const dummyBlob = new Blob(['new-tile-data'], { type: 'application/x-protobuf' });
+        await saveTile(missingUrl, dummyBlob);
+        const thirdAttempt = await getTile(missingUrl);
+        expect(thirdAttempt).not.toBeNull();
     });
 });
