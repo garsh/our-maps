@@ -31,8 +31,8 @@ import type {
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  pingInterval: 86400000, // 24 hours
-  pingTimeout: 60000,     // 1 minute
+  pingInterval: 60000, // 1 minute
+  pingTimeout: 20000,  // 20 seconds
   cors: {
     origin: process.env.CORS_ORIGIN || '*',
     methods: ['GET', 'POST']
