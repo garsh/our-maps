@@ -25,9 +25,8 @@ services:
     container_name: our-maps
     env_file:
       - .env
-    # Expose the configured PORT publicly so the Android app can connect via plain HTTP without TLS errors
-    ports:
-      - "${PORT:-3001}:${PORT:-3001}"
+    # Do not publish PORT on the host. Caddy is the only public entry (443).
+    # The app still listens on PORT for reverse_proxy on the Docker network.
     volumes:
       - our_maps_data:/data
       - ./data/maps:/app/data/maps

@@ -12,8 +12,12 @@ ourmaps.mooo.com {
 	reverse_proxy our-maps:{$PORT}
 }
 
-# Replace "192.168.4.146" with your actual local IP address or a custom local domain.
-# If you have a real domain, place it here and Caddy will fetch a real Let's Encrypt cert!
+# LAN hostname and IP (tls internal — browsers will warn until the cert is trusted)
+bird.lan {
+	tls internal
+	reverse_proxy our-maps:{$PORT}
+}
+
 192.168.253.3 {
 	tls internal
 	reverse_proxy our-maps:{$PORT}

@@ -17,6 +17,7 @@ import placesRouter from './routes/places';
 import { googleLoginHandler, filterContactsHandler, searchUsersHandler, authMiddleware, authenticateToken, getJwtSecret } from './auth';
 import { getMapRole, canEditMap, canViewMap } from './permissions';
 import { resolveSafeMapFile, getSafeFontDownloadTarget, sanitizeMapFilename } from './mapFiles';
+import { isAllowedOrigin } from './cors';
 import * as realtime from './realtime';
 
 const app = express();
@@ -25,7 +26,13 @@ const io = new Server(server, {
   pingInterval: 60000, // 1 minute
   pingTimeout: 20000,  // 20 seconds
   cors: {
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: (origin, callback) => {
+      if (isAllowedOrigin(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false);
+      }
+    },
     methods: ['GET', 'POST']
   }
 });
@@ -66,15 +73,13 @@ const apiLimiter = rateLimit({
 });
 app.use('/api', apiLimiter);
 
-// CORS: Strict origin validation
-const corsOrigin = process.env.CORS_ORIGIN || '*';
+// CORS: exact origin match (comma-separated CORS_ORIGIN) plus LAN/dev hosts
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl) or if origin matches
-    if (!origin || corsOrigin === '*' || origin === corsOrigin || origin.includes('localhost') || origin.includes('127.0.0.1') || origin.includes('192.168.') || origin.includes('.lan')) {
+    if (isAllowedOrigin(origin)) {
       callback(null, true);
     } else {
-      callback(new Error(`Origin ${origin} not allowed by CORS`));
+      callback(null, false);
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
