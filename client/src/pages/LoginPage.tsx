@@ -68,7 +68,13 @@ export default function LoginPage() {
             />
           ) : (
             <button 
-              onClick={() => login()}
+              onClick={async () => {
+                try {
+                  await login();
+                } catch (err: any) {
+                  setError(err.message || 'Login failed. Please try again.');
+                }
+              }}
               style={{ 
                 padding: '0.75rem 2rem', 
                 fontSize: '1rem', 

@@ -1,8 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { OAuth2Client } from 'google-auth-library';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { getDb } from './db';
 import type { User } from '@shared/interfaces';
+
+export const SESSION_COOKIE = 'ourmaps_session';
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 export const DEV_JWT_SECRET = 'our-maps-dev-secret-key-30-days';
 
@@ -31,6 +35,109 @@ export class AuthError extends Error {
 
 function isValidUser(user: any): user is User {
   return Boolean(user && typeof user.id === 'string' && user.id && typeof user.email === 'string' && user.email);
+}
+
+export function parseCookies(header?: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!header) return out;
+  for (const part of header.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (!key) continue;
+    try {
+      out[key] = decodeURIComponent(value);
+    } catch {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+function sessionCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge: SESSION_MAX_AGE_MS,
+  };
+}
+
+export function setSessionCookie(res: Response, sessionId: string) {
+  res.cookie(SESSION_COOKIE, sessionId, sessionCookieOptions());
+}
+
+export function clearSessionCookie(res: Response) {
+  res.clearCookie(SESSION_COOKIE, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+  });
+}
+
+export async function createSession(userId: string): Promise<string> {
+  const db = await getDb();
+  const id = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString();
+  await db.run(
+    'INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)',
+    id,
+    userId,
+    expiresAt
+  );
+  return id;
+}
+
+export async function getUserForSession(sessionId: string): Promise<User> {
+  const db = await getDb();
+  const row = await db.get(
+    `SELECT s.id, s.expires_at, u.id as user_id, u.email, u.name, u.picture
+     FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.id = ?`,
+    sessionId
+  );
+  if (!row) {
+    throw new AuthError('No token provided');
+  }
+  if (new Date(row.expires_at).getTime() <= Date.now()) {
+    await db.run('DELETE FROM sessions WHERE id = ?', sessionId);
+    throw new AuthError('Session expired');
+  }
+  return {
+    id: row.user_id,
+    email: row.email,
+    name: row.name,
+    picture: row.picture
+  };
+}
+
+export async function deleteSession(sessionId: string) {
+  const db = await getDb();
+  await db.run('DELETE FROM sessions WHERE id = ?', sessionId);
+}
+
+export async function deleteAllSessionsForUser(userId: string) {
+  const db = await getDb();
+  await db.run('DELETE FROM sessions WHERE user_id = ?', userId);
+}
+
+export async function authenticateRequest(req: Request): Promise<User> {
+  const sessionId = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  if (sessionId) {
+    try {
+      return await getUserForSession(sessionId);
+    } catch (error) {
+      if (!(error instanceof AuthError)) throw error;
+    }
+  }
+
+  const authHeader = req.headers.authorization;
+  const mockUserHeader = req.headers['x-mock-user'];
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : undefined;
+  return authenticateToken(token, mockUserHeader as string | undefined);
 }
 
 export async function authenticateToken(
@@ -145,20 +252,9 @@ export async function googleLoginHandler(req: Request, res: Response) {
     
     const user = userFromGooglePayload(ticket.getPayload());
     await ensureUserExists(user);
-
-    // Sign a custom JWT valid for 30 days
-    const token = jwt.sign(
-      {
-        sub: user.id,
-        email: user.email,
-        name: user.name,
-        picture: user.picture,
-      },
-      getJwtSecret(),
-      { expiresIn: '30d' }
-    );
-
-    return res.json({ token, user });
+    const sessionId = await createSession(user.id);
+    setSessionCookie(res, sessionId);
+    return res.json({ user });
   } catch (e: any) {
     if (e instanceof AuthError) {
       return res.status(e.status).json({ error: e.message });
@@ -190,12 +286,8 @@ export function userFromGooglePayload(payload: {
 }
 
 export async function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  const mockUserHeader = req.headers['x-mock-user'];
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : undefined;
-
   try {
-    req.user = await authenticateToken(token, mockUserHeader as string | undefined);
+    req.user = await authenticateRequest(req);
     return next();
   } catch (error) {
     if (error instanceof AuthError) {
@@ -203,6 +295,48 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
     }
     return res.status(401).json({ error: 'Authentication failed' });
   }
+}
+
+export async function meHandler(req: Request, res: Response) {
+  try {
+    const user = await authenticateRequest(req);
+    return res.json({ user });
+  } catch {
+    return res.json({ user: null });
+  }
+}
+
+export async function mockLoginHandler(req: Request, res: Response) {
+  if (!isMockAuthAllowed()) {
+    return res.status(404).json({ error: 'Not Found' });
+  }
+  const mockUser: User = {
+    id: 'mock-user-id',
+    email: 'mock@example.com',
+    name: 'Mock User',
+    picture: ''
+  };
+  await ensureUserExists(mockUser);
+  const sessionId = await createSession(mockUser.id);
+  setSessionCookie(res, sessionId);
+  return res.json({ user: mockUser });
+}
+
+export async function logoutHandler(req: Request, res: Response) {
+  const sessionId = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  if (sessionId) {
+    await deleteSession(sessionId);
+  }
+  clearSessionCookie(res);
+  return res.json({ message: 'Signed out' });
+}
+
+export async function logoutEverywhereHandler(req: AuthRequest, res: Response) {
+  if (req.user?.id) {
+    await deleteAllSessionsForUser(req.user.id);
+  }
+  clearSessionCookie(res);
+  return res.json({ message: 'Signed out everywhere' });
 }
 
 async function ensureUserExists(user: User) {

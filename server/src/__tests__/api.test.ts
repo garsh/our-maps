@@ -206,6 +206,44 @@ describe('API Endpoints', () => {
     expect(res.body.ownerId).toBe('jwt-test-user-id');
   });
 
+  it('GET /api/auth/me returns null user when there is no session', async () => {
+    const res = await request(app).get('/api/auth/me');
+    expect(res.status).toBe(200);
+    expect(res.body.user).toBeNull();
+  });
+
+  it('mock login sets a session cookie and /auth/me returns the user', async () => {
+    const loginRes = await request(app).post('/api/auth/mock-login');
+    expect(loginRes.status).toBe(200);
+    expect(loginRes.body.user.email).toBe('mock@example.com');
+    expect(loginRes.body.token).toBeUndefined();
+    const rawCookie = loginRes.headers['set-cookie'];
+    const cookie = Array.isArray(rawCookie) ? rawCookie.join('; ') : rawCookie;
+    expect(cookie).toContain('ourmaps_session=');
+    expect(cookie).toMatch(/httponly/i);
+
+    const meRes = await request(app).get('/api/auth/me').set('Cookie', cookie);
+    expect(meRes.status).toBe(200);
+    expect(meRes.body.user.email).toBe('mock@example.com');
+  });
+
+  it('logout-everywhere invalidates other sessions', async () => {
+    const first = await request(app).post('/api/auth/mock-login');
+    const second = await request(app).post('/api/auth/mock-login');
+    const cookie1 = (Array.isArray(first.headers['set-cookie']) ? first.headers['set-cookie'] : [first.headers['set-cookie']]).join('; ');
+    const cookie2 = (Array.isArray(second.headers['set-cookie']) ? second.headers['set-cookie'] : [second.headers['set-cookie']]).join('; ');
+
+    const everywhere = await request(app).post('/api/auth/logout-everywhere').set('Cookie', cookie2);
+    expect(everywhere.status).toBe(200);
+
+    const me1 = await request(app).get('/api/auth/me').set('Cookie', cookie1);
+    const me2 = await request(app).get('/api/auth/me').set('Cookie', cookie2);
+    expect(me1.status).toBe(200);
+    expect(me1.body.user).toBeNull();
+    expect(me2.status).toBe(200);
+    expect(me2.body.user).toBeNull();
+  });
+
   it('GET /maps/sprites/light@2x.png should return sprite image', async () => {
     const res = await request(app).get('/maps/sprites/light@2x.png');
     expect(res.status).toBe(200);

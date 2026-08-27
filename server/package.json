@@ -4,8 +4,8 @@
   "description": "Express backend for Our Maps",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "PORT=3002 nodemon --watch 'src/**/*.ts' --ignore database.sqlite --exec 'ts-node' src/index.ts",
-    "dev:no-watch": "PORT=3002 ts-node src/index.ts",
+    "dev": "NODE_ENV=development PORT=3002 nodemon --watch 'src/**/*.ts' --ignore database.sqlite --exec 'ts-node' src/index.ts",
+    "dev:no-watch": "NODE_ENV=development PORT=3002 ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/server/src/index.js",
     "test": "vitest run"

@@ -26,7 +26,10 @@ async function login(page: any) {
   });
   
   await page.goto('/login');
-  await page.getByRole('button', { name: /Sign in with Mock Account/i }).click();
+  await Promise.all([
+    page.waitForResponse((res: any) => res.url().includes('/api/auth/mock-login') && res.ok()),
+    page.getByRole('button', { name: /Sign in with Mock Account/i }).click(),
+  ]);
   await expect(page).toHaveURL('/');
 }
 
@@ -68,10 +71,9 @@ test('sidebar items are interactible', async ({ page }) => {
     const mapId = url.split('/map/')[1]?.split('?')[0];
     if (mapId && mapId !== 'new') {
       await page.evaluate(async (id: string) => {
-        const token = localStorage.getItem('token');
         await fetch(`/api/maps/${id}`, {
           method: 'DELETE',
-          headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+          credentials: 'include'
         });
       }, mapId);
     }
@@ -140,10 +142,9 @@ test('sidebar multi-layer creation, collapse/expand, and multi-selection flow', 
     const mapId = url.split('/map/')[1]?.split('?')[0];
     if (mapId && mapId !== 'new') {
       await page.evaluate(async (id: string) => {
-        const token = localStorage.getItem('token');
         await fetch(`/api/maps/${id}`, {
           method: 'DELETE',
-          headers: { 'Authorization': token ? `Bearer ${token}` : '' }
+          credentials: 'include'
         });
       }, mapId);
     }

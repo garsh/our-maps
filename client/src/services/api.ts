@@ -4,16 +4,14 @@ import { getOfflineMap, saveMapOffline, isMapDownloaded } from '../utils/tileUti
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 const getHeaders = () => {
-  const token = localStorage.getItem('token');
   return {
     'Content-Type': 'application/json',
-    'Authorization': token ? `Bearer ${token}` : '',
   };
 };
 
 const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 3): Promise<Response> => {
   try {
-    const res = await fetch(url, options);
+    const res = await fetch(url, { credentials: 'include', ...options });
     if (!res.ok && retries > 0 && res.status >= 500) {
       console.warn(`Fetch status ${res.status} for ${url}, retrying... (${retries} left)`);
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -52,9 +50,10 @@ export const apiService = {
     this._logoutCallback = callback;
   },
 
-  async loginWithGoogle(credential: string): Promise<{ token: string; user: any }> {
+  async loginWithGoogle(credential: string): Promise<{ user: any }> {
     const res = await fetch(`${API_BASE}/auth/google-login`, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json'
       },
@@ -65,6 +64,45 @@ export const apiService = {
       throw new Error(err.error || 'Google login failed on server');
     }
     return res.json();
+  },
+
+  async mockLogin(): Promise<{ user: any }> {
+    const res = await fetch(`${API_BASE}/auth/mock-login`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Mock login failed');
+    }
+    return res.json();
+  },
+
+  async me(): Promise<{ user: any } | null> {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      credentials: 'include',
+      headers: getHeaders(),
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => ({}));
+    return data.user ? data : null;
+  },
+
+  async logout(): Promise<void> {
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: getHeaders(),
+    });
+  },
+
+  async logoutEverywhere(): Promise<void> {
+    await fetch(`${API_BASE}/auth/logout-everywhere`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: getHeaders(),
+    });
   },
 
   async getMaps(): Promise<any[]> {

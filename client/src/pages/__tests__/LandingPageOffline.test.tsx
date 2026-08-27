@@ -42,6 +42,7 @@ describe('LandingPage Offline Map Access', () => {
       isLoading: false,
       login: vi.fn(),
       logout: vi.fn(),
+      logoutEverywhere: vi.fn(),
     });
     (apiService.getMaps as any).mockResolvedValue(mockMaps);
 

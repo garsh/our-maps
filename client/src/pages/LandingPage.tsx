@@ -16,7 +16,7 @@ interface MapSummary {
 }
 
 export default function LandingPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, logoutEverywhere } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [maps, setMaps] = useState<MapSummary[]>([]);
@@ -522,11 +522,14 @@ export default function LandingPage() {
             </div>
             <h3 style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>Sign Out</h3>
             <p style={{ color: 'var(--text-secondary)', lineHeight: '1.5', margin: '1rem 0 2rem 0' }}>
-              Are you sure you want to sign out of OurMaps?
+              Sign out of this browser, or end every signed-in session on all devices.
             </p>
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <button onClick={() => setShowSignOutDialog(false)} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)' }}>Cancel</button>
-              <button onClick={() => { setShowSignOutDialog(false); logout(); }} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--primary-color)', color: 'white', fontWeight: '600' }}>Sign Out</button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button onClick={() => setShowSignOutDialog(false)} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)' }}>Cancel</button>
+                <button onClick={() => { setShowSignOutDialog(false); logout(); }} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--primary-color)', color: 'white', fontWeight: '600' }}>Sign Out</button>
+              </div>
+              <button onClick={() => { setShowSignOutDialog(false); logoutEverywhere(); }} style={{ padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)' }}>Sign out everywhere</button>
             </div>
           </div>
         </div>

@@ -24,7 +24,10 @@ async function login(page: any) {
     else console.log(`BROWSER: ${text}`);
   });
   await page.goto('/login');
-  await page.getByRole('button', { name: /Sign in with Mock Account/i }).click();
+  await Promise.all([
+    page.waitForResponse((res: any) => res.url().includes('/api/auth/mock-login') && res.ok()),
+    page.getByRole('button', { name: /Sign in with Mock Account/i }).click(),
+  ]);
   await expect(page).toHaveURL('/');
   await cleanupTestMaps(page);
 }
@@ -42,11 +45,10 @@ async function deleteCurrentMap(page: any) {
     const mapId = url.split('/map/')[1]?.split('?')[0];
     if (mapId && mapId !== 'new') {
       await page.evaluate(async (id: string) => {
-        const token = localStorage.getItem('token');
         await fetch(`/api/maps/${id}`, {
           method: 'DELETE',
+          credentials: 'include',
           headers: {
-            'Authorization': token ? `Bearer ${token}` : '',
             'Content-Type': 'application/json',
           },
         });
@@ -61,10 +63,8 @@ async function deleteCurrentMap(page: any) {
 async function cleanupTestMaps(page: any) {
   try {
     await page.evaluate(async () => {
-      const token = localStorage.getItem('token');
-      if (!token) return;
       const res = await fetch('/api/maps', {
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include'
       });
       if (res.ok) {
         const maps = await res.json();
@@ -75,7 +75,7 @@ async function cleanupTestMaps(page: any) {
           if (isTestMap) {
             await fetch(`/api/maps/${m.id}`, {
               method: 'DELETE',
-              headers: { 'Authorization': `Bearer ${token}` }
+              credentials: 'include'
             });
           }
         }

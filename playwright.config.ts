@@ -25,6 +25,7 @@ export default defineConfig({
       url: 'http://127.0.0.1:5173',
       reuseExistingServer: !process.env.CI,
       env: {
+        NODE_ENV: 'development',
         VITE_MOCK_AUTH: 'true',
         VITE_GOOGLE_CLIENT_ID: 'MOCK_CLIENT_ID',
         GOOGLE_CLIENT_ID: 'MOCK_CLIENT_ID',

@@ -5,9 +5,9 @@ import { apiService } from '../services/api';
 
 interface AuthContextType {
   user: User | null;
-  token: string | null;
-  login: () => void; // Keep for legacy/fallback
-  logout: () => void;
+  login: () => Promise<void>;
+  logout: () => Promise<void>;
+  logoutEverywhere: () => Promise<void>;
   isAuthenticated: boolean;
   isLoading: boolean;
   handleCredentialResponse: (credential: string) => Promise<void>;
@@ -17,45 +17,46 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [isLoading, setIsLoading] = useState(true);
 
-  // Helper to decode JWT without a library
-  const decodeJwt = (token: string) => {
-    try {
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join(''));
-      return JSON.parse(jsonPayload);
-    } catch {
-      return null;
-    }
-  };
-
-  const logout = () => {
+  const clearLocalSession = () => {
     googleLogout();
-    setToken(null);
     setUser(null);
-    localStorage.removeItem('token');
     setIsLoading(false);
   };
 
+  const logout = async () => {
+    try {
+      await apiService.logout();
+    } catch {
+      // Cookie/session may already be gone
+    }
+    clearLocalSession();
+  };
+
+  const logoutEverywhere = async () => {
+    try {
+      await apiService.logoutEverywhere();
+    } catch {
+      // Still clear this browser
+    }
+    clearLocalSession();
+  };
+
   useEffect(() => {
-    apiService.setLogoutCallback(logout);
+    apiService.setLogoutCallback(() => {
+      clearLocalSession();
+    });
   }, []);
 
   const handleCredentialResponse = async (credential: string) => {
     setIsLoading(true);
     try {
       const data = await apiService.loginWithGoogle(credential);
-      setToken(data.token);
-      localStorage.setItem('token', data.token);
       setUser(data.user);
     } catch (err) {
       console.error('[AUTH] Login with custom JWT failed:', err);
-      logout();
+      clearLocalSession();
       throw err;
     } finally {
       setIsLoading(false);
@@ -63,73 +64,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    const checkToken = () => {
-      if (token) {
-        if (token.includes('.')) {
-          const payload = decodeJwt(token);
-          if (payload) {
-            const isExpired = payload.exp * 1000 < Date.now();
-            const isGoogleToken = payload.iss === 'https://accounts.google.com' || payload.iss === 'accounts.google.com';
-            if (isExpired || isGoogleToken) {
-              console.warn(isGoogleToken ? '[AUTH] Google ID token detected, logging out' : '[AUTH] Token expired, logging out');
-              logout();
-              return;
-            }
-            
-            setUser({
-              id: payload.sub,
-              email: payload.email,
-              name: payload.name || payload.email,
-              picture: payload.picture,
-            });
-          } else {
-            logout();
-          }
+    // Delete after 2027-01-01: leftover JWTs from the pre-cookie auth era.
+    localStorage.removeItem('token');
+
+    const loadSession = async () => {
+      try {
+        const data = await apiService.me();
+        if (data?.user) {
+          setUser(data.user);
         } else {
-          // Fallback to mock token
-          try {
-            const decoded = decodeURIComponent(escape(atob(token)));
-            const user = JSON.parse(decoded);
-            if (user.id && user.email) {
-              setUser(user);
-            }
-          } catch {
-            logout();
-          }
+          setUser(null);
         }
+      } catch {
+        setUser(null);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
+    loadSession();
+  }, []);
 
-    checkToken();
-    
-    // Periodically check for token expiration (every minute)
-    const interval = setInterval(checkToken, 60000);
-    return () => clearInterval(interval);
-  }, [token]);
-
-  const mockLogin = () => {
+  const mockLogin = async () => {
     if (import.meta.env.VITE_MOCK_AUTH === 'true' || !import.meta.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID === 'MOCK_CLIENT_ID') {
-        const mockUser = {
-            id: 'mock-user-id',
-            email: 'mock@example.com',
-            name: 'Mock User',
-            picture: ''
-        };
-        const json = JSON.stringify(mockUser);
-        const mockToken = btoa(unescape(encodeURIComponent(json))); 
-        setToken(mockToken);
-        localStorage.setItem('token', mockToken);
-        setUser(mockUser);
+      setIsLoading(true);
+      try {
+        const data = await apiService.mockLogin();
+        setUser(data.user);
+      } catch (err) {
+        console.error('[AUTH] Mock login failed:', err);
+        clearLocalSession();
+        throw err;
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
   return (
     <AuthContext.Provider value={{ 
       user, 
-      token, 
       login: mockLogin, 
-      logout, 
+      logout,
+      logoutEverywhere,
       isAuthenticated: !!user, 
       isLoading,
       handleCredentialResponse 

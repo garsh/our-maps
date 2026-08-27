@@ -41,7 +41,7 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
 export function MapEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, logout, token } = useAuth();
+  const { user, logout, logoutEverywhere } = useAuth();
   const socketRef = useRef<Socket | null>(null);
   
   const [pins, setPins] = useState<Pin[]>([])
@@ -411,7 +411,7 @@ export function MapEditor() {
         loadMap(id);
       }
 
-      if (!token) {
+      if (!user) {
         return;
       }
 
@@ -419,7 +419,7 @@ export function MapEditor() {
       const socket = io(SOCKET_URL, {
         path: '/socket.io',
         transports: ['websocket', 'polling'],
-        auth: { token }
+        withCredentials: true
       });
       socketRef.current = socket;
 
@@ -639,7 +639,7 @@ export function MapEditor() {
       setUserRole('owner');
       setIsMapLoading(false);
     }
-  }, [id, token]);
+  }, [id, user]);
 
   // Auto-save logic
   useEffect(() => {
@@ -1661,11 +1661,14 @@ export function MapEditor() {
             </div>
             <h3 style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>Sign Out</h3>
             <p style={{ color: 'var(--text-secondary)', lineHeight: '1.5', margin: '1rem 0 2rem 0' }}>
-              Are you sure you want to sign out of OurMaps?
+              Sign out of this browser, or end every signed-in session on all devices.
             </p>
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <button onClick={() => setShowSignOutDialog(false)} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)' }}>Cancel</button>
-              <button onClick={() => { setShowSignOutDialog(false); logout(); }} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--primary-color)', color: 'white', fontWeight: '600' }}>Sign Out</button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button onClick={() => setShowSignOutDialog(false)} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)' }}>Cancel</button>
+                <button onClick={() => { setShowSignOutDialog(false); logout(); }} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--primary-color)', color: 'white', fontWeight: '600' }}>Sign Out</button>
+              </div>
+              <button onClick={() => { setShowSignOutDialog(false); logoutEverywhere(); }} style={{ padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)' }}>Sign out everywhere</button>
             </div>
           </div>
         </div>

@@ -145,6 +145,16 @@ export async function getDb() {
     CREATE INDEX IF NOT EXISTS idx_maps_owner_id ON maps(owner_id);
     CREATE INDEX IF NOT EXISTS idx_map_permissions_user_id ON map_permissions(user_id);
     CREATE INDEX IF NOT EXISTS idx_user_map_access_map_id ON user_map_access(map_id);
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      expires_at DATETIME NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
   `);
 
   await migrate(db);

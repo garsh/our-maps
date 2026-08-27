@@ -37,6 +37,7 @@ describe('App Components Error Handling', () => {
       isLoading: false,
       login: vi.fn(),
       logout: vi.fn(),
+      logoutEverywhere: vi.fn(),
       handleCredentialResponse: vi.fn()
     });
 

@@ -14,7 +14,7 @@ import { Server, Socket } from 'socket.io';
 import mapsRouter from './routes/maps';
 import type { User } from '@shared/interfaces';
 import placesRouter from './routes/places';
-import { googleLoginHandler, sharedContactsHandler, searchUsersHandler, authMiddleware, authenticateToken, getJwtSecret } from './auth';
+import { googleLoginHandler, sharedContactsHandler, searchUsersHandler, authMiddleware, authenticateToken, getJwtSecret, meHandler, mockLoginHandler, logoutHandler, logoutEverywhereHandler, parseCookies, SESSION_COOKIE, getUserForSession } from './auth';
 import { getMapRole, canEditMap, canViewMap } from './permissions';
 import { resolveSafeMapFile, getSafeFontDownloadTarget, sanitizeMapFilename } from './mapFiles';
 import { isAllowedOrigin } from './cors';
@@ -34,7 +34,8 @@ const io = new Server(server, {
         callback(null, false);
       }
     },
-    methods: ['GET', 'POST']
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 app.set('io', io);
@@ -80,6 +81,10 @@ app.use(express.json({ limit: '10mb' }));
 
 // API Routes
 app.post('/api/auth/google-login', googleLoginHandler);
+app.post('/api/auth/mock-login', mockLoginHandler);
+app.get('/api/auth/me', meHandler);
+app.post('/api/auth/logout', logoutHandler);
+app.post('/api/auth/logout-everywhere', authMiddleware, logoutEverywhereHandler);
 app.get('/api/auth/shared-contacts', authMiddleware, sharedContactsHandler);
 app.get('/api/auth/search-users', authMiddleware, searchUsersHandler);
 app.use('/api/maps', mapsRouter);
@@ -101,6 +106,11 @@ function getAuthedUser(socket: Socket): User {
 
 io.use(async (socket, next) => {
   try {
+    const sessionId = parseCookies(socket.handshake.headers.cookie)[SESSION_COOKIE];
+    if (sessionId) {
+      socket.data.user = await getUserForSession(sessionId);
+      return next();
+    }
     const user = await authenticateToken(getSocketToken(socket));
     socket.data.user = user as User;
     next();
