@@ -930,23 +930,12 @@ export function MapEditor() {
   const removePin = useCallback((targetId: string) => {
     if (userRole === 'view' || isOffline) return;
     const currentPins = pinsRef.current;
-    const targetPin = currentPins.find(p => p.id === targetId);
-    const targetLayerId = targetPin?.layerId;
 
     const remainingPins = currentPins.filter(p => p.id !== targetId);
     setPins(remainingPins);
 
     if (mapId) {
       socketRef.current?.emit('pin-delete', { mapId, pinId: targetId });
-      
-      const layerPins = remainingPins
-        .filter(p => isSameLayer(p.layerId, targetLayerId))
-        .sort(comparePinPositions);
-      socketRef.current?.emit('pins-reorder', { 
-        mapId, 
-        layerId: targetLayerId === undefined ? null : targetLayerId, 
-        pinOrder: layerPins.map(p => p.id) 
-      });
     }
   }, [userRole, isOffline, mapId]);
 
