@@ -200,7 +200,7 @@ router.get('/search', async (req: AuthRequest, res) => {
 
     if (data.error) {
       console.error('[Places API] Google search returned error:', data.error.message);
-      return res.status(502).json({ error: `Google API error: ${data.error.message}` });
+      return res.status(502).json({ error: 'Search failed' });
     }
 
     const results = data.places || [];
@@ -292,7 +292,7 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
 
     if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
       console.error('[Places API] Google reverse geocode returned status:', data.status, data.error_message);
-      return res.status(502).json({ error: `Google API error: ${data.status}` });
+      return res.status(502).json({ error: 'Reverse geocode failed' });
     }
 
     let address = data.results?.[0]?.formatted_address || null;

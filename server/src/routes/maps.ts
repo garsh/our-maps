@@ -278,7 +278,7 @@ router.post('/', async (req: AuthRequest, res) => {
       return res.status(400).json({ error: 'Validation failed', details: error.issues });
     }
     console.error('[SERVER] POST /api/maps ERROR:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -400,7 +400,8 @@ router.put('/:id', async (req: AuthRequest, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Validation failed', details: error.issues });
     }
-    res.status(500).json({ error: error.message });
+    console.error('[SERVER] PUT /api/maps ERROR:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -462,7 +463,8 @@ router.post('/:id/share', async (req: AuthRequest, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Validation failed', details: error.issues });
     }
-    res.status(500).json({ error: error.message });
+    console.error('[SERVER] POST /api/maps share ERROR:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -483,7 +485,8 @@ router.delete('/:id/share/:userId', async (req: AuthRequest, res) => {
     await db.run('DELETE FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, targetUserId);
     res.json({ message: 'Permission removed' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('[SERVER] DELETE /api/maps share ERROR:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -507,7 +510,8 @@ router.delete('/:id', async (req: AuthRequest, res) => {
 
     res.json({ message: 'Map deleted' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error('[SERVER] DELETE /api/maps ERROR:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
