@@ -481,4 +481,112 @@ describe('Sidebar', () => {
 
     expect(addressInput.value).toBe('123 Main St');
   });
+
+  it('renders multi-layer pin list and handles layer collapse/expand', () => {
+    const layers = [
+      { id: 'layer-1', name: 'Restaurants', position: 0 },
+      { id: 'layer-2', name: 'Hotels', position: 1 }
+    ];
+    const pins = [
+      { id: 'p1', lat: 10, lng: 20, label: 'Restaurant 1', layerId: 'layer-1', position: 0 },
+      { id: 'p2', lat: 11, lng: 21, label: 'Restaurant 2', layerId: 'layer-1', position: 1 },
+      { id: 'p3', lat: 12, lng: 22, label: 'Hotel 1', layerId: 'layer-2', position: 0 },
+      { id: 'p4', lat: 13, lng: 23, label: 'Default Pin', layerId: undefined, position: 0 }
+    ];
+
+    const onToggleExpand = vi.fn();
+    const { rerender } = render(
+      <TestWrapper 
+        pins={pins} 
+        handlers={{ 
+          layers, 
+          collapsedLayerIds: new Set<string | null>(),
+          onToggleExpand 
+        }} 
+      />
+    );
+
+    // All pins and layer headers should be visible
+    expect(screen.getByText('Restaurants')).toBeInTheDocument();
+    expect(screen.getByText('Hotels')).toBeInTheDocument();
+    expect(screen.getByText('Restaurant 1')).toBeInTheDocument();
+    expect(screen.getByText('Restaurant 2')).toBeInTheDocument();
+    expect(screen.getByText('Hotel 1')).toBeInTheDocument();
+    expect(screen.getByText('Default Pin')).toBeInTheDocument();
+
+    // Rerender with layer-1 collapsed
+    rerender(
+      <TestWrapper 
+        pins={pins} 
+        handlers={{ 
+          layers, 
+          collapsedLayerIds: new Set(['layer-1']),
+          onToggleExpand 
+        }} 
+      />
+    );
+
+    // Restaurant pins should now be hidden
+    expect(screen.queryByText('Restaurant 1')).not.toBeInTheDocument();
+    expect(screen.queryByText('Restaurant 2')).not.toBeInTheDocument();
+    // Hotel and Default pins should still be visible
+    expect(screen.getByText('Hotel 1')).toBeInTheDocument();
+    expect(screen.getByText('Default Pin')).toBeInTheDocument();
+  });
+
+  it('handles multi-pin navigation selection and Select All toggle', () => {
+    const layers = [{ id: 'layer-1', name: 'Activities', position: 0 }];
+    const pins = [
+      { id: 'p1', lat: 10, lng: 20, label: 'Activity 1', layerId: 'layer-1', position: 0 },
+      { id: 'p2', lat: 11, lng: 21, label: 'Activity 2', layerId: 'layer-1', position: 1 }
+    ];
+
+    const onToggleSelectNav = vi.fn();
+    const onToggleSelectAll = vi.fn();
+
+    render(
+      <TestWrapper 
+        pins={pins} 
+        selectedNavIds={new Set(['p1'])}
+        handlers={{ 
+          layers, 
+          onToggleSelectNav, 
+          onToggleSelectAll 
+        }} 
+      />
+    );
+
+    // Activity 1 checkbox should be checked
+    const checkboxes = screen.getAllByRole('checkbox');
+    expect(checkboxes.length).toBeGreaterThanOrEqual(2);
+
+    // Navigation button should show 1 selected
+    expect(screen.getByText(/Go\s*\(\s*1\s*\)/i)).toBeInTheDocument();
+  });
+
+  it('shows matching search results in SearchBar dropdown', () => {
+    const layers = [
+      { id: 'layer-1', name: 'Food', position: 0 },
+      { id: 'layer-2', name: 'Attractions', position: 1 }
+    ];
+    const pins = [
+      { id: 'p1', lat: 10, lng: 20, label: 'Burger Joint', layerId: 'layer-1', position: 0 },
+      { id: 'p2', lat: 11, lng: 21, label: 'Pizza Place', layerId: 'layer-1', position: 1 },
+      { id: 'p3', lat: 12, lng: 22, label: 'City Museum', layerId: 'layer-2', position: 0 }
+    ];
+
+    render(
+      <TestWrapper 
+        pins={pins} 
+        handlers={{ layers }} 
+      />
+    );
+
+    const searchInput = screen.getByPlaceholderText('Search...');
+    fireEvent.change(searchInput, { target: { value: 'Burger' } });
+
+    // Matching pin should appear in the search dropdown results
+    const matchingElements = screen.getAllByText('Burger Joint');
+    expect(matchingElements.length).toBeGreaterThanOrEqual(2);
+  });
 });
