@@ -143,18 +143,7 @@ export async function googleLoginHandler(req: Request, res: Response) {
       audience: googleClientId,
     });
     
-    const payload = ticket.getPayload();
-    if (!payload || !payload.sub || !payload.email) {
-      return res.status(401).json({ error: 'Invalid token payload' });
-    }
-
-    const user: User = {
-      id: payload.sub,
-      email: payload.email,
-      name: payload.name || payload.email,
-      picture: payload.picture
-    };
-
+    const user = userFromGooglePayload(ticket.getPayload());
     await ensureUserExists(user);
 
     // Sign a custom JWT valid for 30 days
@@ -171,9 +160,33 @@ export async function googleLoginHandler(req: Request, res: Response) {
 
     return res.json({ token, user });
   } catch (e: any) {
+    if (e instanceof AuthError) {
+      return res.status(e.status).json({ error: e.message });
+    }
     console.error('[AUTH] Google login failed:', e);
     return res.status(401).json({ error: `Authentication failed: ${e.message}` });
   }
+}
+
+export function userFromGooglePayload(payload: {
+  sub?: string;
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+  picture?: string;
+} | undefined): User {
+  if (!payload || !payload.sub || !payload.email) {
+    throw new AuthError('Invalid token payload');
+  }
+  if (payload.email_verified !== true) {
+    throw new AuthError('Verify this email with Google, then sign in again.');
+  }
+  return {
+    id: payload.sub,
+    email: payload.email,
+    name: payload.name || payload.email,
+    picture: payload.picture
+  };
 }
 
 export async function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {

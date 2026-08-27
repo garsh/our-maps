@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { getJwtSecret, DEV_JWT_SECRET, isMockAuthAllowed, authenticateToken, AuthError } from '../auth';
+import { getJwtSecret, DEV_JWT_SECRET, isMockAuthAllowed, authenticateToken, AuthError, userFromGooglePayload } from '../auth';
 
 describe('JWT production requirements', () => {
   const originalNodeEnv = process.env.NODE_ENV;
@@ -68,5 +68,39 @@ describe('mock auth gating', () => {
     await expect(
       authenticateToken(undefined, JSON.stringify({ id: 'mock-user-id', email: 'mock@example.com', name: 'Mock' }))
     ).rejects.toBeInstanceOf(AuthError);
+  });
+});
+
+describe('userFromGooglePayload', () => {
+  const verified = {
+    sub: 'google-sub-1',
+    email: 'user@gmail.com',
+    email_verified: true as const,
+    name: 'User',
+    picture: 'https://example.com/p.png'
+  };
+
+  it('accepts a verified Google account', () => {
+    expect(userFromGooglePayload(verified)).toEqual({
+      id: 'google-sub-1',
+      email: 'user@gmail.com',
+      name: 'User',
+      picture: 'https://example.com/p.png'
+    });
+  });
+
+  it('rejects missing payload fields', () => {
+    expect(() => userFromGooglePayload(undefined)).toThrow(AuthError);
+    expect(() => userFromGooglePayload({ email: 'a@b.c', email_verified: true })).toThrow(/Invalid token payload/);
+    expect(() => userFromGooglePayload({ sub: 'x', email_verified: true })).toThrow(/Invalid token payload/);
+  });
+
+  it('rejects unverified emails', () => {
+    expect(() => userFromGooglePayload({ ...verified, email_verified: false })).toThrow(
+      /Verify this email with Google, then sign in again/
+    );
+    expect(() => userFromGooglePayload({ ...verified, email_verified: undefined })).toThrow(
+      /Verify this email with Google, then sign in again/
+    );
   });
 });
