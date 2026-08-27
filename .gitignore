@@ -91,9 +91,9 @@ GEMINI.md
 
 
 # database
-server/database.sqlite*
-*.sqlite-wal
-*.sqlite-shm
+*.sqlite
+*.sqlite-*
+*.sqlite.bak
 server/dist/
 
 # Map tiles, sprites & fonts
