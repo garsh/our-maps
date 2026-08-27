@@ -1604,12 +1604,37 @@ export function MapEditor() {
           </div>
         )}
         {!isMobile && (
-          <div 
+          <div
             onClick={() => setShowSignOutDialog(true)}
-            style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--surface-color)', padding: '6px 12px', borderRadius: '50px', boxShadow: 'var(--shadow-sm)', cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
+            title={user?.name}
+            style={{
+              position: 'absolute',
+              top: '10px',
+              right: '10px',
+              zIndex: 1000,
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
+              cursor: 'pointer',
+              overflow: 'hidden',
+              border: '2px solid rgba(255,255,255,0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(255,255,255,0.2)',
+              fontWeight: 'bold',
+              color: 'white',
+              boxShadow: 'var(--shadow-sm)',
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              WebkitTouchCallout: 'none',
+            }}
           >
-            <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)' }}>{user?.name}</span>
-            {user?.picture && <img src={user.picture} alt={user.name} style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid rgba(0,0,0,0.05)' }} />}
+            {user?.picture ? (
+              <img src={user.picture} alt={user.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <span>{user?.name?.[0]?.toUpperCase() || 'U'}</span>
+            )}
           </div>
         )}
         <MapView 
