@@ -461,6 +461,17 @@ export function MapEditor() {
         if (data.mapId !== id) return;
         isRemoteUpdateRef.current = true;
         setPins(prev => prev.filter(p => p.id !== data.pinId));
+        setHoveredPinId(prev => (prev === data.pinId ? null : prev));
+        setTargetPinId(prev => (prev === data.pinId ? null : prev));
+        setEditingPinId(prev => (prev === data.pinId ? null : prev));
+        setSelectedNavIds(prev => {
+          if (prev.has(data.pinId)) {
+            const next = new Set(prev);
+            next.delete(data.pinId);
+            return next;
+          }
+          return prev;
+        });
         setIsDirty(false);
       });
 
@@ -549,6 +560,14 @@ export function MapEditor() {
         if (data.mapId !== id) return;
         isRemoteUpdateRef.current = true;
         setLayers(prev => prev.filter(l => l.id !== data.layerId));
+        setSelectedNavIds(prev => {
+          if (prev.has(data.layerId)) {
+            const next = new Set(prev);
+            next.delete(data.layerId);
+            return next;
+          }
+          return prev;
+        });
         setPins(prev => {
           const defaultPins = prev.filter(p => isSameLayer(p.layerId, undefined));
           let currentMaxPos = defaultPins.length > 0
@@ -915,7 +934,9 @@ export function MapEditor() {
       return;
     }
     // If a card is open, don't allow other pins to be highlighted by hover
-    if (targetPinId !== null || editingPinId !== null) {
+    const activeTargetExists = targetPinId !== null && pinsRef.current.some(p => p.id === targetPinId);
+    const activeEditingExists = editingPinId !== null && pinsRef.current.some(p => p.id === editingPinId);
+    if (activeTargetExists || activeEditingExists) {
       return;
     }
     setHoveredPinId(id);
@@ -986,6 +1007,18 @@ export function MapEditor() {
 
     const remainingPins = currentPins.filter(p => p.id !== targetId);
     setPins(remainingPins);
+
+    setHoveredPinId(prev => (prev === targetId ? null : prev));
+    setTargetPinId(prev => (prev === targetId ? null : prev));
+    setEditingPinId(prev => (prev === targetId ? null : prev));
+    setSelectedNavIds(prev => {
+      if (prev.has(targetId)) {
+        const next = new Set(prev);
+        next.delete(targetId);
+        return next;
+      }
+      return prev;
+    });
 
     if (mapId) {
       socketRef.current?.emit('pin-delete', { mapId, pinId: targetId });
@@ -1079,6 +1112,15 @@ export function MapEditor() {
     if (userRole === 'view' || isOffline) return;
     const remainingLayers = layers.filter(g => g.id !== targetId);
     setLayers(remainingLayers);
+
+    setSelectedNavIds(prev => {
+      if (prev.has(targetId)) {
+        const next = new Set(prev);
+        next.delete(targetId);
+        return next;
+      }
+      return prev;
+    });
 
     setPins(prev => {
       const defaultPins = prev.filter(p => isSameLayer(p.layerId, undefined));

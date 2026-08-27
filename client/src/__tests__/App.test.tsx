@@ -116,4 +116,61 @@ describe('App Components Error Handling', () => {
     }, { timeout: 4000 });
 
   }, 10000);
+
+  it('allows hovering over remaining pins immediately after deleting a pin', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    const mockPins = [
+      { id: 'pin-1', lat: 10, lng: 20, label: 'Pin 1', position: 0 },
+      { id: 'pin-2', lat: 15, lng: 25, label: 'Pin 2', position: 1 }
+    ];
+
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: mockPins,
+      layers: [],
+      userRole: 'owner'
+    });
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    // Wait for map to load
+    await waitFor(() => {
+      expect(screen.getByText('Pin 1')).toBeInTheDocument();
+      expect(screen.getByText('Pin 2')).toBeInTheDocument();
+    });
+
+    // Enter edit mode for Pin 1
+    const editBtns = screen.getAllByLabelText('Edit');
+    fireEvent.click(editBtns[0]);
+
+    // Click delete on Pin 1
+    const deleteBtn = screen.getByTitle('Delete Pin');
+    fireEvent.click(deleteBtn);
+
+    // Pin 1 should be gone
+    await waitFor(() => {
+      expect(screen.queryByText('Pin 1')).not.toBeInTheDocument();
+      expect(screen.getByText('Pin 2')).toBeInTheDocument();
+    });
+
+    // Hover over Pin 2
+    const pin2Element = screen.getByText('Pin 2').closest('li')!;
+    fireEvent.pointerEnter(pin2Element, { pointerType: 'mouse' });
+
+    // Pin 2 should have hovered style (boxShadow)
+    expect(pin2Element.style.boxShadow).toContain('var(--primary-color)');
+
+    confirmSpy.mockRestore();
+  });
 });
+
