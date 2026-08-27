@@ -1,4 +1,5 @@
 import { getDb } from './db';
+import { MAX_LAYERS_PER_MAP, MAX_PINS_PER_MAP } from './schemas';
 import type {
   PinCreatePayload,
   PinUpdatePayload,
@@ -20,6 +21,10 @@ export async function handlePinCreate(data: PinCreatePayload): Promise<boolean |
   const existing = await db.get('SELECT id, map_id FROM pins WHERE id = ?', pin.id);
   if (existing && existing.map_id !== mapId) {
     return false;
+  }
+  if (!existing) {
+    const countRow = await db.get('SELECT COUNT(*) as n FROM pins WHERE map_id = ?', mapId);
+    if ((countRow?.n ?? 0) >= MAX_PINS_PER_MAP) return false;
   }
 
   await db.run(
@@ -176,6 +181,10 @@ export async function handleLayerCreate(data: LayerCreatePayload): Promise<boole
   const existing = await db.get('SELECT id, map_id FROM pin_layers WHERE id = ?', layer.id);
   if (existing && existing.map_id !== mapId) {
     return false;
+  }
+  if (!existing) {
+    const countRow = await db.get('SELECT COUNT(*) as n FROM pin_layers WHERE map_id = ?', mapId);
+    if ((countRow?.n ?? 0) >= MAX_LAYERS_PER_MAP) return false;
   }
 
   await db.run(

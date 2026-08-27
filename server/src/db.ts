@@ -162,6 +162,14 @@ export async function getDb() {
   return db;
 }
 
+export async function purgeExpiredSessions() {
+  const database = await getDb();
+  await database.run(
+    'DELETE FROM sessions WHERE expires_at <= ?',
+    new Date().toISOString()
+  );
+}
+
 export async function closeDb() {
   if (db) {
     await db.close();

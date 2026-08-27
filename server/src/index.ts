@@ -19,6 +19,8 @@ import { getMapRole, canEditMap, canViewMap } from './permissions';
 import { resolveSafeMapFile, getSafeFontDownloadTarget, sanitizeMapFilename } from './mapFiles';
 import { isAllowedOrigin } from './cors';
 import { getCspDirectives } from './csp';
+import { socketPayloadSchemas } from './schemas';
+import { purgeExpiredSessions } from './db';
 import * as realtime from './realtime';
 
 const app = express();
@@ -166,8 +168,13 @@ io.on('connection', (socket: Socket) => {
   for (const [eventName, handler] of Object.entries(deltaHandlers)) {
     socket.on(eventName, async (data: any) => {
       try {
-        const mapId = data?.mapId;
-        if (typeof mapId !== 'string' || !mapId) return;
+        const parsed = socketPayloadSchemas[eventName as keyof typeof socketPayloadSchemas].safeParse(data);
+        if (!parsed.success) {
+          socket.emit('write-error', { mapId: data?.mapId, error: 'Validation failed' });
+          return;
+        }
+        const payload = parsed.data;
+        const mapId = payload.mapId;
 
         const role = await getMapRole(getAuthedUser(socket).id, mapId);
         if (!canEditMap(role)) {
@@ -175,10 +182,10 @@ io.on('connection', (socket: Socket) => {
           return;
         }
 
-        const applied = await handler(data);
+        const applied = await handler(payload);
         if (applied === false) return;
 
-        socket.to(`map:${mapId}`).emit(eventName, data);
+        socket.to(`map:${mapId}`).emit(eventName, payload);
         console.log(`[SOCKET] ${eventName} on map:${mapId} by ${socket.id}`);
       } catch (err) {
         console.error(`[SOCKET] ERROR ${eventName}:`, err);
@@ -389,6 +396,14 @@ export { app };
 
 if (process.env.NODE_ENV !== 'test') {
   getJwtSecret();
+  purgeExpiredSessions().catch((err) => {
+    console.error('[AUTH] Failed to purge expired sessions:', err);
+  });
+  setInterval(() => {
+    purgeExpiredSessions().catch((err) => {
+      console.error('[AUTH] Failed to purge expired sessions:', err);
+    });
+  }, 60 * 60 * 1000);
   server.listen(port as number, '0.0.0.0', () => {
     console.log(`Server is running on http://0.0.0.0:${port}`);
   });

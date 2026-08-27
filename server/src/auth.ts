@@ -174,6 +174,10 @@ export async function authenticateToken(
     }
   }
 
+  if (process.env.NODE_ENV === 'production') {
+    throw new AuthError('Session required');
+  }
+
   try {
     const decoded = jwt.verify(token, getJwtSecret()) as any;
     if (!decoded || !decoded.sub || !decoded.email) {

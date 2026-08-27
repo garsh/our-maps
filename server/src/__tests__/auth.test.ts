@@ -69,6 +69,18 @@ describe('mock auth gating', () => {
       authenticateToken(undefined, JSON.stringify({ id: 'mock-user-id', email: 'mock@example.com', name: 'Mock' }))
     ).rejects.toBeInstanceOf(AuthError);
   });
+
+  it('rejects Bearer JWTs in production', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.JWT_SECRET = 'a-unique-production-secret-value-32';
+    const jwt = await import('jsonwebtoken');
+    const token = jwt.default.sign(
+      { sub: 'prod-user', email: 'prod@example.com', name: 'Prod' },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+    await expect(authenticateToken(token)).rejects.toThrow(/Session required/);
+  });
 });
 
 describe('userFromGooglePayload', () => {

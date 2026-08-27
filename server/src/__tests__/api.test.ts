@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { app } from '../index';
-import { getDb, setDbName, closeDb } from '../db';
+import { getDb, setDbName, closeDb, purgeExpiredSessions } from '../db';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -242,6 +242,28 @@ describe('API Endpoints', () => {
     expect(me1.body.user).toBeNull();
     expect(me2.status).toBe(200);
     expect(me2.body.user).toBeNull();
+  });
+
+  it('purgeExpiredSessions deletes expired rows and keeps live ones', async () => {
+    const db = await getDb();
+    await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', 'sess-user', 'sess@example.com', 'Sess');
+    await db.run(
+      'INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)',
+      'expired-session',
+      'sess-user',
+      '2000-01-01T00:00:00.000Z'
+    );
+    await db.run(
+      'INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)',
+      'live-session',
+      'sess-user',
+      '2099-01-01T00:00:00.000Z'
+    );
+
+    await purgeExpiredSessions();
+
+    expect(await db.get('SELECT id FROM sessions WHERE id = ?', 'expired-session')).toBeUndefined();
+    expect(await db.get('SELECT id FROM sessions WHERE id = ?', 'live-session')).toBeDefined();
   });
 
   it('GET /maps/sprites/light@2x.png should return sprite image', async () => {
