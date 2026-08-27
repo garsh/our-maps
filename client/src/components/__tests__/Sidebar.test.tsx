@@ -5,7 +5,7 @@ import { useState } from 'react';
 
 describe('Sidebar', () => {
   const mockPins = [
-    { id: '1', lat: 10, lng: 20, label: 'Test Pin', description: '', imageUrl: '', position: 0 }
+    { id: '1', lat: 10, lng: 20, label: 'Test Pin', description: '', position: 0 }
   ];
   
   const TestWrapper = ({ pins = mockPins, handlers = {}, selectedNavIds = new Set<string>() }: { pins?: any[], handlers?: any, selectedNavIds?: Set<string> }) => {

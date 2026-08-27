@@ -23,8 +23,8 @@ export async function handlePinCreate(data: PinCreatePayload): Promise<boolean |
   }
 
   await db.run(
-    `INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, image_url, color, icon, position) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET 
        layer_id = excluded.layer_id,
        lat = excluded.lat,
@@ -32,7 +32,6 @@ export async function handlePinCreate(data: PinCreatePayload): Promise<boolean |
        label = excluded.label,
        description = excluded.description,
        address = excluded.address,
-       image_url = excluded.image_url,
        color = excluded.color,
        icon = excluded.icon,
        position = excluded.position
@@ -45,7 +44,6 @@ export async function handlePinCreate(data: PinCreatePayload): Promise<boolean |
     pin.label || null,
     pin.description || null,
     pin.address || null,
-    pin.imageUrl || null,
     pin.color || 'blue',
     pin.icon || 'default',
     pin.position || 0
@@ -86,10 +84,6 @@ export async function handlePinUpdate(data: PinUpdatePayload) {
   if ('address' in updates) {
     setClauses.push('address = ?');
     params.push(updates.address || null);
-  }
-  if ('imageUrl' in updates) {
-    setClauses.push('image_url = ?');
-    params.push(updates.imageUrl || null);
   }
   if ('color' in updates) {
     setClauses.push('color = ?');

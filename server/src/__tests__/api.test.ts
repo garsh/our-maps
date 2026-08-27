@@ -51,7 +51,7 @@ describe('API Endpoints', () => {
         { id: 'layer-1', name: 'My Layer', position: 0 }
       ],
       pins: [
-        { id: 'pin-1', map_id: mapId, layerId: 'layer-1', lat: 10, lng: 20, label: 'Pin 1', description: 'Desc 1', imageUrl: 'http://img.com/1', color: 'red', icon: 'hotel', position: 0 }
+        { id: 'pin-1', map_id: mapId, layerId: 'layer-1', lat: 10, lng: 20, label: 'Pin 1', description: 'Desc 1', color: 'red', icon: 'hotel', position: 0 }
       ]
     };
 
@@ -143,7 +143,7 @@ describe('API Endpoints', () => {
         { id: 'g1', name: 'G1', position: 0 }
       ],
       pins: [
-        { id: 'new-pin', map_id: mapId, layerId: 'g1', lat: 50, lng: 60, label: 'New Pin', description: 'New Desc', imageUrl: 'http://new.com', color: 'green', icon: 'airport', position: 0 }
+        { id: 'new-pin', map_id: mapId, layerId: 'g1', lat: 50, lng: 60, label: 'New Pin', description: 'New Desc', color: 'green', icon: 'airport', position: 0 }
       ]
     };
 

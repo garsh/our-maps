@@ -23,7 +23,6 @@ export interface Pin {
   label: string;
   description?: string;
   address?: string;
-  imageUrl?: string;
   color?: PinColor;
   icon?: PinIcon;
   layerId?: string;

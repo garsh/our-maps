@@ -7,7 +7,6 @@ export const PinSchema = z.object({
   label: z.string().max(10000).optional().nullable(),
   description: z.string().max(100000).optional().nullable(),
   address: z.string().max(5000).optional().nullable(),
-  imageUrl: z.string().max(2000000).optional().nullable(),
   color: z.string().max(100).optional().nullable(),
   icon: z.string().max(100).optional().nullable(),
   layerId: z.string().optional().nullable(),

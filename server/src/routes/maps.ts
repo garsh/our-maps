@@ -82,15 +82,17 @@ router.get('/:id', async (req: AuthRequest, res) => {
   permissions = perms.map(p => ({ userId: p.user_id, userEmail: p.email, userName: p.name, userPicture: p.picture, role: p.role }));
 
   // Map fields for frontend consistency
-  const formattedPins = pins.map(p => ({
-    ...p,
-    imageUrl: p.image_url,
-    layerId: p.layer_id,
-    address: p.address,
-    color: p.color || 'blue',
-    icon: p.icon || 'default',
-    position: p.position || 0
-  }));
+  const formattedPins = pins.map(p => {
+    const { image_url: _imageUrl, layer_id, ...rest } = p;
+    return {
+      ...rest,
+      layerId: layer_id,
+      address: p.address,
+      color: p.color || 'blue',
+      icon: p.icon || 'default',
+      position: p.position || 0
+    };
+  });
 
   const response: MapData = {
     ...map,
@@ -244,9 +246,9 @@ router.post('/', async (req: AuthRequest, res) => {
           finalPins.push({ ...pin, id: pinId, layerId: targetLayerId || undefined } as Pin);
         }
 
-        const stmt = await db.prepare('INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, image_url, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        const stmt = await db.prepare('INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         for (const pin of finalPins) {
-          await stmt.run(pin.id, id, pin.layerId || null, pin.lat, pin.lng, pin.label || null, pin.description || null, pin.address || null, pin.imageUrl || null, pin.color || 'blue', pin.icon || 'default', pin.position);
+          await stmt.run(pin.id, id, pin.layerId || null, pin.lat, pin.lng, pin.label || null, pin.description || null, pin.address || null, pin.color || 'blue', pin.icon || 'default', pin.position);
         }
         await stmt.finalize();
       }
@@ -358,8 +360,8 @@ router.put('/:id', async (req: AuthRequest, res) => {
 
         // Upsert provided pins
         const pinStmt = await db.prepare(`
-          INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, image_url, color, icon, position) 
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET 
             map_id = excluded.map_id,
             layer_id = excluded.layer_id,
@@ -368,7 +370,6 @@ router.put('/:id', async (req: AuthRequest, res) => {
             label = excluded.label,
             description = excluded.description,
             address = excluded.address,
-            image_url = excluded.image_url,
             color = excluded.color,
             icon = excluded.icon,
             position = excluded.position
@@ -376,7 +377,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
         for (const pin of finalPins) {
           await pinStmt.run(
             pin.id, mapId, pin.layerId || null, pin.lat, pin.lng, pin.label || null, 
-            pin.description || null, pin.address || null, pin.imageUrl || null, 
+            pin.description || null, pin.address || null, 
             pin.color || 'blue', pin.icon || 'default', pin.position
           );
         }

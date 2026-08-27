@@ -52,7 +52,6 @@ export const parseKmlHierarchy = (kmlDoc: Document): { pins: Pin[], layers: PinL
       lng,
       label: name,
       description,
-      imageUrl: '', // Hard to extract reliably from raw KML description HTML
       color: 'blue',
       icon: 'default',
       layerId,
