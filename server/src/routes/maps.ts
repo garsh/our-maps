@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { getDb } from '../db';
 import type { Pin, MapData, MapPermission, PinLayer } from '@shared/interfaces';
 import { authMiddleware, type AuthRequest } from '../auth';
+import { getMapRole, canEditMap } from '../permissions';
 import { MapCreateSchema, MapUpdateSchema, ShareSchema } from '../schemas';
 import { z } from 'zod';
 
@@ -24,7 +25,7 @@ router.get('/', async (req: AuthRequest, res) => {
     LEFT JOIN users u ON m.owner_id = u.id
     LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
     LEFT JOIN user_map_access uma ON m.id = uma.map_id AND uma.user_id = ?
-    WHERE m.owner_id = ? OR mp.user_id = ? OR m.owner_id = 'mock-user-id'
+    WHERE m.owner_id = ? OR mp.user_id = ?
     ORDER BY uma.last_accessed_at DESC NULLS LAST, m.name ASC
   `, userId, userId, userId, userId);
 
@@ -55,20 +56,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
     return res.status(404).json({ error: 'Map not found' });
   }
 
-  // Check Permissions
-  let role: 'owner' | 'edit' | 'view' | null = null;
-
-  // Determine role with legacy fallbacks
-  const isLegacyOwner = map.owner_id === 'mock-user-id';
-  const isCurrentUserMock = userId === 'mock-user-id';
-
-  if (map.owner_id === userId || isLegacyOwner || (isCurrentUserMock && process.env.NODE_ENV !== 'production')) {
-    role = 'owner';
-  } else {
-    const perm = await db.get('SELECT role FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, userId);
-    if (perm) role = perm.role;
-  }
-
+  const role = await getMapRole(userId, mapId);
   if (!role) {
     return res.status(403).json({ error: 'Access denied' });
   }
@@ -136,18 +124,7 @@ router.get('/:id/permissions', async (req: AuthRequest, res) => {
     return res.status(404).json({ error: 'Map not found' });
   }
 
-  // Check Permissions
-  let role: 'owner' | 'edit' | 'view' | null = null;
-  const isLegacyOwner = map.owner_id === 'mock-user-id';
-  const isCurrentUserMock = userId === 'mock-user-id';
-
-  if (map.owner_id === userId || isLegacyOwner || (isCurrentUserMock && process.env.NODE_ENV !== 'production')) {
-    role = 'owner';
-  } else {
-    const perm = await db.get('SELECT role FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, userId);
-    if (perm) role = perm.role;
-  }
-
+  const role = await getMapRole(userId, mapId);
   if (!role) {
     return res.status(403).json({ error: 'Access denied' });
   }
@@ -312,17 +289,11 @@ router.put('/:id', async (req: AuthRequest, res) => {
     const userId = req.user!.id;
     const db = await getDb();
 
-    // Check permissions
     const map = await db.get('SELECT owner_id FROM maps WHERE id = ?', mapId);
     if (!map) return res.status(404).json({ error: 'Map not found' });
 
-    let hasEditAccess = map.owner_id === userId;
-    if (!hasEditAccess) {
-      const perm = await db.get('SELECT role FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, userId);
-      hasEditAccess = perm && perm.role === 'edit';
-    }
-
-    if (!hasEditAccess) {
+    const role = await getMapRole(userId, mapId);
+    if (!canEditMap(role)) {
       return res.status(403).json({ error: 'Write access denied' });
     }
 

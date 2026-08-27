@@ -4,7 +4,114 @@ import jwt from 'jsonwebtoken';
 import { getDb } from './db';
 import type { User } from '@shared/interfaces';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'our-maps-dev-secret-key-30-days';
+export const DEV_JWT_SECRET = 'our-maps-dev-secret-key-30-days';
+
+export function isMockAuthAllowed(): boolean {
+  return process.env.NODE_ENV !== 'production';
+}
+
+export function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    if (!secret || secret === DEV_JWT_SECRET) {
+      throw new Error('JWT_SECRET must be set to a unique non-default value when NODE_ENV=production');
+    }
+    return secret;
+  }
+  return secret || DEV_JWT_SECRET;
+}
+
+export class AuthError extends Error {
+  status: number;
+  constructor(message: string, status = 401) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function isValidUser(user: any): user is User {
+  return Boolean(user && typeof user.id === 'string' && user.id && typeof user.email === 'string' && user.email);
+}
+
+export async function authenticateToken(
+  token: string | undefined | null,
+  mockUserHeader?: string
+): Promise<User> {
+  if (isMockAuthAllowed() && mockUserHeader) {
+    try {
+      const mockUser = JSON.parse(mockUserHeader);
+      if (!isValidUser(mockUser)) {
+        throw new Error('invalid mock user');
+      }
+      await ensureUserExists(mockUser);
+      return mockUser;
+    } catch (e) {
+      if (e instanceof AuthError) throw e;
+      throw new AuthError('Invalid mock user header', 400);
+    }
+  }
+
+  if (!token) {
+    throw new AuthError('No token provided');
+  }
+
+  if (!token.includes('.') && isMockAuthAllowed()) {
+    try {
+      const user = JSON.parse(Buffer.from(token, 'base64').toString());
+      if (isValidUser(user)) {
+        await ensureUserExists(user);
+        return user;
+      }
+    } catch {
+      // Fall through to JWT verification
+    }
+  }
+
+  try {
+    const decoded = jwt.verify(token, getJwtSecret()) as any;
+    if (!decoded || !decoded.sub || !decoded.email) {
+      throw new AuthError('Invalid token payload');
+    }
+
+    const user: User = {
+      id: decoded.sub,
+      email: decoded.email,
+      name: decoded.name || decoded.email,
+      picture: decoded.picture
+    };
+
+    await ensureUserExists(user);
+    return user;
+  } catch (jwtErr: any) {
+    if (jwtErr instanceof AuthError) throw jwtErr;
+
+    if (!isMockAuthAllowed()) {
+      throw new AuthError(`Authentication failed: ${jwtErr.message}`);
+    }
+
+    try {
+      let user;
+      if (token.includes('.')) {
+        const payload = token.split('.')[1];
+        const decoded = Buffer.from(payload, 'base64').toString('utf8');
+        user = JSON.parse(decoded);
+        if (!user.id && user.sub) user.id = user.sub;
+      } else {
+        const decoded = Buffer.from(token, 'base64').toString('utf8');
+        user = JSON.parse(decoded);
+      }
+
+      if (!isValidUser(user)) {
+        throw new Error('invalid token');
+      }
+
+      await ensureUserExists(user);
+      return user;
+    } catch {
+      throw new AuthError('Invalid token');
+    }
+  }
+}
 
 // Helper to get clean Client ID
 const getGoogleClientId = () => {
@@ -58,7 +165,7 @@ export async function googleLoginHandler(req: Request, res: Response) {
         name: user.name,
         picture: user.picture,
       },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: '30d' }
     );
 
@@ -72,85 +179,16 @@ export async function googleLoginHandler(req: Request, res: Response) {
 export async function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   const mockUserHeader = req.headers['x-mock-user'];
-  
-  const isMockAllowed = process.env.NODE_ENV !== 'production' || process.env.GOOGLE_CLIENT_ID === 'MOCK_CLIENT_ID' || !process.env.GOOGLE_CLIENT_ID;
-
-  // SUPPORT MOCK USER FOR DEVELOPMENT OR WHEN NOT CONFIGURED
-  if (isMockAllowed && mockUserHeader) {
-    try {
-      const mockUser = JSON.parse(mockUserHeader as string);
-      req.user = mockUser;
-      await ensureUserExists(mockUser);
-      return next();
-    } catch (e) {
-      return res.status(400).json({ error: 'Invalid mock user header' });
-    }
-  }
-
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-
-  const token = authHeader.split(' ')[1];
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : undefined;
 
   try {
-    // If it looks like a mock token (no dots) and we're not in production, try to decode it first
-    if (!token.includes('.') && isMockAllowed) {
-      try {
-        const decoded = Buffer.from(token, 'base64').toString();
-        const user = JSON.parse(decoded);
-        req.user = user;
-        await ensureUserExists(user);
-        return next();
-      } catch (e) {
-        // Fall through
-      }
-    }
-
-    // Verify custom JWT
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
-      if (!decoded || !decoded.sub || !decoded.email) {
-        return res.status(401).json({ error: 'Invalid token payload' });
-      }
-
-      const user: User = {
-        id: decoded.sub,
-        email: decoded.email,
-        name: decoded.name || decoded.email,
-        picture: decoded.picture
-      };
-
-      req.user = user;
-      await ensureUserExists(user);
-      return next();
-    } catch (jwtErr: any) {
-      // Fallback for development if signature verification failed
-      if (!isMockAllowed) {
-        return res.status(401).json({ error: `Authentication failed: ${jwtErr.message}` });
-      }
-
-      try {
-        let user;
-        if (token.includes('.')) {
-           const payload = token.split('.')[1];
-           const decoded = Buffer.from(payload, 'base64').toString('utf8');
-           user = JSON.parse(decoded);
-           if (!user.id && user.sub) user.id = user.sub;
-        } else {
-           const decoded = Buffer.from(token, 'base64').toString('utf8');
-           user = JSON.parse(decoded);
-        }
-        
-        req.user = user;
-        await ensureUserExists(user);
-        return next();
-      } catch (e) {
-        return res.status(401).json({ error: 'Invalid token' });
-      }
-    }
+    req.user = await authenticateToken(token, mockUserHeader as string | undefined);
+    return next();
   } catch (error) {
-    res.status(401).json({ error: 'Authentication failed' });
+    if (error instanceof AuthError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return res.status(401).json({ error: 'Authentication failed' });
   }
 }
 

@@ -279,4 +279,50 @@ describe('API Endpoints', () => {
     expect(res.body.pins).toBeUndefined();
     expect(res.body.layers).toBeUndefined();
   });
+
+  it('does not grant other users access to mock-user-id maps', async () => {
+    const db = await getDb();
+    await db.run(
+      'INSERT INTO users (id, email, name) VALUES (?, ?, ?)',
+      'mock-user-id',
+      'mock@example.com',
+      'Mock User'
+    );
+    await db.run(
+      'INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)',
+      'legacy-mock-map',
+      'Legacy Mock Map',
+      'mock-user-id'
+    );
+
+    const listRes = await request(app).get('/api/maps').set(authHeader);
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.find((m: any) => m.id === 'legacy-mock-map')).toBeUndefined();
+
+    const getRes = await request(app).get('/api/maps/legacy-mock-map').set(authHeader);
+    expect(getRes.status).toBe(403);
+
+    const permRes = await request(app).get('/api/maps/legacy-mock-map/permissions').set(authHeader);
+    expect(permRes.status).toBe(403);
+
+    const mockOwnerHeader = {
+      'x-mock-user': JSON.stringify({
+        id: 'mock-user-id',
+        email: 'mock@example.com',
+        name: 'Mock User'
+      })
+    };
+    const ownerRes = await request(app).get('/api/maps/legacy-mock-map').set(mockOwnerHeader);
+    expect(ownerRes.status).toBe(200);
+    expect(ownerRes.body.userRole).toBe('owner');
+  });
+
+  it('rejects map file path traversal', async () => {
+    const traversalRes = await request(app).get('/maps/..%2F..%2F..%2Fetc/passwd');
+    expect(traversalRes.status).toBe(404);
+    expect(traversalRes.body.error).toBe('Map file not found');
+
+    const fontTraversalRes = await request(app).get('/maps/fonts/..%2F..%2Fpackage.json');
+    expect(fontTraversalRes.status).toBe(404);
+  });
 });

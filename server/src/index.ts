@@ -11,22 +11,13 @@ import rateLimit from 'express-rate-limit';
 import fs from 'fs';
 import http from 'http';
 import { Server, Socket } from 'socket.io';
-import { getDb } from './db';
 import mapsRouter from './routes/maps';
+import type { User } from '@shared/interfaces';
 import placesRouter from './routes/places';
-import { googleLoginHandler, filterContactsHandler, searchUsersHandler, authMiddleware } from './auth';
+import { googleLoginHandler, filterContactsHandler, searchUsersHandler, authMiddleware, authenticateToken, getJwtSecret } from './auth';
+import { getMapRole, canEditMap, canViewMap } from './permissions';
+import { resolveSafeMapFile, getSafeFontDownloadTarget, sanitizeMapFilename } from './mapFiles';
 import * as realtime from './realtime';
-import type {
-  PinCreatePayload,
-  PinUpdatePayload,
-  PinDeletePayload,
-  PinsReorderPayload,
-  LayerCreatePayload,
-  LayerUpdatePayload,
-  LayerDeletePayload,
-  LayersReorderPayload,
-  MapNameUpdatePayload
-} from '@shared/interfaces';
 
 const app = express();
 const server = http.createServer(app);
@@ -100,17 +91,47 @@ app.get('/api/auth/search-users', authMiddleware, searchUsersHandler);
 app.use('/api/maps', mapsRouter);
 app.use('/api/places', placesRouter);
 
+function getSocketToken(socket: Socket): string | undefined {
+  const authToken = socket.handshake.auth?.token;
+  if (typeof authToken === 'string' && authToken) return authToken;
+  const header = socket.handshake.headers?.authorization;
+  if (typeof header === 'string' && header.startsWith('Bearer ')) {
+    return header.slice('Bearer '.length);
+  }
+  return undefined;
+}
+
+function getAuthedUser(socket: Socket): User {
+  return socket.data.user as User;
+}
+
+io.use(async (socket, next) => {
+  try {
+    const user = await authenticateToken(getSocketToken(socket));
+    socket.data.user = user as User;
+    next();
+  } catch {
+    next(new Error('Authentication failed'));
+  }
+});
+
 // Socket.io for real-time collaboration
 io.on('connection', (socket: Socket) => {
   console.log('[SOCKET] User connected:', socket.id);
 
-  socket.on('join-map', (mapId: string) => {
+  socket.on('join-map', async (mapId: string) => {
+    if (typeof mapId !== 'string' || !mapId) return;
+    const role = await getMapRole(getAuthedUser(socket).id, mapId);
+    if (!canViewMap(role)) {
+      socket.emit('join-map-error', { mapId, error: 'Access denied' });
+      return;
+    }
     socket.join(`map:${mapId}`);
     console.log(`[SOCKET] User ${socket.id} joined map:${mapId}`);
   });
 
   // Granular Delta Events
-  const deltaHandlers: Record<string, (data: any) => Promise<void>> = {
+  const deltaHandlers: Record<string, (data: any) => Promise<boolean | void>> = {
     'pin-create': realtime.handlePinCreate,
     'pin-update': realtime.handlePinUpdate,
     'pin-delete': realtime.handlePinDelete,
@@ -126,9 +147,20 @@ io.on('connection', (socket: Socket) => {
   for (const [eventName, handler] of Object.entries(deltaHandlers)) {
     socket.on(eventName, async (data: any) => {
       try {
-        await handler(data);
-        socket.to(`map:${data.mapId}`).emit(eventName, data);
-        console.log(`[SOCKET] ${eventName} on map:${data.mapId} by ${socket.id}`);
+        const mapId = data?.mapId;
+        if (typeof mapId !== 'string' || !mapId) return;
+
+        const role = await getMapRole(getAuthedUser(socket).id, mapId);
+        if (!canEditMap(role)) {
+          socket.emit('write-error', { mapId, error: 'Write access denied' });
+          return;
+        }
+
+        const applied = await handler(data);
+        if (applied === false) return;
+
+        socket.to(`map:${mapId}`).emit(eventName, data);
+        console.log(`[SOCKET] ${eventName} on map:${mapId} by ${socket.id}`);
       } catch (err) {
         console.error(`[SOCKET] ERROR ${eventName}:`, err);
       }
@@ -194,86 +226,37 @@ try {
   }
 }
 
-const resolvedMapFilePathCache = new Map<string, string>();
-
-function resolveMapFilePath(filename: string): string | null {
-  const cached = resolvedMapFilePathCache.get(filename);
-  if (cached) return cached;
-
-  for (const dir of candidateMapsDirs) {
-    if (!dir) continue;
-
-    // Direct join
-    const p = path.join(dir, filename);
-    try {
-      if (fs.existsSync(p) && !fs.statSync(p).isDirectory()) {
-        resolvedMapFilePathCache.set(filename, p);
-        return p;
-      }
-    } catch {
-      // Ignore filesystem permission read errors
-    }
-
-    // If candidate dir is a sprites dir and request starts with "sprites/"
-    if (filename.startsWith('sprites/')) {
-      const trimmedFilename = filename.replace(/^sprites\//, '');
-      const p2 = path.join(dir, trimmedFilename);
-      try {
-        if (fs.existsSync(p2) && !fs.statSync(p2).isDirectory()) {
-          resolvedMapFilePathCache.set(filename, p2);
-          return p2;
-        }
-      } catch {
-        // Ignore
-      }
-    }
-
-    // If candidate dir is a fonts dir and request starts with "fonts/"
-    if (filename.startsWith('fonts/')) {
-      const trimmedFilename = filename.replace(/^fonts\//, '');
-      const p2 = path.join(dir, trimmedFilename);
-      try {
-        if (fs.existsSync(p2) && !fs.statSync(p2).isDirectory()) {
-          resolvedMapFilePathCache.set(filename, p2);
-          return p2;
-        }
-      } catch {
-        // Ignore
-      }
-    }
-  }
-
-  return null;
-}
-
 app.get('/maps/:filename(*)', async (req, res, next) => {
   const filename = req.params.filename || 'planet.pmtiles';
-  let foundFilePath = resolveMapFilePath(filename);
+  const sanitizedName = sanitizeMapFilename(filename);
+  let foundFilePath = resolveSafeMapFile(filename, candidateMapsDirs);
 
   // On-demand font download fallback if font file not yet on disk
-  if (!foundFilePath && filename.startsWith('fonts/') && filename.endsWith('.pbf')) {
+  if (!foundFilePath && sanitizedName && sanitizedName.startsWith('fonts/') && sanitizedName.endsWith('.pbf')) {
     try {
-      const upstreamUrl = `https://protomaps.github.io/basemaps-assets/${filename.split('/').map(encodeURIComponent).join('/')}`;
-      const targetDir = path.resolve(process.cwd(), 'data', path.dirname(filename));
-      const targetPath = path.resolve(process.cwd(), 'data', filename);
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
-      const response = await fetch(upstreamUrl);
-      if (response.ok) {
-        const buffer = Buffer.from(await response.arrayBuffer());
-        fs.writeFileSync(targetPath, buffer);
-        resolvedMapFilePathCache.set(filename, targetPath);
-        foundFilePath = targetPath;
+      const safeTarget = getSafeFontDownloadTarget(sanitizedName, path.resolve(process.cwd(), 'data'));
+      if (safeTarget) {
+        const upstreamUrl = `https://protomaps.github.io/basemaps-assets/${sanitizedName.split('/').map(encodeURIComponent).join('/')}`;
+        if (!fs.existsSync(safeTarget.targetDir)) {
+          fs.mkdirSync(safeTarget.targetDir, { recursive: true });
+        }
+        const response = await fetch(upstreamUrl);
+        if (response.ok) {
+          const buffer = Buffer.from(await response.arrayBuffer());
+          fs.writeFileSync(safeTarget.targetPath, buffer);
+          foundFilePath = resolveSafeMapFile(sanitizedName, candidateMapsDirs) || safeTarget.targetPath;
+        }
       }
     } catch (fetchErr) {
-      console.warn(`[MAPS FONTS FETCH] Failed to fetch on-demand font ${filename}:`, fetchErr);
+      console.warn('[MAPS FONTS FETCH] Failed to fetch on-demand font:', fetchErr);
     }
   }
 
   if (!foundFilePath) {
-    console.warn(`[MAPS 404] Requested file "${filename}" not found in candidate directories:`, candidateMapsDirs);
-    return res.status(404).json({ error: `Map file ${filename} not found` });
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn('[MAPS 404] Requested map file not found');
+    }
+    return res.status(404).json({ error: 'Map file not found' });
   }
 
   try {
@@ -386,6 +369,7 @@ app.get('*', (req, res) => {
 export { app };
 
 if (process.env.NODE_ENV !== 'test') {
+  getJwtSecret();
   server.listen(port as number, '0.0.0.0', () => {
     console.log(`Server is running on http://0.0.0.0:${port}`);
   });

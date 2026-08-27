@@ -156,4 +156,43 @@ describe('Realtime Delta Handlers', () => {
     expect(remainingSrc.layer_id).toBe('layer-src');
     expect(remainingSrc.position).toBe(0);
   });
+
+  it('handlePinCreate does not move a pin that already belongs to another map', async () => {
+    const db = await getDb();
+    await db.run('INSERT INTO maps (id, name) VALUES (?, ?)', 'other-map', 'Other Map');
+    await realtime.handlePinCreate({
+      mapId: 'other-map',
+      pin: { id: 'shared-pin-id', lat: 1, lng: 1, label: 'Original', position: 0 }
+    });
+
+    const applied = await realtime.handlePinCreate({
+      mapId,
+      pin: { id: 'shared-pin-id', lat: 2, lng: 2, label: 'Stolen', position: 0 }
+    });
+    expect(applied).toBe(false);
+
+    const pin = await db.get('SELECT * FROM pins WHERE id = ?', 'shared-pin-id');
+    expect(pin.map_id).toBe('other-map');
+    expect(pin.label).toBe('Original');
+    expect(pin.lat).toBe(1);
+  });
+
+  it('handleLayerCreate does not move a layer that already belongs to another map', async () => {
+    const db = await getDb();
+    await db.run('INSERT INTO maps (id, name) VALUES (?, ?)', 'other-map', 'Other Map');
+    await realtime.handleLayerCreate({
+      mapId: 'other-map',
+      layer: { id: 'shared-layer-id', name: 'Original Layer', position: 0 }
+    });
+
+    const applied = await realtime.handleLayerCreate({
+      mapId,
+      layer: { id: 'shared-layer-id', name: 'Stolen Layer', position: 1 }
+    });
+    expect(applied).toBe(false);
+
+    const layer = await db.get('SELECT * FROM pin_layers WHERE id = ?', 'shared-layer-id');
+    expect(layer.map_id).toBe('other-map');
+    expect(layer.name).toBe('Original Layer');
+  });
 });

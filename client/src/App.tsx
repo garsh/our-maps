@@ -41,7 +41,7 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
 export function MapEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, token } = useAuth();
   const socketRef = useRef<Socket | null>(null);
   
   const [pins, setPins] = useState<Pin[]>([])
@@ -411,10 +411,15 @@ export function MapEditor() {
         loadMap(id);
       }
 
+      if (!token) {
+        return;
+      }
+
       // Setup Socket
       const socket = io(SOCKET_URL, {
         path: '/socket.io',
-        transports: ['websocket', 'polling']
+        transports: ['websocket', 'polling'],
+        auth: { token }
       });
       socketRef.current = socket;
 
@@ -634,7 +639,7 @@ export function MapEditor() {
       setUserRole('owner');
       setIsMapLoading(false);
     }
-  }, [id]);
+  }, [id, token]);
 
   // Auto-save logic
   useEffect(() => {

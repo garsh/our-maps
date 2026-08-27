@@ -40,6 +40,7 @@ services:
       - PORT=${PORT:-3001}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
       - CORS_ORIGIN=${CORS_ORIGIN:-https://ourmaps.mooo.com}
       - DB_PATH=${DB_PATH:-/data/database.sqlite}
 

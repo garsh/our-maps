@@ -12,16 +12,20 @@ import type {
   MapNameUpdatePayload
 } from '@shared/interfaces';
 
-export async function handlePinCreate(data: PinCreatePayload) {
+export async function handlePinCreate(data: PinCreatePayload): Promise<boolean | void> {
   const db = await getDb();
   const { mapId, layerId, pin } = data;
-  if (!mapId || !pin || !pin.id) return;
+  if (!mapId || !pin || !pin.id) return false;
+
+  const existing = await db.get('SELECT id, map_id FROM pins WHERE id = ?', pin.id);
+  if (existing && existing.map_id !== mapId) {
+    return false;
+  }
 
   await db.run(
     `INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, image_url, color, icon, position) 
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET 
-       map_id = excluded.map_id,
        layer_id = excluded.layer_id,
        lat = excluded.lat,
        lng = excluded.lng,
@@ -31,7 +35,8 @@ export async function handlePinCreate(data: PinCreatePayload) {
        image_url = excluded.image_url,
        color = excluded.color,
        icon = excluded.icon,
-       position = excluded.position`,
+       position = excluded.position
+     WHERE pins.map_id = excluded.map_id`,
     pin.id,
     mapId,
     pin.layerId || layerId || null,
@@ -169,18 +174,23 @@ export async function handlePinMoveLayer(data: PinMoveLayerPayload) {
   }
 }
 
-export async function handleLayerCreate(data: LayerCreatePayload) {
+export async function handleLayerCreate(data: LayerCreatePayload): Promise<boolean | void> {
   const db = await getDb();
   const { mapId, layer } = data;
-  if (!mapId || !layer || !layer.id) return;
+  if (!mapId || !layer || !layer.id) return false;
+
+  const existing = await db.get('SELECT id, map_id FROM pin_layers WHERE id = ?', layer.id);
+  if (existing && existing.map_id !== mapId) {
+    return false;
+  }
 
   await db.run(
     `INSERT INTO pin_layers (id, map_id, name, position) 
      VALUES (?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET 
-       map_id = excluded.map_id,
        name = excluded.name,
-       position = excluded.position`,
+       position = excluded.position
+     WHERE pin_layers.map_id = excluded.map_id`,
     layer.id,
     mapId,
     layer.name,

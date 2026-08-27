@@ -5,7 +5,7 @@ Our Maps is an app to create and share sets of location pins with others. It is 
 Our Maps uses Google OAuth on the client and exchanges the Google ID credential for a custom JSON Web Token (JWT) signed by the server. This custom token is valid for 30 days (compared to the 1-hour Google ID token expiration limit), allowing users to stay signed in for a month.
 
 To configure this:
-- **`JWT_SECRET`**: You can set this environment variable in the server's `.env` configuration file to sign the custom tokens. If not specified, a default development secret is used.
+- **`JWT_SECRET`**: Set this in `.env` to sign the custom tokens. Development falls back to a default secret if it is unset. Production (`NODE_ENV=production`) will refuse to start unless `JWT_SECRET` is set to a unique non-default value. Generate one with `openssl rand -hex 32`.
 
 ## Google Maps Search & Geocoding
 Our Maps uses Google Maps APIs to search for locations and perform reverse geocoding:

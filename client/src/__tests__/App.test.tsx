@@ -13,6 +13,15 @@ vi.mock('../contexts/AuthContext');
 vi.mock('../components/MapView', () => ({
   default: () => <div data-testid="map-view" />
 }));
+vi.mock('socket.io-client', () => {
+  const socket = {
+    emit: vi.fn(),
+    on: vi.fn(),
+    disconnect: vi.fn(),
+    connected: false
+  };
+  return { io: vi.fn(() => socket) };
+});
 
 describe('App Components Error Handling', () => {
   const mockUser = { id: 'user-1', email: 'test@test.com', name: 'Test User' };

@@ -1,0 +1,86 @@
+import fs from 'fs';
+import path from 'path';
+
+export const ALLOWED_MAP_EXTENSIONS = new Set(['.pmtiles', '.pbf', '.png', '.json']);
+
+const resolvedMapFilePathCache = new Map<string, string>();
+
+export function clearMapFilePathCache() {
+  resolvedMapFilePathCache.clear();
+}
+
+export function isPathInside(parent: string, child: string): boolean {
+  const parentResolved = path.resolve(parent);
+  const childResolved = path.resolve(child);
+  const relative = path.relative(parentResolved, childResolved);
+  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+export function sanitizeMapFilename(filename: string): string | null {
+  if (!filename || filename.includes('\0')) return null;
+
+  const raw = filename.replace(/\\/g, '/').replace(/^\/+/, '');
+  if (raw === '' || raw.includes('://')) return null;
+
+  const normalized = path.posix.normalize(raw);
+  if (normalized.startsWith('..') || path.posix.isAbsolute(normalized)) return null;
+  if (normalized.split('/').includes('..')) return null;
+
+  const ext = path.posix.extname(normalized).toLowerCase();
+  if (!ALLOWED_MAP_EXTENSIONS.has(ext)) return null;
+
+  return normalized;
+}
+
+export function resolveSafeMapFile(filename: string, dirs: string[]): string | null {
+  const sanitized = sanitizeMapFilename(filename);
+  if (!sanitized) return null;
+
+  const cached = resolvedMapFilePathCache.get(sanitized);
+  if (cached) return cached;
+
+  const candidates: Array<{ dir: string; rel: string }> = [];
+  for (const dir of dirs) {
+    if (!dir) continue;
+    candidates.push({ dir, rel: sanitized });
+    if (sanitized.startsWith('sprites/')) {
+      candidates.push({ dir, rel: sanitized.slice('sprites/'.length) });
+    }
+    if (sanitized.startsWith('fonts/')) {
+      candidates.push({ dir, rel: sanitized.slice('fonts/'.length) });
+    }
+  }
+
+  for (const { dir, rel } of candidates) {
+    const resolvedDir = path.resolve(dir);
+    const resolvedFile = path.resolve(resolvedDir, rel);
+    if (!isPathInside(resolvedDir, resolvedFile)) continue;
+
+    try {
+      if (fs.existsSync(resolvedFile) && !fs.statSync(resolvedFile).isDirectory()) {
+        resolvedMapFilePathCache.set(sanitized, resolvedFile);
+        return resolvedFile;
+      }
+    } catch {
+      // Ignore filesystem permission read errors
+    }
+  }
+
+  return null;
+}
+
+export function getSafeFontDownloadTarget(
+  filename: string,
+  dataRoot: string
+): { targetPath: string; targetDir: string } | null {
+  const sanitized = sanitizeMapFilename(filename);
+  if (!sanitized || !sanitized.startsWith('fonts/') || !sanitized.endsWith('.pbf')) {
+    return null;
+  }
+
+  const dataRootResolved = path.resolve(dataRoot);
+  const targetPath = path.resolve(dataRootResolved, sanitized);
+  if (!isPathInside(dataRootResolved, targetPath)) return null;
+
+  return { targetPath, targetDir: path.dirname(targetPath) };
+}
