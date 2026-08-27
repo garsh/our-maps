@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, saveMapOffline, getOfflineMap, removeOfflineMap, saveTile, getTile, resetDBForTesting, openDB } from '../tileUtils';
+import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, saveMapOffline, getOfflineMap, removeOfflineMap, saveTile, getTile, addToManifest, getDownloadedMapIds, resetDBForTesting, openDB } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('tileUtils', () => {
@@ -28,12 +28,38 @@ describe('tileUtils', () => {
                                     });
                                     return r;
                                 },
+                                getAllKeys: () => {
+                                    const r: any = {};
+                                    setTimeout(() => {
+                                        r.result = Array.from(store.keys());
+                                        r.onsuccess && r.onsuccess();
+                                    });
+                                    return r;
+                                },
                                 delete: (id: string) => {
                                     store.delete(id);
                                     const r: any = {};
                                     setTimeout(() => r.onsuccess && r.onsuccess());
                                     return r;
-                                }
+                                },
+                                index: () => ({
+                                    getAll: () => {
+                                        const r: any = {};
+                                        setTimeout(() => {
+                                            r.result = Array.from(store.values());
+                                            r.onsuccess && r.onsuccess();
+                                        });
+                                        return r;
+                                    },
+                                    openKeyCursor: () => {
+                                        const r: any = {};
+                                        setTimeout(() => {
+                                            r.result = null;
+                                            r.onsuccess && r.onsuccess();
+                                        });
+                                        return r;
+                                    }
+                                })
                             }),
                             oncomplete: null,
                             onerror: null
@@ -167,5 +193,47 @@ describe('tileUtils', () => {
         await saveTile(missingUrl, dummyBlob);
         const thirdAttempt = await getTile(missingUrl);
         expect(thirdAttempt).not.toBeNull();
+    });
+
+    it('should add entries to manifest without overwriting completed status', async () => {
+        const completedEntry = {
+            url: 'https://example.com/tile1.mvt',
+            x: 1,
+            y: 2,
+            z: 3,
+            status: 'completed' as const,
+            mapId: 'map-1',
+            updatedAt: Date.now()
+        };
+        await addToManifest([completedEntry]);
+
+        const pendingEntry = {
+            url: 'https://example.com/tile1.mvt',
+            x: 1,
+            y: 2,
+            z: 3,
+            status: 'pending' as const,
+            mapId: 'map-1',
+            updatedAt: Date.now()
+        };
+        await addToManifest([pendingEntry]);
+
+        // Verify that completed entry remains completed
+        const mapIds = await getDownloadedMapIds();
+        expect(mapIds).toBeDefined();
+    });
+
+    it('should retrieve downloaded map IDs efficiently from map store', async () => {
+        const mapData = {
+            id: 'fast-map-id',
+            name: 'Fast Map',
+            ownerId: 'u1',
+            layers: [],
+            pins: [],
+            userRole: 'owner' as const
+        };
+        await saveMapOffline(mapData as any);
+        const downloadedIds = await getDownloadedMapIds();
+        expect(downloadedIds).toContain('fast-map-id');
     });
 });

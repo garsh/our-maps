@@ -143,36 +143,24 @@ export async function removeOfflineMap(mapId: string): Promise<void> {
 }
 
 export async function addToManifest(entries: ManifestEntry[]): Promise<void> {
+    if (!entries || entries.length === 0) return;
     const db = await openDB();
-    const completedUrls = new Set<string>();
-    
-    try {
-        const readTx = db.transaction(MANIFEST_STORE, 'readonly');
-        const store = readTx.objectStore(MANIFEST_STORE);
-        await new Promise<void>((resolve) => {
-            const req = store.getAll();
-            req.onsuccess = () => {
-                const all = (req.result as ManifestEntry[]) || [];
-                all.forEach(e => {
-                    if (e.status === 'completed') {
-                        completedUrls.add(e.url);
-                    }
-                });
-                resolve();
-            };
-            req.onerror = () => resolve();
-        });
-    } catch {}
-
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(MANIFEST_STORE, 'readwrite');
         const store = transaction.objectStore(MANIFEST_STORE);
-        
+
         entries.forEach(entry => {
-            if (completedUrls.has(entry.url) && entry.status !== 'completed') {
-                return;
+            if (entry.status === 'completed') {
+                store.put(entry);
+            } else {
+                const getReq = store.get(entry.url);
+                getReq.onsuccess = () => {
+                    const existing = getReq.result as ManifestEntry | undefined;
+                    if (!existing || existing.status !== 'completed') {
+                        store.put(entry);
+                    }
+                };
             }
-            store.put(entry);
         });
 
         transaction.oncomplete = () => resolve();
@@ -332,22 +320,34 @@ export async function getDownloadedMapIds(): Promise<string[]> {
     if (typeof indexedDB === 'undefined') return [];
     try {
         const db = await openDB();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction(MANIFEST_STORE, 'readonly');
-            const store = transaction.objectStore(MANIFEST_STORE);
-            const request = store.getAll();
+        return new Promise((resolve) => {
+            const transaction = db.transaction([MAP_STORE, MANIFEST_STORE], 'readonly');
+            const mapStore = transaction.objectStore(MAP_STORE);
+            const mapReq = mapStore.getAllKeys();
 
-            request.onsuccess = () => {
-                const all = request.result as ManifestEntry[];
+            mapReq.onsuccess = () => {
+                const keys = (mapReq.result as string[]) || [];
+                if (keys.length > 0) {
+                    resolve(keys);
+                    return;
+                }
+                const manifestStore = transaction.objectStore(MANIFEST_STORE);
+                const index = manifestStore.index('mapId');
                 const downloadedSet = new Set<string>();
-                all.forEach(entry => {
-                    if (entry.status === 'completed' && entry.mapId) {
-                        downloadedSet.add(entry.mapId);
+                const cursorReq = index.openKeyCursor();
+                cursorReq.onsuccess = () => {
+                    const cursor = cursorReq.result;
+                    if (cursor) {
+                        const mapId = cursor.key as string;
+                        if (mapId) downloadedSet.add(mapId);
+                        cursor.continue();
+                    } else {
+                        resolve(Array.from(downloadedSet));
                     }
-                });
-                resolve(Array.from(downloadedSet));
+                };
+                cursorReq.onerror = () => resolve([]);
             };
-            request.onerror = () => reject(request.error);
+            mapReq.onerror = () => resolve([]);
         });
     } catch {
         return [];
