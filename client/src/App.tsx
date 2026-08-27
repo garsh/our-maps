@@ -134,9 +134,14 @@ export function MapEditor() {
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   useEffect(() => {
+    let resizeRaf: number | null = null;
     const handleResize = () => {
-      setIsMobile(window.innerWidth <= 768);
-      setMobileScale(computeMobileScale());
+      if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(() => {
+        setIsMobile(window.innerWidth <= 768);
+        setMobileScale(computeMobileScale());
+        resizeRaf = null;
+      });
     };
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
@@ -146,6 +151,7 @@ export function MapEditor() {
     window.addEventListener('offline', handleOffline);
 
     return () => {
+      if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);

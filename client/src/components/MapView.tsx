@@ -1121,7 +1121,6 @@ const MapView = ({
             }
             updateBounds();
           }}
-          onIdle={updateBounds}
           onZoomStart={() => {
             if (hoveredPinId) onHoverPin?.(null);
           }}
