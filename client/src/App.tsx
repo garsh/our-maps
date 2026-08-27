@@ -345,11 +345,58 @@ export function MapEditor() {
     };
   }, [mapId]);
 
-  const addCustomColor = (color: string) => {
-    if (!customColors.includes(color)) {
-      setCustomColors(prev => [color, ...prev].slice(0, 10)); // Keep last 10
-    }
-  };
+  const addCustomColor = useCallback((color: string) => {
+    setCustomColors(prev => {
+      if (prev.includes(color)) return prev;
+      return [color, ...prev].slice(0, 10);
+    });
+  }, []);
+
+  const handleToggleNavId = useCallback((id: string) => {
+    setSelectedNavIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  }, []);
+
+  const handleToggleNavIds = useCallback((ids: string[], force?: boolean) => {
+    setSelectedNavIds(prev => {
+      const newSet = new Set(prev);
+      ids.forEach(id => {
+        if (force === true) newSet.add(id);
+        else if (force === false) newSet.delete(id);
+        else {
+          if (newSet.has(id)) newSet.delete(id);
+          else newSet.add(id);
+        }
+      });
+      return newSet;
+    });
+  }, []);
+
+  const handleToggleLayerVisibility = useCallback((id: string | null) => {
+    setHiddenLayerIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  }, []);
+
+  const handleToggleExpand = useCallback((id: string | null) => {
+    setCollapsedLayerIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  }, []);
+
+  const handleHoverSearchResult = useCallback((lat: number | null, lng: number | null) => {
+    setPreviewLocation(lat !== null && lng !== null ? { lat, lng } : null);
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const isRemoteUpdateRef = useRef(false);
@@ -1443,49 +1490,13 @@ export function MapEditor() {
             customColors={customColors}
             onAddCustomColor={addCustomColor}
             selectedNavIds={selectedNavIds}
-            onToggleNavId={(id) => {
-              setSelectedNavIds(prev => {
-                const newSet = new Set(prev);
-                if (newSet.has(id)) newSet.delete(id);
-                else newSet.add(id);
-                return newSet;
-              });
-            }}
-            onToggleNavIds={(ids, force) => {
-              setSelectedNavIds(prev => {
-                const newSet = new Set(prev);
-                ids.forEach(id => {
-                  if (force === true) newSet.add(id);
-                  else if (force === false) newSet.delete(id);
-                  else {
-                    if (newSet.has(id)) newSet.delete(id);
-                    else newSet.add(id);
-                  }
-                });
-                return newSet;
-              });
-            }}
+            onToggleNavId={handleToggleNavId}
+            onToggleNavIds={handleToggleNavIds}
             hiddenLayerIds={hiddenLayerIds}
-            onToggleLayerVisibility={(id) => {
-              setHiddenLayerIds(prev => {
-                const newSet = new Set(prev);
-                if (newSet.has(id)) newSet.delete(id);
-                else newSet.add(id);
-                return newSet;
-              });
-            }}
+            onToggleLayerVisibility={handleToggleLayerVisibility}
             collapsedLayerIds={collapsedLayerIds}
-            onToggleExpand={(id) => {
-              setCollapsedLayerIds(prev => {
-                const newSet = new Set(prev);
-                if (newSet.has(id)) newSet.delete(id);
-                else newSet.add(id);
-                return newSet;
-              });
-            }}
-            onHoverSearchResult={(lat, lng) => {
-              setPreviewLocation(lat !== null && lng !== null ? { lat, lng } : null);
-            }}
+            onToggleExpand={handleToggleExpand}
+            onHoverSearchResult={handleHoverSearchResult}
             mapTheme={mapTheme}
             onThemeChange={handleThemeChange}
             showSatellite={showSatellite}

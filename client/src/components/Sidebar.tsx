@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { createPortal } from 'react-dom';
 import SearchBar, { type SearchAreaState } from './SearchBar';
 import { reverseGeocode } from '../utils/geocoding';
@@ -53,7 +53,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { restrictToWindowEdges, restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { exportMap, importMapFile } from '../utils/fileUtils';
 import { 
   countTiles, 
@@ -281,7 +281,7 @@ const StaticPin = ({ pin, isSelected }: { pin: Pin, isSelected?: boolean }) => {
   );
 };
 
-const SortablePin = ({ 
+const SortablePin = memo(({ 
   pin, 
   onPinClick, 
   onRemovePin, 
@@ -505,7 +505,9 @@ const SortablePin = ({
         border: (editingPinId === pin.id && !isDragActive) ? '1px solid var(--primary-color)' : '1px solid transparent',
         boxShadow: ((hoveredPinId === pin.id || targetPinId === pin.id) && !isDragActive) ? '0 0 0 1px var(--primary-color)' : 'none',
         transition: 'all 0.1s ease',
-        cursor: 'default'
+        cursor: 'default',
+        contentVisibility: editingPinId === pin.id ? ('visible' as const) : ('auto' as const),
+        containIntrinsicSize: editingPinId === pin.id ? 'auto' : '28px'
       }}
       onPointerEnter={(e) => {
         if (e.pointerType === 'mouse') onHoverPin?.(pin.id);
@@ -763,7 +765,7 @@ const SortablePin = ({
       )}
     </li>
   );
-};
+});
 
 const DefaultLayerHeader = ({
   defaultPins,
@@ -801,9 +803,8 @@ const DefaultLayerHeader = ({
   const isHighlighted = isOver && !isLayerDragging;
 
   return (
-    <div style={{ marginTop: layersCount > 0 ? '0.3rem' : '0' }}>
+    <div ref={setNodeRef} style={{ marginTop: layersCount > 0 ? '0.3rem' : '0' }}>
       <div 
-        ref={setNodeRef}
         id="default"
         style={{ 
           position: 'sticky', 
@@ -1598,15 +1599,33 @@ class MouseSensor extends PointerSensor {
   };
 
   const handleDragEndInternal = (event: DragEndEvent) => {
+    const currentEditingId = editingPinId;
     setActivePin(null);
     setActiveLayer(null);
     onDragEnd(event);
+    if (currentEditingId) {
+      setTimeout(() => {
+        const el = document.getElementById(`pin-${currentEditingId}`);
+        if (el) {
+          el.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 100);
+    }
   };
 
   const handleDragCancelInternal = () => {
+    const currentEditingId = editingPinId;
     setActivePin(null);
     setActiveLayer(null);
     onDragCancel?.();
+    if (currentEditingId) {
+      setTimeout(() => {
+        const el = document.getElementById(`pin-${currentEditingId}`);
+        if (el) {
+          el.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 100);
+    }
   };
 
   const activePinId = activePin?.id;
@@ -2155,7 +2174,13 @@ class MouseSensor extends PointerSensor {
             overflowY: 'auto', 
             paddingRight: '4px', 
             paddingTop: '0px',
-            paddingBottom: isMobile ? '4rem' : '1.5rem',
+            // Temporary bottom expansion padding during drag prevents browser scroll clamping:
+            // When dragging the last pin in a long list while its ~180px edit drawer is open,
+            // collapsing the drawer to a 24px row decreases the container's scrollHeight.
+            // Without this expansion padding, the browser would forcibly clamp scrollTop to the
+            // smaller height, causing the entire list to jump upwards on screen and misalign
+            // with the mouse cursor.
+            paddingBottom: isDragActive ? '20rem' : (isMobile ? '4rem' : '1.5rem'),
             margin: '0 -4px',
             touchAction: 'pan-y',
             WebkitOverflowScrolling: 'touch',
@@ -2212,7 +2237,7 @@ class MouseSensor extends PointerSensor {
             {!collapsedLayerIds?.has(null) && (
               <div style={{ paddingLeft: '0.2rem', borderLeft: '1px solid var(--border-color)', marginTop: '0px', marginLeft: '0.4rem' }}>
                 <SortableContext items={defaultPins.map(p => p.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, paddingTop: '2px', minHeight: '10px' }}>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, paddingTop: '2px', minHeight: defaultPins.length === 0 ? '24px' : '10px' }}>
                     {defaultPins.map((pin) => (
                       <SortablePin 
                         key={pin.id} 
@@ -2387,7 +2412,7 @@ class MouseSensor extends PointerSensor {
 
         {createPortal(
           <DragOverlay 
-            modifiers={[restrictToVerticalAxis, restrictToWindowEdges]}
+            modifiers={[restrictToVerticalAxis]}
             style={{ pointerEvents: 'none', zIndex: 3000 }}
             dropAnimation={{
             sideEffects: defaultDropAnimationSideEffects({
