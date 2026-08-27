@@ -130,13 +130,11 @@ export const apiService = {
     return handleResponse<any>(res, this._logoutCallback, 'Failed to share map');
   },
 
-  async filterContacts(emails: string[]): Promise<{ existingEmails: string[] }> {
-    const res = await fetchWithRetry(`${API_BASE}/auth/filter-contacts`, {
-      method: 'POST',
+  async sharedContacts(): Promise<{ emails: string[] }> {
+    const res = await fetchWithRetry(`${API_BASE}/auth/shared-contacts`, {
       headers: getHeaders(),
-      body: JSON.stringify({ emails }),
     });
-    return handleResponse<{ existingEmails: string[] }>(res, this._logoutCallback, 'Failed to filter contacts');
+    return handleResponse<{ emails: string[] }>(res, this._logoutCallback, 'Failed to load shared contacts');
   },
 
   async searchUsers(query: string): Promise<{ users: any[] }> {

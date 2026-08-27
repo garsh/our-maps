@@ -213,21 +213,40 @@ async function ensureUserExists(user: User) {
   );
 }
 
-export async function filterContactsHandler(req: AuthRequest, res: Response) {
+const SHARED_COLLABORATORS_FROM = `
+  FROM users
+  WHERE email != ? AND id IN (
+    SELECT owner_id FROM maps WHERE id IN (
+      SELECT id FROM maps WHERE owner_id = ?
+      UNION
+      SELECT p.map_id FROM map_permissions p JOIN maps m ON p.map_id = m.id WHERE p.user_id = ?
+    )
+    UNION
+    SELECT p2.user_id FROM map_permissions p2 JOIN maps m2 ON p2.map_id = m2.id WHERE p2.map_id IN (
+      SELECT id FROM maps WHERE owner_id = ?
+      UNION
+      SELECT p3.map_id FROM map_permissions p3 JOIN maps m3 ON p3.map_id = m3.id WHERE p3.user_id = ?
+    )
+  )
+`;
+
+function sharedCollaboratorParams(email: string, userId: string) {
+  return [email, userId, userId, userId, userId];
+}
+
+export async function sharedContactsHandler(req: AuthRequest, res: Response) {
   try {
-    const { emails } = req.body;
-    if (!Array.isArray(emails)) return res.status(400).json({ error: 'emails array required' });
-    if (emails.length === 0) return res.json({ existingEmails: [] });
-    
+    const currentUserEmail = req.user?.email || '';
+    const currentUserId = req.user?.id || '';
     const db = await getDb();
-    const placeholders = emails.map(() => '?').join(',');
-    const rows = await db.all(`SELECT email FROM users WHERE email IN (${placeholders})`, ...emails);
-    
-    const existingEmails = rows.map(r => r.email.toLowerCase());
-    return res.json({ existingEmails });
+    const rows = await db.all(
+      `SELECT email ${SHARED_COLLABORATORS_FROM} ORDER BY name ASC, email ASC LIMIT 200`,
+      ...sharedCollaboratorParams(currentUserEmail, currentUserId)
+    );
+    return res.json({ emails: rows.map((r) => r.email.toLowerCase()) });
   } catch (err: any) {
-    console.error('Failed to filter contacts', err);
-    res.status(500).json({ error: 'Failed to filter contacts' });
+    console.error('Failed to list shared contacts', err);
+    res.status(500).json({ error: 'Failed to list shared contacts' });
   }
 }
 
@@ -239,28 +258,8 @@ export async function searchUsersHandler(req: AuthRequest, res: Response) {
     
     const db = await getDb();
     
-    let baseQuery = `
-      SELECT email, name, picture as photoUrl 
-      FROM users 
-      WHERE email != ? AND id IN (
-        SELECT owner_id FROM maps WHERE id IN (
-          SELECT id FROM maps WHERE owner_id = ?
-          UNION
-          SELECT p.map_id FROM map_permissions p JOIN maps m ON p.map_id = m.id WHERE p.user_id = ?
-        )
-        UNION
-        SELECT p2.user_id FROM map_permissions p2 JOIN maps m2 ON p2.map_id = m2.id WHERE p2.map_id IN (
-          SELECT id FROM maps WHERE owner_id = ?
-          UNION
-          SELECT p3.map_id FROM map_permissions p3 JOIN maps m3 ON p3.map_id = m3.id WHERE p3.user_id = ?
-        )
-      )
-    `;
-    let queryParams: any[] = [
-      currentUserEmail, 
-      currentUserId, currentUserId, 
-      currentUserId, currentUserId
-    ];
+    let baseQuery = `SELECT email, name, picture as photoUrl ${SHARED_COLLABORATORS_FROM}`;
+    let queryParams: any[] = sharedCollaboratorParams(currentUserEmail, currentUserId);
 
     if (q.trim() !== '') {
       const searchTerm = `%${q.trim()}%`;

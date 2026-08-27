@@ -14,7 +14,7 @@ import { Server, Socket } from 'socket.io';
 import mapsRouter from './routes/maps';
 import type { User } from '@shared/interfaces';
 import placesRouter from './routes/places';
-import { googleLoginHandler, filterContactsHandler, searchUsersHandler, authMiddleware, authenticateToken, getJwtSecret } from './auth';
+import { googleLoginHandler, sharedContactsHandler, searchUsersHandler, authMiddleware, authenticateToken, getJwtSecret } from './auth';
 import { getMapRole, canEditMap, canViewMap } from './permissions';
 import { resolveSafeMapFile, getSafeFontDownloadTarget, sanitizeMapFilename } from './mapFiles';
 import { isAllowedOrigin } from './cors';
@@ -80,7 +80,7 @@ app.use(express.json({ limit: '10mb' }));
 
 // API Routes
 app.post('/api/auth/google-login', googleLoginHandler);
-app.post('/api/auth/filter-contacts', authMiddleware, filterContactsHandler);
+app.get('/api/auth/shared-contacts', authMiddleware, sharedContactsHandler);
 app.get('/api/auth/search-users', authMiddleware, searchUsersHandler);
 app.use('/api/maps', mapsRouter);
 app.use('/api/places', placesRouter);

@@ -280,6 +280,27 @@ describe('API Endpoints', () => {
     expect(res.body.layers).toBeUndefined();
   });
 
+  it('GET /api/auth/shared-contacts only returns emails from existing shares', async () => {
+    const mapId = 'shared-contacts-map';
+    await request(app).post('/api/maps').set(authHeader).send({
+      id: mapId,
+      name: 'Shared Contacts Map',
+      layers: [],
+      pins: []
+    });
+
+    const db = await getDb();
+    await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', 'collab-shared', 'collab-shared@example.com', 'Collab Shared');
+    await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', 'stranger-user', 'stranger@example.com', 'Stranger');
+    await db.run('INSERT INTO map_permissions (map_id, user_id, role) VALUES (?, ?, ?)', mapId, 'collab-shared', 'view');
+
+    const res = await request(app).get('/api/auth/shared-contacts').set(authHeader);
+    expect(res.status).toBe(200);
+    expect(res.body.emails).toContain('collab-shared@example.com');
+    expect(res.body.emails).not.toContain('stranger@example.com');
+    expect(res.body.emails).not.toContain('test@example.com');
+  });
+
   it('does not grant other users access to mock-user-id maps', async () => {
     const db = await getDb();
     await db.run(

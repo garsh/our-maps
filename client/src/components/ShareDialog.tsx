@@ -173,9 +173,9 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
     onSuccess: async (tokenResponse) => {
       try {
         const fetchedContacts = await fetchGoogleContacts(tokenResponse.access_token);
-        const emailsToFilter = fetchedContacts.map(c => c.email);
-        const { existingEmails } = await apiService.filterContacts(emailsToFilter);
-        const validContacts = fetchedContacts.filter(c => existingEmails.includes(c.email.toLowerCase()));
+        const { emails: sharedEmails } = await apiService.sharedContacts();
+        const shared = new Set(sharedEmails.map((email) => email.toLowerCase()));
+        const validContacts = fetchedContacts.filter(c => shared.has(c.email.toLowerCase()));
         
         setContacts(validContacts);
         setShowDropdown(true);
@@ -196,9 +196,9 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
     if (!hasClientId || forceMock) {
       try {
         const mockContacts = await fetchMockContacts();
-        const emailsToFilter = mockContacts.map(c => c.email);
-        const { existingEmails } = await apiService.filterContacts(emailsToFilter);
-        const validContacts = mockContacts.filter(c => existingEmails.includes(c.email.toLowerCase()));
+        const { emails: sharedEmails } = await apiService.sharedContacts();
+        const shared = new Set(sharedEmails.map((email) => email.toLowerCase()));
+        const validContacts = mockContacts.filter(c => shared.has(c.email.toLowerCase()));
         
         setContacts(validContacts);
         setShowDropdown(true);
