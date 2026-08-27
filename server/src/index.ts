@@ -18,6 +18,7 @@ import { googleLoginHandler, filterContactsHandler, searchUsersHandler, authMidd
 import { getMapRole, canEditMap, canViewMap } from './permissions';
 import { resolveSafeMapFile, getSafeFontDownloadTarget, sanitizeMapFilename } from './mapFiles';
 import { isAllowedOrigin } from './cors';
+import { getCspDirectives } from './csp';
 import * as realtime from './realtime';
 
 const app = express();
@@ -44,19 +45,7 @@ const port = process.env.PORT || 3001;
 // Security: Use helmet for secure headers
 app.use(helmet({
   contentSecurityPolicy: {
-    directives: {
-      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-      "img-src": ["'self'", "data:", "https:", "http:"], 
-      "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'", "blob:", "https://accounts.google.com/gsi/client", "https://www.gstatic.com"], 
-      "style-src": ["'self'", "'unsafe-inline'", "https://accounts.google.com/gsi/style", "https://fonts.googleapis.com"],
-      "font-src": ["'self'", "https://fonts.gstatic.com"],
-      "frame-src": ["'self'", "https://accounts.google.com/gsi/"],
-      "connect-src": ["'self'", "https:", "http:", "wss:", "ws:", "blob:"],
-      "worker-src": ["'self'", "blob:"],
-      "child-src": ["'self'", "blob:"],
-      "manifest-src": ["'self'"],
-      "upgrade-insecure-requests": null, 
-    },
+    directives: getCspDirectives(),
   },
   crossOriginEmbedderPolicy: false, 
   crossOriginOpenerPolicy: false, // Disable COOP to ensure Google GSI / postMessage compatibility
