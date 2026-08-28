@@ -408,6 +408,10 @@ function prefetchMapSprites() {
 }
 prefetchMapSprites();
 
+// Terrain flyTo freezes camera height and only calls _finalizeElevation when this is set.
+// Without it, street labels keep a mid-flight perspective scale after Find my location.
+const FLY_TO_TERRAIN = { freezeElevation: true as const };
+
 const MapView = ({
   center = [20, 0], // default [lat, lng]
   zoom = 3,
@@ -1123,6 +1127,7 @@ const MapView = ({
           center: [minLng, minLat],
           zoom: 13,
           duration,
+          ...FLY_TO_TERRAIN,
         });
       } else {
         mapRef.current.fitBounds(
@@ -1134,6 +1139,7 @@ const MapView = ({
             padding: { top: 80, left: computedLeftPadding, right: 80, bottom: 80 + bottomPadding },
             maxZoom: 13,
             duration,
+            ...FLY_TO_TERRAIN,
           }
         );
       }
@@ -1151,6 +1157,7 @@ const MapView = ({
         center: [targetLocation[1], targetLocation[0]], // [lng, lat]
         zoom: 14,
         duration: 1500,
+        ...FLY_TO_TERRAIN,
       });
       lastTarget.current = targetLocation;
     }
@@ -1170,6 +1177,7 @@ const MapView = ({
         center: [pin.lng, pin.lat],
         zoom: map.getZoom(),
         duration: 1200,
+        ...FLY_TO_TERRAIN,
       });
     }
   }, [targetPinId, pins]);
@@ -1225,6 +1233,7 @@ const MapView = ({
               center: [lng, lat],
               zoom: 16,
               duration: 1500,
+              ...FLY_TO_TERRAIN,
             });
           }
         },
