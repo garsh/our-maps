@@ -20,7 +20,7 @@ router.get('/', async (req: AuthRequest, res) => {
   // Get owned maps and shared maps, ordered by last access
   // Use LEFT JOIN to avoid losing maps if a user was deleted or if using mock IDs
   const maps = await db.all(`
-    SELECT m.*, u.name as owner_name, u.email as owner_email, uma.last_accessed_at
+    SELECT m.*, u.name as owner_name, uma.last_accessed_at
     FROM maps m
     LEFT JOIN users u ON m.owner_id = u.id
     LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
@@ -34,7 +34,6 @@ router.get('/', async (req: AuthRequest, res) => {
     name: m.name,
     ownerId: m.owner_id,
     ownerName: m.owner_name || 'Legacy User',
-    ownerEmail: m.owner_email || 'legacy@example.com',
     lastAccessedAt: m.last_accessed_at
   })));
 });

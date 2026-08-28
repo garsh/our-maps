@@ -65,7 +65,7 @@ self.onmessage = async (e) => {
                                 await updateManifestStatus(entry.url, 'completed');
                             }
                             success = true;
-                        } catch (error) {
+                        } catch {
                             retries++;
                             if (retries < MAX_RETRIES) {
                                 await new Promise(r => setTimeout(r, Math.pow(2, retries) * 250));

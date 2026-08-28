@@ -29,8 +29,8 @@ vi.mock('react-router-dom', async () => {
 describe('LandingPage Offline Map Access', () => {
   const mockUser = { id: 'user-1', email: 'test@test.com', name: 'Test User' };
   const mockMaps = [
-    { id: 'map-downloaded', name: 'Downloaded Map', ownerId: 'user-1', ownerName: 'Test User', ownerEmail: 'test@test.com' },
-    { id: 'map-not-downloaded', name: 'Online Only Map', ownerId: 'user-1', ownerName: 'Test User', ownerEmail: 'test@test.com' },
+    { id: 'map-downloaded', name: 'Downloaded Map', ownerId: 'user-1', ownerName: 'Test User' },
+    { id: 'map-not-downloaded', name: 'Online Only Map', ownerId: 'user-1', ownerName: 'Test User' },
   ];
 
   beforeEach(() => {
@@ -113,7 +113,7 @@ describe('LandingPage Offline Map Access', () => {
 
   it('shows owner name without Shared by prefix for shared maps', async () => {
     const sharedMaps = [
-      { id: 'map-shared', name: 'Shared Map', ownerId: 'user-other', ownerName: 'Alice Smith', ownerEmail: 'alice@test.com' },
+      { id: 'map-shared', name: 'Shared Map', ownerId: 'user-other', ownerName: 'Alice Smith' },
     ];
     (apiService.getMaps as any).mockResolvedValue(sharedMaps);
 

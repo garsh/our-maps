@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { app } from '../index';
-import { getDb, setDbName, closeDb } from '../db';
+import { setDbName, closeDb } from '../db';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -174,7 +174,7 @@ describe('Places API Proxy Endpoints', () => {
       display_name: 'Reverse Nominatim Address'
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
       expect(url.toString()).toContain('nominatim.openstreetmap.org/reverse');
       return {
         json: async () => mockNominatimReverse
@@ -203,7 +203,7 @@ describe('Places API Proxy Endpoints', () => {
       ]
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
       expect(url.toString()).toContain('googleapis.com/maps/api/geocode');
       return {
         json: async () => mockGoogleGeocode

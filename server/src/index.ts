@@ -66,7 +66,7 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
-  skip: (req) => process.env.NODE_ENV === 'test',
+  skip: () => process.env.NODE_ENV === 'test',
 });
 app.use('/api', apiLimiter);
 
@@ -76,7 +76,7 @@ const placesLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many search requests, please try again later.' },
-  skip: (req) => process.env.NODE_ENV === 'test',
+  skip: () => process.env.NODE_ENV === 'test',
 });
 app.use('/api/places', placesLimiter);
 
@@ -252,7 +252,7 @@ try {
   }
 }
 
-app.get('/maps/:filename(*)', async (req, res, next) => {
+app.get('/maps/:filename(*)', async (req, res) => {
   const filename = req.params.filename || 'planet.pmtiles';
   const sanitizedName = sanitizeMapFilename(filename);
   let foundFilePath = resolveSafeMapFile(filename, candidateMapsDirs);

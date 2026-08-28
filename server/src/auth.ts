@@ -94,7 +94,7 @@ export async function createSession(userId: string): Promise<string> {
 export async function getUserForSession(sessionId: string): Promise<User> {
   const db = await getDb();
   const row = await db.get(
-    `SELECT s.id, s.expires_at, u.id as user_id, u.email, u.name, u.picture
+    `SELECT s.expires_at, u.id as user_id, u.email, u.name, u.picture
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.id = ?`,
     sessionId
@@ -310,7 +310,7 @@ export async function meHandler(req: Request, res: Response) {
   }
 }
 
-export async function mockLoginHandler(req: Request, res: Response) {
+export async function mockLoginHandler(_req: Request, res: Response) {
   if (!isMockAuthAllowed()) {
     return res.status(404).json({ error: 'Not Found' });
   }

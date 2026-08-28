@@ -11,7 +11,6 @@ interface MapSummary {
   name: string;
   ownerId: string;
   ownerName: string;
-  ownerEmail: string;
   lastAccessedAt?: string;
 }
 
