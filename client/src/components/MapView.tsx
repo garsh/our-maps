@@ -261,6 +261,153 @@ const PinMarker = memo(({
   );
 });
 
+const LIGHT_MINOR_ROAD_COLOR = ['interpolate', ['linear'], ['zoom'], 10, '#e2dfd7', 13.5, '#d4d0c7', 15.5, '#ffffff'];
+const DARK_MINOR_ROAD_COLOR = ['interpolate', ['linear'], ['zoom'], 9, '#36465e', 13, '#3e506c', 15.5, '#485b7a'];
+
+function themePaintUpdates(layer: { id?: string; type?: string }, flavor: 'light' | 'dark'): Record<string, any> | null {
+  const id = layer.id || '';
+  const type = layer.type;
+  if (!id || id === 'esri-satellite') return null;
+  const dark = flavor === 'dark';
+
+  if (id === 'background') {
+    return {
+      'background-color': dark ? '#202a3a' : '#fcfbfa',
+      'background-opacity': 1,
+    };
+  }
+  if (id === 'earth' || id === 'landcover') {
+    return {
+      'fill-color': dark ? '#202a3a' : '#f8f7f4',
+      'fill-opacity': 1,
+    };
+  }
+  if (id === 'water') {
+    return {
+      'fill-color': dark ? '#141f2d' : '#a0c8f0',
+      'fill-opacity': 0.88,
+    };
+  }
+  if (id.includes('water_river') || id.includes('water_stream')) {
+    return {
+      'line-color': dark ? '#141f2d' : '#a0c8f0',
+      'line-opacity': 1,
+    };
+  }
+  if (id === 'landuse_park' || id === 'landuse_urban_green') {
+    return { 'fill-color': dark ? '#1a3d3c' : '#d8ebd2', 'fill-opacity': 1 };
+  }
+  if (id === 'buildings' && type !== 'fill-extrusion') {
+    return {
+      'fill-color': dark ? '#2e3848' : '#e8e4dc',
+      'fill-opacity': dark ? 0.75 : 0.7,
+    };
+  }
+  if (id === '3d-buildings') {
+    return { 'fill-extrusion-color': dark ? '#2c3847' : '#e0ded7' };
+  }
+  if (id === 'landuse_school') {
+    return { 'fill-color': dark ? '#2a3342' : '#fbf3d5', 'fill-opacity': 1 };
+  }
+  if (id === 'landuse_hospital') {
+    return { 'fill-color': dark ? '#3c2d38' : '#f6e5e5', 'fill-opacity': 1 };
+  }
+  if (id === 'landuse_industrial') {
+    return { 'fill-color': dark ? '#283240' : '#eceeef', 'fill-opacity': 1 };
+  }
+  if (
+    id === 'landuse_aerodrome' ||
+    id === 'landuse_pedestrian' ||
+    id === 'landuse_zoo' ||
+    id === 'landuse_beach' ||
+    id === 'landuse_pier' ||
+    id === 'landuse_runway'
+  ) {
+    return { 'fill-color': dark ? '#202a3a' : '#f8f7f4', 'fill-opacity': 1 };
+  }
+  if (id === 'hills') {
+    return {
+      'hillshade-exaggeration': dark ? 0.35 : 0.45,
+      'hillshade-shadow-color': dark ? '#121820' : '#473B24',
+      'hillshade-highlight-color': dark ? '#2f3a4b' : '#FFFFFF',
+    };
+  }
+  if (type === 'symbol' || id.includes('label') || id.startsWith('places_') || id.startsWith('pois')) {
+    return {
+      'text-color': id.includes('water_')
+        ? (dark ? '#515c6d' : '#1d4ed8')
+        : (dark ? '#d5e1f2' : '#000000'),
+      'text-halo-color': dark ? '#202a3a' : '#ffffff',
+      'text-halo-width': 2.5,
+    };
+  }
+  if (id.includes('boundaries')) {
+    return { 'line-color': dark ? '#4e5d6c' : '#8a8a8a', 'line-opacity': 1 };
+  }
+  const isRoad = id.includes('roads_') && !id.includes('labels') && !id.includes('shields') && id !== 'roads_oneway';
+  if (isRoad && type !== 'symbol') {
+    const isCasing = id.includes('casing');
+    if (id.includes('roads_highway') || id.includes('highway')) {
+      if (isCasing) return { 'line-color': dark ? '#14222d' : '#de7a22' };
+      return { 'line-color': dark ? '#3c7d9c' : '#fca855' };
+    }
+    if (id.includes('roads_major') || id.includes('major')) {
+      if (isCasing) return { 'line-color': dark ? '#182230' : '#e0aa1b' };
+      return { 'line-color': dark ? '#526482' : '#ffd54f' };
+    }
+    if (isCasing) return { 'line-color': dark ? '#182230' : '#e0ded7' };
+    return { 'line-color': dark ? DARK_MINOR_ROAD_COLOR : LIGHT_MINOR_ROAD_COLOR };
+  }
+  return null;
+}
+
+function applyThemePaintsOnMap(map: any, flavor: 'light' | 'dark') {
+  if (typeof map.setPaintProperty !== 'function') return;
+  const ids: string[] = typeof map.getLayersOrder === 'function'
+    ? map.getLayersOrder()
+    : (map.getStyle?.()?.layers ?? []).map((l: any) => l.id).filter(Boolean);
+
+  for (const id of ids) {
+    let type: string | undefined;
+    try {
+      type = map.getLayer?.(id)?.type;
+    } catch {}
+    const updates = themePaintUpdates({ id, type }, flavor);
+    if (!updates) continue;
+    for (const [prop, value] of Object.entries(updates)) {
+      try {
+        map.setPaintProperty(id, `${prop}-transition`, { duration: 0, delay: 0 }, { validate: false });
+      } catch {}
+      try {
+        map.setPaintProperty(id, prop, value, { validate: false });
+      } catch {}
+    }
+  }
+  if (typeof map.triggerRepaint === 'function') {
+    try { map.triggerRepaint(); } catch {}
+  }
+}
+
+function prefetchMapSprites() {
+  if (typeof window === 'undefined') return;
+  const origin = window.location.origin;
+  for (const flavor of ['light', 'dark'] as const) {
+    const base = `${origin}/maps/sprites/${flavor}`;
+    try {
+      const img = new Image();
+      img.src = `${base}.png`;
+      const img2 = new Image();
+      img2.src = `${base}@2x.png`;
+    } catch {}
+    if (typeof fetch === 'function') {
+      try {
+        Promise.resolve(fetch(`${base}.json`)).catch(() => {});
+      } catch {}
+    }
+  }
+}
+prefetchMapSprites();
+
 const MapView = ({
   center = [20, 0], // default [lat, lng]
   zoom = 3,
@@ -476,6 +623,34 @@ const MapView = ({
     }
   }, [mapTheme, show3DTerrain]);
 
+  const appliedThemeRef = useRef(mapTheme);
+  // Recolor the existing style in one frame. setStyle on theme change reloads
+  // sprites and lets MapLibre's 300ms paint transitions finish layer-by-layer.
+  useEffect(() => {
+    if (appliedThemeRef.current === mapTheme) return;
+    appliedThemeRef.current = mapTheme;
+    if (!mapRef.current) return;
+    const map = mapRef.current.getMap();
+    if (!map) return;
+
+    const flavor: 'light' | 'dark' = mapTheme === 'dark' ? 'dark' : 'light';
+    const apply = () => {
+      try {
+        applyThemePaintsOnMap(map, flavor);
+        if (typeof map.setSprite === 'function') {
+          map.setSprite(`${window.location.origin}/maps/sprites/${flavor}`);
+        }
+      } catch {}
+    };
+
+    if (typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) {
+      apply();
+    } else if (typeof map.once === 'function') {
+      map.once('idle', apply);
+    } else {
+      apply();
+    }
+  }, [mapTheme]);
 
   const mapStyle = useMemo<any>(() => {
     const pmtilesUrl = `${window.location.origin}/maps/planet.pmtiles`;
@@ -768,6 +943,7 @@ const MapView = ({
 
     return {
       version: 8,
+      transition: { duration: 0, delay: 0 },
       glyphs: `${window.location.origin}/maps/fonts/{fontstack}/{range}.pbf`,
       sprite: `${window.location.origin}/maps/sprites/${validFlavor}`,
       sources: {
@@ -808,7 +984,10 @@ const MapView = ({
       layers: customLayers,
       terrain: show3DTerrain ? { source: 'terrainElevation', exaggeration: 1.0 } : undefined,
     };
-  }, [mapTheme]);
+  // Theme paints/sprites are applied in place; omitting mapTheme keeps
+  // react-map-gl from calling setStyle (which staggers layer updates).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const visiblePins = useMemo(
     () => pins.filter((pin) => !hiddenLayerIds?.has(pin.layerId || null)),
