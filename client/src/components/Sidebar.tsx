@@ -72,20 +72,6 @@ import { comparePinPositions } from '../utils/reorderUtils';
 
 export type MapTheme = 'light' | 'dark';
 
-export interface ThemeOption {
-  id: MapTheme;
-  label: string;
-  sublabel: string;
-  previewBg: string;
-  previewBorder: string;
-  previewAccent: string;
-}
-
-export const MAP_THEMES: ThemeOption[] = [
-  { id: 'light', label: 'Light', sublabel: 'Alidade bright palette', previewBg: '#fcfbfa', previewBorder: '#d1d5db', previewAccent: '#fca855' },
-  { id: 'dark', label: 'Dark', sublabel: 'Sleek low-light theme', previewBg: '#242f3e', previewBorder: '#38414e', previewAccent: '#849bbf' },
-];
-
 interface SidebarProps {
   mapId: string | null;
   mapName: string;

@@ -46,8 +46,6 @@ describe('App Components Error Handling', () => {
   });
 
   it('LandingPage shows error message when server is unreachable', async () => {
-    // In our App, getHello is called in a way that error might be caught elsewhere,
-    // but LandingPage fetches maps.
     (apiService.getMaps as any).mockRejectedValue(new Error('Network Error'));
 
     render(
@@ -55,10 +53,6 @@ describe('App Components Error Handling', () => {
         <LandingPage />
       </MemoryRouter>
     );
-
-    // LandingPage doesn't currently show a "could not connect to server" 
-    // message in its UI based on my previous edits, it just logs to console.
-    // Wait, let me check App.tsx where that message was.
   });
 
   it('MapEditor shows error message when map fails to load', async () => {

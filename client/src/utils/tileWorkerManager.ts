@@ -19,10 +19,6 @@ class TileWorkerManager {
   private tileStats: { completed: number; total: number } | null = null;
   private subscribers = new Set<ProgressCallback>();
 
-  public getActiveMapId(): string | null {
-    return this.activeMapId;
-  }
-
   public getStatus(mapId: string | null): DownloadProgressState | null {
     if (!mapId) return null;
     if (this.activeMapId === mapId) {

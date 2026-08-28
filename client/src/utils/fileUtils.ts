@@ -45,7 +45,7 @@ export const generateId = (): string => {
 
 /**
  * Parses GeoJSON FeatureCollection into Pins and Groups.
- * Extracts layer info from 'folder' property (used by togeojson for KML layers).
+ * Extracts layer info from 'folder' / 'layer' / 'parentName' properties.
  */
 export const geoJSONToData = (geojson: any): { pins: Pin[], layers: PinLayer[] } => {
   if (!geojson || geojson.type !== 'FeatureCollection') return { pins: [], layers: [] };

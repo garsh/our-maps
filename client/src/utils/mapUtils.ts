@@ -27,66 +27,6 @@ export const ICON_SVG_PATHS: Record<Exclude<PinIcon, 'default'>, string> = {
   train: '<path d="M 20 16 h 1 c 1 0 2 -0.5 2 -2 v -3 c 0 -1.5 -0.5 -2 -2 -2 h -1 v -3 c 0 -1 -1 -2 -2 -2 h -2 c -1 0 -2 1 -2 2 v 3 h -4 v -4 c 0 -1.5 -1 -3 -3 -3 h -2 c -1.5 0 -3 1.5 -3 3 v 9 c 0 1.5 1 2 2 2 M 10 16 h 4"/><circle cx="7" cy="16" r="3"/><circle cx="17" cy="16" r="3"/>'
 };
 
-const markerHtmlCache = new Map<string, { html: string; className: string; width: number; height: number }>();
-
-export function getMarkerHTML(color: PinColor = 'blue', icon: PinIcon = 'default', isHovered = false) {
-  const cacheKey = `${color}_${icon}_${isHovered ? '1' : '0'}`;
-  const cached = markerHtmlCache.get(cacheKey);
-  if (cached) return cached;
-
-  const isHex = color.startsWith('#');
-  const colorCode = isHex ? color : (COLOR_CODES[color] || COLOR_CODES.blue);
-
-  let iconContent = '';
-  if (icon !== 'default') {
-    const svgPath = ICON_SVG_PATHS[icon as Exclude<PinIcon, 'default'>];
-    iconContent = `
-      <g transform="translate(4.5, 4.5) scale(0.85)" stroke="white" color="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
-        ${svgPath}
-      </g>
-    `;
-  } else {
-    iconContent = `<circle cx="15" cy="15" r="6" fill="white" fill-opacity="0.9"/>`;
-  }
-
-  const width = 20;
-  const height = 28;
-
-  const html = `
-    <div style="
-      position: relative;
-      width: ${width}px;
-      height: ${height}px;
-    ">
-      ${isHovered ? `
-        <div style="
-          position: absolute;
-          top: -${width}px;
-          left: -${width}px;
-          width: ${width * 3}px;
-          height: ${width * 3}px;
-          background: ${colorCode}44;
-          border: 3px solid ${colorCode};
-          border-radius: 50%;
-          z-index: -1;
-          animation: pulse 1.2s infinite;
-          box-shadow: 0 0 15px ${colorCode}66;
-          pointer-events: none;
-        "></div>
-      ` : ''}
-      <svg width="${width}" height="${height}" viewBox="0 0 30 42" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: block; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));">
-        <path d="M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z" fill="${colorCode}"/>
-        ${iconContent}
-      </svg>
-    </div>
-  `;
-
-  const className = isHovered ? 'leaflet-marker-icon custom-pin-modern hovered' : 'leaflet-marker-icon custom-pin-modern';
-  const result = { html, className, width, height };
-  markerHtmlCache.set(cacheKey, result);
-  return result;
-}
-
 export function getPreviewMarkerHTML() {
   const width = 20;
   const height = 28;

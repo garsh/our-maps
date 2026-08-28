@@ -14,13 +14,6 @@
   --shadow-sm: 0 0 2px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.15);
   --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1);
-  
-  /* Pin Colors matching Android */
-  --pin-blue: #2A81CB;
-  --pin-red: #CB2B3E;
-  --pin-green: #2AAD27;
-  --pin-orange: #CB8427;
-  --pin-violet: #9C2BCB;
 }
 
 [data-theme='dark'] {
@@ -180,16 +173,8 @@ button:active {
     display: none !important;
   }
 
-  .leaflet-control-zoom,
   .maplibregl-ctrl-zoom {
     display: none !important;
-  }
-
-  /* Make sure map takes full space on mobile */
-  .map-container-main {
-    flex: 1;
-    height: 100dvh;
-    width: 100vw;
   }
 }
 
@@ -289,35 +274,8 @@ button:active {
   animation: colorCycle 2s infinite linear;
 }
 
-/* Shifting Rainbow Pin Animations */
-@keyframes rainbowSpin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-@keyframes rainbowSpinReverse {
-  0% { transform: rotate(360deg); }
-  100% { transform: rotate(0deg); }
-}
-
-@keyframes rainbowShift {
-  0% { filter: hue-rotate(0deg); }
-  100% { filter: hue-rotate(360deg); }
-}
-
-@keyframes rainbowHue {
-  0% { filter: hue-rotate(0deg); }
-  100% { filter: hue-rotate(360deg); }
-}
-
 @keyframes rainbowMove {
   0% { background-position: 0% 0%; }
   100% { background-position: 100% 100%; }
-}
-
-@keyframes rainbowPulse {
-  0% { transform: scale(0.95); opacity: 0.8; }
-  50% { transform: scale(1.25); opacity: 1; }
-  100% { transform: scale(0.95); opacity: 0.8; }
 }
 

@@ -18,10 +18,6 @@ import { getTile } from '../utils/tileUtils';
 let globalPMTilesProtocol: Protocol | null = null;
 let currentMapHasOfflineTiles = false;
 
-export function setCurrentMapHasOfflineTiles(hasOffline: boolean) {
-  currentMapHasOfflineTiles = hasOffline;
-}
-
 function setupPMTilesProtocol() {
   if (!globalPMTilesProtocol) {
     globalPMTilesProtocol = new Protocol();

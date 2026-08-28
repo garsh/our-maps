@@ -2,7 +2,6 @@
 /// <reference types="vite-plugin-pwa/client" />
 
 interface ImportMetaEnv {
-  readonly VITE_STADIA_API_KEY: string;
   readonly VITE_APP_BUILD_TIME: string;
 }
 

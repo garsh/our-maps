@@ -14,7 +14,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'pwa-icon.svg', 'icons.svg', 'hero.png'],
+      includeAssets: ['favicon.svg', 'pwa-icon.svg'],
       manifest: {
         name: 'OurMaps',
         short_name: 'OurMaps',

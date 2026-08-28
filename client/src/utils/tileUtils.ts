@@ -631,61 +631,6 @@ function mergeBoxes(b1: BoundingBox, b2: BoundingBox): BoundingBox {
     };
 }
 
-export async function downloadTiles(
-    mapId: string,
-    tiles: TileInfo[], 
-    onProgress: (progress: number) => void
-): Promise<void> {
-    // 1. Add all to manifest if not present
-    const entries: ManifestEntry[] = tiles.map(t => ({
-        ...t,
-        status: 'pending',
-        mapId,
-        updatedAt: Date.now()
-    }));
-    await addToManifest(entries);
-
-    // 2. Get pending items (resumable)
-    const pending = await getPendingFromManifest(mapId);
-    if (pending.length === 0) {
-        onProgress(1.0);
-        return;
-    }
-
-    let completedCount = tiles.length - pending.length;
-    const total = tiles.length;
-    
-    // 3. Worker Pool
-    const CONCURRENCY = 15; // Pro-grade concurrency
-    const queue = [...pending];
-    
-    const workers = Array(CONCURRENCY).fill(null).map(async () => {
-        while (queue.length > 0) {
-            const entry = queue.shift();
-            if (!entry) break;
-
-            try {
-                const response = await fetch(entry.url);
-                if (response.ok) {
-                    const blob = await response.blob();
-                    await saveTile(entry.url, blob);
-                } else {
-                    // Update status to error for future retry
-                    await updateManifestStatus(entry.url, 'error');
-                }
-            } catch (error) {
-                console.error(`Failed to download tile ${entry.url}:`, error);
-                await updateManifestStatus(entry.url, 'error');
-            }
-
-            completedCount++;
-            onProgress(completedCount / total);
-        }
-    });
-
-    await Promise.all(workers);
-}
-
 export async function updateManifestStatus(url: string, status: TileStatus): Promise<void> {
     const db = await openDB();
     return new Promise((resolve) => {
