@@ -1237,7 +1237,6 @@ const Sidebar = ({
   isOffline = false,
   onSearchAreaStateChange
 }: SidebarProps) => {
-  const [localMapName, setLocalMapName] = useState(mapName);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -1308,7 +1307,6 @@ const Sidebar = ({
   const [renameInput, setRenameInput] = useState(mapName);
 
   useEffect(() => {
-    setLocalMapName(mapName);
     setRenameInput(mapName);
   }, [mapName]);
 
@@ -1646,18 +1644,6 @@ class MouseSensor extends PointerSensor {
         onDragCancel={handleDragCancelInternal}
         autoScroll={false}
       >
-        <input 
-          id="map-name"
-          type="text" 
-          value={localMapName} 
-          onChange={(e) => setLocalMapName(e.target.value)}
-          onBlur={() => onMapNameChange(localMapName)}
-          onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-          disabled={readOnly}
-          className="input-field map-name-input"
-          style={{ fontWeight: '800', fontSize: '0.9rem', padding: '3px 6px', border: 'none', background: 'transparent', flex: 1, textOverflow: 'ellipsis' }}
-        />
-        
         {(() => {
           const menuContent = (
             <div style={{ position: 'relative' }} ref={menuRef}>
@@ -1675,7 +1661,7 @@ class MouseSensor extends PointerSensor {
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
                       onClick={() => {
-                        setRenameInput(localMapName);
+                        setRenameInput(mapName);
                         setShowRenameModal(true);
                         setIsMenuOpen(false);
                       }}
@@ -2298,7 +2284,6 @@ class MouseSensor extends PointerSensor {
               <form onSubmit={(e) => {
                 e.preventDefault();
                 if (renameInput.trim()) {
-                  setLocalMapName(renameInput.trim());
                   onMapNameChange(renameInput.trim());
                 }
                 setShowRenameModal(false);

@@ -178,9 +178,6 @@ button:active {
   }
 }
 
-.map-name-input {
-  display: none !important;
-}
 
 .bottom-sheet-drag-handle {
   width: 100px;

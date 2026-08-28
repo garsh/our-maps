@@ -89,7 +89,6 @@ interface MapViewProps {
   onPinClick?: (pin: Pin) => void;
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
   onBoundsChange: (bounds: string) => void;
-  targetLocation?: [number, number] | null; // [lat, lng]
   targetPinId?: string | null;
   boundsToFit?: [[number, number], [number, number]] | null;
   userRole?: 'owner' | 'edit' | 'view';
@@ -416,7 +415,6 @@ const MapView = ({
   onPinClick,
   onUpdatePin,
   onBoundsChange,
-  targetLocation,
   targetPinId,
   boundsToFit,
   userRole = 'owner',
@@ -442,7 +440,6 @@ const MapView = ({
 
   const mapRef = useRef<MapRef | null>(null);
   const readOnly = userRole === 'view' || isOffline;
-  const lastTarget = useRef<[number, number] | null>(null);
   const lastTargetPinId = useRef<string | null>(null);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const [currentZoom, setCurrentZoom] = useState<number>(zoom);
@@ -996,10 +993,6 @@ const MapView = ({
 
   // Calculate immediate initial view state using native bounds & fitBoundsOptions so the map opens instantly focused on frame 1
   const initialViewState = useMemo(() => {
-    if (targetLocation) {
-      return { longitude: targetLocation[1], latitude: targetLocation[0], zoom: 14 };
-    }
-
     let targetBounds: [[number, number], [number, number]] | null = null;
     if (boundsToFit && Array.isArray(boundsToFit) && boundsToFit.length === 2) {
       targetBounds = boundsToFit;
@@ -1038,7 +1031,7 @@ const MapView = ({
     }
 
     return { longitude: center[1], latitude: center[0], zoom };
-  }, [boundsToFit, visiblePins, pins, targetLocation, center, zoom, bottomPadding, leftPadding]);
+  }, [boundsToFit, visiblePins, pins, center, zoom, bottomPadding, leftPadding]);
 
   const updateCompassDirect = useCallback(() => {
     if (!mapRef.current) return;
@@ -1142,22 +1135,6 @@ const MapView = ({
     },
     [leftPadding, bottomPadding]
   );
-
-  // Camera movements for targetLocation
-  useEffect(() => {
-    if (
-      targetLocation &&
-      (targetLocation[0] !== lastTarget.current?.[0] || targetLocation[1] !== lastTarget.current?.[1])
-    ) {
-      mapRef.current?.flyTo({
-        center: [targetLocation[1], targetLocation[0]], // [lng, lat]
-        zoom: 14,
-        duration: 1500,
-        ...FLY_TO_TERRAIN,
-      });
-      lastTarget.current = targetLocation;
-    }
-  }, [targetLocation]);
 
   // Camera movements for targetPinId
   useEffect(() => {
