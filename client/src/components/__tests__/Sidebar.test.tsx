@@ -297,9 +297,7 @@ describe('Sidebar', () => {
     const moreBtn = screen.getByLabelText(/more options/i);
     fireEvent.click(moreBtn);
 
-    const appearanceOption = screen.getByText('Appearance');
-    fireEvent.click(appearanceOption);
-
+    expect(screen.getByText('Appearance')).toBeInTheDocument();
     const hillshadeOption = screen.getByText('Hillshading');
     expect(hillshadeOption).toBeInTheDocument();
 
@@ -315,9 +313,7 @@ describe('Sidebar', () => {
     const moreBtn = screen.getByLabelText(/more options/i);
     fireEvent.click(moreBtn);
 
-    const appearanceOption = screen.getByText('Appearance');
-    fireEvent.click(appearanceOption);
-
+    expect(screen.getByText('Appearance')).toBeInTheDocument();
     const terrainOption = screen.getByText('3D Terrain');
     expect(terrainOption).toBeInTheDocument();
     fireEvent.click(terrainOption);
@@ -336,9 +332,7 @@ describe('Sidebar', () => {
     const moreBtn = screen.getByLabelText(/more options/i);
     fireEvent.click(moreBtn);
 
-    const appearanceOption = screen.getByText('Appearance');
-    fireEvent.click(appearanceOption);
-
+    expect(screen.getByText('Appearance')).toBeInTheDocument();
     const darkModeOption = screen.getByText('Dark Mode');
     expect(darkModeOption).toBeInTheDocument();
 
@@ -356,9 +350,7 @@ describe('Sidebar', () => {
     const moreBtn = screen.getByLabelText(/more options/i);
     fireEvent.click(moreBtn);
 
-    const appearanceOption = screen.getByText('Appearance');
-    fireEvent.click(appearanceOption);
-
+    expect(screen.getByText('Appearance')).toBeInTheDocument();
     const satelliteOption = screen.getByText('Satellite');
     expect(satelliteOption).toBeInTheDocument();
 
@@ -374,9 +366,7 @@ describe('Sidebar', () => {
     const moreBtn = screen.getByLabelText(/more options/i);
     fireEvent.click(moreBtn);
 
-    const appearanceOption = screen.getByText('Appearance');
-    fireEvent.click(appearanceOption);
-
+    expect(screen.getByText('Appearance')).toBeInTheDocument();
     const darkModeOption = screen.getByText('Dark Mode');
     const hillshadeOption = screen.getByText('Hillshading');
 
@@ -393,9 +383,7 @@ describe('Sidebar', () => {
     const moreBtn = screen.getByLabelText(/more options/i);
     fireEvent.click(moreBtn);
 
-    const appearanceOption = screen.getByText('Appearance');
-    fireEvent.click(appearanceOption);
-
+    expect(screen.getByText('Appearance')).toBeInTheDocument();
     const satelliteOption = screen.getByText('Satellite');
     const darkModeOption = screen.getByText('Dark Mode');
 

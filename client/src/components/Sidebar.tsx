@@ -1257,7 +1257,6 @@ const Sidebar = ({
 }: SidebarProps) => {
   const [localMapName, setLocalMapName] = useState(mapName);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [menuTab, setMenuTab] = useState<'main' | 'appearance'>('main');
   const menuRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -1472,7 +1471,6 @@ const Sidebar = ({
       }
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
-        setMenuTab('main');
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -1690,7 +1688,7 @@ class MouseSensor extends PointerSensor {
               </button>
               
               {isMenuOpen && (
-                <div style={{ position: 'absolute', top: '100%', right: 0, width: '190px', background: 'var(--surface-color)', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3000 }}>
+                <div style={{ position: 'absolute', top: '100%', right: 0, width: '220px', background: 'var(--surface-color)', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3000, maxHeight: 'min(80vh, 640px)', overflowY: 'auto' }}>
                   {!readOnly && (
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
@@ -1705,338 +1703,47 @@ class MouseSensor extends PointerSensor {
                       Rename Map
                     </div>
                   )}
-                  {/* Appearance menu item */}
-                  <div style={{ position: 'relative' }}>
+                  {!readOnly && (
                     <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', background: menuTab === 'appearance' ? 'var(--bg-color)' : 'transparent' }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMenuTab(menuTab === 'appearance' ? 'main' : 'appearance');
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={() => { onShare?.(); setIsMenuOpen(false); }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      Share
+                    </div>
+                  )}
+                  {!readOnly && pins.length === 0 && layers.length === 0 && (
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={handleImportClick}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      Import
+                    </div>
+                  )}
+                  <div 
+                    style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                    onClick={handleExportClick}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    Export
+                  </div>
+                  {deferredPrompt && (
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={() => {
+                        handleInstallClick();
+                        setIsMenuOpen(false);
                       }}
                       onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                      onMouseLeave={(e) => {
-                        if (menuTab !== 'appearance') e.currentTarget.style.background = 'transparent';
-                      }}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Palette size={16} />
-                        <span>Appearance</span>
-                      </div>
-                      {menuTab === 'appearance' ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                      Install App
                     </div>
-                    {menuTab === 'appearance' && (
-                      <div 
-                        style={{ position: 'absolute', top: '100%', right: '-1px', left: 'auto', width: '240px', background: 'var(--surface-color)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '0 0 var(--radius-md) var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3100 }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {/* Satellite mode toggle */}
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggleSatellite?.(!showSatellite);
-                          }}
-                          style={{
-                            padding: '10px 14px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            fontSize: '0.82rem',
-                            fontWeight: showSatellite ? '600' : '500',
-                            color: 'var(--text-primary)',
-                            borderBottom: '1px solid var(--border-color)',
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <Globe size={15} color={showSatellite ? '#3b82f6' : '#64748b'} />
-                            <span>Satellite</span>
-                          </div>
-                          <div
-                            style={{
-                              width: '34px',
-                              height: '18px',
-                              borderRadius: '10px',
-                              background: showSatellite ? '#3b82f6' : '#e2e8f0',
-                              position: 'relative',
-                              transition: 'background 0.2s ease',
-                              flexShrink: 0,
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: '14px',
-                                height: '14px',
-                                borderRadius: '50%',
-                                background: 'white',
-                                position: 'absolute',
-                                top: '2px',
-                                left: showSatellite ? '18px' : '2px',
-                                transition: 'left 0.2s ease',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Light/Dark mode toggle */}
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onThemeChange?.(mapTheme === 'dark' ? 'light' : 'dark');
-                          }}
-                          style={{
-                            padding: '10px 14px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            fontSize: '0.82rem',
-                            fontWeight: mapTheme === 'dark' ? '600' : '500',
-                            color: 'var(--text-primary)',
-                            borderBottom: '1px solid var(--border-color)',
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'var(--bg-color)';
-                          }}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {mapTheme === 'dark' ? <Moon size={15} color="#3b82f6" /> : <Sun size={15} color="#64748b" />}
-                            <span>Dark Mode</span>
-                          </div>
-                          <div
-                            style={{
-                              width: '34px',
-                              height: '18px',
-                              borderRadius: '10px',
-                              background: mapTheme === 'dark' ? '#3b82f6' : '#e2e8f0',
-                              position: 'relative',
-                              transition: 'background 0.2s ease',
-                              flexShrink: 0,
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: '14px',
-                                height: '14px',
-                                borderRadius: '50%',
-                                background: 'white',
-                                position: 'absolute',
-                                top: '2px',
-                                left: mapTheme === 'dark' ? '18px' : '2px',
-                                transition: 'left 0.2s ease',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Toggles with pill switches */}
-                        <div>
-                          {/* Hillshading */}
-                          <div
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (!showSatellite) {
-                                onToggleHillshade?.(!showHillshade);
-                              }
-                            }}
-                            style={{
-                              padding: '10px 14px',
-                              cursor: showSatellite ? 'not-allowed' : 'pointer',
-                              opacity: showSatellite ? 0.45 : 1,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              fontSize: '0.82rem',
-                              fontWeight: showHillshade ? '600' : '500',
-                              color: 'var(--text-primary)',
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!showSatellite) e.currentTarget.style.background = 'var(--bg-color)';
-                            }}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={showHillshade ? (showSatellite ? '#94a3b8' : '#1d4ed8') : '#64748b'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="m8 3 4 8 5-5 5 15H2L8 3z" />
-                                <path d="M12 11l5 10H12V11z" fill={showHillshade ? (showSatellite ? '#94a3b8' : '#1d4ed8') : '#64748b'} opacity="0.4" stroke="none" />
-                              </svg>
-                              <span>Hillshading</span>
-                            </div>
-                            <div
-                              style={{
-                                width: '34px',
-                                height: '18px',
-                                borderRadius: '10px',
-                                background: showHillshade ? (showSatellite ? '#94a3b8' : '#3b82f6') : '#e2e8f0',
-                                position: 'relative',
-                                transition: 'background 0.2s ease',
-                                flexShrink: 0,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  width: '14px',
-                                  height: '14px',
-                                  borderRadius: '50%',
-                                  background: 'white',
-                                  position: 'absolute',
-                                  top: '2px',
-                                  left: showHillshade ? '18px' : '2px',
-                                  transition: 'left 0.2s ease',
-                                  boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                                }}
-                              />
-                            </div>
-                          </div>
-
-                          {/* 3D Terrain */}
-                          <div
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onToggle3DTerrain?.(!show3DTerrain);
-                            }}
-                            style={{
-                              padding: '10px 14px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              fontSize: '0.82rem',
-                              fontWeight: show3DTerrain ? '600' : '500',
-                              color: 'var(--text-primary)',
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <Mountain size={15} style={{ color: show3DTerrain ? '#1d4ed8' : '#64748b' }} />
-                              <span>3D Terrain</span>
-                            </div>
-                            <div
-                              style={{
-                                width: '34px',
-                                height: '18px',
-                                borderRadius: '10px',
-                                background: show3DTerrain ? '#3b82f6' : '#e2e8f0',
-                                position: 'relative',
-                                transition: 'background 0.2s ease',
-                                flexShrink: 0,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  width: '14px',
-                                  height: '14px',
-                                  borderRadius: '50%',
-                                  background: 'white',
-                                  position: 'absolute',
-                                  top: '2px',
-                                  left: show3DTerrain ? '18px' : '2px',
-                                  transition: 'left 0.2s ease',
-                                  boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                                }}
-                              />
-                            </div>
-                          </div>
-
-                          {/* 3D Buildings */}
-                          <div
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onToggle3DBuildings?.(!show3DBuildings);
-                            }}
-                            style={{
-                              padding: '10px 14px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              fontSize: '0.82rem',
-                              fontWeight: show3DBuildings ? '600' : '500',
-                              color: 'var(--text-primary)',
-                            }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <Box size={15} style={{ color: show3DBuildings ? '#1d4ed8' : '#64748b' }} />
-                              <span>3D Buildings</span>
-                            </div>
-                            <div
-                              style={{
-                                width: '34px',
-                                height: '18px',
-                                borderRadius: '10px',
-                                background: show3DBuildings ? '#3b82f6' : '#e2e8f0',
-                                position: 'relative',
-                                transition: 'background 0.2s ease',
-                                flexShrink: 0,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  width: '14px',
-                                  height: '14px',
-                                  borderRadius: '50%',
-                                  background: 'white',
-                                  position: 'absolute',
-                                  top: '2px',
-                                  left: show3DBuildings ? '18px' : '2px',
-                                  transition: 'left 0.2s ease',
-                                  boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                      {!readOnly && (
-                        <div 
-                          style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                          onClick={() => { onShare?.(); setIsMenuOpen(false); }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          Share
-                        </div>
-                      )}
-                      {!readOnly && pins.length === 0 && layers.length === 0 && (
-                        <div 
-                          style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                          onClick={handleImportClick}
-                          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          Import
-                        </div>
-                      )}
-                      <div 
-                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                        onClick={handleExportClick}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                          Export
-                      </div>
-                      {deferredPrompt && (
-                        <div 
-                          style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                          onClick={() => {
-                            handleInstallClick();
-                            setIsMenuOpen(false);
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          Install App
-                        </div>
-                      )}
+                  )}
 
                   {!isOffline && (
                     isDownloaded || isDownloading || hasPartialDownload ? (
@@ -2061,7 +1768,7 @@ class MouseSensor extends PointerSensor {
                   )}
                   {!readOnly && (
                     <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', borderTop: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
                       onClick={() => {
                         isAddingLayerRef.current = true;
                         const newLayer = onAddLayer();
@@ -2109,6 +1816,277 @@ class MouseSensor extends PointerSensor {
                       ))}
                     </>
                   )}
+                  <div
+                    style={{
+                      padding: '4px 16px',
+                      fontSize: '0.7rem',
+                      fontWeight: '800',
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                      color: 'var(--text-muted, #999)',
+                      background: mapTheme === 'dark' ? 'rgba(59, 130, 246, 0.16)' : 'rgba(59, 130, 246, 0.12)',
+                      borderTop: '1px solid var(--border-color)',
+                      borderBottom: '1px solid var(--border-color)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <Palette size={12} />
+                    Appearance
+                  </div>
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleSatellite?.(!showSatellite);
+                    }}
+                    style={{
+                      padding: '10px 16px 10px 28px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.82rem',
+                      fontWeight: showSatellite ? '600' : '500',
+                      color: 'var(--text-primary)',
+                      borderBottom: '1px solid var(--border-color)',
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Globe size={15} color={showSatellite ? '#3b82f6' : '#64748b'} />
+                      <span>Satellite</span>
+                    </div>
+                    <div
+                      style={{
+                        width: '34px',
+                        height: '18px',
+                        borderRadius: '10px',
+                        background: showSatellite ? '#3b82f6' : '#e2e8f0',
+                        position: 'relative',
+                        transition: 'background 0.2s ease',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '14px',
+                          height: '14px',
+                          borderRadius: '50%',
+                          background: 'white',
+                          position: 'absolute',
+                          top: '2px',
+                          left: showSatellite ? '18px' : '2px',
+                          transition: 'left 0.2s ease',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onThemeChange?.(mapTheme === 'dark' ? 'light' : 'dark');
+                    }}
+                    style={{
+                      padding: '10px 16px 10px 28px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.82rem',
+                      fontWeight: mapTheme === 'dark' ? '600' : '500',
+                      color: 'var(--text-primary)',
+                      borderBottom: '1px solid var(--border-color)',
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {mapTheme === 'dark' ? <Moon size={15} color="#3b82f6" /> : <Sun size={15} color="#64748b" />}
+                      <span>Dark Mode</span>
+                    </div>
+                    <div
+                      style={{
+                        width: '34px',
+                        height: '18px',
+                        borderRadius: '10px',
+                        background: mapTheme === 'dark' ? '#3b82f6' : '#e2e8f0',
+                        position: 'relative',
+                        transition: 'background 0.2s ease',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '14px',
+                          height: '14px',
+                          borderRadius: '50%',
+                          background: 'white',
+                          position: 'absolute',
+                          top: '2px',
+                          left: mapTheme === 'dark' ? '18px' : '2px',
+                          transition: 'left 0.2s ease',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!showSatellite) {
+                        onToggleHillshade?.(!showHillshade);
+                      }
+                    }}
+                    style={{
+                      padding: '10px 16px 10px 28px',
+                      cursor: showSatellite ? 'not-allowed' : 'pointer',
+                      opacity: showSatellite ? 0.45 : 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.82rem',
+                      fontWeight: showHillshade ? '600' : '500',
+                      color: 'var(--text-primary)',
+                      borderBottom: '1px solid var(--border-color)',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!showSatellite) e.currentTarget.style.background = 'var(--bg-color)';
+                    }}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={showHillshade ? (showSatellite ? '#94a3b8' : '#1d4ed8') : '#64748b'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m8 3 4 8 5-5 5 15H2L8 3z" />
+                        <path d="M12 11l5 10H12V11z" fill={showHillshade ? (showSatellite ? '#94a3b8' : '#1d4ed8') : '#64748b'} opacity="0.4" stroke="none" />
+                      </svg>
+                      <span>Hillshading</span>
+                    </div>
+                    <div
+                      style={{
+                        width: '34px',
+                        height: '18px',
+                        borderRadius: '10px',
+                        background: showHillshade ? (showSatellite ? '#94a3b8' : '#3b82f6') : '#e2e8f0',
+                        position: 'relative',
+                        transition: 'background 0.2s ease',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '14px',
+                          height: '14px',
+                          borderRadius: '50%',
+                          background: 'white',
+                          position: 'absolute',
+                          top: '2px',
+                          left: showHillshade ? '18px' : '2px',
+                          transition: 'left 0.2s ease',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggle3DTerrain?.(!show3DTerrain);
+                    }}
+                    style={{
+                      padding: '10px 16px 10px 28px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.82rem',
+                      fontWeight: show3DTerrain ? '600' : '500',
+                      color: 'var(--text-primary)',
+                      borderBottom: '1px solid var(--border-color)',
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Mountain size={15} style={{ color: show3DTerrain ? '#1d4ed8' : '#64748b' }} />
+                      <span>3D Terrain</span>
+                    </div>
+                    <div
+                      style={{
+                        width: '34px',
+                        height: '18px',
+                        borderRadius: '10px',
+                        background: show3DTerrain ? '#3b82f6' : '#e2e8f0',
+                        position: 'relative',
+                        transition: 'background 0.2s ease',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '14px',
+                          height: '14px',
+                          borderRadius: '50%',
+                          background: 'white',
+                          position: 'absolute',
+                          top: '2px',
+                          left: show3DTerrain ? '18px' : '2px',
+                          transition: 'left 0.2s ease',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggle3DBuildings?.(!show3DBuildings);
+                    }}
+                    style={{
+                      padding: '10px 16px 10px 28px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.82rem',
+                      fontWeight: show3DBuildings ? '600' : '500',
+                      color: 'var(--text-primary)',
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Box size={15} style={{ color: show3DBuildings ? '#1d4ed8' : '#64748b' }} />
+                      <span>3D Buildings</span>
+                    </div>
+                    <div
+                      style={{
+                        width: '34px',
+                        height: '18px',
+                        borderRadius: '10px',
+                        background: show3DBuildings ? '#3b82f6' : '#e2e8f0',
+                        position: 'relative',
+                        transition: 'background 0.2s ease',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '14px',
+                          height: '14px',
+                          borderRadius: '50%',
+                          background: 'white',
+                          position: 'absolute',
+                          top: '2px',
+                          left: show3DBuildings ? '18px' : '2px',
+                          transition: 'left 0.2s ease',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
