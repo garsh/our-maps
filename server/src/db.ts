@@ -20,9 +20,8 @@ async function migrate(db: Database) {
   if (!columnNames.includes('address')) {
     await db.exec("ALTER TABLE pins ADD COLUMN address TEXT");
   }
-  // Deprecated: drop pins.image_url the next time a schema change is required.
-  if (!columnNames.includes('image_url')) {
-    await db.exec("ALTER TABLE pins ADD COLUMN image_url TEXT");
+  if (columnNames.includes('image_url')) {
+    await db.exec("ALTER TABLE pins DROP COLUMN image_url");
   }
   if (!columnNames.includes('color')) {
     await db.exec("ALTER TABLE pins ADD COLUMN color TEXT DEFAULT 'blue'");
@@ -131,7 +130,6 @@ export async function getDb() {
       label TEXT,
       description TEXT,
       address TEXT,
-      image_url TEXT, -- Deprecated: drop pins.image_url the next time a schema change is required.
       color TEXT DEFAULT 'blue',
       icon TEXT DEFAULT 'default',
       position INTEGER DEFAULT 0,

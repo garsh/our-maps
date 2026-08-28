@@ -35,6 +35,10 @@ const TILE_STORE = 'tiles';
 const MAP_STORE = 'maps';
 const DB_VERSION = 2;
 
+function keyRangeOnly(key: string): any {
+    return typeof IDBKeyRange !== 'undefined' ? IDBKeyRange.only(key) : key;
+}
+
 let dbPromise: Promise<IDBDatabase> | null = null;
 const tileMissCache = new Set<string>();
 const MAX_MISS_CACHE_SIZE = 10000;
@@ -125,23 +129,6 @@ export async function getOfflineMap(mapId: string): Promise<MapData | null> {
     }
 }
 
-export async function removeOfflineMap(mapId: string): Promise<void> {
-    if (!mapId || typeof indexedDB === 'undefined') return;
-    try {
-        const db = await openDB();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction(MAP_STORE, 'readwrite');
-            const store = transaction.objectStore(MAP_STORE);
-            const req = store.delete(mapId);
-            req.onsuccess = () => resolve();
-            req.onerror = () => reject(req.error);
-            transaction.onerror = () => reject(transaction.error);
-        });
-    } catch {
-        return;
-    }
-}
-
 export async function addToManifest(entries: ManifestEntry[]): Promise<void> {
     if (!entries || entries.length === 0) return;
     const db = await openDB();
@@ -175,7 +162,7 @@ export async function getPendingFromManifest(mapId: string): Promise<ManifestEnt
         const transaction = db.transaction(MANIFEST_STORE, 'readonly');
         const store = transaction.objectStore(MANIFEST_STORE);
         const index = store.index('mapId');
-        const request = index.getAll(IDBKeyRange.only(mapId));
+        const request = index.getAll(keyRangeOnly(mapId));
 
         request.onsuccess = () => {
             const all = request.result as ManifestEntry[];
@@ -193,7 +180,7 @@ export async function getManifestStats(mapId: string): Promise<{ total: number, 
             const transaction = db.transaction(MANIFEST_STORE, 'readonly');
             const store = transaction.objectStore(MANIFEST_STORE);
             const index = store.index('mapId');
-            const request = index.getAll(IDBKeyRange.only(mapId));
+            const request = index.getAll(keyRangeOnly(mapId));
 
             request.onsuccess = () => {
                 const all = request.result as ManifestEntry[];
@@ -215,7 +202,7 @@ export async function getManifestEntries(mapId: string): Promise<ManifestEntry[]
             const transaction = db.transaction(MANIFEST_STORE, 'readonly');
             const store = transaction.objectStore(MANIFEST_STORE);
             const index = store.index('mapId');
-            const request = index.getAll(IDBKeyRange.only(mapId));
+            const request = index.getAll(keyRangeOnly(mapId));
 
             request.onsuccess = () => resolve(request.result as ManifestEntry[]);
             request.onerror = () => reject(request.error);
@@ -249,7 +236,7 @@ export async function getMapDownloadStatuses(mapIds?: string[]): Promise<Map<str
                         if (pending === 0) resolve(resultMap);
                         continue;
                     }
-                    const req = index.getAll(IDBKeyRange.only(mapId));
+                    const req = index.getAll(keyRangeOnly(mapId));
                     req.onsuccess = () => {
                         const entries = req.result as ManifestEntry[];
                         if (entries && entries.length > 0) {
@@ -316,44 +303,6 @@ export async function isMapDownloaded(mapId: string): Promise<boolean> {
     }
 }
 
-export async function getDownloadedMapIds(): Promise<string[]> {
-    if (typeof indexedDB === 'undefined') return [];
-    try {
-        const db = await openDB();
-        return new Promise((resolve) => {
-            const transaction = db.transaction([MAP_STORE, MANIFEST_STORE], 'readonly');
-            const mapStore = transaction.objectStore(MAP_STORE);
-            const mapReq = mapStore.getAllKeys();
-
-            mapReq.onsuccess = () => {
-                const keys = (mapReq.result as string[]) || [];
-                if (keys.length > 0) {
-                    resolve(keys);
-                    return;
-                }
-                const manifestStore = transaction.objectStore(MANIFEST_STORE);
-                const index = manifestStore.index('mapId');
-                const downloadedSet = new Set<string>();
-                const cursorReq = index.openKeyCursor();
-                cursorReq.onsuccess = () => {
-                    const cursor = cursorReq.result;
-                    if (cursor) {
-                        const mapId = cursor.key as string;
-                        if (mapId) downloadedSet.add(mapId);
-                        cursor.continue();
-                    } else {
-                        resolve(Array.from(downloadedSet));
-                    }
-                };
-                cursorReq.onerror = () => resolve([]);
-            };
-            mapReq.onerror = () => resolve([]);
-        });
-    } catch {
-        return [];
-    }
-}
-
 export async function removeMapDownload(mapId: string): Promise<void> {
     if (!mapId) return;
     clearTileMissCache();
@@ -367,7 +316,7 @@ export async function removeMapDownload(mapId: string): Promise<void> {
         mapStore.delete(mapId);
 
         const index = manifestStore.index('mapId');
-        const request = index.getAll(IDBKeyRange.only(mapId));
+        const request = index.getAll(keyRangeOnly(mapId));
 
         request.onsuccess = () => {
             const entries = request.result as ManifestEntry[];

@@ -16,7 +16,6 @@ describe('Sidebar', () => {
       onAddLayer: vi.fn(),
       onUpdateLayer: vi.fn(),
       onRemoveLayer: vi.fn(),
-      onResultSelect: vi.fn(),
       onAddPin: vi.fn(),
       onRemovePin: vi.fn(),
       onPinClick: vi.fn(),

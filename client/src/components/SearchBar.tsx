@@ -21,9 +21,7 @@ export interface SearchAreaState {
 }
 
 interface SearchBarProps {
-  onResultSelect: (lat: number, lng: number) => void;
   onAddPin: (lat: number, lng: number, label: string, address?: string) => void;
-  onSelectPin?: (pinId: string) => void;
   pins: Pin[];
   disabled?: boolean;
   debounceMs?: number;
@@ -60,7 +58,7 @@ const renderAddressParts = (title: string, address: string = '') => {
   );
 };
 
-const SearchBar = ({ onResultSelect: _onResultSelect, onAddPin, onSelectPin: _onSelectPin, pins, disabled, debounceMs = 500, mapBounds, onHoverSearchResult, onHoverPin, onSearchAreaStateChange }: SearchBarProps) => {
+const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHoverSearchResult, onHoverPin, onSearchAreaStateChange }: SearchBarProps) => {
   const [query, setQuery] = useState('');
   const [globalResults, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);

@@ -59,7 +59,6 @@ export function MapEditor() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
-  const [targetLocation, setTargetLocation] = useState<[number, number] | null>(null);
   const [targetPinId, setTargetPinId] = useState<string | null>(null);
   const [boundsToFit, setBoundsToFit] = useState<[[number, number], [number, number]] | null>(null);
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
@@ -1509,12 +1508,7 @@ export function MapEditor() {
             onUpdateLayer={updateLayer}
             onRemoveLayer={removeLayer}
             pins={pins}
-            onResultSelect={(lat, lng) => {
-              setTargetLocation([lat, lng]);
-              if (isMobile) setSheetHeight(0);
-            }}
             onAddPin={addPinAtLocation}
-            onSelectPin={handlePinSelect}
             onRemovePin={removePin}
             onPinClick={(pin) => {
               handlePinSelect(pin.id);
@@ -1607,7 +1601,6 @@ export function MapEditor() {
             onMapClick={handleMapClick} 
             onPinClick={handlePinClick}
             onUpdatePin={updatePin}
-            targetLocation={targetLocation} 
             targetPinId={targetPinId}
             editingPinId={editingPinId}
             boundsToFit={boundsToFit}

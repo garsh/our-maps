@@ -83,7 +83,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
 
   // Map fields for frontend consistency
   const formattedPins = pins.map(p => {
-    const { image_url: _imageUrl, layer_id, ...rest } = p;
+    const { layer_id, ...rest } = p;
     return {
       ...rest,
       layerId: layer_id,

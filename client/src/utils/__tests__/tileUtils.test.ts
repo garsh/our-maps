@@ -1,70 +1,90 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, saveMapOffline, getOfflineMap, removeOfflineMap, saveTile, getTile, addToManifest, getDownloadedMapIds, resetDBForTesting, openDB } from '../tileUtils';
+import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, saveMapOffline, getOfflineMap, removeMapDownload, saveTile, getTile, addToManifest, getManifestStats, resetDBForTesting, openDB } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('tileUtils', () => {
     let openSpy: any;
     beforeEach(() => {
         resetDBForTesting();
-        const store = new Map();
+        const stores = new Map<string, Map<any, any>>();
+        const getStore = (name: string) => {
+            if (!stores.has(name)) stores.set(name, new Map());
+            return stores.get(name)!;
+        };
         openSpy = vi.fn(() => {
             const req: any = {
                 result: {
                     objectStoreNames: { contains: () => true },
                     transaction: () => {
                         const tx: any = {
-                            objectStore: () => ({
-                                put: (val: any, key?: any) => {
-                                    store.set(key !== undefined ? key : (val?.id ?? val?.url), val);
-                                    const r: any = {};
-                                    setTimeout(() => r.onsuccess && r.onsuccess());
-                                    return r;
-                                },
-                                get: (id: string) => {
-                                    const r: any = {};
-                                    setTimeout(() => {
-                                        r.result = store.get(id);
-                                        r.onsuccess && r.onsuccess();
-                                    });
-                                    return r;
-                                },
-                                getAllKeys: () => {
-                                    const r: any = {};
-                                    setTimeout(() => {
-                                        r.result = Array.from(store.keys());
-                                        r.onsuccess && r.onsuccess();
-                                    });
-                                    return r;
-                                },
-                                delete: (id: string) => {
-                                    store.delete(id);
-                                    const r: any = {};
-                                    setTimeout(() => r.onsuccess && r.onsuccess());
-                                    return r;
-                                },
-                                index: () => ({
-                                    getAll: () => {
+                            objectStore: (name: string) => {
+                                const txStore = getStore(name);
+                                return {
+                                    put: (val: any, key?: any) => {
+                                        txStore.set(key !== undefined ? key : (val?.id ?? val?.url), val);
+                                        const r: any = {};
+                                        setTimeout(() => r.onsuccess && r.onsuccess());
+                                        return r;
+                                    },
+                                    get: (id: string) => {
                                         const r: any = {};
                                         setTimeout(() => {
-                                            r.result = Array.from(store.values());
+                                            r.result = txStore.get(id);
                                             r.onsuccess && r.onsuccess();
                                         });
                                         return r;
                                     },
-                                    openKeyCursor: () => {
+                                    getAll: () => {
                                         const r: any = {};
                                         setTimeout(() => {
-                                            r.result = null;
+                                            r.result = Array.from(txStore.values());
                                             r.onsuccess && r.onsuccess();
                                         });
                                         return r;
-                                    }
-                                })
-                            }),
+                                    },
+                                    getAllKeys: () => {
+                                        const r: any = {};
+                                        setTimeout(() => {
+                                            r.result = Array.from(txStore.keys());
+                                            r.onsuccess && r.onsuccess();
+                                        });
+                                        return r;
+                                    },
+                                    delete: (id: string) => {
+                                        txStore.delete(id);
+                                        const r: any = {};
+                                        setTimeout(() => r.onsuccess && r.onsuccess());
+                                        return r;
+                                    },
+                                    index: (idxName?: string) => ({
+                                        getAll: (query?: any) => {
+                                            const r: any = {};
+                                            setTimeout(() => {
+                                                let values = Array.from(txStore.values());
+                                                if (query !== undefined && query !== null) {
+                                                    const target = typeof query === 'object' && query?.lower !== undefined ? query.lower : query;
+                                                    values = values.filter((v: any) => (idxName && v?.[idxName] === target) || v?.mapId === target);
+                                                }
+                                                r.result = values;
+                                                r.onsuccess && r.onsuccess();
+                                            });
+                                            return r;
+                                        },
+                                        openKeyCursor: () => {
+                                            const r: any = {};
+                                            setTimeout(() => {
+                                                r.result = null;
+                                                r.onsuccess && r.onsuccess();
+                                            });
+                                            return r;
+                                        }
+                                    })
+                                };
+                            },
                             oncomplete: null,
                             onerror: null
                         };
-                        setTimeout(() => tx.oncomplete && tx.oncomplete(), 5);
+                        setTimeout(() => tx.oncomplete && tx.oncomplete(), 20);
                         return tx;
                     }
                 },
@@ -153,7 +173,7 @@ describe('tileUtils', () => {
         expect(retrieved?.name).toBe('Offline Test Map');
         expect(retrieved?.pins.length).toBe(1);
 
-        await removeOfflineMap('offline-map-123');
+        await removeMapDownload('offline-map-123');
         const afterRemove = await getOfflineMap('offline-map-123');
         expect(afterRemove).toBeNull();
     });
@@ -219,21 +239,8 @@ describe('tileUtils', () => {
         await addToManifest([pendingEntry]);
 
         // Verify that completed entry remains completed
-        const mapIds = await getDownloadedMapIds();
-        expect(mapIds).toBeDefined();
-    });
-
-    it('should retrieve downloaded map IDs efficiently from map store', async () => {
-        const mapData = {
-            id: 'fast-map-id',
-            name: 'Fast Map',
-            ownerId: 'u1',
-            layers: [],
-            pins: [],
-            userRole: 'owner' as const
-        };
-        await saveMapOffline(mapData as any);
-        const downloadedIds = await getDownloadedMapIds();
-        expect(downloadedIds).toContain('fast-map-id');
+        const stats = await getManifestStats('map-1');
+        expect(stats.completed).toBe(1);
+        expect(stats.total).toBe(1);
     });
 });

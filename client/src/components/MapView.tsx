@@ -1591,20 +1591,6 @@ const MapView = ({
         .maplibregl-ctrl-attrib a.maplibregl-compact {
           order: 99 !important;
         }
-        .add-pin-context-popup .maplibregl-popup-content {
-          background: transparent !important;
-          box-shadow: none !important;
-          padding: 0 !important;
-          border-radius: 0 !important;
-        }
-        .add-pin-context-popup .maplibregl-popup-tip {
-          border-top-width: 20px !important;
-          border-left-width: 10px !important;
-          border-right-width: 10px !important;
-          border-top-color: var(--primary-color, #483D8B) !important;
-          border-bottom-color: var(--primary-color, #483D8B) !important;
-          margin-top: -1px;
-        }
       `}</style>
     </div>
   );

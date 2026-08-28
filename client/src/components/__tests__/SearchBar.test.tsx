@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import SearchBar from '../SearchBar';
 
 describe('SearchBar', () => {
-  const mockOnResultSelect = vi.fn();
   const mockOnAddPin = vi.fn();
   const mockPins = [
     { id: '1', lat: 10, lng: 20, label: 'Local Coffee', description: 'Good coffee', position: 0 }
@@ -14,7 +13,7 @@ describe('SearchBar', () => {
   });
 
   it('renders correctly', () => {
-    render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={[]} />);
+    render(<SearchBar onAddPin={mockOnAddPin} pins={[]} />);
     expect(screen.getByPlaceholderText(/Search.../i)).toBeInTheDocument();
   });
 
@@ -28,7 +27,7 @@ describe('SearchBar', () => {
       json: async () => mockResults
     });
 
-    render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={[]} debounceMs={10} />);
+    render(<SearchBar onAddPin={mockOnAddPin} pins={[]} debounceMs={10} />);
     
     const input = screen.getByPlaceholderText(/Search.../i);
     fireEvent.change(input, { target: { value: 'London' } });
@@ -44,7 +43,7 @@ describe('SearchBar', () => {
   });
 
   it('performs fuzzy search on local pins', async () => {
-    render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={mockPins} />);
+    render(<SearchBar onAddPin={mockOnAddPin} pins={mockPins} />);
     
     const input = screen.getByPlaceholderText(/Search.../i);
     fireEvent.change(input, { target: { value: 'Cofee' } }); // Misspelled
@@ -56,7 +55,7 @@ describe('SearchBar', () => {
 
   it('previews a local result when clicked', async () => {
     const mockOnHoverPin = vi.fn();
-    render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} onHoverPin={mockOnHoverPin} pins={mockPins} />);
+    render(<SearchBar onAddPin={mockOnAddPin} onHoverPin={mockOnHoverPin} pins={mockPins} />);
     
     fireEvent.change(screen.getByPlaceholderText(/Search.../i), { target: { value: 'Coffee' } });
 
@@ -77,7 +76,6 @@ describe('SearchBar', () => {
     // Bounds around lat: 10, lng: 20 -> west: 19, north: 11, east: 21, south: 9.
     render(
       <SearchBar 
-        onResultSelect={mockOnResultSelect} 
         onAddPin={mockOnAddPin} 
         pins={mixedPins} 
         mapBounds="19,11,21,9" 
@@ -104,7 +102,7 @@ describe('SearchBar', () => {
       json: async () => mockResults
     });
 
-    render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={[]} debounceMs={10} />);
+    render(<SearchBar onAddPin={mockOnAddPin} pins={[]} debounceMs={10} />);
     
     fireEvent.change(screen.getByPlaceholderText(/Search.../i), { target: { value: 'New York' } });
 
@@ -126,7 +124,6 @@ describe('SearchBar', () => {
 
     const { rerender } = render(
       <SearchBar 
-        onResultSelect={mockOnResultSelect} 
         onAddPin={mockOnAddPin} 
         pins={[]} 
         debounceMs={10} 
@@ -146,7 +143,6 @@ describe('SearchBar', () => {
     // Simulate panning the map (bounds change)
     rerender(
       <SearchBar 
-        onResultSelect={mockOnResultSelect} 
         onAddPin={mockOnAddPin} 
         pins={[]} 
         debounceMs={10} 
@@ -172,7 +168,6 @@ describe('SearchBar', () => {
 
     const { rerender } = render(
       <SearchBar 
-        onResultSelect={mockOnResultSelect} 
         onAddPin={mockOnAddPin} 
         pins={[]} 
         debounceMs={10} 
@@ -191,7 +186,6 @@ describe('SearchBar', () => {
     // Simulate panning the map
     rerender(
       <SearchBar 
-        onResultSelect={mockOnResultSelect} 
         onAddPin={mockOnAddPin} 
         pins={[]} 
         debounceMs={10} 
@@ -217,7 +211,7 @@ describe('SearchBar', () => {
       json: async () => mockResults
     });
 
-    render(<SearchBar onResultSelect={mockOnResultSelect} onAddPin={mockOnAddPin} pins={[]} debounceMs={5000} />);
+    render(<SearchBar onAddPin={mockOnAddPin} pins={[]} debounceMs={5000} />);
     
     const input = screen.getByPlaceholderText(/Search.../i);
     fireEvent.change(input, { target: { value: 'Berlin' } });

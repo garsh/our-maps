@@ -81,9 +81,7 @@ interface SidebarProps {
   onUpdateLayer: (id: string, updates: Partial<PinLayer>) => void;
   onRemoveLayer: (id: string) => void;
   pins: Pin[];
-  onResultSelect: (lat: number, lng: number) => void;
   onAddPin: (lat: number, lng: number, label: string, address?: string) => void;
-  onSelectPin?: (pinId: string) => void;
   onRemovePin: (id: string) => void;
   onPinClick: (pin: Pin) => void;
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
@@ -1198,9 +1196,7 @@ const Sidebar = ({
   onUpdateLayer,
   onRemoveLayer,
   pins,
-  onResultSelect,
   onAddPin,
-  onSelectPin,
   onRemovePin,
   onPinClick,
   onUpdatePin,
@@ -2088,9 +2084,7 @@ class MouseSensor extends PointerSensor {
             {!readOnly && (
               <div style={{ flex: 1, minWidth: 0, height: '28px' }}>
                 <SearchBar 
-                  onResultSelect={onResultSelect} 
                   onAddPin={onAddPin}
-                  onSelectPin={onSelectPin}
                   pins={pins} 
                   disabled={readOnly} 
                   mapBounds={mapBounds}

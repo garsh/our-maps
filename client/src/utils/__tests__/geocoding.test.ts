@@ -1,10 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { reverseGeocode, resetGeocodingState } from '../geocoding';
+import { reverseGeocode } from '../geocoding';
 
 describe('reverseGeocode', () => {
   beforeEach(() => {
     global.fetch = vi.fn();
-    resetGeocodingState();
   });
 
   afterEach(() => {

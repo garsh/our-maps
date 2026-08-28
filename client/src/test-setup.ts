@@ -25,3 +25,14 @@ if (typeof File === 'undefined') {
     }
   } as any;
 }
+
+// Polyfill IDBKeyRange for Node/jsdom environment if needed
+if (typeof IDBKeyRange === 'undefined') {
+  (global as any).IDBKeyRange = {
+    only: (val: any) => val,
+    lowerBound: (val: any) => val,
+    upperBound: (val: any) => val,
+    bound: (lower: any, upper: any) => ({ lower, upper }),
+  };
+}
+
