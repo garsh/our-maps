@@ -241,4 +241,41 @@ describe('fileUtils', () => {
     expect(result.pins![0].id).not.toBe('old-pin-1');
     expect(result.pins![0].layerId).toBe(result.layers![0].id);
   });
+
+  it('round-trips KML export through importMapFile, preserving folders and pins', async () => {
+    const { mapDataToKml } = await import('../kmlUtils');
+    const { importMapFile } = await import('../fileUtils');
+
+    const mapData: MapData = {
+      id: 'map-export',
+      name: 'Exported Trails',
+      ownerId: 'user-1',
+      layers: [
+        { id: 'layer-1', name: 'Lookouts', position: 0 }
+      ],
+      pins: [
+        { id: 'pin-1', lat: 37.8, lng: -122.4, label: 'Vista', description: 'Best view', layerId: 'layer-1', position: 0 },
+        { id: 'pin-2', lat: 37.7, lng: -122.5, label: 'Parking', position: 1 }
+      ]
+    };
+
+    const file = new File([mapDataToKml(mapData)], 'export.kml', { type: 'application/vnd.google-earth.kml+xml' });
+    const result = await importMapFile(file);
+
+    expect(result.name).toBe('Exported Trails');
+    expect(result.layers).toHaveLength(1);
+    expect(result.layers![0].name).toBe('Lookouts');
+    expect(result.pins).toHaveLength(2);
+
+    const vista = result.pins!.find((pin) => pin.label === 'Vista');
+    expect(vista).toBeDefined();
+    expect(vista!.lat).toBe(37.8);
+    expect(vista!.lng).toBe(-122.4);
+    expect(vista!.description).toBe('Best view');
+    expect(vista!.layerId).toBe(result.layers![0].id);
+
+    const parking = result.pins!.find((pin) => pin.label === 'Parking');
+    expect(parking).toBeDefined();
+    expect(parking!.layerId).toBeUndefined();
+  });
 });

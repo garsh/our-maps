@@ -3,15 +3,16 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy root and sub-project package files
-COPY package.json package-lock.json ./
+# Root package.json is only needed for `npm run build` / `npm start` scripts.
+COPY package.json ./
 COPY client/package.json client/package-lock.json ./client/
 COPY server/package.json server/package-lock.json ./server/
 
-# Install dependencies across all workspaces
-RUN npm ci
-RUN cd client && npm ci
-RUN cd server && npm ci
+# Install client (Vite build) and server (tsc) dependencies.
+# Root deps (Playwright, concurrently, wait-on) are not used in this image.
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+RUN cd client && npm ci --no-audit --no-fund
+RUN cd server && npm ci --no-audit --no-fund
 
 # Copy all project files (ignoring node_modules via .dockerignore)
 COPY . .
@@ -32,11 +33,12 @@ ENV PORT=3000
 ENV DB_PATH=/data/database.sqlite
 
 # Copy only what's needed to run
-COPY package.json package-lock.json ./
+COPY package.json ./
 COPY server/package.json server/package-lock.json ./server/
 
 # Install production dependencies
-RUN cd server && npm ci --omit=dev
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+RUN cd server && npm ci --omit=dev --no-audit --no-fund
 
 # Copy over the compiled code and static map assets from the builder stages
 COPY --from=builder /app/client/dist ./client/dist

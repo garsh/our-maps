@@ -1,6 +1,5 @@
-import tokml from 'tokml';
 import type { MapData, Pin, PinLayer, PinIcon } from '@shared/interfaces';
-import { parseKmlHierarchy } from './kmlUtils';
+import { mapDataToKml, parseKmlHierarchy } from './kmlUtils';
 
 /**
  * Converts MapData to a GeoJSON FeatureCollection
@@ -158,8 +157,7 @@ export const exportMap = (mapData: MapData, format: 'json' | 'geojson' | 'kml', 
       break;
     }
     case 'kml': {
-      const kmlStr = tokml(mapDataToGeoJSON(mapData));
-      downloadFile(kmlStr, `${fileName}.kml`, 'application/vnd.google-earth.kml+xml');
+      downloadFile(mapDataToKml(mapData), `${fileName}.kml`, 'application/vnd.google-earth.kml+xml');
       break;
     }
   }

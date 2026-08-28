@@ -1,5 +1,64 @@
-import type { Pin, PinLayer } from '@shared/interfaces';
+import type { MapData, Pin, PinLayer } from '@shared/interfaces';
 import { generateId } from './fileUtils';
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function pinPlacemarkXml(pin: Pin): string {
+  const description = pin.description
+    ? `\n        <description>${escapeXml(pin.description)}</description>`
+    : '';
+  return `      <Placemark>
+        <name>${escapeXml(pin.label)}</name>${description}
+        <Point>
+          <coordinates>${pin.lng},${pin.lat}</coordinates>
+        </Point>
+      </Placemark>`;
+}
+
+/**
+ * Serializes map pins and layers to KML 2.2.
+ * Layers become Folders so parseKmlHierarchy can round-trip them.
+ */
+export function mapDataToKml(mapData: MapData): string {
+  const sortedLayers = [...mapData.layers].sort((a, b) => a.position - b.position);
+  const knownLayerIds = new Set(sortedLayers.map((layer) => layer.id));
+
+  const foldersXml = sortedLayers.map((layer) => {
+    const layerPins = mapData.pins
+      .filter((pin) => pin.layerId === layer.id)
+      .sort((a, b) => a.position - b.position)
+      .map(pinPlacemarkXml)
+      .join('\n');
+    return `    <Folder>
+      <name>${escapeXml(layer.name)}</name>
+${layerPins}
+    </Folder>`;
+  }).join('\n');
+
+  const ungroupedXml = mapData.pins
+    .filter((pin) => !pin.layerId || !knownLayerIds.has(pin.layerId))
+    .sort((a, b) => a.position - b.position)
+    .map(pinPlacemarkXml)
+    .join('\n');
+
+  const body = [foldersXml, ungroupedXml].filter(Boolean).join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>${escapeXml(mapData.name || 'Untitled Map')}</name>
+${body}
+  </Document>
+</kml>
+`;
+}
 
 /**
  * Manually parses KML DOM to extract Folders and Placemarks, preserving hierarchy.
