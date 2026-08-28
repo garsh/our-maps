@@ -28,7 +28,7 @@ import type {
 } from '@shared/interfaces'
 
 import type { DragEndEvent } from '@dnd-kit/core'
-import { Loader2, Map as MapIcon, LogOut, RotateCw } from 'lucide-react';
+import { Loader2, Map as MapIcon, RotateCw } from 'lucide-react';
 import type { SearchAreaState } from './components/SearchBar';
 import { reorderPins, reorderLayers, isSameLayer, comparePinPositions } from './utils/reorderUtils';
 import { generateId } from './utils/fileUtils';
@@ -41,7 +41,7 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
 export function MapEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, logout, logoutEverywhere } = useAuth();
+  const { user } = useAuth();
   const socketRef = useRef<Socket | null>(null);
   
   const [pins, setPins] = useState<Pin[]>([])
@@ -59,7 +59,6 @@ export function MapEditor() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
-  const [showSignOutDialog, setShowSignOutDialog] = useState(false);
   const [targetLocation, setTargetLocation] = useState<[number, number] | null>(null);
   const [targetPinId, setTargetPinId] = useState<string | null>(null);
   const [boundsToFit, setBoundsToFit] = useState<[[number, number], [number, number]] | null>(null);
@@ -1603,40 +1602,6 @@ export function MapEditor() {
             </button>
           </div>
         )}
-        {!isMobile && (
-          <div
-            onClick={() => setShowSignOutDialog(true)}
-            title={user?.name}
-            style={{
-              position: 'absolute',
-              top: '10px',
-              right: '10px',
-              zIndex: 1000,
-              width: '36px',
-              height: '36px',
-              borderRadius: '50%',
-              cursor: 'pointer',
-              overflow: 'hidden',
-              border: '2px solid rgba(255,255,255,0.3)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'rgba(255,255,255,0.2)',
-              fontWeight: 'bold',
-              color: 'white',
-              boxShadow: 'var(--shadow-sm)',
-              userSelect: 'none',
-              WebkitUserSelect: 'none',
-              WebkitTouchCallout: 'none',
-            }}
-          >
-            {user?.picture ? (
-              <img src={user.picture} alt={user.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <span>{user?.name?.[0]?.toUpperCase() || 'U'}</span>
-            )}
-          </div>
-        )}
         <MapView 
             pins={pins} 
             onMapClick={handleMapClick} 
@@ -1678,26 +1643,6 @@ export function MapEditor() {
         />
       )}
 
-      {showSignOutDialog && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(4px)' }} onClick={() => setShowSignOutDialog(false)}>
-          <div style={{ background: 'var(--surface-color)', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '400px', width: '90%', boxShadow: 'var(--shadow-lg)', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-            <div style={{ background: 'var(--bg-color)', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
-              <LogOut size={32} color="var(--primary-color)" />
-            </div>
-            <h3 style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>Sign Out</h3>
-            <p style={{ color: 'var(--text-secondary)', lineHeight: '1.5', margin: '1rem 0 2rem 0' }}>
-              Sign out of this browser, or end every signed-in session on all devices.
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <button onClick={() => setShowSignOutDialog(false)} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)' }}>Cancel</button>
-                <button onClick={() => { setShowSignOutDialog(false); logout(); }} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--primary-color)', color: 'white', fontWeight: '600' }}>Sign Out</button>
-              </div>
-              <button onClick={() => { setShowSignOutDialog(false); logoutEverywhere(); }} style={{ padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)' }}>Sign out everywhere</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

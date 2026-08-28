@@ -129,7 +129,7 @@ button:active {
 /* Live Zoom Level Indicator Pill (Dev Server Only) */
 .zoom-level-pill {
   position: absolute;
-  top: 64px;
+  top: 16px;
   right: 16px;
   background: var(--surface-color);
   backdrop-filter: blur(8px);
@@ -183,11 +183,6 @@ button:active {
   .leaflet-control-zoom,
   .maplibregl-ctrl-zoom {
     display: none !important;
-  }
-
-  .zoom-level-pill {
-    top: 16px;
-    right: 16px;
   }
 
   /* Make sure map takes full space on mobile */
