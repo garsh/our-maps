@@ -1,6 +1,7 @@
 :root {
   --primary-color: #483D8B; /* DarkSlateBlue */
   --primary-light: #6A5ACD;
+  --primary-hover: var(--primary-light);
   --success-color: #2AAD27; /* SuccessGreen from Android */
   --error-color: #CB2B3E; /* Red from Android */
   --bg-color: #f8f9fa;
@@ -8,6 +9,7 @@
   --text-primary: #1a1c1e;
   --text-secondary: #44474e;
   --border-color: #dee2e6;
+  --divider-color: color-mix(in srgb, var(--text-primary) 28%, var(--border-color));
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -23,6 +25,7 @@
   --text-primary: #cbd5e1;
   --text-secondary: #94a3b8;
   --border-color: #333333;
+  --primary-hover: #b3a6ff;
   --shadow-sm: 0 0 2px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.4);
   --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
@@ -75,6 +78,36 @@ button:active {
 
 .btn-primary:hover {
   background: var(--primary-light);
+}
+
+.maps-open-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 3px;
+  border-radius: 4px;
+  border: 1px solid var(--divider-color);
+  background: var(--surface-color);
+  color: var(--text-primary);
+  text-decoration: none;
+  cursor: pointer;
+  line-height: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.maps-open-btn:hover {
+  border-color: var(--primary-hover);
+  background: var(--bg-color);
+}
+
+[data-theme='dark'] .maps-open-btn:hover {
+  background: color-mix(in srgb, var(--primary-light) 20%, var(--surface-color));
+}
+
+.maps-open-btn:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 1px;
 }
 
 .input-field {

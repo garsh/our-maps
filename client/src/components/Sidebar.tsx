@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, memo } from 'react';
+import { useState, useEffect, useRef, useCallback, memo, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import SearchBar, { type SearchAreaState } from './SearchBar';
 import { reverseGeocode } from '../utils/geocoding';
@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronRight,
   Navigation,
+  Check,
   MoreVertical,
   Fuel,
   Zap,
@@ -171,6 +172,92 @@ const ICONS: { type: PinIcon; Icon: LucideIcon | any }[] = [
   { type: 'charging', Icon: Zap },
   { type: 'shopping', Icon: Handbag },
 ];
+
+const ADDRESS_TEXTAREA_MAX_PX = 120;
+const DESCRIPTION_TEXTAREA_MIN_PX = 64;
+const PIN_TEXTAREA_STYLE: CSSProperties = {
+  display: 'block',
+  margin: 0,
+  padding: '2px 4px',
+  fontSize: '0.6rem',
+  fontFamily: 'inherit',
+  lineHeight: 1.3,
+  overflow: 'hidden',
+  resize: 'none'
+};
+
+const fitTextarea = (el: HTMLTextAreaElement | null, minHeight: number, maxHeight: number) => {
+  if (!el) return;
+  el.style.overflowY = 'hidden';
+  el.style.height = '0px';
+  const cs = getComputedStyle(el);
+  const borderY = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+  const needed = el.scrollHeight + borderY + 4;
+  el.style.height = `${Math.min(Math.max(needed, minHeight), maxHeight)}px`;
+  el.style.overflowY = needed > maxHeight ? 'auto' : 'hidden';
+};
+
+const getCheckColors = (hex: string) => {
+  const raw = hex.trim().replace('#', '');
+  let r = 0, g = 0, b = 0;
+  if (raw.length === 3) {
+    r = parseInt(raw[0] + raw[0], 16);
+    g = parseInt(raw[1] + raw[1], 16);
+    b = parseInt(raw[2] + raw[2], 16);
+  } else if (raw.length >= 6) {
+    r = parseInt(raw.slice(0, 2), 16);
+    g = parseInt(raw.slice(2, 4), 16);
+    b = parseInt(raw.slice(4, 6), 16);
+  }
+  const toLin = (c: number) => {
+    const s = c / 255;
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * toLin(r) + 0.7152 * toLin(g) + 0.0722 * toLin(b);
+  return luminance > 0.45
+    ? { fg: '#111111', outline: '#ffffff' }
+    : { fg: '#ffffff', outline: '#111111' };
+};
+
+const ColorSwatch = ({
+  color,
+  isSelected,
+  onClick,
+  ariaLabel
+}: {
+  color: string;
+  isSelected: boolean;
+  onClick: () => void;
+  ariaLabel?: string;
+}) => {
+  const checkColors = isSelected ? getCheckColors(color) : null;
+  return (
+    <button
+      aria-label={ariaLabel}
+      onClick={onClick}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        height: '16px',
+        borderRadius: '4px',
+        background: color,
+        border: '1px solid rgba(0,0,0,0.2)',
+        cursor: 'pointer',
+        padding: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}
+    >
+      {checkColors && (
+        <span style={{ position: 'relative', width: 12, height: 12, display: 'block' }}>
+          <Check size={12} strokeWidth={4} color={checkColors.outline} style={{ position: 'absolute', inset: 0 }} />
+          <Check size={12} strokeWidth={2.25} color={checkColors.fg} style={{ position: 'absolute', inset: 0, zIndex: 1 }} />
+        </span>
+      )}
+    </button>
+  );
+};
 
 const IconButton = ({ type, Icon, isSelected, onClick }: { type: PinIcon, Icon: any, isSelected: boolean, onClick: () => void }) => {
   return (
@@ -326,6 +413,8 @@ const SortablePin = memo(({
   const localDescriptionRef = useRef(pin.description || '');
   const focusedFieldRef = useRef<'label' | 'address' | 'description' | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addressTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (focusedFieldRef.current !== 'label') {
@@ -347,6 +436,17 @@ const SortablePin = memo(({
       localDescriptionRef.current = pin.description || '';
     }
   }, [pin.description]);
+
+  useEffect(() => {
+    if (editingPinId !== pin.id) return;
+    const fitAll = () => {
+      fitTextarea(addressTextareaRef.current, 0, ADDRESS_TEXTAREA_MAX_PX);
+      fitTextarea(descriptionTextareaRef.current, DESCRIPTION_TEXTAREA_MIN_PX, Math.round(window.innerHeight * 0.7));
+    };
+    fitAll();
+    const frame = requestAnimationFrame(fitAll);
+    return () => cancelAnimationFrame(frame);
+  }, [editingPinId, pin.id, localAddress, localDescription]);
 
   const flushField = useCallback((field: 'label' | 'address' | 'description') => {
     if (debounceTimerRef.current) {
@@ -405,10 +505,10 @@ const SortablePin = memo(({
     flushField(field);
   };
 
-  const handleFieldKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>, field: 'label' | 'address' | 'description') => {
-    if (e.key === 'Enter' && field !== 'description') {
+  const handleLabelKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
       e.preventDefault();
-      flushField(field);
+      flushField('label');
       e.currentTarget.blur();
     }
   };
@@ -534,20 +634,13 @@ const SortablePin = memo(({
                   text={pin.label}
                   style={{ fontWeight: '600', fontSize: '0.65rem', color: 'var(--text-primary)', lineHeight: '1.1' }}
                 />
-                {pin.description && (
+                {pin.description && (isDragActive || (targetPinId !== pin.id && editingPinId !== pin.id)) && (
                   <div style={{ fontSize: '0.5rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '-1px', lineHeight: '1' }}>{pin.description}</div>
                 )}
               </div>            </div>
           </div>
         </div>
         <div style={{ display: 'flex', gap: '2px', marginLeft: '4px', alignItems: 'center' }}>
-          <input 
-            type="checkbox" 
-            checked={!!isSelected} 
-            onChange={(e) => { e.stopPropagation(); onToggleSelect?.(pin.id); }}
-            style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
-            onClick={(e) => e.stopPropagation()}
-          />
           {!readOnly && editingPinId === pin.id && (
             <button 
               title="Delete Pin"
@@ -570,6 +663,13 @@ const SortablePin = memo(({
               <Trash2 size={12} />
             </button>
           )}
+          <input 
+            type="checkbox" 
+            checked={!!isSelected} 
+            onChange={(e) => { e.stopPropagation(); onToggleSelect?.(pin.id); }}
+            style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
+            onClick={(e) => e.stopPropagation()}
+          />
           {!readOnly && (
             <button 
               aria-label={editingPinId === pin.id ? "Close edit" : "Edit"}
@@ -590,37 +690,48 @@ const SortablePin = memo(({
         </div>
       </div>
 
-      {!isDragActive && targetPinId === pin.id && editingPinId !== pin.id && (
-        <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '0.3rem', borderTop: '1px solid var(--border-color)' }}>
+      {!isDragActive && targetPinId === pin.id && editingPinId !== pin.id && (pin.address || pin.description) && (
+        <div style={{ padding: '0.3rem 0 0.15rem 0.15rem', marginTop: '2px', borderTop: '1px solid var(--divider-color)' }}>
           {pin.address && (
-            <div style={{ marginBottom: '8px', fontSize: '0.65rem', color: 'var(--text-secondary)', lineHeight: '1.2' }}>
-              <strong style={{ color: 'var(--text-primary)' }}>Address:</strong><br/>
-              {pin.address}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-primary)', lineHeight: '1.3', flex: 1, whiteSpace: 'pre-wrap' }}>
+                {pin.address}
+              </div>
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pin.address)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open in Google Maps"
+                aria-label="Open address in Google Maps"
+                onClick={(e) => e.stopPropagation()}
+                className="maps-open-btn"
+              >
+                <img
+                  src="/google-maps-pin.png"
+                  alt=""
+                  width={14}
+                  height={14}
+                  draggable={false}
+                />
+              </a>
             </div>
           )}
           {pin.description && (
-            <div style={{ marginBottom: '8px', fontSize: '0.65rem', color: 'var(--text-secondary)', lineHeight: '1.2', whiteSpace: 'pre-wrap' }}>
-              <strong style={{ color: 'var(--text-primary)' }}>Description:</strong><br/>
+            <div style={{
+              fontSize: '0.65rem',
+              color: 'var(--text-primary)',
+              lineHeight: '1.3',
+              whiteSpace: 'pre-wrap',
+              ...(pin.address ? { borderTop: '1px solid var(--divider-color)', marginTop: '0.3rem', paddingTop: '8px' } : {})
+            }}>
               {pin.description}
             </div>
           )}
-          <div style={{ marginTop: '8px' }}>
-            <a 
-              href={`https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lng}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ textDecoration: 'none', display: 'block' }}
-            >
-              <button className="btn-primary" style={{ width: '100%', padding: '6px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                <Navigation size={12} /> Navigate to Pin
-              </button>
-            </a>
-          </div>
         </div>
       )}
 
       {!isDragActive && editingPinId === pin.id && !readOnly && (
-        <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '0.3rem', borderTop: '1px solid var(--border-color)', fontSize: '0.7rem' }}>
+        <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '2px', borderTop: '1px solid var(--divider-color)', fontSize: '0.7rem' }}>
           <div style={{ marginBottom: '5px' }}>
             <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Name</label>
             <input 
@@ -629,7 +740,7 @@ const SortablePin = memo(({
               value={localLabel} 
               onFocus={() => { focusedFieldRef.current = 'label'; }}
               onChange={(e) => handleFieldChange('label', e.target.value)}
-              onKeyDown={(e) => handleFieldKeyDown(e, 'label')}
+              onKeyDown={handleLabelKeyDown}
               onBlur={() => handleFieldBlur('label')}
               className="input-field"
               style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit' }}
@@ -640,13 +751,14 @@ const SortablePin = memo(({
             <label htmlFor={`address-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Address</label>
             <textarea 
               id={`address-${pin.id}`}
+              ref={addressTextareaRef}
+              rows={1}
               value={localAddress} 
               onFocus={() => { focusedFieldRef.current = 'address'; }}
               onChange={(e) => handleFieldChange('address', e.target.value)}
-              onKeyDown={(e) => handleFieldKeyDown(e, 'address')}
               onBlur={() => handleFieldBlur('address')}
               className="input-field"
-              style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit', minHeight: '30px', resize: 'vertical' }}
+              style={PIN_TEXTAREA_STYLE}
               placeholder="Fetch address from map or type here..."
             />
           </div>
@@ -668,39 +780,25 @@ const SortablePin = memo(({
 
           <div style={{ marginBottom: '5px' }}>
             <label style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Color</label>
-            <div style={{ display: 'flex', gap: '2px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '1px', justifyContent: 'space-between' }}>
               {COLORS.map(color => (
-                <button
+                <ColorSwatch
                   key={color.name}
-                  aria-label={`color-${color.name}`}
+                  color={color.value}
+                  ariaLabel={`color-${color.name}`}
+                  isSelected={pin.color === color.name || (!pin.color && color.name === 'blue')}
                   onClick={() => onUpdatePin(pin.id, { color: color.name })}
-                  style={{
-                    width: '16px',
-                    height: '16px',
-                    borderRadius: '4px',
-                    background: color.value,
-                    border: pin.color === color.name || (!pin.color && color.name === 'blue') ? '1.5px solid var(--text-primary)' : '1px solid rgba(0,0,0,0.1)',
-                    cursor: 'pointer',
-                    padding: 0
-                  }}
                 />
               ))}
               {(customColors || []).map(color => (
-                <button
+                <ColorSwatch
                   key={color}
+                  color={color}
+                  isSelected={pin.color === color}
                   onClick={() => onUpdatePin(pin.id, { color })}
-                  style={{
-                    width: '16px',
-                    height: '16px',
-                    borderRadius: '4px',
-                    background: color,
-                    border: pin.color === color ? '1.5px solid var(--text-primary)' : '1px solid rgba(0,0,0,0.1)',
-                    cursor: 'pointer',
-                    padding: 0
-                  }}
                 />
               ))}
-              <div style={{ position: 'relative', width: '16px', height: '16px' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: 0, height: '16px' }}>
                 <input 
                   type="color"
                   value={(!pin.color || COLORS.some(c => c.name === pin.color)) ? '#9C2BCB' : pin.color}
@@ -710,7 +808,7 @@ const SortablePin = memo(({
                   onBlur={(e) => onAddCustomColor?.(e.target.value)}
                   style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 2 }}
                 />
-                <div style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'var(--bg-color)', border: '1px dashed var(--border-color)', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: 'var(--text-secondary)' }}>
+                <div style={{ width: '100%', height: '100%', borderRadius: '4px', background: 'var(--bg-color)', border: '1px dashed var(--border-color)', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: 'var(--text-secondary)' }}>
                   +
                 </div>
               </div>
@@ -732,17 +830,17 @@ const SortablePin = memo(({
             </div>
           </div>
 
-
           <div style={{ marginBottom: '5px' }}>
             <label htmlFor={`desc-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Description</label>
             <textarea 
               id={`desc-${pin.id}`}
+              ref={descriptionTextareaRef}
               value={localDescription} 
               onFocus={() => { focusedFieldRef.current = 'description'; }}
               onChange={(e) => handleFieldChange('description', e.target.value)}
               onBlur={() => handleFieldBlur('description')}
               className="input-field"
-              style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit', minHeight: '30px', resize: 'vertical' }}
+              style={{ ...PIN_TEXTAREA_STYLE, minHeight: DESCRIPTION_TEXTAREA_MIN_PX, maxHeight: '70vh' }}
             />
           </div>
         </div>
