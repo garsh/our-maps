@@ -698,7 +698,9 @@ const SortablePin = memo(({
                 {pin.address}
               </div>
               <a
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pin.address)}`}
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                  [pin.label, pin.address].filter(part => part?.trim()).join(', ').replace(/\s+/g, ' ')
+                )}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 title="Open in Google Maps"
