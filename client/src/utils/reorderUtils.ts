@@ -58,7 +58,14 @@ export function reorderPins(
     
     const result = [...otherPins];
     result.splice(Math.max(0, targetIndex), 0, ...updatedMovedPins);
-    return result.map((p, i) => ({ ...p, position: i }));
+
+    const layerPositions = new Map<string | null, number>();
+    return result.map((p) => {
+        const layerKey = p.layerId || null;
+        const pos = layerPositions.get(layerKey) || 0;
+        layerPositions.set(layerKey, pos + 1);
+        return { ...p, position: pos };
+    });
 }
 
 /**

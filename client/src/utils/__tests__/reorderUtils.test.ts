@@ -83,6 +83,20 @@ describe('reorderUtils', () => {
         expect(result[2].id).toBe('L2');
     });
 
+    it('should assign 0-indexed positions scoped per-layer across multiple layers', () => {
+        const multiLayerPins: Pin[] = [
+            { id: '1', label: 'P1', layerId: 'L1', position: 0, lat: 0, lng: 0 },
+            { id: '2', label: 'P2', layerId: 'L1', position: 1, lat: 0, lng: 0 },
+            { id: '3', label: 'P3', layerId: 'L2', position: 0, lat: 0, lng: 0 },
+            { id: '4', label: 'P4', layerId: 'L2', position: 1, lat: 0, lng: 0 },
+        ] as any;
+        const result = reorderPins(multiLayerPins, '1', '2', 'pin', 'L1', new Set());
+        const l1Pins = result.filter(p => p.layerId === 'L1');
+        const l2Pins = result.filter(p => p.layerId === 'L2');
+        expect(l1Pins.map(p => p.position)).toEqual([0, 1]);
+        expect(l2Pins.map(p => p.position)).toEqual([0, 1]);
+    });
+
     it('should not allow moving or targeting default layer', () => {
         const layers = [{ id: 'L1', name: 'L1', position: 0 }, { id: 'L2', name: 'L2', position: 1 }] as any;
         expect(reorderLayers(layers, 'default', 'L1')).toEqual(layers);

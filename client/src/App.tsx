@@ -1245,8 +1245,22 @@ export function MapEditor() {
         const destLayerPins = next.filter(p => isSameLayer(p.layerId, overLayerId));
 
         if (changedLayerPins.length > 0) {
-          const sourceLayerPins = originalLayerId !== undefined && !isSameLayer(originalLayerId, overLayerId)
-            ? next.filter(p => isSameLayer(p.layerId, originalLayerId))
+          // Identify all distinct source layers that lost pins
+          const sourceLayers = new Set<string | undefined>();
+          pinsToMoveIds.forEach(pId => {
+            const srcLayer = startLayersMap.get(pId);
+            if (!isSameLayer(srcLayer, overLayerId)) {
+              sourceLayers.add(srcLayer);
+            }
+          });
+
+          // Primary source layer (from the active dragged pin)
+          const primarySourceLayer = sourceLayers.has(originalLayerId)
+            ? originalLayerId
+            : (sourceLayers.values().next().value as string | undefined);
+
+          const primarySourcePins = primarySourceLayer !== undefined && !isSameLayer(primarySourceLayer, overLayerId)
+            ? next.filter(p => isSameLayer(p.layerId, primarySourceLayer))
             : undefined;
 
           socketRef.current?.emit('pin-move-layer', {
@@ -1254,8 +1268,20 @@ export function MapEditor() {
             pinIds: changedLayerPins,
             targetLayerId: overLayerId === undefined ? null : overLayerId,
             destPinOrder: destLayerPins.map(p => p.id),
-            sourceLayerId: originalLayerId === undefined ? null : originalLayerId,
-            sourcePinOrder: sourceLayerPins?.map(p => p.id),
+            sourceLayerId: primarySourceLayer === undefined ? null : primarySourceLayer,
+            sourcePinOrder: primarySourcePins?.map(p => p.id),
+          });
+
+          // If pins were moved from multiple distinct source layers, emit pins-reorder for the other source layers
+          sourceLayers.forEach(srcLayer => {
+            if (srcLayer !== primarySourceLayer) {
+              const remainingPins = next.filter(p => isSameLayer(p.layerId, srcLayer));
+              socketRef.current?.emit('pins-reorder', {
+                mapId: currentMapId,
+                layerId: srcLayer === undefined ? null : srcLayer,
+                pinOrder: remainingPins.map(p => p.id),
+              });
+            }
           });
         } else {
           // Same-layer reorder only
