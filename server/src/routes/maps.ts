@@ -419,7 +419,7 @@ router.post('/:id/share', async (req: AuthRequest, res) => {
     if (map.owner_id !== userId) return res.status(403).json({ error: 'Only owner can share' });
 
     // Lookup user by email
-    const targetUser = await db.get('SELECT id FROM users WHERE email = ?', email);
+    const targetUser = await db.get('SELECT id, name, picture FROM users WHERE email = ?', email);
     if (!targetUser) {
       return res.status(404).json({ error: 'User not found. They must sign in at least once.' });
     }
@@ -457,7 +457,14 @@ router.post('/:id/share', async (req: AuthRequest, res) => {
       `, mapId, targetUser.id, role);
     }
 
-    res.json({ message: 'Map shared', userId: targetUser.id, email, role });
+    res.json({
+      message: 'Map shared',
+      userId: targetUser.id,
+      email,
+      role,
+      userName: targetUser.name || email,
+      userPicture: targetUser.picture
+    });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Validation failed', details: error.issues });

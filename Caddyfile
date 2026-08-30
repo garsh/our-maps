@@ -9,22 +9,26 @@
 }
 
 ourmaps.mooo.com {
+	encode zstd gzip
 	reverse_proxy our-maps:{$PORT}
 }
 
 # LAN hostname and IP (tls internal — browsers will warn until the cert is trusted)
 bird.lan {
 	tls internal
+	encode zstd gzip
 	reverse_proxy our-maps:{$PORT}
 }
 
 192.168.253.3 {
 	tls internal
+	encode zstd gzip
 	reverse_proxy our-maps:{$PORT}
 }
 
 # Also allow access via localhost if you are testing on the same machine
 localhost {
 	tls internal
+	encode zstd gzip
 	reverse_proxy our-maps:{$PORT}
 }

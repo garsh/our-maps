@@ -222,41 +222,7 @@ export async function getMapDownloadStatuses(mapIds?: string[]): Promise<Map<str
     try {
         const db = await openDB();
         const resultMap = new Map<string, MapDownloadStatus>();
-
-        if (mapIds && mapIds.length > 0) {
-            return new Promise((resolve) => {
-                const transaction = db.transaction(MANIFEST_STORE, 'readonly');
-                const store = transaction.objectStore(MANIFEST_STORE);
-                const index = store.index('mapId');
-                let pending = mapIds.length;
-
-                for (const mapId of mapIds) {
-                    if (!mapId) {
-                        pending--;
-                        if (pending === 0) resolve(resultMap);
-                        continue;
-                    }
-                    const req = index.getAll(keyRangeOnly(mapId));
-                    req.onsuccess = () => {
-                        const entries = req.result as ManifestEntry[];
-                        if (entries && entries.length > 0) {
-                            const total = entries.length;
-                            const completed = entries.filter(e => e.status === 'completed').length;
-                            resultMap.set(mapId, {
-                                isComplete: completed === total && total > 0,
-                                isPartial: completed > 0 && completed < total
-                            });
-                        }
-                        pending--;
-                        if (pending === 0) resolve(resultMap);
-                    };
-                    req.onerror = () => {
-                        pending--;
-                        if (pending === 0) resolve(resultMap);
-                    };
-                }
-            });
-        }
+        const targetMapIdSet = mapIds && mapIds.length > 0 ? new Set(mapIds) : null;
 
         return new Promise((resolve, reject) => {
             const transaction = db.transaction(MANIFEST_STORE, 'readonly');
@@ -268,6 +234,7 @@ export async function getMapDownloadStatuses(mapIds?: string[]): Promise<Map<str
                 const mapStats = new Map<string, { total: number; completed: number }>();
                 all.forEach(entry => {
                     if (!entry.mapId) return;
+                    if (targetMapIdSet && !targetMapIdSet.has(entry.mapId)) return;
                     const current = mapStats.get(entry.mapId) || { total: 0, completed: 0 };
                     current.total++;
                     if (entry.status === 'completed') {

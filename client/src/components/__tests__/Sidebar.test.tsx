@@ -733,4 +733,32 @@ describe('Sidebar', () => {
 
     droppableSpy.mockRestore();
   });
+
+  it('calls onMovePinsToLayer with batched pin IDs when moving selected pins', () => {
+    const onMovePinsToLayer = vi.fn();
+    const pins = [
+      { id: '1', lat: 10, lng: 20, label: 'Pin 1', position: 0 },
+      { id: '2', lat: 11, lng: 21, label: 'Pin 2', position: 1 },
+    ];
+    const layers = [{ id: 'layer-1', name: 'Custom Layer', position: 0 }];
+
+    render(
+      <TestWrapper 
+        pins={pins} 
+        selectedNavIds={new Set(['1', '2'])}
+        handlers={{ 
+          layers,
+          onMovePinsToLayer,
+        }} 
+      />
+    );
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+    expect(screen.getByText('MOVE SELECTED TO...')).toBeInTheDocument();
+    const layerOptions = screen.getAllByText('Custom Layer');
+    // Click the menu option (first match in dropdown)
+    fireEvent.click(layerOptions[0]);
+
+    expect(onMovePinsToLayer).toHaveBeenCalledWith(['1', '2'], 'layer-1');
+  });
 });

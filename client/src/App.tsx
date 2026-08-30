@@ -898,11 +898,27 @@ export function MapEditor() {
 
   const handleShare = async (email: string, role: 'view' | 'edit' | 'owner') => {
     if (!mapId) return;
-    await apiService.shareMap(mapId, email, role);
-    const data = await apiService.getMapPermissions(mapId);
-    setPermissions(data.permissions || []);
-    if (data.owner) setOwner(data.owner);
-    if (data.userRole) setUserRole(data.userRole);
+    const res = await apiService.shareMap(mapId, email, role);
+    if (role === 'owner') {
+      const data = await apiService.getMapPermissions(mapId);
+      setPermissions(data.permissions || []);
+      if (data.owner) setOwner(data.owner);
+      if (data.userRole) setUserRole(data.userRole);
+    } else if (res?.userId) {
+      setPermissions(prev => {
+        const filtered = prev.filter(p => p.userId !== res.userId);
+        return [...filtered, {
+          userId: res.userId,
+          userEmail: res.email || email,
+          userName: res.userName || email,
+          userPicture: res.userPicture,
+          role: res.role || role
+        }];
+      });
+    } else {
+      const data = await apiService.getMapPermissions(mapId);
+      setPermissions(data.permissions || []);
+    }
   };
 
   const handleRemoveShare = async (userId: string) => {
@@ -1075,6 +1091,71 @@ export function MapEditor() {
         });
       } else {
         socketRef.current?.emit('pin-update', { mapId, pinId: targetId, updates: computedUpdates });
+      }
+    }
+  }, [userRole, isOffline, mapId]);
+
+  const movePinsToLayer = useCallback((pinIds: string[], targetLayerId?: string) => {
+    if (userRole === 'view' || isOffline || pinIds.length === 0) return;
+
+    const currentPins = pinsRef.current;
+    const pinIdSet = new Set(pinIds);
+    const pinsToMove = currentPins.filter(p => pinIdSet.has(p.id));
+    if (pinsToMove.length === 0) return;
+
+    const startLayersMap = new Map<string, string | undefined>();
+    pinsToMove.forEach(p => startLayersMap.set(p.id, p.layerId));
+
+    const pinsInTargetLayer = currentPins.filter(p => !pinIdSet.has(p.id) && isSameLayer(p.layerId, targetLayerId));
+    let nextPos = getNextPinPosition(pinsInTargetLayer, targetLayerId);
+
+    const updatedPins = currentPins.map(p => {
+      if (pinIdSet.has(p.id)) {
+        const assignedPos = nextPos++;
+        return { ...p, layerId: targetLayerId, position: assignedPos };
+      }
+      return p;
+    });
+
+    setPins(updatedPins);
+
+    if (mapId) {
+      const changedLayerPins = pinIds.filter(pId => !isSameLayer(startLayersMap.get(pId), targetLayerId));
+      const destLayerPins = updatedPins.filter(p => isSameLayer(p.layerId, targetLayerId)).sort(comparePinPositions);
+
+      if (changedLayerPins.length > 0) {
+        const sourceLayers = new Set<string | undefined>();
+        pinIds.forEach(pId => {
+          const srcLayer = startLayersMap.get(pId);
+          if (!isSameLayer(srcLayer, targetLayerId)) {
+            sourceLayers.add(srcLayer);
+          }
+        });
+
+        const primarySourceLayer = sourceLayers.values().next().value as string | undefined;
+        const primarySourcePins = primarySourceLayer !== undefined && !isSameLayer(primarySourceLayer, targetLayerId)
+          ? updatedPins.filter(p => isSameLayer(p.layerId, primarySourceLayer)).sort(comparePinPositions)
+          : undefined;
+
+        socketRef.current?.emit('pin-move-layer', {
+          mapId,
+          pinIds: changedLayerPins,
+          targetLayerId: targetLayerId === undefined ? null : targetLayerId,
+          destPinOrder: destLayerPins.map(p => p.id),
+          sourceLayerId: primarySourceLayer === undefined ? null : primarySourceLayer,
+          sourcePinOrder: primarySourcePins?.map(p => p.id),
+        });
+
+        sourceLayers.forEach(srcLayer => {
+          if (srcLayer !== primarySourceLayer) {
+            const remainingPins = updatedPins.filter(p => isSameLayer(p.layerId, srcLayer)).sort(comparePinPositions);
+            socketRef.current?.emit('pins-reorder', {
+              mapId,
+              layerId: srcLayer === undefined ? null : srcLayer,
+              pinOrder: remainingPins.map(p => p.id),
+            });
+          }
+        });
       }
     }
   }, [userRole, isOffline, mapId]);
@@ -1505,6 +1586,7 @@ export function MapEditor() {
             onRemovePin={removePin}
             onPinClick={handlePinClick}
             onUpdatePin={updatePin}
+            onMovePinsToLayer={movePinsToLayer}
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
             onDragStart={handleDragStart}

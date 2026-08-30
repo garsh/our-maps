@@ -121,9 +121,17 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
   const [showDropdown, setShowDropdown] = useState(false);
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchAbortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      searchAbortControllerRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) {
+      searchAbortControllerRef.current?.abort();
       setFilteredContacts([]);
       setShowDropdown(false);
       return;
@@ -135,22 +143,31 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
     } else if (contacts) {
       setFilteredContacts(contacts);
     } else {
+      searchAbortControllerRef.current?.abort();
+      const controller = new AbortController();
+      searchAbortControllerRef.current = controller;
+
       const searchTimer = setTimeout(async () => {
         try {
-          const { users } = await apiService.searchUsers(email);
-          setFilteredContacts(users);
-          if (users.length > 0 && email.length > 0) {
-            if (!(users.length === 1 && users[0].email === email)) {
-              setShowDropdown(true);
+          const { users } = await apiService.searchUsers(email, controller.signal);
+          if (!controller.signal.aborted) {
+            setFilteredContacts(users);
+            if (users.length > 0 && email.length > 0) {
+              if (!(users.length === 1 && users[0].email === email)) {
+                setShowDropdown(true);
+              }
             }
           }
         } catch (e: any) {
-          if (e?.name !== 'AbortError') {
+          if (e?.name !== 'AbortError' && !controller.signal.aborted) {
             console.error('Failed to search users', e);
           }
         }
       }, 300);
-      return () => clearTimeout(searchTimer);
+      return () => {
+        clearTimeout(searchTimer);
+        controller.abort();
+      };
     }
   }, [isOpen, email, contacts]);
 

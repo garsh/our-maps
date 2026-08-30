@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, saveMapOffline, getOfflineMap, removeMapDownload, saveTile, getTile, addToManifest, getManifestStats, resetDBForTesting, openDB } from '../tileUtils';
+import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, saveMapOffline, getOfflineMap, removeMapDownload, saveTile, getTile, addToManifest, getManifestStats, getMapDownloadStatuses, resetDBForTesting, openDB } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('tileUtils', () => {
@@ -242,5 +242,31 @@ describe('tileUtils', () => {
         const stats = await getManifestStats('map-1');
         expect(stats.completed).toBe(1);
         expect(stats.total).toBe(1);
+    });
+
+    it('returns download statuses for maps in single pass with or without mapId list', async () => {
+        const entry1 = {
+            url: 'https://example.com/map1_t1.mvt',
+            x: 1, y: 1, z: 1,
+            status: 'completed' as const,
+            mapId: 'map-1',
+            updatedAt: Date.now()
+        };
+        const entry2 = {
+            url: 'https://example.com/map2_t1.mvt',
+            x: 2, y: 2, z: 2,
+            status: 'pending' as const,
+            mapId: 'map-2',
+            updatedAt: Date.now()
+        };
+        await addToManifest([entry1, entry2]);
+
+        const statusesAll = await getMapDownloadStatuses();
+        expect(statusesAll.get('map-1')).toEqual({ isComplete: true, isPartial: false });
+        expect(statusesAll.get('map-2')).toEqual({ isComplete: false, isPartial: false });
+
+        const statusesFiltered = await getMapDownloadStatuses(['map-1']);
+        expect(statusesFiltered.get('map-1')).toEqual({ isComplete: true, isPartial: false });
+        expect(statusesFiltered.has('map-2')).toBe(false);
     });
 });

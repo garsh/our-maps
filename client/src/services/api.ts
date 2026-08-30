@@ -18,7 +18,10 @@ const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 
       return fetchWithRetry(url, options, retries - 1);
     }
     return res;
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw err;
+    }
     if (retries > 0) {
       console.warn(`Fetch network error for ${url}, retrying... (${retries} left)`, err);
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -175,10 +178,11 @@ export const apiService = {
     return handleResponse<{ emails: string[] }>(res, this._logoutCallback, 'Failed to load shared contacts');
   },
 
-  async searchUsers(query: string): Promise<{ users: any[] }> {
+  async searchUsers(query: string, signal?: AbortSignal): Promise<{ users: any[] }> {
     const res = await fetchWithRetry(`${API_BASE}/auth/search-users?q=${encodeURIComponent(query)}`, {
       headers: getHeaders(),
-    });
+      signal,
+    }, 0);
     return handleResponse<{ users: any[] }>(res, this._logoutCallback, 'Failed to search users');
   },
 
@@ -198,17 +202,20 @@ export const apiService = {
     return handleResponse<any>(res, this._logoutCallback, 'Failed to delete map');
   },
 
-  async search(query: string, bounds?: string | null): Promise<any[]> {
+  async search(query: string, bounds?: string | null, signal?: AbortSignal): Promise<any[]> {
     let url = `${API_BASE}/places/search?q=${encodeURIComponent(query)}`;
     if (bounds) {
       url += `&bounds=${encodeURIComponent(bounds)}`;
     }
-    const res = await fetchWithRetry(url, { headers: getHeaders() });
+    const res = await fetchWithRetry(url, { headers: getHeaders(), signal }, 0);
     return handleResponse<any[]>(res, this._logoutCallback, 'Search failed');
   },
 
-  async reverseGeocode(lat: number, lng: number): Promise<string | null> {
-    const res = await fetchWithRetry(`${API_BASE}/places/reverse-geocode?lat=${lat}&lng=${lng}`, { headers: getHeaders() });
+  async reverseGeocode(lat: number, lng: number, signal?: AbortSignal): Promise<string | null> {
+    const res = await fetchWithRetry(`${API_BASE}/places/reverse-geocode?lat=${lat}&lng=${lng}`, {
+      headers: getHeaders(),
+      signal
+    }, 0);
     const data = await handleResponse<{ address?: string }>(res, this._logoutCallback, 'Reverse geocode failed');
     return data.address || null;
   }

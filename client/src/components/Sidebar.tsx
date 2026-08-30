@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, memo, type CSSProperties } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, memo, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import SearchBar, { type SearchAreaState } from './SearchBar';
 import { reverseGeocode } from '../utils/geocoding';
@@ -99,6 +99,7 @@ interface SidebarProps {
   onRemovePin: (id: string) => void;
   onPinClick: (pin: Pin) => void;
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
+  onMovePinsToLayer?: (pinIds: string[], targetLayerId?: string) => void;
   onDragEnd: (event: DragEndEvent) => void;
   onDragCancel?: () => void;
   onDragStart?: (event: DragStartEvent) => void;
@@ -1340,6 +1341,7 @@ const Sidebar = ({
   onRemovePin,
   onPinClick,
   onUpdatePin,
+  onMovePinsToLayer,
   onDragEnd,
   onDragCancel,
   onDragStart,
@@ -1382,6 +1384,23 @@ const Sidebar = ({
   const [activePin, setActivePin] = useState<Pin | null>(null);
   const [activeLayer, setActiveLayer] = useState<PinLayer | null>(null);
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const [headerActionsEl, setHeaderActionsEl] = useState<HTMLElement | null>(() => {
+    return typeof document !== 'undefined' ? document.getElementById('mobile-header-actions') : null;
+  });
+  const [downloadPillEl, setDownloadPillEl] = useState<HTMLElement | null>(() => {
+    return typeof document !== 'undefined' ? document.getElementById('download-pill-container') : null;
+  });
+
+  useLayoutEffect(() => {
+    const updateContainers = () => {
+      setHeaderActionsEl(document.getElementById('mobile-header-actions'));
+      setDownloadPillEl(document.getElementById('download-pill-container'));
+    };
+    updateContainers();
+
+    window.addEventListener('resize', updateContainers);
+    return () => window.removeEventListener('resize', updateContainers);
+  }, [isMobile]);
 
   useEffect(() => {
     const handleEditLayerEvent = (e: CustomEvent<{ layerId: string }>) => {
@@ -1961,12 +1980,26 @@ const Sidebar = ({
         }}
       >
         {(() => {
+          const targetHeaderActions = (headerActionsEl && document.body.contains(headerActionsEl))
+            ? headerActionsEl
+            : (typeof document !== 'undefined' ? document.getElementById('mobile-header-actions') : null);
+          const isPortaled = !!(targetHeaderActions && document.body.contains(targetHeaderActions));
+
           const menuContent = (
             <div style={{ position: 'relative' }} ref={menuRef}>
               <button 
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                 aria-label="More options"
-                style={{ background: 'none', border: 'none', color: mapTheme === 'dark' ? '#cbd5e1' : 'white', cursor: 'pointer', display: 'flex', padding: '3px' }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: isPortaled
+                    ? (mapTheme === 'dark' ? '#cbd5e1' : 'white')
+                    : (mapTheme === 'dark' ? '#cbd5e1' : 'var(--text-primary)'),
+                  cursor: 'pointer',
+                  display: 'flex',
+                  padding: '3px'
+                }}
               >
                 <MoreVertical size={20} />
               </button>
@@ -2074,7 +2107,11 @@ const Sidebar = ({
                       <div 
                         style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
                         onClick={() => {
-                          selectedPins.forEach(p => onUpdatePin(p.id, { layerId: undefined }));
+                          if (onMovePinsToLayer) {
+                            onMovePinsToLayer(selectedPins.map(p => p.id), undefined);
+                          } else {
+                            selectedPins.forEach(p => onUpdatePin(p.id, { layerId: undefined }));
+                          }
                           setIsMenuOpen(false);
                         }}
                         onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
@@ -2087,7 +2124,11 @@ const Sidebar = ({
                           key={layer.id}
                           style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
                           onClick={() => {
-                            selectedPins.forEach(p => onUpdatePin(p.id, { layerId: layer.id }));
+                            if (onMovePinsToLayer) {
+                              onMovePinsToLayer(selectedPins.map(p => p.id), layer.id);
+                            } else {
+                              selectedPins.forEach(p => onUpdatePin(p.id, { layerId: layer.id }));
+                            }
                             setIsMenuOpen(false);
                           }}
                           onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
@@ -2374,8 +2415,8 @@ const Sidebar = ({
             </div>
           );
 
-          return document.getElementById('mobile-header-actions')
-            ? createPortal(menuContent, document.getElementById('mobile-header-actions')!)
+          return isPortaled && targetHeaderActions
+            ? createPortal(menuContent, targetHeaderActions)
             : menuContent;
         })()}
 
@@ -2726,8 +2767,10 @@ const Sidebar = ({
 
       {/* Download Pill Indicator (Portaled into header next to sync pill) */}
       {(() => {
-        const pillContainer = document.getElementById('download-pill-container');
-        if (!pillContainer) return null;
+        const pillContainer = (downloadPillEl && document.body.contains(downloadPillEl))
+          ? downloadPillEl
+          : (typeof document !== 'undefined' ? document.getElementById('download-pill-container') : null);
+        if (!pillContainer || !document.body.contains(pillContainer)) return null;
 
         const showActiveProgress = isDownloading || hasPartialDownload;
         const showCompleted = isDownloaded && !showActiveProgress;

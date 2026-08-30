@@ -68,6 +68,13 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
   const effectiveBounds = mapBounds ?? storeBounds ?? getMapViewportBounds();
   const mapBoundsRef = useRef(effectiveBounds);
   mapBoundsRef.current = effectiveBounds;
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     if (mapBounds != null) return;
@@ -131,21 +138,33 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
 
   const executeGlobalSearch = useCallback(async (searchQuery: string, boundsToUse?: string | null) => {
     if (searchQuery.trim().length < 3) {
+      abortControllerRef.current?.abort();
       setResults([]);
       setIsSearching(false);
       setLastSearchedBounds(null);
       return;
     }
+
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setIsSearching(true);
     const bounds = boundsToUse ?? mapBoundsRef.current ?? getMapViewportBounds();
     try {
-      const formatted = await apiService.search(searchQuery, bounds);
-      setResults(formatted);
-      setLastSearchedBounds(bounds || null);
-    } catch (error) {
-      console.error('Search failed:', error);
+      const formatted = await apiService.search(searchQuery, bounds, controller.signal);
+      if (!controller.signal.aborted) {
+        setResults(formatted);
+        setLastSearchedBounds(bounds || null);
+      }
+    } catch (error: any) {
+      if (error?.name !== 'AbortError' && !controller.signal.aborted) {
+        console.error('Search failed:', error);
+      }
     } finally {
-      setIsSearching(false);
+      if (!controller.signal.aborted) {
+        setIsSearching(false);
+      }
     }
   }, []);
 

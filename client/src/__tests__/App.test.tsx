@@ -220,5 +220,46 @@ describe('App Components Error Handling', () => {
     fireEvent.mouseUp(window);
     expect(sidebar.style.width).toBe('520px');
   });
+
+  it('keeps More options button available when resizing window from desktop to mobile', async () => {
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    // Start with desktop window size
+    window.innerWidth = 1024;
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/more options/i)).toBeInTheDocument();
+    });
+
+    // Simulate resizing window to mobile dimensions (<= 768px)
+    await act(async () => {
+      window.innerWidth = 500;
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/more options/i)).toBeInTheDocument();
+    });
+
+    // Verify opening the menu on mobile works
+    fireEvent.click(screen.getByLabelText(/more options/i));
+    expect(screen.getByText(/Rename Map/i)).toBeInTheDocument();
+  });
 });
 
