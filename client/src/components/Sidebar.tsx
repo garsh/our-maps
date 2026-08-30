@@ -1789,49 +1789,129 @@ const Sidebar = ({
       ? droppableContainers.filter((c: any) => (c.data.current?.type === 'layer' || c.data.current?.type === 'layer-top') && c.id !== 'default')
       : droppableContainers;
 
-    const firstLayerId = layers[0]?.id;
+    const containerRectMap = new Map<string, { top: number; bottom: number; left: number; right: number; height: number }>();
 
-    // Check direct pointer containment using live bounding client rects
-    for (const container of allowedContainers) {
-      if (container.disabled) continue;
-      const baseNode = container.node.current;
-      if (!baseNode) continue;
+    if (isLayerDrag) {
+      const firstLayerId = layers[0]?.id;
+      for (const container of allowedContainers) {
+        if (container.disabled) continue;
+        const baseNode = container.node.current;
+        if (!baseNode) continue;
 
-      let rect: { top: number; bottom: number; left: number; right: number; height: number };
-
-      if (isLayerDrag) {
         if (container.id === 'layer-top') {
           const firstLayerNode = allowedContainers.find((c: any) => c.id === firstLayerId)?.node.current;
           const firstHeaderRect = firstLayerNode?.getBoundingClientRect();
           const splitY = firstHeaderRect ? firstHeaderRect.top + firstHeaderRect.height / 2 : (containerRect ? containerRect.top + 20 : 0);
           const topBound = containerRect ? containerRect.top - 200 : -1000;
-          rect = {
+          containerRectMap.set(container.id, {
             top: topBound,
             bottom: splitY,
             left: containerRect ? containerRect.left : 0,
             right: containerRect ? containerRect.right : window.innerWidth,
             height: splitY - topBound
-          };
+          });
         } else if (container.id === firstLayerId) {
           const fullNode = baseNode.parentElement || baseNode;
           const fullRect = fullNode.getBoundingClientRect();
           const headerRect = baseNode.getBoundingClientRect();
           const splitY = headerRect.top + headerRect.height / 2;
-          rect = {
+          containerRectMap.set(container.id, {
             top: splitY,
             bottom: fullRect.bottom,
             left: fullRect.left,
             right: fullRect.right,
             height: fullRect.bottom - splitY
-          };
+          });
         } else if (container.data.current?.type === 'layer' && baseNode.parentElement) {
-          rect = baseNode.parentElement.getBoundingClientRect();
+          const fullRect = baseNode.parentElement.getBoundingClientRect();
+          containerRectMap.set(container.id, fullRect);
         } else {
-          rect = baseNode.getBoundingClientRect();
+          containerRectMap.set(container.id, baseNode.getBoundingClientRect());
         }
-      } else {
-        rect = baseNode.getBoundingClientRect();
       }
+    } else {
+      // Pin dragging: Group active droppable nodes by layer to compute midpoint split
+      const layerGroups = new Map<string, { header?: any; pins: Array<{ container: any; rect: DOMRect }> }>();
+
+      for (const container of allowedContainers) {
+        if (container.disabled) continue;
+        const baseNode = container.node.current;
+        if (!baseNode) continue;
+        const rect = baseNode.getBoundingClientRect();
+
+        const type = container.data.current?.type;
+        if (type === 'layer' || container.id === 'default') {
+          const layerKey = container.id;
+          if (!layerGroups.has(layerKey)) {
+            layerGroups.set(layerKey, { pins: [] });
+          }
+          layerGroups.get(layerKey)!.header = { container, rect };
+        } else if (type === 'pin') {
+          const pinLayerKey = container.data.current?.pin?.layerId || 'default';
+          if (!layerGroups.has(pinLayerKey)) {
+            layerGroups.set(pinLayerKey, { pins: [] });
+          }
+          layerGroups.get(pinLayerKey)!.pins.push({ container, rect });
+        }
+      }
+
+      // Compute midpoint split within and between layers
+      const orderedLayerIds = [...layers.map(l => l.id), 'default'];
+      const visibleLayerIds = orderedLayerIds.filter(id => layerGroups.has(id));
+
+      for (let idx = 0; idx < visibleLayerIds.length; idx++) {
+        const layerId = visibleLayerIds[idx];
+        const group = layerGroups.get(layerId)!;
+        const sortedPins = group.pins.sort((a, b) => a.rect.top - b.rect.top);
+
+        const nextLayerId = visibleLayerIds[idx + 1];
+        const nextGroup = nextLayerId ? layerGroups.get(nextLayerId) : undefined;
+        const nextHeaderRect = nextGroup?.header?.rect;
+        const nextTransitionY = nextHeaderRect ? (nextHeaderRect.top + nextHeaderRect.height * 0.6) : undefined;
+
+        if (group.header) {
+          const headerRect = group.header.rect;
+          const splitTop = idx === 0 
+            ? (containerRect ? containerRect.top - 200 : headerRect.top)
+            : (headerRect.top + headerRect.height * 0.6);
+          const firstPin = sortedPins[0];
+          const splitBottom = firstPin
+            ? (firstPin.rect.top + firstPin.rect.height * 0.5)
+            : (nextTransitionY !== undefined ? nextTransitionY : headerRect.bottom);
+
+          containerRectMap.set(group.header.container.id, {
+            top: splitTop,
+            bottom: splitBottom,
+            left: headerRect.left,
+            right: headerRect.right,
+            height: splitBottom - splitTop
+          });
+        }
+
+        for (let i = 0; i < sortedPins.length; i++) {
+          const current = sortedPins[i];
+          const next = sortedPins[i + 1];
+          const splitTop = current.rect.top + current.rect.height * 0.5;
+          const splitBottom = next
+            ? (next.rect.top + next.rect.height * 0.5)
+            : (nextTransitionY !== undefined ? nextTransitionY : current.rect.bottom);
+
+          containerRectMap.set(current.container.id, {
+            top: splitTop,
+            bottom: splitBottom,
+            left: current.rect.left,
+            right: current.rect.right,
+            height: splitBottom - splitTop
+          });
+        }
+      }
+    }
+
+    // Check direct pointer containment using live bounding client rects
+    for (const container of allowedContainers) {
+      if (container.disabled) continue;
+      const rect = containerRectMap.get(container.id);
+      if (!rect) continue;
 
       // Only consider elements that are currently visible within the scroll container
       if (containerRect && container.id !== 'layer-top' && (rect.bottom < containerRect.top || rect.top > containerRect.bottom)) {
@@ -1866,44 +1946,8 @@ const Sidebar = ({
 
     for (const container of allowedContainers) {
       if (container.disabled) continue;
-      const baseNode = container.node.current;
-      if (!baseNode) continue;
-
-      let rect: { top: number; bottom: number; left: number; right: number; height: number };
-
-      if (isLayerDrag) {
-        if (container.id === 'layer-top') {
-          const firstLayerNode = allowedContainers.find((c: any) => c.id === firstLayerId)?.node.current;
-          const firstHeaderRect = firstLayerNode?.getBoundingClientRect();
-          const splitY = firstHeaderRect ? firstHeaderRect.top + firstHeaderRect.height / 2 : (containerRect ? containerRect.top + 20 : 0);
-          const topBound = containerRect ? containerRect.top - 200 : -1000;
-          rect = {
-            top: topBound,
-            bottom: splitY,
-            left: containerRect ? containerRect.left : 0,
-            right: containerRect ? containerRect.right : window.innerWidth,
-            height: splitY - topBound
-          };
-        } else if (container.id === firstLayerId) {
-          const fullNode = baseNode.parentElement || baseNode;
-          const fullRect = fullNode.getBoundingClientRect();
-          const headerRect = baseNode.getBoundingClientRect();
-          const splitY = headerRect.top + headerRect.height / 2;
-          rect = {
-            top: splitY,
-            bottom: fullRect.bottom,
-            left: fullRect.left,
-            right: fullRect.right,
-            height: fullRect.bottom - splitY
-          };
-        } else if (container.data.current?.type === 'layer' && baseNode.parentElement) {
-          rect = baseNode.parentElement.getBoundingClientRect();
-        } else {
-          rect = baseNode.getBoundingClientRect();
-        }
-      } else {
-        rect = baseNode.getBoundingClientRect();
-      }
+      const rect = containerRectMap.get(container.id);
+      if (!rect) continue;
 
       // Only consider visible elements
       if (containerRect && container.id !== 'layer-top' && (rect.bottom < containerRect.top || rect.top > containerRect.bottom)) {
