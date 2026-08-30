@@ -41,7 +41,6 @@ import {
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
-  type DragOverEvent,
   DragOverlay,
   defaultDropAnimationSideEffects,
   useDroppable
@@ -102,7 +101,6 @@ interface SidebarProps {
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
   onDragEnd: (event: DragEndEvent) => void;
   onDragCancel?: () => void;
-  onDragOver?: (event: DragOverEvent) => void;
   onDragStart?: (event: DragStartEvent) => void;
   userRole?: 'owner' | 'edit' | 'view';
   onShare?: () => void;
@@ -194,13 +192,14 @@ const PIN_TEXTAREA_STYLE: CSSProperties = {
   fontFamily: 'inherit',
   lineHeight: 1.25,
   overflow: 'hidden',
-  resize: 'none'
+  resize: 'none',
+  fieldSizing: 'content' as any,
 };
 
 const fitTextarea = (el: HTMLTextAreaElement | null, minHeight: number, maxHeight: number) => {
   if (!el) return;
-  el.style.height = 'auto';
   const borderOffset = Math.max(0, el.offsetHeight - el.clientHeight);
+  el.style.height = 'auto';
   const needed = el.scrollHeight + borderOffset;
   const finalHeight = Math.min(Math.max(needed, minHeight), maxHeight);
   el.style.height = `${finalHeight}px`;
@@ -583,46 +582,6 @@ const SortablePin = memo(({
 
   const isItemInDraggingBundle = isAnySelectedDragging && isSelected;
   const isDropTarget = isOver && !!isAnyPinDragging && !isDragging && !isItemInDraggingBundle;
-  const prevIsEditingRef = useRef(isEditing);
-  const prevIsTargetRef = useRef(isTarget);
-
-  useEffect(() => {
-    const becameEditing = !prevIsEditingRef.current && isEditing;
-    const becameTarget = !prevIsTargetRef.current && isTarget;
-    prevIsEditingRef.current = isEditing;
-    prevIsTargetRef.current = isTarget;
-
-    if (becameEditing || becameTarget) {
-      const timer = setTimeout(() => {
-        const el = document.getElementById(`pin-${pin.id}`);
-        if (el) {
-          let container: HTMLElement | null = el.parentElement;
-          while (container && container !== document.body) {
-            const style = window.getComputedStyle(container);
-            if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
-              break;
-            }
-            container = container.parentElement;
-          }
-
-          if (container && container !== document.body) {
-            const containerRect = container.getBoundingClientRect();
-            const rect = el.getBoundingClientRect();
-            const stickyHeaderHeight = 24;
-            
-            if (rect.top < containerRect.top + stickyHeaderHeight || el.offsetHeight >= container.clientHeight - stickyHeaderHeight) {
-                el.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-            } else if (rect.bottom > containerRect.bottom) {
-                el.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
-            }
-          } else {
-            el.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
-          }
-        }
-      }, 150); // wait for expand transition
-      return () => clearTimeout(timer);
-    }
-  }, [isEditing, isTarget, pin.id]);
 
   const style = {
     transition,
@@ -1383,7 +1342,6 @@ const Sidebar = ({
   onUpdatePin,
   onDragEnd,
   onDragCancel,
-  onDragOver,
   onDragStart,
   userRole = 'owner',
   onShare,
@@ -1424,19 +1382,6 @@ const Sidebar = ({
   const [activePin, setActivePin] = useState<Pin | null>(null);
   const [activeLayer, setActiveLayer] = useState<PinLayer | null>(null);
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
-  const isAddingLayerRef = useRef(false);
-  const prevLayersLengthRef = useRef(layers.length);
-
-  useEffect(() => {
-    if (isAddingLayerRef.current && layers.length > prevLayersLengthRef.current) {
-      const newLayer = layers[layers.length - 1];
-      if (newLayer) {
-        setEditingLayerId(newLayer.id);
-      }
-      isAddingLayerRef.current = false;
-    }
-    prevLayersLengthRef.current = layers.length;
-  }, [layers]);
 
   useEffect(() => {
     const handleEditLayerEvent = (e: CustomEvent<{ layerId: string }>) => {
@@ -1447,6 +1392,39 @@ const Sidebar = ({
     window.addEventListener('ourmaps:edit-layer', handleEditLayerEvent as EventListener);
     return () => window.removeEventListener('ourmaps:edit-layer', handleEditLayerEvent as EventListener);
   }, []);
+
+  // Auto-scroll the sidebar list to keep the active/editing pin in view
+  useEffect(() => {
+    const targetId = editingPinId || targetPinId;
+    if (!targetId) return;
+
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`pin-${targetId}`);
+      const container = scrollContainerRef.current;
+      if (el && container) {
+        const containerRect = container.getBoundingClientRect();
+        const elRect = el.getBoundingClientRect();
+        const scale = (container.offsetHeight > 0 ? containerRect.height / container.offsetHeight : 1) || 1;
+        
+        // Relative visual position of pin element from the top of the container viewport
+        const relativeVisualTop = (elRect.top - containerRect.top) / scale;
+        const currentScroll = container.scrollTop;
+        const stickyHeaderOffset = 38; // Account for sticky layer headers
+
+        if (relativeVisualTop < stickyHeaderOffset) {
+          // Pin is above or behind sticky header: scroll up to place it below header
+          const targetScrollTop = currentScroll + relativeVisualTop - stickyHeaderOffset - 4;
+          container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+        } else if (relativeVisualTop + el.offsetHeight > container.clientHeight - 8) {
+          // Pin is below visible viewport: scroll down to bring it fully into view
+          const targetScrollTop = currentScroll + (relativeVisualTop + el.offsetHeight) - container.clientHeight + 24;
+          container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+        }
+      }
+    }, 80);
+
+    return () => clearTimeout(timer);
+  }, [targetPinId, editingPinId, pins.length]);
   // PWA Install State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
@@ -1974,7 +1952,6 @@ const Sidebar = ({
         sensors={sensors}
         collisionDetection={customCollisionDetection}
         onDragStart={handleDragStart}
-        onDragOver={onDragOver}
         onDragEnd={handleDragEndInternal}
         onDragCancel={handleDragCancelInternal}
         autoScroll={{
@@ -2077,12 +2054,10 @@ const Sidebar = ({
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
                       onClick={() => {
-                        isAddingLayerRef.current = true;
                         const newLayer = onAddLayer();
                         if (newLayer) {
                           const id = typeof newLayer === 'string' ? newLayer : newLayer.id;
                           setEditingLayerId(id);
-                          isAddingLayerRef.current = false;
                         }
                         setIsMenuOpen(false);
                       }}
@@ -2701,7 +2676,7 @@ const Sidebar = ({
           }}>
             <div>
             {activePin ? (
-              <div style={{ width: '200px', position: 'relative', transform: isMobile ? 'scale(1.5)' : 'none', transformOrigin: 'top left' }}>
+              <div style={{ width: '200px', position: 'relative', transform: isMobile ? 'scale(1.5)' : 'scale(1.25)', transformOrigin: 'top left' }}>
                 {/* Bundle visual: a stack of items if multiple are selected */}
                 {isAnySelectedDragging && selectedNavIds && selectedNavIds.size > 1 ? (
                     <>
@@ -2739,7 +2714,7 @@ const Sidebar = ({
                 )}
               </div>
             ) : activeLayer ? (
-              <div style={{ width: '240px', background: 'var(--surface-color)', color: 'var(--text-primary)', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.9, boxShadow: 'var(--shadow-md)', marginLeft: '12px', transform: isMobile ? 'scale(1.5)' : 'none', transformOrigin: 'top left' }}>
+              <div style={{ width: '240px', background: 'var(--surface-color)', color: 'var(--text-primary)', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.9, boxShadow: 'var(--shadow-md)', marginLeft: '12px', transform: isMobile ? 'scale(1.5)' : 'scale(1.25)', transformOrigin: 'top left' }}>
                 <div style={{ fontWeight: '700', fontSize: '0.65rem' }}>{activeLayer.name}</div>
               </div>
             ) : null}

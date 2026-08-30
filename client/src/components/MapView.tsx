@@ -1057,44 +1057,46 @@ const MapView = ({
   );
 
   // Calculate immediate initial view state using native bounds & fitBoundsOptions so the map opens instantly focused on frame 1
-  const initialViewState = useMemo(() => {
-    let targetBounds: [[number, number], [number, number]] | null = null;
-    if (boundsToFit && Array.isArray(boundsToFit) && boundsToFit.length === 2) {
-      targetBounds = boundsToFit;
-    } else {
-      const pinsToUse = visiblePins.length > 0 ? visiblePins : pins;
-      if (pinsToUse.length > 0) {
-        const lats = pinsToUse.map((p) => p.lat);
-        const lngs = pinsToUse.map((p) => p.lng);
-        targetBounds = [
-          [Math.min(...lats), Math.min(...lngs)],
-          [Math.max(...lats), Math.max(...lngs)],
-        ];
-      }
-    }
-
-    if (targetBounds) {
-      const [first, second] = targetBounds;
-      const minLat = Math.min(first[0], second[0]);
-      const maxLat = Math.max(first[0], second[0]);
-      const minLng = Math.min(first[1], second[1]);
-      const maxLng = Math.max(first[1], second[1]);
-
-      if (Math.abs(maxLat - minLat) < 0.0001 && Math.abs(maxLng - minLng) < 0.0001) {
-        return { longitude: minLng, latitude: minLat, zoom: 13 };
+  const initialViewState = useRef(
+    (() => {
+      let targetBounds: [[number, number], [number, number]] | null = null;
+      if (boundsToFit && Array.isArray(boundsToFit) && boundsToFit.length === 2) {
+        targetBounds = boundsToFit;
+      } else {
+        const pinsToUse = visiblePins.length > 0 ? visiblePins : pins;
+        if (pinsToUse.length > 0) {
+          const lats = pinsToUse.map((p) => p.lat);
+          const lngs = pinsToUse.map((p) => p.lng);
+          targetBounds = [
+            [Math.min(...lats), Math.min(...lngs)],
+            [Math.max(...lats), Math.max(...lngs)],
+          ];
+        }
       }
 
-      return {
-        bounds: [minLng, minLat, maxLng, maxLat] as [number, number, number, number],
-        fitBoundsOptions: {
-          padding: paddedMapView(leftPadding, bottomPadding),
-          maxZoom: 13,
-        },
-      };
-    }
+      if (targetBounds) {
+        const [first, second] = targetBounds;
+        const minLat = Math.min(first[0], second[0]);
+        const maxLat = Math.max(first[0], second[0]);
+        const minLng = Math.min(first[1], second[1]);
+        const maxLng = Math.max(first[1], second[1]);
 
-    return { longitude: center[1], latitude: center[0], zoom };
-  }, [boundsToFit, visiblePins, pins, center, zoom, bottomPadding, leftPadding]);
+        if (Math.abs(maxLat - minLat) < 0.0001 && Math.abs(maxLng - minLng) < 0.0001) {
+          return { longitude: minLng, latitude: minLat, zoom: 13 };
+        }
+
+        return {
+          bounds: [minLng, minLat, maxLng, maxLat] as [number, number, number, number],
+          fitBoundsOptions: {
+            padding: paddedMapView(leftPadding, bottomPadding),
+            maxZoom: 13,
+          },
+        };
+      }
+
+      return { longitude: center[1], latitude: center[0], zoom };
+    })()
+  ).current;
 
   const updateCompassDirect = useCallback(() => {
     if (!mapRef.current) return;
@@ -1125,23 +1127,54 @@ const MapView = ({
     updateCompassDirect();
 
     try {
-      const bounds = map.getBounds();
-      if (bounds && typeof bounds.getWest === 'function') {
-        const west = bounds.getWest();
-        const north = bounds.getNorth();
-        const east = bounds.getEast();
-        const south = bounds.getSouth();
+      const el = typeof map.getContainer === 'function' ? map.getContainer() : null;
+      const rect = el?.getBoundingClientRect?.();
+      const w = rect?.width || el?.clientWidth || 0;
+      const h = rect?.height || el?.clientHeight || 0;
+
+      const left = leftPaddingRef.current || 0;
+      const bottom = bottomPaddingRef.current || 0;
+
+      if (w > 0 && h > 0 && typeof map.unproject === 'function') {
+        const nw = map.unproject([left, 0]);
+        const ne = map.unproject([w, 0]);
+        const sw = map.unproject([left, Math.max(0, h - bottom)]);
+        const se = map.unproject([w, Math.max(0, h - bottom)]);
+
+        const west = Math.min(nw.lng, sw.lng);
+        const east = Math.max(ne.lng, se.lng);
+        const north = Math.max(nw.lat, ne.lat);
+        const south = Math.min(sw.lat, se.lat);
+
         const boundsStr = `${west},${north},${east},${south}`;
         if (lastBoundsStrRef.current !== boundsStr) {
           lastBoundsStrRef.current = boundsStr;
           setMapViewportBounds(boundsStr);
           onBoundsChangeRef.current?.(boundsStr);
         }
+      } else {
+        const bounds = map.getBounds();
+        if (bounds && typeof bounds.getWest === 'function') {
+          const west = bounds.getWest();
+          const north = bounds.getNorth();
+          const east = bounds.getEast();
+          const south = bounds.getSouth();
+          const boundsStr = `${west},${north},${east},${south}`;
+          if (lastBoundsStrRef.current !== boundsStr) {
+            lastBoundsStrRef.current = boundsStr;
+            setMapViewportBounds(boundsStr);
+            onBoundsChangeRef.current?.(boundsStr);
+          }
+        }
       }
     } catch (e) {
       console.warn('Failed to get map bounds:', e);
     }
   }, [updateCompassDirect]);
+
+  useEffect(() => {
+    updateBounds();
+  }, [leftPadding, bottomPadding, updateBounds]);
 
   const handlePinClickStable = useCallback((clickedPin: Pin) => {
     setPendingContextLocation(null);

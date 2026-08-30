@@ -65,30 +65,22 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
   const [isSearching, setIsSearching] = useState(false);
   const [lastSearchedBounds, setLastSearchedBounds] = useState<string | null>(null);
   const [storeBounds, setStoreBounds] = useState<string | null>(() => getMapViewportBounds());
-  const queryRef = useRef(query);
-  queryRef.current = query;
-
-  const effectiveBounds = mapBounds ?? storeBounds;
+  const effectiveBounds = mapBounds ?? storeBounds ?? getMapViewportBounds();
   const mapBoundsRef = useRef(effectiveBounds);
   mapBoundsRef.current = effectiveBounds;
 
   useEffect(() => {
     if (mapBounds != null) return;
-    setStoreBounds(getMapViewportBounds());
+    const initial = getMapViewportBounds();
+    if (initial) {
+      mapBoundsRef.current = initial;
+      setStoreBounds(initial);
+    }
     return subscribeMapViewportBounds((next) => {
       mapBoundsRef.current = next;
-      if (queryRef.current.trim()) {
-        setStoreBounds(next);
-      }
+      setStoreBounds(next);
     });
   }, [mapBounds]);
-
-  useEffect(() => {
-    if (mapBounds != null) return;
-    if (query.trim()) {
-      setStoreBounds(getMapViewportBounds());
-    }
-  }, [query, mapBounds]);
 
   // Initialize Fuse for fuzzy search on local pins (memoized on pins array only)
   const fuse = useMemo(() => {
@@ -145,10 +137,11 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
       return;
     }
     setIsSearching(true);
+    const bounds = boundsToUse ?? mapBoundsRef.current ?? getMapViewportBounds();
     try {
-      const formatted = await apiService.search(searchQuery, boundsToUse);
+      const formatted = await apiService.search(searchQuery, bounds);
       setResults(formatted);
-      setLastSearchedBounds(boundsToUse || null);
+      setLastSearchedBounds(bounds || null);
     } catch (error) {
       console.error('Search failed:', error);
     } finally {
@@ -183,7 +176,9 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
       ) {
         onSearchAreaStateChange({
           showPill: true,
-          onSearchThisArea: () => executeGlobalSearch(query, mapBoundsRef.current),
+          onSearchThisArea: () => {
+            executeGlobalSearch(query, mapBoundsRef.current);
+          },
           isSearching,
         });
       } else {
@@ -201,7 +196,8 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && query.trim().length >= 3) {
       e.preventDefault();
-      executeGlobalSearch(query, mapBoundsRef.current);
+      const bounds = mapBounds ?? getMapViewportBounds() ?? mapBoundsRef.current;
+      executeGlobalSearch(query, bounds);
     }
   };
 
