@@ -261,5 +261,64 @@ describe('App Components Error Handling', () => {
     fireEvent.click(screen.getByLabelText(/more options/i));
     expect(screen.getByText(/Rename Map/i)).toBeInTheDocument();
   });
+
+  it('resizes mobile bottom sheet to standard size on handle tap unless already at standard size', async () => {
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    window.innerWidth = 375;
+    window.innerHeight = 800;
+
+    const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Map Synced/i)).toBeInTheDocument();
+    });
+
+    const handle = container.querySelector('.bottom-sheet-drag-handle') as HTMLElement;
+    const sheet = container.querySelector('.mobile-bottom-sheet') as HTMLElement;
+    expect(handle).toBeTruthy();
+    expect(sheet).toBeTruthy();
+
+    // Standard height for 800px height is Math.min(350, Math.round(800 * 0.45)) = 350px
+    expect(sheet.style.height).toBe('350px');
+
+    // 1. Tapping when at standard height (350px) should close it to 0px
+    fireEvent.pointerDown(handle, { clientY: 450, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientY: 450, pointerId: 1 });
+    expect(sheet.style.height).toBe('0px');
+
+    // 2. Tapping when closed (0px) should open it back to standard height (350px)
+    fireEvent.pointerDown(handle, { clientY: 800, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientY: 800, pointerId: 1 });
+    expect(sheet.style.height).toBe('350px');
+
+    // 3. Fast flick UP raises all the way to max height (772px)
+    fireEvent.pointerDown(handle, { clientY: 450, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientY: 200, pointerId: 1 });
+    expect(sheet.style.height).toBe('772px');
+
+    // 4. Tapping when at max/non-standard height (772px) should resize to standard height (350px)
+    fireEvent.pointerDown(handle, { clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientY: 200, pointerId: 1 });
+    expect(sheet.style.height).toBe('350px');
+
+    const pinList = container.querySelector('.pin-list');
+    expect(pinList?.classList.contains('pin-hover-blocked')).toBe(true);
+  });
 });
 

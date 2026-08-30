@@ -159,8 +159,16 @@ export function MapEditor() {
     };
   }, []);
 
-  const [sheetHeight, setSheetHeight] = useState(300);
+  const getStandardSheetHeight = () => {
+    if (typeof window === 'undefined') return 300;
+    return Math.min(350, Math.round(window.innerHeight * 0.45));
+  };
+
+  const [sheetHeight, setSheetHeight] = useState(getStandardSheetHeight);
   const [isDraggingSheet, setIsDraggingSheet] = useState(false);
+  const [isHoverBlocked, setIsHoverBlocked] = useState(false);
+  const isHoverBlockedRef = useRef(false);
+  isHoverBlockedRef.current = isHoverBlocked;
   const sheetRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const sheetBoundsRef = useRef<{ minH: number; maxH: number }>({ minH: 0, maxH: 600 });
@@ -237,14 +245,38 @@ export function MapEditor() {
     const velocity = totalDeltaY / elapsed; // px per ms
 
     const { minH, maxH } = getSheetBounds();
+    const standardHeight = getStandardSheetHeight();
+    const isAtStandardHeight = Math.abs(sheetHeight - standardHeight) <= 5;
     let finalH = currentDragHeight.current;
 
     if (!sheetDragStart.current.moved || (elapsed < 200 && Math.abs(totalDeltaY) < 5)) {
-      // Toggle collapsed (0) vs open on tap
-      if (sheetHeight < 30) {
-        finalH = Math.min(350, Math.round(window.innerHeight * 0.45));
-      } else {
+      // Tap on handle: clear hover and block hover highlight until cursor intentionally moves
+      clearHoveredPin();
+      setIsHoverBlocked(true);
+      isHoverBlockedRef.current = true;
+      const tapX = e.clientX;
+      const tapY = e.clientY;
+      let timeoutId: number;
+      const onMove = (moveEvt: MouseEvent) => {
+        if (Math.abs(moveEvt.clientX - tapX) > 4 || Math.abs(moveEvt.clientY - tapY) > 4) {
+          setIsHoverBlocked(false);
+          isHoverBlockedRef.current = false;
+          window.removeEventListener('mousemove', onMove);
+          clearTimeout(timeoutId);
+        }
+      };
+      window.addEventListener('mousemove', onMove);
+      timeoutId = window.setTimeout(() => {
+        setIsHoverBlocked(false);
+        isHoverBlockedRef.current = false;
+        window.removeEventListener('mousemove', onMove);
+      }, 500);
+
+      // Close if already standard size, otherwise resize to standard size
+      if (isAtStandardHeight) {
         finalH = minH;
+      } else {
+        finalH = standardHeight;
       }
     } else if (velocity > 0.4) {
       // Fast flick UP -> raise all the way so handle touches title bar
@@ -976,6 +1008,7 @@ export function MapEditor() {
   }, [handleSetEditingPinId]);
 
   const handleHoverPin = useCallback((id: string | null, leavingPinId?: string) => {
+    if (isHoverBlockedRef.current && id !== null) return;
     if (id !== null) {
       const target = targetPinIdRef.current;
       const editing = editingPinIdRef.current;
@@ -1574,6 +1607,7 @@ export function MapEditor() {
             <Sidebar 
               isMobile={isMobile}
               mobileScale={mobileScale}
+              isHoverBlocked={isHoverBlocked}
               isOffline={isOffline}
             mapId={mapId}
             mapName={mapName}

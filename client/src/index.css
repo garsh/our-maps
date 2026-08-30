@@ -39,6 +39,7 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -315,10 +316,13 @@ button:active {
 }
 
 /* Map↔list pin hover is applied via a class on #pin-{id} so App/Sidebar do not re-render. */
-.pin-list-item.pin-hovered,
-.pin-list:not(.pin-hover-blocked):not(.pin-drag-active) .pin-list-item:hover:not(.pin-editing) {
+.pin-list-item.pin-hovered {
   background: rgba(72, 61, 139, 0.05);
   box-shadow: 0 0 0 1px var(--primary-color);
+}
+
+.pin-list.pin-hover-blocked {
+  pointer-events: none;
 }
 
 .pin-list.pin-drag-active .pin-list-item.pin-hovered {

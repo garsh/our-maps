@@ -133,6 +133,7 @@ interface SidebarProps {
   show3DBuildings?: boolean;
   onToggle3DBuildings?: (enabled: boolean) => void;
   isOffline?: boolean;
+  isHoverBlocked?: boolean;
   onSearchAreaStateChange?: (state: SearchAreaState | null) => void;
 }
 
@@ -428,7 +429,8 @@ const SortablePin = memo(({
   customColors,
   allLayers,
   isAnySelectedDragging,
-  isAnyPinDragging
+  isAnyPinDragging,
+  isHoverBlocked
 }: { 
   pin: Pin, 
   onPinClick: (pin: Pin) => void,
@@ -445,7 +447,8 @@ const SortablePin = memo(({
   customColors?: string[],
   allLayers: PinLayer[],
   isAnySelectedDragging: boolean,
-  isAnyPinDragging?: boolean
+  isAnyPinDragging?: boolean,
+  isHoverBlocked?: boolean
 }) => {
   const {
     attributes,
@@ -613,7 +616,7 @@ const SortablePin = memo(({
         cursor: 'default'
       }}
       onPointerEnter={(e) => {
-        if (e.pointerType === 'mouse') onHoverPin?.(pin.id);
+        if (!isHoverBlocked && e.pointerType === 'mouse') onHoverPin?.(pin.id);
       }}
       onPointerLeave={(e) => {
         if (e.pointerType === 'mouse') onHoverPin?.(null, pin.id);
@@ -1015,7 +1018,8 @@ const SortableLayer = memo(({
   onToggleExpand,
   isAnySelectedDragging,
   isLayerDragging,
-  isAnyPinDragging
+  isAnyPinDragging,
+  isHoverBlocked
 }: { 
   layer: PinLayer,
   layerPins: Pin[],
@@ -1043,7 +1047,8 @@ const SortableLayer = memo(({
   onToggleExpand: () => void,
   isAnySelectedDragging: boolean,
   isLayerDragging: boolean,
-  isAnyPinDragging?: boolean
+  isAnyPinDragging?: boolean,
+  isHoverBlocked?: boolean
 }) => {
   const [localIsEditingName, setLocalIsEditingName] = useState(false);
   const isEditingName = editingLayerId !== undefined 
@@ -1319,6 +1324,7 @@ const SortableLayer = memo(({
                   allLayers={allLayers}
                   isAnySelectedDragging={isAnySelectedDragging}
                   isAnyPinDragging={isAnyPinDragging}
+                  isHoverBlocked={isHoverBlocked}
                 />
               ))}
             </ul>
@@ -1376,6 +1382,7 @@ const Sidebar = ({
   show3DBuildings = true,
   onToggle3DBuildings,
   isOffline = false,
+  isHoverBlocked = false,
   onSearchAreaStateChange
 }: SidebarProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -2468,7 +2475,7 @@ const Sidebar = ({
 
         <div 
           ref={scrollContainerRef}
-          className={`pin-list${(targetPinId || editingPinId) ? ' pin-hover-blocked' : ''}${isDragActive ? ' pin-drag-active' : ''}`}
+          className={`pin-list${(targetPinId || editingPinId || isHoverBlocked) ? ' pin-hover-blocked' : ''}${isDragActive ? ' pin-drag-active' : ''}`}
           style={{ 
             flex: 1, 
             minHeight: 0,
@@ -2513,6 +2520,7 @@ const Sidebar = ({
                 isAnySelectedDragging={isAnySelectedDragging}
                 isLayerDragging={!!activeLayer}
                 isAnyPinDragging={isAnyPinDragging}
+                isHoverBlocked={isHoverBlocked}
               />
             ))}
           </SortableContext>
@@ -2553,6 +2561,7 @@ const Sidebar = ({
                         allLayers={layers}
                         isAnySelectedDragging={isAnySelectedDragging}
                         isAnyPinDragging={isAnyPinDragging}
+                        isHoverBlocked={isHoverBlocked}
                       />
                     ))}
                     {defaultPins.length === 0 && layers.length === 0 && (
