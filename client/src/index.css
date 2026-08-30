@@ -321,10 +321,6 @@ button:active {
   box-shadow: 0 0 0 1px var(--primary-color);
 }
 
-.pin-list.pin-hover-blocked {
-  pointer-events: none;
-}
-
 .pin-list.pin-drag-active .pin-list-item.pin-hovered {
   background: transparent;
   box-shadow: none;
