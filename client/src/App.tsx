@@ -34,9 +34,14 @@ import { reorderPins, reorderLayers, isSameLayer, comparePinPositions } from './
 import { generateId } from './utils/fileUtils';
 import { getManifestStats } from './utils/tileUtils';
 import { tileWorkerManager } from './utils/tileWorkerManager';
+import { clearHoveredPin, getHoveredPinId, setHoveredPin } from './utils/pinHover';
 import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
+
+export function clampSidebarWidth(width: number, viewportWidth: number, min = 200, maxMargin = 50): number {
+  return Math.max(min, Math.min(viewportWidth - maxMargin, width));
+}
 
 export function MapEditor() {
   const { id } = useParams<{ id: string }>();
@@ -62,7 +67,6 @@ export function MapEditor() {
   const [targetPinId, setTargetPinId] = useState<string | null>(null);
   const [boundsToFit, setBoundsToFit] = useState<[[number, number], [number, number]] | null>(null);
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
-  const [mapBounds, setMapBounds] = useState<string | null>(null);
   const [hasOfflineTiles, setHasOfflineTiles] = useState(false);
   const [previewLocation, setPreviewLocation] = useState<{lat: number, lng: number} | null>(null);
   const DEFAULT_SIDEBAR_WIDTH = 400;
@@ -78,10 +82,10 @@ export function MapEditor() {
     return saved !== null ? saved === 'true' : true;
   });
 
-  const handleToggleHillshade = (enabled: boolean) => {
+  const handleToggleHillshade = useCallback((enabled: boolean) => {
     setShowHillshade(enabled);
     localStorage.setItem('ourmaps_hillshade', String(enabled));
-  };
+  }, []);
 
   const [show3DTerrain, setShow3DTerrain] = useState<boolean>(() => {
     const saved = localStorage.getItem('ourmaps_3d_terrain');
@@ -90,10 +94,10 @@ export function MapEditor() {
     return legacy !== null ? legacy === 'true' : true;
   });
 
-  const handleToggle3DTerrain = (enabled: boolean) => {
+  const handleToggle3DTerrain = useCallback((enabled: boolean) => {
     setShow3DTerrain(enabled);
     localStorage.setItem('ourmaps_3d_terrain', String(enabled));
-  };
+  }, []);
 
   const [show3DBuildings, setShow3DBuildings] = useState<boolean>(() => {
     const saved = localStorage.getItem('ourmaps_3d_buildings');
@@ -102,20 +106,20 @@ export function MapEditor() {
     return legacy !== null ? legacy === 'true' : true;
   });
 
-  const handleToggle3DBuildings = (enabled: boolean) => {
+  const handleToggle3DBuildings = useCallback((enabled: boolean) => {
     setShow3DBuildings(enabled);
     localStorage.setItem('ourmaps_3d_buildings', String(enabled));
-  };
+  }, []);
 
   const [showSatellite, setShowSatellite] = useState<boolean>(() => {
     const saved = localStorage.getItem('ourmaps_satellite');
     return saved !== null ? saved === 'true' : false;
   });
 
-  const handleToggleSatellite = (enabled: boolean) => {
+  const handleToggleSatellite = useCallback((enabled: boolean) => {
     setShowSatellite(enabled);
     localStorage.setItem('ourmaps_satellite', String(enabled));
-  };
+  }, []);
 
   // Mobile layout states
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
@@ -256,7 +260,6 @@ export function MapEditor() {
 
 
 
-  const [hoveredPinId, setHoveredPinId] = useState<string | null>(null);
   const [selectedNavIds, setSelectedNavIds] = useState<Set<string>>(new Set());
   const [hiddenLayerIds, setHiddenLayerIds] = useState<Set<string | null>>(() => {
     const mapIdVal = id || null;
@@ -283,6 +286,21 @@ export function MapEditor() {
     const saved = localStorage.getItem('customColors');
     return saved ? JSON.parse(saved) : [];
   });
+
+  const selectedNavIdsRef = useRef(selectedNavIds);
+  selectedNavIdsRef.current = selectedNavIds;
+  const collapsedLayerIdsRef = useRef(collapsedLayerIds);
+  collapsedLayerIdsRef.current = collapsedLayerIds;
+  const userRoleRef = useRef(userRole);
+  userRoleRef.current = userRole;
+  const isOfflineRef = useRef(isOffline);
+  isOfflineRef.current = isOffline;
+  const mapIdRef = useRef(mapId);
+  mapIdRef.current = mapId;
+  const targetPinIdRef = useRef(targetPinId);
+  targetPinIdRef.current = targetPinId;
+  const editingPinIdRef = useRef(editingPinId);
+  editingPinIdRef.current = editingPinId;
 
   // Load persistent UI state when mapId changes
   useEffect(() => {
@@ -464,7 +482,7 @@ export function MapEditor() {
         if (data.mapId !== id) return;
         isRemoteUpdateRef.current = true;
         setPins(prev => prev.filter(p => p.id !== data.pinId));
-        setHoveredPinId(prev => (prev === data.pinId ? null : prev));
+        if (getHoveredPinId() === data.pinId) clearHoveredPin();
         setTargetPinId(prev => (prev === data.pinId ? null : prev));
         setEditingPinId(prev => (prev === data.pinId ? null : prev));
         setSelectedNavIds(prev => {
@@ -891,7 +909,7 @@ export function MapEditor() {
   const handlePinSelect = useCallback((pinId: string) => {
     if (Date.now() < ignoreMapClickUntil.current) return;
     // Clear stuck hover states on mobile/touch, or if a different pin was clicked
-    setHoveredPinId(null);
+    clearHoveredPin();
 
     // Expand the collapsed layer containing this pin so the pin element is in the DOM
     const pin = pinsRef.current.find(p => p.id === pinId);
@@ -928,29 +946,23 @@ export function MapEditor() {
   }, [handleSetEditingPinId]);
 
   const handleHoverPin = useCallback((id: string | null, leavingPinId?: string) => {
-    if (id === null) {
-      if (leavingPinId) {
-        setHoveredPinId(prev => (prev === leavingPinId ? null : prev));
-      } else {
-        setHoveredPinId(null);
-      }
-      return;
+    if (id !== null) {
+      const target = targetPinIdRef.current;
+      const editing = editingPinIdRef.current;
+      if (target && pinsRef.current.some(p => p.id === target)) return;
+      if (editing && pinsRef.current.some(p => p.id === editing)) return;
     }
-    // If a card is open, don't allow other pins to be highlighted by hover
-    const activeTargetExists = targetPinId !== null && pinsRef.current.some(p => p.id === targetPinId);
-    const activeEditingExists = editingPinId !== null && pinsRef.current.some(p => p.id === editingPinId);
-    if (activeTargetExists || activeEditingExists) {
-      return;
-    }
-    setHoveredPinId(id);
-  }, [targetPinId, editingPinId]);
+    setHoveredPin(id, leavingPinId);
+  }, []);
 
   const handleBackgroundClick = useCallback(() => {
     if (Date.now() < ignoreMapClickUntil.current) return;
     setTargetPinId(null);
     setEditingPinId(null);
-    setHoveredPinId(null);
+    clearHoveredPin();
   }, []);
+
+  const handleOpenShare = useCallback(() => setIsSharing(true), []);
 
   const getNextPinPosition = (allPins: Pin[], targetLayerId?: string): number => {
     const layerPins = allPins.filter(p => isSameLayer(p.layerId, targetLayerId));
@@ -1011,7 +1023,7 @@ export function MapEditor() {
     const remainingPins = currentPins.filter(p => p.id !== targetId);
     setPins(remainingPins);
 
-    setHoveredPinId(prev => (prev === targetId ? null : prev));
+    if (getHoveredPinId() === targetId) clearHoveredPin();
     setTargetPinId(prev => (prev === targetId ? null : prev));
     setEditingPinId(prev => (prev === targetId ? null : prev));
     setSelectedNavIds(prev => {
@@ -1103,18 +1115,18 @@ export function MapEditor() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [addLayer, isOffline, userRole]);
 
-  const updateLayer = (targetId: string, updates: Partial<PinLayer>) => {
-    if (userRole === 'view' || isOffline) return;
+  const updateLayer = useCallback((targetId: string, updates: Partial<PinLayer>) => {
+    if (userRoleRef.current === 'view' || isOfflineRef.current) return;
     setLayers(prev => prev.map(g => g.id === targetId ? { ...g, ...updates } : g));
-    if (mapId) {
-      socketRef.current?.emit('layer-update', { mapId, layerId: targetId, updates });
+    const currentMapId = mapIdRef.current;
+    if (currentMapId) {
+      socketRef.current?.emit('layer-update', { mapId: currentMapId, layerId: targetId, updates });
     }
-  };
+  }, []);
 
-  const removeLayer = (targetId: string) => {
-    if (userRole === 'view' || isOffline) return;
-    const remainingLayers = layers.filter(g => g.id !== targetId);
-    setLayers(remainingLayers);
+  const removeLayer = useCallback((targetId: string) => {
+    if (userRoleRef.current === 'view' || isOfflineRef.current) return;
+    setLayers(prev => prev.filter(g => g.id !== targetId));
 
     setSelectedNavIds(prev => {
       if (prev.has(targetId)) {
@@ -1140,21 +1152,23 @@ export function MapEditor() {
       });
     });
 
-    if (mapId) {
-      socketRef.current?.emit('layer-delete', { mapId, layerId: targetId });
+    const currentMapId = mapIdRef.current;
+    if (currentMapId) {
+      socketRef.current?.emit('layer-delete', { mapId: currentMapId, layerId: targetId });
     }
-  };
+  }, []);
 
-  const handleMapNameChange = (newName: string) => {
-    if (userRole === 'view' || isOffline) return;
+  const handleMapNameChange = useCallback((newName: string) => {
+    if (userRoleRef.current === 'view' || isOfflineRef.current) return;
     setMapName(newName);
-    if (mapId) {
-      socketRef.current?.emit('map-name-update', { mapId, name: newName });
+    const currentMapId = mapIdRef.current;
+    if (currentMapId) {
+      socketRef.current?.emit('map-name-update', { mapId: currentMapId, name: newName });
     }
-  };
+  }, []);
 
-  const handleDragOver = (event: any) => {
-    if (userRole === 'view' || isOffline) return;
+  const handleDragOver = useCallback((event: any) => {
+    if (userRoleRef.current === 'view' || isOfflineRef.current) return;
     const { active, over } = event;
     if (!over) return;
 
@@ -1162,8 +1176,9 @@ export function MapEditor() {
       const activeId = active.id as string;
       const overId = over.id as string;
       const overData = over.data.current;
+      const currentPins = pinsRef.current;
 
-      const activePin = pins.find(p => p.id === activeId);
+      const activePin = currentPins.find(p => p.id === activeId);
       if (!activePin) return;
 
       let newLayerId: string | undefined = activePin.layerId;
@@ -1176,10 +1191,11 @@ export function MapEditor() {
       // ONLY update state in onDragOver if the layer actually changed (moving between layers)
       // This provides immediate visual feedback of layer changes.
       // We prevent moving into collapsed layers during drag to avoid unmounting the active item.
-      if (newLayerId !== activePin.layerId && !collapsedLayerIds.has(newLayerId || null)) {
+      if (newLayerId !== activePin.layerId && !collapsedLayerIdsRef.current.has(newLayerId || null)) {
         setPins((prevPins) => {
-          const pinsToMoveIds = selectedNavIds.has(activeId) 
-            ? Array.from(selectedNavIds) 
+          const selected = selectedNavIdsRef.current;
+          const pinsToMoveIds = selected.has(activeId) 
+            ? Array.from(selected) 
             : [activeId];
           
           const movedPins = pinsToMoveIds.map(id => prevPins.find(p => p.id === id)).filter(Boolean) as Pin[];
@@ -1192,36 +1208,38 @@ export function MapEditor() {
         });
       }
     }
-  };
+  }, []);
 
-  const handleDragStart = (event: any) => {
-    if (userRole === 'view' || isOffline) return;
-    dragStartPinsRef.current = pins;
+  const handleDragStart = useCallback((event: any) => {
+    if (userRoleRef.current === 'view' || isOfflineRef.current) return;
+    const currentPins = pinsRef.current;
+    dragStartPinsRef.current = currentPins;
     const { active } = event;
     if (active.data.current?.type === 'pin') {
       const activeId = active.id as string;
-      const pinsToMoveIds = selectedNavIds.has(activeId) 
-        ? Array.from(selectedNavIds) 
+      const selected = selectedNavIdsRef.current;
+      const pinsToMoveIds = selected.has(activeId) 
+        ? Array.from(selected) 
         : [activeId];
       
       const startMap = new Map<string, string | undefined>();
       pinsToMoveIds.forEach(id => {
-        const p = pins.find(pin => pin.id === id);
+        const p = currentPins.find(pin => pin.id === id);
         if (p) startMap.set(id, p.layerId);
       });
       dragStartLayersRef.current = startMap;
     }
-  };
+  }, []);
 
-  const handleDragCancel = () => {
+  const handleDragCancel = useCallback(() => {
     if (dragStartPinsRef.current) {
       setPins(dragStartPinsRef.current);
       dragStartPinsRef.current = null;
     }
-  };
+  }, []);
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    if (userRole === 'view' || isOffline) return;
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    if (userRoleRef.current === 'view' || isOfflineRef.current) return;
     const { active, over } = event;
     
     if (!over) {
@@ -1247,8 +1265,9 @@ export function MapEditor() {
       
       setLayers(prev => {
         const next = reorderLayers(prev, active.id as string, targetLayerId);
-        if (mapId) {
-          socketRef.current?.emit('layers-reorder', { mapId, layerOrder: next.map(l => l.id) });
+        const currentMapId = mapIdRef.current;
+        if (currentMapId) {
+          socketRef.current?.emit('layers-reorder', { mapId: currentMapId, layerOrder: next.map(l => l.id) });
         }
         return next;
       });
@@ -1266,9 +1285,11 @@ export function MapEditor() {
 
       const originalLayerId = startLayersMap.get(activeId);
 
-      const pinsToMoveIds = selectedNavIds.has(activeId) 
-        ? Array.from(selectedNavIds) 
+      const selected = selectedNavIdsRef.current;
+      const pinsToMoveIds = selected.has(activeId) 
+        ? Array.from(selected) 
         : [activeId];
+      const currentMapId = mapIdRef.current;
 
       setPins(prev => {
         const next = reorderPins(
@@ -1277,9 +1298,9 @@ export function MapEditor() {
           over.id as string, 
           overData?.type === 'pin' ? 'pin' : 'layer',
           overLayerId,
-          selectedNavIds
+          selected
         );
-        if (mapId) {
+        if (currentMapId) {
           const changedLayerPins = pinsToMoveIds.filter(pId => !isSameLayer(startLayersMap.get(pId), overLayerId));
           const destLayerPins = next.filter(p => isSameLayer(p.layerId, overLayerId));
 
@@ -1289,7 +1310,7 @@ export function MapEditor() {
               : undefined;
 
             socketRef.current?.emit('pin-move-layer', {
-              mapId,
+              mapId: currentMapId,
               pinIds: changedLayerPins,
               targetLayerId: overLayerId === undefined ? null : overLayerId,
               destPinOrder: destLayerPins.map(p => p.id),
@@ -1299,7 +1320,7 @@ export function MapEditor() {
           } else {
             // Same-layer reorder only
             socketRef.current?.emit('pins-reorder', { 
-              mapId, 
+              mapId: currentMapId, 
               layerId: overLayerId === undefined ? null : overLayerId, 
               pinOrder: destLayerPins.map(p => p.id) 
             });
@@ -1308,11 +1329,11 @@ export function MapEditor() {
         return next;
       });
     }
-  };
+  }, []);
 
 
-  const handleImport = (data: Partial<MapData>) => {
-    if (userRole === 'view' || isOffline) return;
+  const handleImport = useCallback((data: Partial<MapData>) => {
+    if (userRoleRef.current === 'view' || isOfflineRef.current) return;
     if (data.name) setMapName(data.name);
     if (data.pins) {
       setPins(data.pins);
@@ -1330,19 +1351,25 @@ export function MapEditor() {
     if (data.layers) setLayers(data.layers);
     setSuccessMessage('Map imported! Auto-saving...');
     setTimeout(() => setSuccessMessage(null), 3000);
-  };
+  }, []);
+
+  const sidebarWidthRef = useRef(sidebarWidth);
+  sidebarWidthRef.current = sidebarWidth;
 
   const handleResize = useCallback((e: MouseEvent) => {
     if (Math.abs(e.clientX - resizerStartXRef.current) > 3) {
       isResizerDraggingRef.current = true;
     }
-    const newWidth = e.clientX;
-    if (newWidth > 200 && newWidth < window.innerWidth - 50) {
-      setSidebarWidth(newWidth);
+    const newWidth = clampSidebarWidth(e.clientX, window.innerWidth);
+    sidebarWidthRef.current = newWidth;
+    if (sheetRef.current) {
+      sheetRef.current.style.width = `${newWidth}px`;
     }
   }, []);
 
   const stopResize = useCallback(() => {
+    sheetRef.current?.classList.remove('sidebar-resizing');
+    setSidebarWidth(sidebarWidthRef.current);
     setIsResizing(false);
     window.removeEventListener('mousemove', handleResize);
     window.removeEventListener('mouseup', stopResize);
@@ -1351,6 +1378,8 @@ export function MapEditor() {
   const startResize = useCallback((e: React.MouseEvent) => {
     isResizerDraggingRef.current = false;
     resizerStartXRef.current = e.clientX;
+    clearHoveredPin();
+    sheetRef.current?.classList.add('sidebar-resizing');
     setIsResizing(true);
     window.addEventListener('mousemove', handleResize);
     window.addEventListener('mouseup', stopResize);
@@ -1434,7 +1463,7 @@ export function MapEditor() {
 
       <div 
         ref={sheetRef}
-        className={isMobile ? `mobile-bottom-sheet ${isDraggingSheet ? 'dragging' : ''}` : ''}
+        className={`${isMobile ? `mobile-bottom-sheet ${isDraggingSheet ? 'dragging' : ''}` : ''}${!isMobile && isResizing ? ' sidebar-resizing' : ''}`.trim()}
         style={isMobile ? { 
           height: `${sheetHeight}px`,
           background: 'var(--bg-color)',
@@ -1510,21 +1539,17 @@ export function MapEditor() {
             pins={pins}
             onAddPin={addPinAtLocation}
             onRemovePin={removePin}
-            onPinClick={(pin) => {
-              handlePinSelect(pin.id);
-            }}
+            onPinClick={handlePinClick}
             onUpdatePin={updatePin}
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
             onDragOver={handleDragOver}
             onDragStart={handleDragStart}
             userRole={userRole}
-            onShare={() => setIsSharing(true)}
+            onShare={handleOpenShare}
             onImport={handleImport}
-            mapBounds={mapBounds}
             editingPinId={editingPinId}
             onSetEditingPinId={handleSetEditingPinId}
-            hoveredPinId={hoveredPinId}
             onHoverPin={handleHoverPin}
             targetPinId={targetPinId}
             customColors={customColors}
@@ -1604,10 +1629,8 @@ export function MapEditor() {
             targetPinId={targetPinId}
             editingPinId={editingPinId}
             boundsToFit={boundsToFit}
-            onBoundsChange={setMapBounds}
             userRole={userRole}
             isOffline={isOffline}
-            hoveredPinId={hoveredPinId}
             onHoverPin={handleHoverPin}
             onBackgroundClick={handleBackgroundClick}
             hiddenLayerIds={hiddenLayerIds}

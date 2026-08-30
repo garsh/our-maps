@@ -3,6 +3,7 @@ import type { Pin } from '@shared/interfaces';
 import Fuse from 'fuse.js';
 import { Search, MapPin, Loader2, X, Plus } from 'lucide-react';
 import { apiService } from '../services/api';
+import { getMapViewportBounds, subscribeMapViewportBounds } from '../utils/mapViewport';
 
 interface SearchResult {
   place_id: string | number;
@@ -63,9 +64,31 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
   const [globalResults, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [lastSearchedBounds, setLastSearchedBounds] = useState<string | null>(null);
+  const [storeBounds, setStoreBounds] = useState<string | null>(() => getMapViewportBounds());
+  const queryRef = useRef(query);
+  queryRef.current = query;
 
-  const mapBoundsRef = useRef(mapBounds);
-  mapBoundsRef.current = mapBounds;
+  const effectiveBounds = mapBounds ?? storeBounds;
+  const mapBoundsRef = useRef(effectiveBounds);
+  mapBoundsRef.current = effectiveBounds;
+
+  useEffect(() => {
+    if (mapBounds != null) return;
+    setStoreBounds(getMapViewportBounds());
+    return subscribeMapViewportBounds((next) => {
+      mapBoundsRef.current = next;
+      if (queryRef.current.trim()) {
+        setStoreBounds(next);
+      }
+    });
+  }, [mapBounds]);
+
+  useEffect(() => {
+    if (mapBounds != null) return;
+    if (query.trim()) {
+      setStoreBounds(getMapViewportBounds());
+    }
+  }, [query, mapBounds]);
 
   // Initialize Fuse for fuzzy search on local pins (memoized on pins array only)
   const fuse = useMemo(() => {
@@ -80,8 +103,8 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     if (!query.trim()) return [];
     let searchResults = fuse.search(query);
 
-    if (mapBounds) {
-      const parts = mapBounds.split(',').map(Number);
+    if (effectiveBounds) {
+      const parts = effectiveBounds.split(',').map(Number);
       if (parts.length === 4 && parts.every((n) => !isNaN(n))) {
         const [west, north, east, south] = parts;
         const minLat = Math.min(north, south);
@@ -112,7 +135,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
         pinId: result.item.id
       };
     });
-  }, [query, fuse, mapBounds]);
+  }, [query, fuse, effectiveBounds]);
 
   const executeGlobalSearch = useCallback(async (searchQuery: string, boundsToUse?: string | null) => {
     if (searchQuery.trim().length < 3) {
@@ -154,9 +177,9 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     if (onSearchAreaStateChange) {
       if (
         query.trim().length >= 3 &&
-        mapBounds &&
+        effectiveBounds &&
         lastSearchedBounds &&
-        mapBounds !== lastSearchedBounds
+        effectiveBounds !== lastSearchedBounds
       ) {
         onSearchAreaStateChange({
           showPill: true,
@@ -167,7 +190,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
         onSearchAreaStateChange(null);
       }
     }
-  }, [query, mapBounds, lastSearchedBounds, isSearching, onSearchAreaStateChange, executeGlobalSearch]);
+  }, [query, effectiveBounds, lastSearchedBounds, isSearching, onSearchAreaStateChange, executeGlobalSearch]);
 
   useEffect(() => {
     return () => {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, memo, type CSSProperties } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import SearchBar, { type SearchAreaState } from './SearchBar';
 import { reverseGeocode } from '../utils/geocoding';
@@ -35,6 +35,7 @@ import {
 import {
   DndContext, 
   closestCorners,
+  pointerWithin,
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
@@ -70,6 +71,23 @@ import { canFit } from '../utils/storageUtils';
 import { tileWorkerManager } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
 import { comparePinPositions } from '../utils/reorderUtils';
+import { getMapViewportBounds } from '../utils/mapViewport';
+import { resolvePinDragCollision } from '../utils/pinDragCollision';
+
+class MouseSensor extends PointerSensor {
+  static activators = [
+    {
+      eventName: 'onPointerDown' as const,
+      handler: ({ nativeEvent: event }: React.PointerEvent) => {
+        return event.pointerType === 'mouse';
+      },
+    },
+  ];
+}
+
+const MOUSE_SENSOR_OPTIONS = { activationConstraint: { distance: 5 } };
+const TOUCH_SENSOR_OPTIONS = { activationConstraint: { delay: 250, tolerance: 5 } };
+const KEYBOARD_SENSOR_OPTIONS = { coordinateGetter: sortableKeyboardCoordinates };
 
 export type MapTheme = 'light' | 'dark';
 
@@ -93,10 +111,8 @@ interface SidebarProps {
   userRole?: 'owner' | 'edit' | 'view';
   onShare?: () => void;
   onImport?: (data: Partial<MapData>) => void;
-  mapBounds?: string | null;
   editingPinId: string | null;
   onSetEditingPinId: (id: string | null) => void;
-  hoveredPinId?: string | null;
   targetPinId?: string | null;
   onHoverPin?: (id: string | null, leavingPinId?: string) => void;
   customColors?: string[];
@@ -361,7 +377,6 @@ const SortablePin = memo(({
   setEditingPinId,
   readOnly,
   targetPinId,
-  hoveredPinId,
   onHoverPin,
   onAddCustomColor,
   isSelected,
@@ -369,7 +384,8 @@ const SortablePin = memo(({
   customColors,
   allLayers,
   isAnySelectedDragging,
-  isDragActive
+  isDragActive,
+  activeDragId
 }: { 
   pin: Pin, 
   onPinClick: (pin: Pin) => void,
@@ -379,7 +395,6 @@ const SortablePin = memo(({
   setEditingPinId: (id: string | null) => void,
   readOnly: boolean,
   targetPinId?: string | null,
-  hoveredPinId?: string | null,
   onHoverPin?: (id: string | null, leavingPinId?: string) => void,
   onAddCustomColor?: (color: string) => void,
   isSelected?: boolean,
@@ -387,7 +402,8 @@ const SortablePin = memo(({
   customColors?: string[],
   allLayers: PinLayer[],
   isAnySelectedDragging: boolean,
-  isDragActive: boolean
+  isDragActive: boolean,
+  activeDragId?: string | null
 }) => {
   const {
     attributes,
@@ -399,7 +415,7 @@ const SortablePin = memo(({
   } = useSortable({ 
     id: pin.id,
     data: { type: 'pin', pin },
-    disabled: readOnly
+    disabled: readOnly || (!!activeDragId && !!isSelected && pin.id !== activeDragId)
   });
 
   const [isFetchingAddress, setIsFetchingAddress] = useState(false);
@@ -578,6 +594,7 @@ const SortablePin = memo(({
   return (
     <li 
       id={`pin-${pin.id}`}
+      className={`pin-list-item${editingPinId === pin.id ? ' pin-editing' : ''}`}
       ref={setNodeRef} 
       style={{ 
         ...style, 
@@ -585,12 +602,12 @@ const SortablePin = memo(({
         marginBottom: '0px',
         scrollMarginTop: '24px',
         borderRadius: 'var(--radius-sm)',
-        background: ((hoveredPinId === pin.id || targetPinId === pin.id) && !isDragActive) ? 'rgba(72, 61, 139, 0.05)' : (editingPinId === pin.id && !isDragActive ? 'var(--bg-color)' : 'transparent'),
+        background: (targetPinId === pin.id && !isDragActive) ? 'rgba(72, 61, 139, 0.05)' : (editingPinId === pin.id && !isDragActive ? 'var(--bg-color)' : undefined),
         border: (editingPinId === pin.id && !isDragActive) ? '1px solid var(--primary-color)' : '1px solid transparent',
-        boxShadow: ((hoveredPinId === pin.id || targetPinId === pin.id) && !isDragActive) ? '0 0 0 1px var(--primary-color)' : 'none',
+        boxShadow: (targetPinId === pin.id && !isDragActive) ? '0 0 0 1px var(--primary-color)' : undefined,
         transition: 'all 0.1s ease',
         cursor: 'default',
-        contentVisibility: editingPinId === pin.id ? ('visible' as const) : ('auto' as const),
+        contentVisibility: (editingPinId === pin.id || isDragActive) ? ('visible' as const) : ('auto' as const),
         containIntrinsicSize: editingPinId === pin.id ? 'auto' : '28px'
       }}
       onPointerEnter={(e) => {
@@ -975,7 +992,6 @@ const SortableLayer = ({
   onSetEditingLayerId,
   readOnly,
   targetPinId,
-  hoveredPinId,
   onHoverPin,
   customColors,
   onAddCustomColor,
@@ -989,7 +1005,8 @@ const SortableLayer = ({
   onToggleExpand,
   isAnySelectedDragging,
   isLayerDragging,
-  isDragActive
+  isDragActive,
+  activeDragId
 }: { 
   layer: PinLayer,
   layerPins: Pin[],
@@ -1004,7 +1021,6 @@ const SortableLayer = ({
   onSetEditingLayerId?: (id: string | null) => void,
   readOnly: boolean,
   targetPinId?: string | null,
-  hoveredPinId?: string | null,
   onHoverPin?: (id: string | null, leavingPinId?: string) => void,
   customColors?: string[],
   onAddCustomColor?: (color: string) => void,
@@ -1018,7 +1034,8 @@ const SortableLayer = ({
   onToggleExpand: () => void,
   isAnySelectedDragging: boolean,
   isLayerDragging: boolean,
-  isDragActive: boolean
+  isDragActive: boolean,
+  activeDragId?: string | null
 }) => {
   const [localIsEditingName, setLocalIsEditingName] = useState(false);
   const isEditingName = editingLayerId !== undefined 
@@ -1268,7 +1285,6 @@ const SortableLayer = ({
                   setEditingPinId={onSetEditingPinId}
                   readOnly={readOnly}
                   targetPinId={targetPinId}
-                  hoveredPinId={hoveredPinId}
                   onHoverPin={onHoverPin}
                   onAddCustomColor={onAddCustomColor}
                   isSelected={selectedNavIds?.has(pin.id)}
@@ -1277,6 +1293,7 @@ const SortableLayer = ({
                   allLayers={allLayers}
                   isAnySelectedDragging={isAnySelectedDragging}
                   isDragActive={isDragActive}
+                  activeDragId={activeDragId}
                 />
               ))}
             </ul>
@@ -1307,11 +1324,9 @@ const Sidebar = ({
   userRole = 'owner',
   onShare,
   onImport,
-  mapBounds,
   editingPinId,
   onSetEditingPinId,
   targetPinId,
-  hoveredPinId,
   onHoverPin,
   customColors,
   onAddCustomColor,
@@ -1479,11 +1494,12 @@ const Sidebar = ({
     let bbox: BoundingBox | null = getPinsBoundingBox(pins);
     
     if (!bbox) {
-        if (!mapBounds) {
+        const viewportBounds = getMapViewportBounds();
+        if (!viewportBounds) {
             alert("Please wait for map to load bounds.");
             return;
         }
-        const parts = mapBounds.split(',').map(Number);
+        const parts = viewportBounds.split(',').map(Number);
         bbox = {
             west: parts[0],
             north: parts[1],
@@ -1594,32 +1610,10 @@ const Sidebar = ({
     input.click();
   };
 
-class MouseSensor extends PointerSensor {
-  static activators = [
-    {
-      eventName: 'onPointerDown' as const,
-      handler: ({ nativeEvent: event }: React.PointerEvent) => {
-        return event.pointerType === 'mouse';
-      },
-    },
-  ];
-}
-
   const sensors = useSensors(
-    useSensor(MouseSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 5,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
+    useSensor(MouseSensor, MOUSE_SENSOR_OPTIONS),
+    useSensor(TouchSensor, TOUCH_SENSOR_OPTIONS),
+    useSensor(KeyboardSensor, KEYBOARD_SENSOR_OPTIONS)
   );
 
   const defaultPins = pins.filter(p => !p.layerId).sort(comparePinPositions);
@@ -1711,6 +1705,19 @@ class MouseSensor extends PointerSensor {
   const isDragActive = !!(activePinId || activeLayer);
 
   const customCollisionDetection = (args: any) => {
+    if (args.active.data.current?.type === 'pin') {
+      const activeId = String(args.active.id);
+      const excludeIds = selectedNavIds?.has(activeId)
+        ? new Set(selectedNavIds)
+        : new Set([activeId]);
+      return resolvePinDragCollision({
+        pointerHits: pointerWithin(args),
+        closestHits: closestCorners(args),
+        droppableContainers: args.droppableContainers,
+        excludeIds,
+      });
+    }
+
     const pointerCollisions = closestCorners(args);
     if (args.active.data.current?.type === 'layer' && pointerCollisions.length > 0) {
       const firstCollision = pointerCollisions[0];
@@ -2173,7 +2180,6 @@ class MouseSensor extends PointerSensor {
                   onAddPin={onAddPin}
                   pins={pins} 
                   disabled={readOnly} 
-                  mapBounds={mapBounds}
                   onHoverSearchResult={onHoverSearchResult}
                   onHoverPin={onHoverPin}
                   onSearchAreaStateChange={onSearchAreaStateChange}
@@ -2212,6 +2218,7 @@ class MouseSensor extends PointerSensor {
 
         <div 
           ref={scrollContainerRef}
+          className={`pin-list${(targetPinId || editingPinId) ? ' pin-hover-blocked' : ''}${isDragActive ? ' pin-drag-active' : ''}`}
           style={{ 
             flex: 1, 
             minHeight: 0,
@@ -2247,7 +2254,6 @@ class MouseSensor extends PointerSensor {
                 onSetEditingLayerId={setEditingLayerId}
                 readOnly={readOnly}
                 targetPinId={targetPinId}
-                hoveredPinId={hoveredPinId}
                 onHoverPin={onHoverPin}
                 customColors={customColors}
                 onAddCustomColor={onAddCustomColor}
@@ -2262,6 +2268,7 @@ class MouseSensor extends PointerSensor {
                 isAnySelectedDragging={isAnySelectedDragging}
                 isLayerDragging={!!activeLayer}
                 isDragActive={isDragActive}
+                activeDragId={activePinId}
               />
             ))}
           </SortableContext>
@@ -2293,7 +2300,6 @@ class MouseSensor extends PointerSensor {
                         setEditingPinId={onSetEditingPinId}
                         readOnly={readOnly}
                         targetPinId={targetPinId}
-                        hoveredPinId={hoveredPinId}
                         onHoverPin={onHoverPin}
                         customColors={customColors}
                         onAddCustomColor={onAddCustomColor}
@@ -2302,6 +2308,7 @@ class MouseSensor extends PointerSensor {
                         allLayers={layers}
                         isAnySelectedDragging={isAnySelectedDragging}
                         isDragActive={isDragActive}
+                        activeDragId={activePinId}
                       />
                     ))}
                     {defaultPins.length === 0 && layers.length === 0 && (
@@ -2567,5 +2574,4 @@ class MouseSensor extends PointerSensor {
   );
 };
 
-export default Sidebar;
-// Force Vite HMR reload
+export default memo(Sidebar);

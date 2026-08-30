@@ -291,6 +291,16 @@ button:active {
   transform: scaleY(1.1);
 }
 
+.sidebar-resizing {
+  cursor: col-resize;
+}
+.sidebar-resizing * {
+  pointer-events: none !important;
+}
+.sidebar-resizing .resizer-handle {
+  pointer-events: auto !important;
+}
+
 
 @keyframes colorCycle {
   0% { color: #3b82f6; transform: translateY(0); }
@@ -302,6 +312,18 @@ button:active {
 
 .animated-download-icon {
   animation: colorCycle 2s infinite linear;
+}
+
+/* Map↔list pin hover is applied via a class on #pin-{id} so App/Sidebar do not re-render. */
+.pin-list-item.pin-hovered,
+.pin-list:not(.pin-hover-blocked):not(.pin-drag-active) .pin-list-item:hover:not(.pin-editing) {
+  background: rgba(72, 61, 139, 0.05);
+  box-shadow: 0 0 0 1px var(--primary-color);
+}
+
+.pin-list.pin-drag-active .pin-list-item.pin-hovered {
+  background: transparent;
+  box-shadow: none;
 }
 
 @keyframes rainbowMove {

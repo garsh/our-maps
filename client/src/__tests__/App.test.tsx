@@ -1,7 +1,8 @@
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
-import { MapEditor } from '../App';
+import { MapEditor, clampSidebarWidth } from '../App';
+import { PIN_HOVER_CLASS } from '../utils/pinHover';
 import LandingPage from '../pages/LandingPage';
 import { apiService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -171,10 +172,53 @@ describe('App Components Error Handling', () => {
     const pin2Element = screen.getByText('Pin 2').closest('li')!;
     fireEvent.pointerEnter(pin2Element, { pointerType: 'mouse' });
 
-    // Pin 2 should have hovered style (boxShadow)
-    expect(pin2Element.style.boxShadow).toContain('var(--primary-color)');
+    expect(pin2Element).toHaveClass(PIN_HOVER_CLASS);
 
     confirmSpy.mockRestore();
+  });
+
+  it('clamps sidebar width to the usable viewport range', () => {
+    expect(clampSidebarWidth(100, 1000)).toBe(200);
+    expect(clampSidebarWidth(400, 1000)).toBe(400);
+    expect(clampSidebarWidth(990, 1000)).toBe(950);
+  });
+
+  it('updates sidebar width via DOM during drag and commits on mouseup', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1280 });
+
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Map Synced/i)).toBeInTheDocument();
+    });
+
+    const resizer = container.querySelector('.resizer-handle') as HTMLElement;
+    expect(resizer).toBeTruthy();
+    const sidebar = resizer.parentElement as HTMLElement;
+
+    fireEvent.mouseDown(resizer, { clientX: 400 });
+    expect(sidebar.classList.contains('sidebar-resizing')).toBe(true);
+    fireEvent.mouseMove(window, { clientX: 520 });
+    expect(sidebar.style.width).toBe('520px');
+
+    fireEvent.mouseUp(window);
+    expect(sidebar.style.width).toBe('520px');
   });
 });
 

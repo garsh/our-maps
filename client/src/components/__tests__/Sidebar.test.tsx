@@ -1,9 +1,18 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Sidebar from '../Sidebar';
 import { useState } from 'react';
+import { PIN_HOVER_CLASS, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
 
 describe('Sidebar', () => {
+  beforeEach(() => {
+    resetPinHoverForTests();
+  });
+
+  afterEach(() => {
+    resetPinHoverForTests();
+  });
+
   const mockPins = [
     { id: '1', lat: 10, lng: 20, label: 'Test Pin', description: '', position: 0 }
   ];
@@ -167,6 +176,21 @@ describe('Sidebar', () => {
     fireEvent.click(screen.getByText('Test Pin'));
     
     expect(onPinClick).toHaveBeenCalled();
+  });
+
+  it('marks pin rows for CSS hover and applies the shared hover class from the store', () => {
+    const onHoverPin = vi.fn();
+    render(<TestWrapper handlers={{ onHoverPin }} />);
+
+    const pinRow = screen.getByText('Test Pin').closest('li')!;
+    expect(pinRow).toHaveClass('pin-list-item');
+    expect(pinRow.id).toBe('pin-1');
+
+    fireEvent.pointerEnter(pinRow, { pointerType: 'mouse' });
+    expect(onHoverPin).toHaveBeenCalledWith('1');
+
+    setHoveredPin('1');
+    expect(pinRow).toHaveClass(PIN_HOVER_CLASS);
   });
 
   it('shows the Download for Offline option in the menu when map is not downloaded', async () => {

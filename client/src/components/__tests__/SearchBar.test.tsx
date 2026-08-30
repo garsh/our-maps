@@ -1,6 +1,7 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import SearchBar from '../SearchBar';
+import { setMapViewportBounds, resetMapViewportBoundsForTests } from '../../utils/mapViewport';
 
 describe('SearchBar', () => {
   const mockOnAddPin = vi.fn();
@@ -10,6 +11,7 @@ describe('SearchBar', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetMapViewportBoundsForTests();
   });
 
   it('renders correctly', () => {
@@ -225,5 +227,31 @@ describe('SearchBar', () => {
       expect.stringContaining('q=Berlin'),
       expect.any(Object)
     );
+  });
+
+  it('filters local pins from the viewport bounds store when mapBounds is not passed', async () => {
+    const mixedPins = [
+      { id: '1', lat: 10.8, lng: 20.8, label: 'Coffee Spot', description: 'In bounds', position: 0 },
+      { id: '4', lat: 50.0, lng: 80.0, label: 'Distant Coffee', description: 'Out of bounds', position: 3 }
+    ];
+
+    setMapViewportBounds('19,11,21,9');
+    render(<SearchBar onAddPin={mockOnAddPin} pins={mixedPins} />);
+
+    fireEvent.change(screen.getByPlaceholderText(/Search.../i), { target: { value: 'Coffee' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Coffee Spot')).toBeInTheDocument();
+      expect(screen.queryByText('Distant Coffee')).not.toBeInTheDocument();
+    });
+
+    act(() => {
+      setMapViewportBounds('79,51,81,49');
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Distant Coffee')).toBeInTheDocument();
+      expect(screen.queryByText('Coffee Spot')).not.toBeInTheDocument();
+    });
   });
 });

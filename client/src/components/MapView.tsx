@@ -14,6 +14,8 @@ import { reverseGeocode } from '../utils/geocoding';
 import type { MapTheme } from './Sidebar';
 
 import { getTile } from '../utils/tileUtils';
+import { clearHoveredPin, getHoveredPinId, useIsPinHovered } from '../utils/pinHover';
+import { setMapViewportBounds } from '../utils/mapViewport';
 
 let globalPMTilesProtocol: Protocol | null = null;
 let currentMapHasOfflineTiles = false;
@@ -88,11 +90,10 @@ interface MapViewProps {
   onMapClick: (lat: number, lng: number) => void;
   onPinClick?: (pin: Pin) => void;
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
-  onBoundsChange: (bounds: string) => void;
+  onBoundsChange?: (bounds: string) => void;
   targetPinId?: string | null;
   boundsToFit?: [[number, number], [number, number]] | null;
   userRole?: 'owner' | 'edit' | 'view';
-  hoveredPinId?: string | null;
   onHoverPin?: (id: string | null, leavingPinId?: string) => void;
   hiddenLayerIds?: Set<string | null>;
   previewLocation?: { lat: number; lng: number } | null;
@@ -146,6 +147,8 @@ const PinMarker = memo(({
   isEditing,
   readOnly,
 }: PinMarkerProps) => {
+  const isHovered = useIsPinHovered(pin.id);
+  const showHighlight = isSelected || isHovered;
   const isHex = pin.color?.startsWith('#');
   const colorCode = isHex ? pin.color : (COLOR_CODES[pin.color as PinColor] || COLOR_CODES.blue);
   const iconPath = pin.icon && pin.icon !== 'default' ? ICON_SVG_PATHS[pin.icon as Exclude<PinIcon, 'default'>] : null;
@@ -192,10 +195,10 @@ const PinMarker = memo(({
       anchor="bottom"
       draggable={!readOnly && isEditing}
       onDragEnd={handleDragEnd}
-      style={{ zIndex: isSelected ? 1000 : 1 }}
+      style={{ zIndex: showHighlight ? 1000 : 1 }}
     >
       <div
-        className={`leaflet-marker-icon custom-pin-modern ${isSelected ? 'hovered' : ''}`}
+        className={`leaflet-marker-icon custom-pin-modern ${showHighlight ? 'hovered' : ''}`}
         style={{
           position: 'relative',
           width: '20px',
@@ -206,7 +209,7 @@ const PinMarker = memo(({
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        {isSelected && (
+        {showHighlight && (
           <div
             style={{
               position: 'absolute',
@@ -406,6 +409,46 @@ prefetchMapSprites();
 // Terrain flyTo freezes camera height and only calls _finalizeElevation when this is set.
 // Without it, street labels keep a mid-flight perspective scale after Find my location.
 const FLY_TO_TERRAIN = { freezeElevation: true as const };
+const MAP_EDGE_PADDING = 80;
+
+export function paddedMapView(leftPadding: number, bottomPadding: number) {
+  return {
+    top: MAP_EDGE_PADDING,
+    left: leftPadding + MAP_EDGE_PADDING,
+    right: MAP_EDGE_PADDING,
+    bottom: MAP_EDGE_PADDING + bottomPadding,
+  };
+}
+
+export function isPinInPaddedViewport(
+  map: {
+    project?: (lngLat: [number, number]) => { x: number; y: number };
+    getContainer?: () => { getBoundingClientRect?: () => { width: number; height: number }; clientWidth?: number; clientHeight?: number } | null;
+    getBounds?: () => { contains?: (lngLat: [number, number]) => boolean };
+  },
+  pin: { lat: number; lng: number },
+  leftPadding: number,
+  bottomPadding: number
+): boolean {
+  const pad = paddedMapView(leftPadding, bottomPadding);
+
+  if (typeof map.project === 'function') {
+    const point = map.project([pin.lng, pin.lat]);
+    const el = typeof map.getContainer === 'function' ? map.getContainer() : null;
+    const rect = el?.getBoundingClientRect?.();
+    const w = rect?.width || el?.clientWidth || 0;
+    const h = rect?.height || el?.clientHeight || 0;
+    if (w > 0 && h > 0) {
+      return point.x >= pad.left && point.x <= w - pad.right && point.y >= pad.top && point.y <= h - pad.bottom;
+    }
+  }
+
+  try {
+    return !!map.getBounds?.()?.contains?.([pin.lng, pin.lat]);
+  } catch {
+    return false;
+  }
+}
 
 const MapView = ({
   center = [20, 0], // default [lat, lng]
@@ -418,7 +461,6 @@ const MapView = ({
   targetPinId,
   boundsToFit,
   userRole = 'owner',
-  hoveredPinId,
   onHoverPin,
   hiddenLayerIds,
   previewLocation,
@@ -439,15 +481,38 @@ const MapView = ({
   }, [hasOfflineTiles]);
 
   const mapRef = useRef<MapRef | null>(null);
+  const leftPaddingRef = useRef(leftPadding);
+  leftPaddingRef.current = leftPadding;
+  const bottomPaddingRef = useRef(bottomPadding);
+  bottomPaddingRef.current = bottomPadding;
   const readOnly = userRole === 'view' || isOffline;
+
+  const setMapRef = useCallback((instance: MapRef | null) => {
+    mapRef.current = instance;
+    if (!instance) return;
+    const map = instance.getMap();
+    if (map && typeof map.setMissingStyleImageResolver === 'function') {
+      map.setMissingStyleImageResolver((id: string) => {
+        if (!map.hasImage(id)) {
+          try {
+            map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
+          } catch {}
+        }
+      });
+    }
+  }, []);
   const lastTargetPinId = useRef<string | null>(null);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
-  const [currentZoom, setCurrentZoom] = useState<number>(zoom);
-  const [bearing, setBearing] = useState<number>(0);
-  const [pitch, setPitch] = useState<number>(0);
   const compassSvgRef = useRef<SVGSVGElement | null>(null);
   const compassGroupRef = useRef<SVGGElement | null>(null);
+  const compassButtonRef = useRef<HTMLButtonElement | null>(null);
+  const zoomPillRef = useRef<HTMLDivElement | null>(null);
+  const lastBoundsStrRef = useRef<string | null>(null);
   const hasFitInitialBoundsRef = useRef(false);
+  const onHoverPinRef = useRef(onHoverPin);
+  onHoverPinRef.current = onHoverPin;
+  const onBoundsChangeRef = useRef(onBoundsChange);
+  onBoundsChangeRef.current = onBoundsChange;
 
   const [pendingContextLocation, setPendingContextLocation] = useState<{ lat: number; lng: number } | null>(null);
   const touchStartRef = useRef<{ x: number; y: number; lat: number; lng: number } | null>(null);
@@ -1015,8 +1080,6 @@ const MapView = ({
       const minLng = Math.min(first[1], second[1]);
       const maxLng = Math.max(first[1], second[1]);
 
-      const computedLeftPadding = leftPadding + 80;
-
       if (Math.abs(maxLat - minLat) < 0.0001 && Math.abs(maxLng - minLng) < 0.0001) {
         return { longitude: minLng, latitude: minLat, zoom: 13 };
       }
@@ -1024,7 +1087,7 @@ const MapView = ({
       return {
         bounds: [minLng, minLat, maxLng, maxLat] as [number, number, number, number],
         fitBoundsOptions: {
-          padding: { top: 80, left: computedLeftPadding, right: 80, bottom: 80 + bottomPadding },
+          padding: paddedMapView(leftPadding, bottomPadding),
           maxZoom: 13,
         },
       };
@@ -1046,46 +1109,46 @@ const MapView = ({
     if (compassGroupRef.current) {
       compassGroupRef.current.style.transform = `rotate(${-b}deg)`;
     }
+    if (compassButtonRef.current) {
+      compassButtonRef.current.title = `Heading: ${Math.round((b % 360 + 360) % 360)}°, Tilt: ${Math.round(p)}° (Click to reset)`;
+    }
+    if (zoomPillRef.current) {
+      zoomPillRef.current.textContent = `Zoom: ${map.getZoom().toFixed(1)}`;
+    }
   }, []);
 
   const updateBounds = useCallback(() => {
     if (!mapRef.current) return;
     const map = mapRef.current.getMap();
     if (!map) return;
-    const b = map.getBearing();
-    const p = map.getPitch();
 
-    setCurrentZoom(map.getZoom());
-    setBearing(b);
-    setPitch(p);
-
-    if (compassSvgRef.current) {
-      compassSvgRef.current.style.transform = `perspective(60px) rotateX(${Math.min(p, 70)}deg)`;
-    }
-    if (compassGroupRef.current) {
-      compassGroupRef.current.style.transform = `rotate(${-b}deg)`;
-    }
+    updateCompassDirect();
 
     try {
       const bounds = map.getBounds();
-      if (bounds) {
+      if (bounds && typeof bounds.getWest === 'function') {
         const west = bounds.getWest();
         const north = bounds.getNorth();
         const east = bounds.getEast();
         const south = bounds.getSouth();
-        onBoundsChange(`${west},${north},${east},${south}`);
+        const boundsStr = `${west},${north},${east},${south}`;
+        if (lastBoundsStrRef.current !== boundsStr) {
+          lastBoundsStrRef.current = boundsStr;
+          setMapViewportBounds(boundsStr);
+          onBoundsChangeRef.current?.(boundsStr);
+        }
       }
     } catch (e) {
       console.warn('Failed to get map bounds:', e);
     }
-  }, [onBoundsChange]);
+  }, [updateCompassDirect]);
 
   const handlePinClickStable = useCallback((clickedPin: Pin) => {
     setPendingContextLocation(null);
     onPinClick?.(clickedPin);
   }, [onPinClick]);
 
-  const handleCombinedCompassTilt = () => {
+  const handleCombinedCompassTilt = useCallback(() => {
     if (!mapRef.current) return;
     const map = mapRef.current.getMap();
     const currentBearing = map.getBearing();
@@ -1096,7 +1159,35 @@ const MapView = ({
     } else {
       mapRef.current.easeTo({ pitch: 60, duration: 300 });
     }
-  };
+  }, []);
+
+  const clearHoverDuringPan = useCallback(() => {
+    if (!getHoveredPinId()) return;
+    clearHoveredPin();
+    onHoverPinRef.current?.(null);
+  }, []);
+
+  const handleMapMove = useCallback(() => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    touchStartRef.current = null;
+    updateCompassDirect();
+    clearHoverDuringPan();
+  }, [updateCompassDirect, clearHoverDuringPan]);
+
+  const handleMapLoad = useCallback((e: any) => {
+    setIsMapLoaded(true);
+    const map = e.target || mapRef.current?.getMap();
+    if (map && typeof map.setMissingStyleImageResolver === 'function') {
+      map.setMissingStyleImageResolver((id: string) => {
+        if (!map.hasImage(id)) {
+          try {
+            map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
+          } catch {}
+        }
+      });
+    }
+    updateBounds();
+  }, [updateBounds]);
 
   const applyBoundsToFit = useCallback(
     (bounds: [[number, number], [number, number]] | null, animate = true) => {
@@ -1109,7 +1200,6 @@ const MapView = ({
       const maxLng = Math.max(first[1], second[1]);
 
       const duration = animate ? 1200 : 0;
-      const computedLeftPadding = leftPadding + 80;
 
       if (Math.abs(maxLat - minLat) < 0.0001 && Math.abs(maxLng - minLng) < 0.0001) {
         mapRef.current.flyTo({
@@ -1125,7 +1215,7 @@ const MapView = ({
             [maxLng, maxLat],
           ],
           {
-            padding: { top: 80, left: computedLeftPadding, right: 80, bottom: 80 + bottomPadding },
+            padding: paddedMapView(leftPadding, bottomPadding),
             maxZoom: 13,
             duration,
             ...FLY_TO_TERRAIN,
@@ -1138,17 +1228,23 @@ const MapView = ({
 
   // Camera movements for targetPinId
   useEffect(() => {
-    if (!targetPinId || targetPinId === lastTargetPinId.current) return;
+    if (!targetPinId) {
+      lastTargetPinId.current = null;
+      return;
+    }
+    if (targetPinId === lastTargetPinId.current) return;
     lastTargetPinId.current = targetPinId;
     const pin = pins?.find((p) => p.id === targetPinId);
     if (!pin || !mapRef.current) return;
 
     const map = mapRef.current.getMap();
-    const bounds = map.getBounds();
-    if (!bounds.contains([pin.lng, pin.lat])) {
+    const left = leftPaddingRef.current;
+    const bottom = bottomPaddingRef.current;
+    if (!isPinInPaddedViewport(map, pin, left, bottom)) {
       map.flyTo({
         center: [pin.lng, pin.lat],
         zoom: map.getZoom(),
+        padding: paddedMapView(left, bottom),
         duration: 1200,
         ...FLY_TO_TERRAIN,
       });
@@ -1240,21 +1336,7 @@ const MapView = ({
         <Map
           attributionControl={false}
           localIdeographFontFamily="'Noto Sans CJK JP', 'Hiragino Kaku Gothic ProN', 'Meiryo', 'Yu Gothic', sans-serif"
-          ref={(instance) => {
-            mapRef.current = instance;
-            if (instance) {
-              const map = instance.getMap();
-              if (map && typeof map.setMissingStyleImageResolver === 'function') {
-                map.setMissingStyleImageResolver((id: string) => {
-                  if (!map.hasImage(id)) {
-                    try {
-                      map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
-                    } catch {}
-                  }
-                });
-              }
-            }
-          }}
+          ref={setMapRef}
           initialViewState={initialViewState}
           mapStyle={mapStyle}
           style={{ width: '100%', height: '100%' }}
@@ -1262,39 +1344,11 @@ const MapView = ({
           maxZoom={22}
           minZoom={1}
           maxPitch={85}
-          onLoad={(e: any) => {
-            setIsMapLoaded(true);
-            const map = e.target || mapRef.current?.getMap();
-            if (map && typeof map.setMissingStyleImageResolver === 'function') {
-              map.setMissingStyleImageResolver((id: string) => {
-                if (!map.hasImage(id)) {
-                  try {
-                    map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
-                  } catch {}
-                }
-              });
-            }
-            if (mapRef.current) {
-              const m = mapRef.current.getMap();
-              setCurrentZoom(m.getZoom());
-              setBearing(m.getBearing());
-              setPitch(m.getPitch());
-            }
-            updateBounds();
-          }}
-          onZoomStart={() => {
-            if (hoveredPinId) onHoverPin?.(null);
-          }}
+          onLoad={handleMapLoad}
+          onZoomStart={clearHoverDuringPan}
           onZoomEnd={updateBounds}
-          onMoveStart={() => {
-            if (hoveredPinId) onHoverPin?.(null);
-          }}
-          onMove={() => {
-            if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-            touchStartRef.current = null;
-            updateCompassDirect();
-            if (hoveredPinId) onHoverPin?.(null);
-          }}
+          onMoveStart={clearHoverDuringPan}
+          onMove={handleMapMove}
           onRotate={updateCompassDirect}
           onPitch={updateCompassDirect}
           onMoveEnd={updateBounds}
@@ -1324,7 +1378,7 @@ const MapView = ({
             <UserLocationMarker position={userLocation} />
           )}
           {visiblePins.map((pin) => {
-            const isSelected = hoveredPinId === pin.id || targetPinId === pin.id || editingPinId === pin.id;
+            const isSelected = targetPinId === pin.id || editingPinId === pin.id;
             const isEditing = !readOnly && editingPinId === pin.id;
             return (
               <PinMarker
@@ -1425,13 +1479,14 @@ const MapView = ({
 
       {/* Live Zoom Level Indicator Pill (Dev Server Only) */}
       {import.meta.env.DEV && (
-        <div className="zoom-level-pill">
-          Zoom: {currentZoom.toFixed(1)}
+        <div ref={zoomPillRef} className="zoom-level-pill">
+          Zoom: {zoom.toFixed(1)}
         </div>
       )}
 
       {/* Combined Compass & Tilt Indicator Control */}
       <button
+        ref={compassButtonRef}
         onClick={handleCombinedCompassTilt}
         style={{
           position: 'absolute',
@@ -1453,7 +1508,7 @@ const MapView = ({
         }}
         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface-color)')}
-        title={`Heading: ${Math.round((bearing % 360 + 360) % 360)}°, Tilt: ${Math.round(pitch)}° (Click to reset)`}
+        title="Heading: 0°, Tilt: 0° (Click to reset)"
         aria-label="Compass - Reset bearing to North"
       >
         <svg
@@ -1462,7 +1517,7 @@ const MapView = ({
           height="34"
           viewBox="0 0 24 24"
           style={{
-            transform: `perspective(60px) rotateX(${Math.min(pitch, 70)}deg)`,
+            transform: 'perspective(60px) rotateX(0deg)',
             filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.25))',
             willChange: 'transform',
           }}
@@ -1470,7 +1525,7 @@ const MapView = ({
           <g
             ref={compassGroupRef}
             style={{
-              transform: `rotate(${-bearing}deg)`,
+              transform: 'rotate(0deg)',
               transformOrigin: '12px 12px',
               willChange: 'transform',
             }}
@@ -1573,4 +1628,4 @@ const MapView = ({
   );
 };
 
-export default MapView;
+export default memo(MapView);
