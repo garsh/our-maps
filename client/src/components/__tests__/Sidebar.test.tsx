@@ -2,6 +2,8 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Sidebar from '../Sidebar';
 import { useState } from 'react';
+import * as dndSortable from '@dnd-kit/sortable';
+import * as dndCore from '@dnd-kit/core';
 import { PIN_HOVER_CLASS, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
 
 describe('Sidebar', () => {
@@ -600,5 +602,135 @@ describe('Sidebar', () => {
     // Matching pin should appear in the search dropdown results
     const matchingElements = screen.getAllByText('Burger Joint');
     expect(matchingElements.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('does not highlight an expanded empty layer header when dragged over', () => {
+    const spy = vi.spyOn(dndSortable, 'useSortable').mockImplementation((args: any) => {
+      if (args.id === 'layer-1') {
+        return {
+          attributes: {},
+          listeners: {},
+          setNodeRef: vi.fn(),
+          transform: null,
+          transition: undefined,
+          isDragging: false,
+          isOver: true,
+        } as any;
+      }
+      return {
+        attributes: {},
+        listeners: {},
+        setNodeRef: vi.fn(),
+        transform: null,
+        transition: undefined,
+        isDragging: false,
+        isOver: false,
+      } as any;
+    });
+
+    const layers = [{ id: 'layer-1', name: 'Empty Layer', position: 0 }];
+    render(
+      <TestWrapper 
+        pins={[]} 
+        handlers={{ 
+          layers,
+          collapsedLayerIds: new Set<string | null>()
+        }} 
+      />
+    );
+
+    const layerHeader = screen.getByText('Empty Layer').closest('div[style*="position: sticky"]') as HTMLElement;
+    expect(layerHeader.style.border).toBe('1px solid transparent');
+    expect(layerHeader.style.boxShadow).toBe('var(--shadow-sm)');
+
+    spy.mockRestore();
+  });
+
+  it('highlights a collapsed layer header when dragged over', () => {
+    const spy = vi.spyOn(dndSortable, 'useSortable').mockImplementation((args: any) => {
+      if (args.id === 'layer-1') {
+        return {
+          attributes: {},
+          listeners: {},
+          setNodeRef: vi.fn(),
+          transform: null,
+          transition: undefined,
+          isDragging: false,
+          isOver: true,
+        } as any;
+      }
+      return {
+        attributes: {},
+        listeners: {},
+        setNodeRef: vi.fn(),
+        transform: null,
+        transition: undefined,
+        isDragging: false,
+        isOver: false,
+      } as any;
+    });
+
+    const layers = [{ id: 'layer-1', name: 'Empty Layer', position: 0 }];
+    render(
+      <TestWrapper 
+        pins={[]} 
+        handlers={{ 
+          layers,
+          collapsedLayerIds: new Set(['layer-1'])
+        }} 
+      />
+    );
+
+    const layerHeader = screen.getByText('Empty Layer').closest('div[style*="position: sticky"]') as HTMLElement;
+    expect(layerHeader.style.border).toBe('1px solid var(--primary-color)');
+    expect(layerHeader.style.boxShadow).toBe('0 0 0 1px var(--primary-color)');
+
+    spy.mockRestore();
+  });
+
+  it('does not highlight default layer header when expanded and hovered, but does when collapsed', () => {
+    const droppableSpy = vi.spyOn(dndCore, 'useDroppable').mockImplementation((args: any) => {
+      if (args.id === 'default') {
+        return {
+          setNodeRef: vi.fn(),
+          isOver: true,
+        } as any;
+      }
+      return {
+        setNodeRef: vi.fn(),
+        isOver: false,
+      } as any;
+    });
+
+    // 1. Expanded default layer
+    const { rerender } = render(
+      <TestWrapper 
+        pins={[]} 
+        handlers={{ 
+          layers: [],
+          collapsedLayerIds: new Set<string | null>()
+        }} 
+      />
+    );
+
+    const defaultHeader = document.getElementById('default') as HTMLElement;
+    expect(defaultHeader.style.border).toBe('1px solid transparent');
+    expect(defaultHeader.style.boxShadow).toBe('var(--shadow-sm)');
+
+    // 2. Collapsed default layer
+    rerender(
+      <TestWrapper 
+        pins={[]} 
+        handlers={{ 
+          layers: [],
+          collapsedLayerIds: new Set<string | null>([null])
+        }} 
+      />
+    );
+
+    expect(defaultHeader.style.border).toBe('1px solid var(--primary-color)');
+    expect(defaultHeader.style.boxShadow).toBe('0 0 0 1px var(--primary-color)');
+
+    droppableSpy.mockRestore();
   });
 });

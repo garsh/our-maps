@@ -889,7 +889,8 @@ const DefaultLayerHeader = memo(({
     disabled: readOnly
   });
 
-  const isHighlighted = isOver && !isLayerDragging;
+  const isCollapsed = !!collapsedLayerIds?.has(null);
+  const isHighlighted = isOver && !isLayerDragging && isCollapsed;
 
   return (
     <div ref={setNodeRef} style={{ marginTop: layersCount > 0 ? '0.3rem' : '0' }}>
@@ -1117,6 +1118,7 @@ const SortableLayer = memo(({
 
   const isAllSelected = layerPins.length > 0 && layerPins.every(p => selectedNavIds?.has(p.id));
   const isSomeSelected = layerPins.some(p => selectedNavIds?.has(p.id));
+  const isHighlighted = isOver && !isExpanded && !isDragging && !isLayerDragging;
 
   return (
     <div ref={setNodeRef} style={style}>
@@ -1124,10 +1126,10 @@ const SortableLayer = memo(({
         position: 'sticky',
         top: 0,
         zIndex: 5,
-        background: (isOver && !isDragging && !isLayerDragging) ? 'var(--bg-color)' : (isEditingName ? 'var(--bg-color)' : 'var(--surface-color)'),
+        background: isHighlighted ? 'var(--bg-color)' : (isEditingName ? 'var(--bg-color)' : 'var(--surface-color)'),
         borderRadius: '0 0 var(--radius-sm) var(--radius-sm)',
-        border: (isOver && !isDragging && !isLayerDragging) ? '1px solid var(--primary-color)' : (isEditingName ? '1px solid var(--primary-color)' : '1px solid transparent'),
-        boxShadow: (isOver && !isDragging && !isLayerDragging) ? '0 0 0 1px var(--primary-color)' : 'var(--shadow-sm)',
+        border: isHighlighted ? '1px solid var(--primary-color)' : (isEditingName ? '1px solid var(--primary-color)' : '1px solid transparent'),
+        boxShadow: isHighlighted ? '0 0 0 1px var(--primary-color)' : 'var(--shadow-sm)',
         transition: 'all 0.1s ease'
       }}>
         <div style={{ 
