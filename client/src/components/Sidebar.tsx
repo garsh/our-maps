@@ -35,7 +35,6 @@ import {
 import {
   DndContext, 
   closestCorners,
-  pointerWithin,
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
@@ -61,7 +60,7 @@ import {
   countTiles, 
   estimateSizeMB, 
   getTilesForArea, 
-  getSurgicalBoxes,
+  getSurgicalBoxes, 
   getPinsBoundingBox,
   getManifestStats,
   saveMapOffline,
@@ -72,7 +71,6 @@ import { tileWorkerManager } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
 import { comparePinPositions } from '../utils/reorderUtils';
 import { getMapViewportBounds } from '../utils/mapViewport';
-import { resolvePinDragCollision } from '../utils/pinDragCollision';
 
 class MouseSensor extends PointerSensor {
   static activators = [
@@ -384,8 +382,7 @@ const SortablePin = memo(({
   customColors,
   allLayers,
   isAnySelectedDragging,
-  isDragActive,
-  activeDragId
+  isDragActive
 }: { 
   pin: Pin, 
   onPinClick: (pin: Pin) => void,
@@ -402,8 +399,7 @@ const SortablePin = memo(({
   customColors?: string[],
   allLayers: PinLayer[],
   isAnySelectedDragging: boolean,
-  isDragActive: boolean,
-  activeDragId?: string | null
+  isDragActive: boolean
 }) => {
   const {
     attributes,
@@ -415,7 +411,7 @@ const SortablePin = memo(({
   } = useSortable({ 
     id: pin.id,
     data: { type: 'pin', pin },
-    disabled: readOnly || (!!activeDragId && !!isSelected && pin.id !== activeDragId)
+    disabled: readOnly
   });
 
   const [isFetchingAddress, setIsFetchingAddress] = useState(false);
@@ -1005,8 +1001,7 @@ const SortableLayer = ({
   onToggleExpand,
   isAnySelectedDragging,
   isLayerDragging,
-  isDragActive,
-  activeDragId
+  isDragActive
 }: { 
   layer: PinLayer,
   layerPins: Pin[],
@@ -1034,8 +1029,7 @@ const SortableLayer = ({
   onToggleExpand: () => void,
   isAnySelectedDragging: boolean,
   isLayerDragging: boolean,
-  isDragActive: boolean,
-  activeDragId?: string | null
+  isDragActive: boolean
 }) => {
   const [localIsEditingName, setLocalIsEditingName] = useState(false);
   const isEditingName = editingLayerId !== undefined 
@@ -1293,7 +1287,6 @@ const SortableLayer = ({
                   allLayers={allLayers}
                   isAnySelectedDragging={isAnySelectedDragging}
                   isDragActive={isDragActive}
-                  activeDragId={activeDragId}
                 />
               ))}
             </ul>
@@ -1705,19 +1698,6 @@ const Sidebar = ({
   const isDragActive = !!(activePinId || activeLayer);
 
   const customCollisionDetection = (args: any) => {
-    if (args.active.data.current?.type === 'pin') {
-      const activeId = String(args.active.id);
-      const excludeIds = selectedNavIds?.has(activeId)
-        ? new Set(selectedNavIds)
-        : new Set([activeId]);
-      return resolvePinDragCollision({
-        pointerHits: pointerWithin(args),
-        closestHits: closestCorners(args),
-        droppableContainers: args.droppableContainers,
-        excludeIds,
-      });
-    }
-
     const pointerCollisions = closestCorners(args);
     if (args.active.data.current?.type === 'layer' && pointerCollisions.length > 0) {
       const firstCollision = pointerCollisions[0];
@@ -2268,7 +2248,6 @@ const Sidebar = ({
                 isAnySelectedDragging={isAnySelectedDragging}
                 isLayerDragging={!!activeLayer}
                 isDragActive={isDragActive}
-                activeDragId={activePinId}
               />
             ))}
           </SortableContext>
@@ -2308,7 +2287,6 @@ const Sidebar = ({
                         allLayers={layers}
                         isAnySelectedDragging={isAnySelectedDragging}
                         isDragActive={isDragActive}
-                        activeDragId={activePinId}
                       />
                     ))}
                     {defaultPins.length === 0 && layers.length === 0 && (
