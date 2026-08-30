@@ -121,6 +121,7 @@ interface SidebarProps {
   onToggleExpand?: (id: string | null) => void;
   onHoverSearchResult?: (lat: number | null, lng: number | null) => void;
   isMobile?: boolean;
+  mobileScale?: number;
   mapTheme?: MapTheme;
   onThemeChange?: (theme: MapTheme) => void;
   showSatellite?: boolean;
@@ -1363,6 +1364,7 @@ const Sidebar = ({
   onToggleExpand,
   onHoverSearchResult,
   isMobile,
+  mobileScale,
   mapTheme = 'light',
   onThemeChange,
   showSatellite = false,
@@ -2716,49 +2718,58 @@ const Sidebar = ({
             }),
           }}>
             <div>
-            {activePin ? (
-              <div style={{ width: '200px', position: 'relative', transform: isMobile ? 'scale(1.5)' : 'scale(1.25)', transformOrigin: 'top left' }}>
-                {/* Bundle visual: a stack of items if multiple are selected */}
-                {isAnySelectedDragging && selectedNavIds && selectedNavIds.size > 1 ? (
-                    <>
-                        <div style={{ position: 'absolute', top: '4px', left: '4px', width: '100%', zIndex: 1, opacity: 0.4 }}>
-                            <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
-                        </div>
-                        <div style={{ position: 'absolute', top: '2px', left: '2px', width: '100%', zIndex: 2, opacity: 0.7 }}>
-                            <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
-                        </div>
-                        <div style={{ position: 'relative', zIndex: 3 }}>
-                            <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
-                            <div style={{ 
-                                position: 'absolute', 
-                                top: '-6px', 
-                                right: '-6px', 
-                                background: 'var(--primary-color)', 
-                                color: 'white', 
-                                borderRadius: '50%', 
-                                width: '14px', 
-                                height: '14px', 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'center', 
-                                fontSize: '0.55rem',
-                                fontWeight: '800',
-                                boxShadow: 'var(--shadow-sm)',
-                                zIndex: 4
-                            }}>
-                                {selectedNavIds.size}
+            {(() => {
+              const dragOverlayScale = isMobile ? (mobileScale ?? 1) : 1.25;
+              if (activePin) {
+                return (
+                  <div style={{ width: '200px', position: 'relative', transform: `scale(${dragOverlayScale})`, transformOrigin: 'top left' }}>
+                    {/* Bundle visual: a stack of items if multiple are selected */}
+                    {isAnySelectedDragging && selectedNavIds && selectedNavIds.size > 1 ? (
+                        <>
+                            <div style={{ position: 'absolute', top: '4px', left: '4px', width: '100%', zIndex: 1, opacity: 0.4 }}>
+                                <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
                             </div>
-                        </div>
-                    </>
-                ) : (
-                    <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
-                )}
-              </div>
-            ) : activeLayer ? (
-              <div style={{ width: '240px', background: 'var(--surface-color)', color: 'var(--text-primary)', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.9, boxShadow: 'var(--shadow-md)', marginLeft: '12px', transform: isMobile ? 'scale(1.5)' : 'scale(1.25)', transformOrigin: 'top left' }}>
-                <div style={{ fontWeight: '700', fontSize: '0.65rem' }}>{activeLayer.name}</div>
-              </div>
-            ) : null}
+                            <div style={{ position: 'absolute', top: '2px', left: '2px', width: '100%', zIndex: 2, opacity: 0.7 }}>
+                                <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
+                            </div>
+                            <div style={{ position: 'relative', zIndex: 3 }}>
+                                <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
+                                <div style={{ 
+                                    position: 'absolute', 
+                                    top: '-6px', 
+                                    right: '-6px', 
+                                    background: 'var(--primary-color)', 
+                                    color: 'white', 
+                                    borderRadius: '50%', 
+                                    width: '14px', 
+                                    height: '14px', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center', 
+                                    fontSize: '0.55rem', 
+                                    fontWeight: '800', 
+                                    boxShadow: 'var(--shadow-sm)', 
+                                    zIndex: 4 
+                                }}>
+                                    {selectedNavIds.size}
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <StaticPin pin={activePin} isSelected={selectedNavIds?.has(activePin.id)} />
+                    )}
+                  </div>
+                );
+              }
+              if (activeLayer) {
+                return (
+                  <div style={{ width: '240px', background: 'var(--surface-color)', color: 'var(--text-primary)', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.9, boxShadow: 'var(--shadow-md)', marginLeft: '12px', transform: `scale(${dragOverlayScale})`, transformOrigin: 'top left' }}>
+                    <div style={{ fontWeight: '700', fontSize: '0.65rem' }}>{activeLayer.name}</div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
             </div>
           </DragOverlay>,
           document.body

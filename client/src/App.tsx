@@ -1573,6 +1573,7 @@ export function MapEditor() {
           }) as React.CSSProperties}>
             <Sidebar 
               isMobile={isMobile}
+              mobileScale={mobileScale}
               isOffline={isOffline}
             mapId={mapId}
             mapName={mapName}
