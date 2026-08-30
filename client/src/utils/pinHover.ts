@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 export const PIN_HOVER_CLASS = 'pin-hovered';
 
 let hoveredId: string | null = null;
+let lastHoveredEl: HTMLElement | null = null;
 const listeners = new Set<(id: string | null) => void>();
 
 export function getHoveredPinId(): string | null {
@@ -11,11 +12,16 @@ export function getHoveredPinId(): string | null {
 
 function applyListHoverClass(id: string | null) {
   if (typeof document === 'undefined') return;
-  document.querySelectorAll(`.${PIN_HOVER_CLASS}`).forEach((el) => {
-    el.classList.remove(PIN_HOVER_CLASS);
-  });
+  if (lastHoveredEl) {
+    lastHoveredEl.classList.remove(PIN_HOVER_CLASS);
+    lastHoveredEl = null;
+  }
   if (id) {
-    document.getElementById(`pin-${id}`)?.classList.add(PIN_HOVER_CLASS);
+    const el = document.getElementById(`pin-${id}`);
+    if (el) {
+      el.classList.add(PIN_HOVER_CLASS);
+      lastHoveredEl = el;
+    }
   }
 }
 
@@ -62,6 +68,11 @@ export function useIsPinHovered(pinId: string): boolean {
 
 export function resetPinHoverForTests() {
   hoveredId = null;
+  lastHoveredEl = null;
   listeners.clear();
-  applyListHoverClass(null);
+  if (typeof document !== 'undefined') {
+    document.querySelectorAll(`.${PIN_HOVER_CLASS}`).forEach((el) => {
+      el.classList.remove(PIN_HOVER_CLASS);
+    });
+  }
 }

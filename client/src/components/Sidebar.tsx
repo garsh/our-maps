@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, memo, type CSSProperties } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import SearchBar, { type SearchAreaState } from './SearchBar';
 import { reverseGeocode } from '../utils/geocoding';
@@ -202,12 +202,10 @@ const PIN_TEXTAREA_STYLE: CSSProperties = {
 
 const fitTextarea = (el: HTMLTextAreaElement | null, minHeight: number, maxHeight: number) => {
   if (!el) return;
-  el.style.overflowY = 'hidden';
-  el.style.height = '0px';
-  const cs = getComputedStyle(el);
-  const borderY = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
-  const needed = el.scrollHeight + borderY + 4;
-  el.style.height = `${Math.min(Math.max(needed, minHeight), maxHeight)}px`;
+  el.style.height = 'auto';
+  const needed = el.scrollHeight + 4;
+  const finalHeight = Math.min(Math.max(needed, minHeight), maxHeight);
+  el.style.height = `${finalHeight}px`;
   el.style.overflowY = needed > maxHeight ? 'auto' : 'hidden';
 };
 
@@ -299,20 +297,18 @@ const IconButton = ({ type, Icon, isSelected, onClick }: { type: PinIcon, Icon: 
 };
 
 const TruncatedTooltip = ({ text, style }: { text: string, style?: React.CSSProperties }) => {
-  const [isTruncated, setIsTruncated] = useState(false);
-  const textRef = useRef<HTMLDivElement>(null);
-
-  const checkTruncation = () => {
-    if (textRef.current) {
-      setIsTruncated(textRef.current.scrollWidth > textRef.current.clientWidth);
+  const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollWidth > el.clientWidth) {
+      el.title = text;
+    } else {
+      el.removeAttribute('title');
     }
   };
 
   return (
     <div 
-      ref={textRef}
-      onMouseEnter={checkTruncation}
-      title={isTruncated ? text : undefined}
+      onMouseEnter={handleMouseEnter}
       style={{
         whiteSpace: 'nowrap',
         overflow: 'hidden',
@@ -371,10 +367,10 @@ const SortablePin = memo(({
   onPinClick, 
   onRemovePin, 
   onUpdatePin,
-  editingPinId,
+  isEditing,
+  isTarget,
   setEditingPinId,
   readOnly,
-  targetPinId,
   onHoverPin,
   onAddCustomColor,
   isSelected,
@@ -388,10 +384,10 @@ const SortablePin = memo(({
   onPinClick: (pin: Pin) => void,
   onRemovePin: (id: string) => void,
   onUpdatePin: (id: string, updates: Partial<Pin>) => void,
-  editingPinId: string | null,
+  isEditing: boolean,
+  isTarget: boolean,
   setEditingPinId: (id: string | null) => void,
   readOnly: boolean,
-  targetPinId?: string | null,
   onHoverPin?: (id: string | null, leavingPinId?: string) => void,
   onAddCustomColor?: (color: string) => void,
   isSelected?: boolean,
@@ -450,15 +446,10 @@ const SortablePin = memo(({
   }, [pin.description]);
 
   useEffect(() => {
-    if (editingPinId !== pin.id) return;
-    const fitAll = () => {
-      fitTextarea(addressTextareaRef.current, 0, ADDRESS_TEXTAREA_MAX_PX);
-      fitTextarea(descriptionTextareaRef.current, DESCRIPTION_TEXTAREA_MIN_PX, Math.round(window.innerHeight * 0.7));
-    };
-    fitAll();
-    const frame = requestAnimationFrame(fitAll);
-    return () => cancelAnimationFrame(frame);
-  }, [editingPinId, pin.id, localAddress, localDescription]);
+    if (!isEditing) return;
+    fitTextarea(addressTextareaRef.current, 0, ADDRESS_TEXTAREA_MAX_PX);
+    fitTextarea(descriptionTextareaRef.current, DESCRIPTION_TEXTAREA_MIN_PX, Math.round(window.innerHeight * 0.7));
+  }, [isEditing, pin.id, localAddress, localDescription]);
 
   const flushField = useCallback((field: 'label' | 'address' | 'description') => {
     if (debounceTimerRef.current) {
@@ -526,7 +517,7 @@ const SortablePin = memo(({
   };
 
   useEffect(() => {
-    if (targetPinId === pin.id && !pin.address && !isFetchingAddress) {
+    if (isTarget && !pin.address && !isFetchingAddress) {
       setIsFetchingAddress(true);
       const reqLat = pin.lat;
       const reqLng = pin.lng;
@@ -539,12 +530,12 @@ const SortablePin = memo(({
         setIsFetchingAddress(false);
       });
     }
-  }, [targetPinId, pin.id, pin.address, pin.lat, pin.lng, isFetchingAddress, onUpdatePin]);
+  }, [isTarget, pin.id, pin.address, pin.lat, pin.lng, isFetchingAddress, onUpdatePin]);
 
   const isItemInDraggingBundle = isAnySelectedDragging && isSelected;
 
   useEffect(() => {
-    if (editingPinId === pin.id || targetPinId === pin.id) {
+    if (isEditing || isTarget) {
       setTimeout(() => {
         const el = document.getElementById(`pin-${pin.id}`);
         if (el) {
@@ -573,7 +564,7 @@ const SortablePin = memo(({
         }
       }, 150); // wait for expand transition
     }
-  }, [editingPinId, targetPinId, pin.id]);
+  }, [isEditing, isTarget, pin.id]);
 
   const style = {
     transform: transform ? CSS.Transform.toString(transform) : undefined,
@@ -590,7 +581,7 @@ const SortablePin = memo(({
   return (
     <li 
       id={`pin-${pin.id}`}
-      className={`pin-list-item${editingPinId === pin.id ? ' pin-editing' : ''}`}
+      className={`pin-list-item${isEditing ? ' pin-editing' : ''}`}
       ref={setNodeRef} 
       style={{ 
         ...style, 
@@ -598,13 +589,13 @@ const SortablePin = memo(({
         marginBottom: '0px',
         scrollMarginTop: '24px',
         borderRadius: 'var(--radius-sm)',
-        background: (targetPinId === pin.id && !isDragActive) ? 'rgba(72, 61, 139, 0.05)' : (editingPinId === pin.id && !isDragActive ? 'var(--bg-color)' : undefined),
-        border: (editingPinId === pin.id && !isDragActive) ? '1px solid var(--primary-color)' : '1px solid transparent',
-        boxShadow: (targetPinId === pin.id && !isDragActive) ? '0 0 0 1px var(--primary-color)' : undefined,
+        background: (isTarget && !isDragActive) ? 'rgba(72, 61, 139, 0.05)' : (isEditing && !isDragActive ? 'var(--bg-color)' : undefined),
+        border: (isEditing && !isDragActive) ? '1px solid var(--primary-color)' : '1px solid transparent',
+        boxShadow: (isTarget && !isDragActive) ? '0 0 0 1px var(--primary-color)' : undefined,
         transition: 'all 0.1s ease',
         cursor: 'default',
-        contentVisibility: (editingPinId === pin.id || isDragActive) ? ('visible' as const) : ('auto' as const),
-        containIntrinsicSize: editingPinId === pin.id ? 'auto' : '28px'
+        contentVisibility: (isEditing || isDragActive) ? ('visible' as const) : ('auto' as const),
+        containIntrinsicSize: isEditing ? 'auto' : '28px'
       }}
       onPointerEnter={(e) => {
         if (e.pointerType === 'mouse') onHoverPin?.(pin.id);
@@ -623,7 +614,7 @@ const SortablePin = memo(({
           <div 
             style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', flex: 1, padding: '0px' }}
             onClick={() => {
-              if (editingPinId === pin.id) return;
+              if (isEditing) return;
               onPinClick(pin);
             }}
           >
@@ -647,14 +638,14 @@ const SortablePin = memo(({
                   text={pin.label}
                   style={{ fontWeight: '600', fontSize: '0.65rem', color: 'var(--text-primary)', lineHeight: '1.1' }}
                 />
-                {pin.description && (isDragActive || (targetPinId !== pin.id && editingPinId !== pin.id)) && (
+                {pin.description && (isDragActive || (!isTarget && !isEditing)) && (
                   <div style={{ fontSize: '0.5rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '-1px', lineHeight: '1' }}>{pin.description}</div>
                 )}
               </div>            </div>
           </div>
         </div>
         <div style={{ display: 'flex', gap: '2px', marginLeft: '4px', alignItems: 'center' }}>
-          {!readOnly && editingPinId === pin.id && (
+          {!readOnly && isEditing && (
             <button 
               title="Delete Pin"
               onClick={(e) => { 
@@ -685,25 +676,25 @@ const SortablePin = memo(({
           />
           {!readOnly && (
             <button 
-              aria-label={editingPinId === pin.id ? "Close edit" : "Edit"}
-              onClick={(e) => { e.stopPropagation(); setEditingPinId(editingPinId === pin.id ? null : pin.id); }}
+              aria-label={isEditing ? "Close edit" : "Edit"}
+              onClick={(e) => { e.stopPropagation(); setEditingPinId(isEditing ? null : pin.id); }}
               style={{ 
                 background: 'transparent', 
-                color: editingPinId === pin.id ? 'var(--text-primary)' : 'var(--primary-color)', 
+                color: isEditing ? 'var(--text-primary)' : 'var(--primary-color)', 
                 border: 'none',
                 padding: '0px 3px', 
                 cursor: 'pointer', 
-                display: 'flex',
+                display: 'flex', 
                 alignItems: 'center'
               }}
             >
-              {editingPinId === pin.id ? <X size={12} /> : <Pencil size={12} />}
+              {isEditing ? <X size={12} /> : <Pencil size={12} />}
             </button>
           )}
         </div>
       </div>
 
-      {!isDragActive && targetPinId === pin.id && editingPinId !== pin.id && (pin.address || pin.description) && (
+      {!isDragActive && isTarget && !isEditing && (pin.address || pin.description) && (
         <div style={{ padding: '0.3rem 0 0.15rem 0.15rem', marginTop: '2px', borderTop: '1px solid var(--divider-color)' }}>
           {pin.address && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -745,7 +736,7 @@ const SortablePin = memo(({
         </div>
       )}
 
-      {!isDragActive && editingPinId === pin.id && !readOnly && (
+      {!isDragActive && isEditing && !readOnly && (
         <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '2px', borderTop: '1px solid var(--divider-color)', fontSize: '0.7rem' }}>
           <div style={{ marginBottom: '5px' }}>
             <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Name</label>
@@ -864,7 +855,7 @@ const SortablePin = memo(({
   );
 });
 
-const DefaultLayerHeader = ({
+const DefaultLayerHeader = memo(({
   defaultPins,
   collapsedLayerIds,
   hiddenLayerIds,
@@ -972,9 +963,9 @@ const DefaultLayerHeader = ({
       {children}
     </div>
   );
-};
+});
 
-const SortableLayer = ({ 
+const SortableLayer = memo(({ 
   layer, 
   layerPins,
   onUpdateLayer,
@@ -1275,10 +1266,10 @@ const SortableLayer = ({
                   onPinClick={onPinClick}
                   onRemovePin={onRemovePin}
                   onUpdatePin={onUpdatePin}
-                  editingPinId={editingPinId}
+                  isEditing={editingPinId === pin.id}
+                  isTarget={targetPinId === pin.id}
                   setEditingPinId={onSetEditingPinId}
                   readOnly={readOnly}
-                  targetPinId={targetPinId}
                   onHoverPin={onHoverPin}
                   onAddCustomColor={onAddCustomColor}
                   isSelected={selectedNavIds?.has(pin.id)}
@@ -1295,7 +1286,7 @@ const SortableLayer = ({
       )}
     </div>
   );
-};
+});
 
 const Sidebar = ({
   mapId,
@@ -1609,26 +1600,48 @@ const Sidebar = ({
     useSensor(KeyboardSensor, KEYBOARD_SENSOR_OPTIONS)
   );
 
-  const defaultPins = pins.filter(p => !p.layerId).sort(comparePinPositions);
+  const layerIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    layers.forEach((l, i) => map.set(l.id, i));
+    return map;
+  }, [layers]);
 
-  const getVisualOrder = (pin: Pin) => {
-    if (!pin.layerId) return { layerIndex: Number.MAX_SAFE_INTEGER, pinPosition: pin.position };
-    const layerIndex = layers.findIndex(g => g.id === pin.layerId);
-    return { 
-      layerIndex: layerIndex !== -1 ? layerIndex : Number.MAX_SAFE_INTEGER, 
-      pinPosition: pin.position 
-    };
-  };
-
-  const selectedPins = pins.filter(p => selectedNavIds?.has(p.id))
-    .sort((a, b) => {
-      const orderA = getVisualOrder(a);
-      const orderB = getVisualOrder(b);
-      if (orderA.layerIndex !== orderB.layerIndex) {
-        return orderA.layerIndex - orderB.layerIndex;
+  const { defaultPins, layerPinsMap } = useMemo(() => {
+    const defaultList: Pin[] = [];
+    const map = new Map<string, Pin[]>();
+    for (const layer of layers) {
+      map.set(layer.id, []);
+    }
+    for (const pin of pins) {
+      if (!pin.layerId) {
+        defaultList.push(pin);
+      } else {
+        const list = map.get(pin.layerId);
+        if (list) {
+          list.push(pin);
+        } else {
+          defaultList.push(pin);
+        }
       }
-      return orderA.pinPosition - orderB.pinPosition;
-    });
+    }
+    defaultList.sort(comparePinPositions);
+    for (const list of map.values()) {
+      list.sort(comparePinPositions);
+    }
+    return { defaultPins: defaultList, layerPinsMap: map };
+  }, [pins, layers]);
+
+  const selectedPins = useMemo(() => {
+    if (!selectedNavIds || selectedNavIds.size === 0) return [];
+    return pins
+      .filter(p => selectedNavIds.has(p.id))
+      .sort((a, b) => {
+        const layerA = a.layerId ? (layerIndexMap.get(a.layerId) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+        const layerB = b.layerId ? (layerIndexMap.get(b.layerId) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+        if (layerA !== layerB) return layerA - layerB;
+        return a.position - b.position;
+      });
+  }, [pins, selectedNavIds, layerIndexMap]);
 
   const handleNavigate = () => {
     if (selectedPins.length === 0) return;
@@ -2222,7 +2235,7 @@ const Sidebar = ({
               <SortableLayer
                 key={layer.id}
                 layer={layer}
-                layerPins={pins.filter(p => p.layerId === layer.id).sort(comparePinPositions)}
+                layerPins={layerPinsMap.get(layer.id) || []}
                 onUpdateLayer={onUpdateLayer}
                 onRemoveLayer={onRemoveLayer}
                 onPinClick={onPinClick}
@@ -2275,10 +2288,10 @@ const Sidebar = ({
                         onPinClick={onPinClick}
                         onRemovePin={onRemovePin}
                         onUpdatePin={onUpdatePin}
-                        editingPinId={editingPinId}
+                        isEditing={editingPinId === pin.id}
+                        isTarget={targetPinId === pin.id}
                         setEditingPinId={onSetEditingPinId}
                         readOnly={readOnly}
-                        targetPinId={targetPinId}
                         onHoverPin={onHoverPin}
                         customColors={customColors}
                         onAddCustomColor={onAddCustomColor}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -128,17 +128,20 @@ export default function LandingPage() {
     navigate('/map/new');
   };
 
-  const filteredMaps = maps.filter(map => 
-    map.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (map.ownerName || '').toLowerCase().includes(searchQuery.toLowerCase())
-  ).sort((a, b) => {
-    if (!a.lastAccessedAt && b.lastAccessedAt) return -1;
-    if (a.lastAccessedAt && !b.lastAccessedAt) return 1;
-    if (a.lastAccessedAt && b.lastAccessedAt) {
-      return new Date(b.lastAccessedAt).getTime() - new Date(a.lastAccessedAt).getTime();
-    }
-    return 0;
-  });
+  const filteredMaps = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return maps.filter(map => 
+      map.name.toLowerCase().includes(q) ||
+      (map.ownerName || '').toLowerCase().includes(q)
+    ).sort((a, b) => {
+      if (!a.lastAccessedAt && b.lastAccessedAt) return -1;
+      if (a.lastAccessedAt && !b.lastAccessedAt) return 1;
+      if (a.lastAccessedAt && b.lastAccessedAt) {
+        return new Date(b.lastAccessedAt).getTime() - new Date(a.lastAccessedAt).getTime();
+      }
+      return 0;
+    });
+  }, [maps, searchQuery]);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Never';

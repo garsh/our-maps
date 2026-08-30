@@ -164,12 +164,13 @@ export function MapEditor() {
   const [isDraggingSheet, setIsDraggingSheet] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
+  const sheetBoundsRef = useRef<{ minH: number; maxH: number }>({ minH: 0, maxH: 600 });
   const sheetDragStart = useRef<{ y: number; height: number; time: number; moved: boolean }>({ y: 0, height: 300, time: 0, moved: false });
   const currentDragHeight = useRef<number>(300);
   const rafId = useRef<number | null>(null);
   const ignoreMapClickUntil = useRef<number>(0);
 
-  const getSheetBounds = () => {
+  const calculateSheetBounds = () => {
     const headerHeight = headerRef.current ? headerRef.current.getBoundingClientRect().height : 44;
     const handleHeight = 28;
     const maxH = Math.max(100, window.innerHeight - headerHeight - handleHeight);
@@ -177,9 +178,14 @@ export function MapEditor() {
     return { minH, maxH };
   };
 
+  const getSheetBounds = () => {
+    return sheetBoundsRef.current;
+  };
+
   const startSheetDrag = (e: React.PointerEvent) => {
     e.stopPropagation();
     ignoreMapClickUntil.current = Date.now() + 450;
+    sheetBoundsRef.current = calculateSheetBounds();
     setIsDraggingSheet(true);
     sheetDragStart.current = { y: e.clientY, height: sheetHeight, time: Date.now(), moved: false };
     currentDragHeight.current = sheetHeight;
