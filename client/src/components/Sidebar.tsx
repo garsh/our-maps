@@ -377,8 +377,7 @@ const SortablePin = memo(({
   onToggleSelect,
   customColors,
   allLayers,
-  isAnySelectedDragging,
-  isDragActive
+  isAnySelectedDragging
 }: { 
   pin: Pin, 
   onPinClick: (pin: Pin) => void,
@@ -394,8 +393,7 @@ const SortablePin = memo(({
   onToggleSelect?: (id: string) => void,
   customColors?: string[],
   allLayers: PinLayer[],
-  isAnySelectedDragging: boolean,
-  isDragActive: boolean
+  isAnySelectedDragging: boolean
 }) => {
   const {
     attributes,
@@ -533,10 +531,17 @@ const SortablePin = memo(({
   }, [isTarget, pin.id, pin.address, pin.lat, pin.lng, isFetchingAddress, onUpdatePin]);
 
   const isItemInDraggingBundle = isAnySelectedDragging && isSelected;
+  const prevIsEditingRef = useRef(isEditing);
+  const prevIsTargetRef = useRef(isTarget);
 
   useEffect(() => {
-    if (isEditing || isTarget) {
-      setTimeout(() => {
+    const becameEditing = !prevIsEditingRef.current && isEditing;
+    const becameTarget = !prevIsTargetRef.current && isTarget;
+    prevIsEditingRef.current = isEditing;
+    prevIsTargetRef.current = isTarget;
+
+    if (becameEditing || becameTarget) {
+      const timer = setTimeout(() => {
         const el = document.getElementById(`pin-${pin.id}`);
         if (el) {
           let container: HTMLElement | null = el.parentElement;
@@ -563,6 +568,7 @@ const SortablePin = memo(({
           }
         }
       }, 150); // wait for expand transition
+      return () => clearTimeout(timer);
     }
   }, [isEditing, isTarget, pin.id]);
 
@@ -589,13 +595,11 @@ const SortablePin = memo(({
         marginBottom: '0px',
         scrollMarginTop: '24px',
         borderRadius: 'var(--radius-sm)',
-        background: (isTarget && !isDragActive) ? 'rgba(72, 61, 139, 0.05)' : (isEditing && !isDragActive ? 'var(--bg-color)' : undefined),
-        border: (isEditing && !isDragActive) ? '1px solid var(--primary-color)' : '1px solid transparent',
-        boxShadow: (isTarget && !isDragActive) ? '0 0 0 1px var(--primary-color)' : undefined,
+        background: isTarget ? 'rgba(72, 61, 139, 0.05)' : (isEditing ? 'var(--bg-color)' : undefined),
+        border: isEditing ? '1px solid var(--primary-color)' : '1px solid transparent',
+        boxShadow: isTarget ? '0 0 0 1px var(--primary-color)' : undefined,
         transition: 'all 0.1s ease',
-        cursor: 'default',
-        contentVisibility: (isEditing || isDragActive) ? ('visible' as const) : ('auto' as const),
-        containIntrinsicSize: isEditing ? 'auto' : '28px'
+        cursor: 'default'
       }}
       onPointerEnter={(e) => {
         if (e.pointerType === 'mouse') onHoverPin?.(pin.id);
@@ -638,7 +642,7 @@ const SortablePin = memo(({
                   text={pin.label}
                   style={{ fontWeight: '600', fontSize: '0.65rem', color: 'var(--text-primary)', lineHeight: '1.1' }}
                 />
-                {pin.description && (isDragActive || (!isTarget && !isEditing)) && (
+                {pin.description && (!isTarget && !isEditing) && (
                   <div style={{ fontSize: '0.5rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '-1px', lineHeight: '1' }}>{pin.description}</div>
                 )}
               </div>            </div>
@@ -694,7 +698,7 @@ const SortablePin = memo(({
         </div>
       </div>
 
-      {!isDragActive && isTarget && !isEditing && (pin.address || pin.description) && (
+      {isTarget && !isEditing && (pin.address || pin.description) && (
         <div style={{ padding: '0.3rem 0 0.15rem 0.15rem', marginTop: '2px', borderTop: '1px solid var(--divider-color)' }}>
           {pin.address && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -736,7 +740,7 @@ const SortablePin = memo(({
         </div>
       )}
 
-      {!isDragActive && isEditing && !readOnly && (
+      {isEditing && !readOnly && (
         <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '2px', borderTop: '1px solid var(--divider-color)', fontSize: '0.7rem' }}>
           <div style={{ marginBottom: '5px' }}>
             <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Name</label>
@@ -993,8 +997,7 @@ const SortableLayer = memo(({
   isExpanded,
   onToggleExpand,
   isAnySelectedDragging,
-  isLayerDragging,
-  isDragActive
+  isLayerDragging
 }: { 
   layer: PinLayer,
   layerPins: Pin[],
@@ -1021,8 +1024,7 @@ const SortableLayer = memo(({
   isExpanded: boolean,
   onToggleExpand: () => void,
   isAnySelectedDragging: boolean,
-  isLayerDragging: boolean,
-  isDragActive: boolean
+  isLayerDragging: boolean
 }) => {
   const [localIsEditingName, setLocalIsEditingName] = useState(false);
   const isEditingName = editingLayerId !== undefined 
@@ -1280,7 +1282,6 @@ const SortableLayer = memo(({
                   customColors={customColors}
                   allLayers={allLayers}
                   isAnySelectedDragging={isAnySelectedDragging}
-                  isDragActive={isDragActive}
                 />
               ))}
             </ul>
@@ -1680,33 +1681,15 @@ const Sidebar = ({
   };
 
   const handleDragEndInternal = (event: DragEndEvent) => {
-    const currentEditingId = editingPinId;
     setActivePin(null);
     setActiveLayer(null);
     onDragEnd(event);
-    if (currentEditingId) {
-      setTimeout(() => {
-        const el = document.getElementById(`pin-${currentEditingId}`);
-        if (el) {
-          el.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
-        }
-      }, 100);
-    }
   };
 
   const handleDragCancelInternal = () => {
-    const currentEditingId = editingPinId;
     setActivePin(null);
     setActiveLayer(null);
     onDragCancel?.();
-    if (currentEditingId) {
-      setTimeout(() => {
-        const el = document.getElementById(`pin-${currentEditingId}`);
-        if (el) {
-          el.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
-        }
-      }, 100);
-    }
   };
 
   const activePinId = activePin?.id;
@@ -2221,13 +2204,7 @@ const Sidebar = ({
             overflowY: 'auto', 
             paddingRight: '4px', 
             paddingTop: '0px',
-            // Temporary bottom expansion padding during drag prevents browser scroll clamping:
-            // When dragging the last pin in a long list while its ~180px edit drawer is open,
-            // collapsing the drawer to a 24px row decreases the container's scrollHeight.
-            // Without this expansion padding, the browser would forcibly clamp scrollTop to the
-            // smaller height, causing the entire list to jump upwards on screen and misalign
-            // with the mouse cursor.
-            paddingBottom: isDragActive ? '20rem' : (isMobile ? '4rem' : '1.5rem'),
+            paddingBottom: isMobile ? '4rem' : '1.5rem',
             margin: '0 -4px',
             touchAction: 'pan-y',
             WebkitOverflowScrolling: 'touch',
@@ -2263,7 +2240,6 @@ const Sidebar = ({
                 onToggleExpand={() => onToggleExpand?.(layer.id)}
                 isAnySelectedDragging={isAnySelectedDragging}
                 isLayerDragging={!!activeLayer}
-                isDragActive={isDragActive}
               />
             ))}
           </SortableContext>
@@ -2302,7 +2278,6 @@ const Sidebar = ({
                         onToggleSelect={onToggleNavId}
                         allLayers={layers}
                         isAnySelectedDragging={isAnySelectedDragging}
-                        isDragActive={isDragActive}
                       />
                     ))}
                     {defaultPins.length === 0 && layers.length === 0 && (
