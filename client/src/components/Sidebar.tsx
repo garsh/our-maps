@@ -34,7 +34,6 @@ import {
 } from 'lucide-react';
 import {
   DndContext, 
-  closestCorners,
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
@@ -53,7 +52,6 @@ import {
   verticalListSortingStrategy,
   useSortable,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { exportMap, importMapFile } from '../utils/fileUtils';
 import { 
@@ -362,6 +360,57 @@ const StaticPin = ({ pin, isSelected }: { pin: Pin, isSelected?: boolean }) => {
   );
 };
 
+const DropIndicator = () => (
+  <div 
+    style={{
+      position: 'absolute',
+      bottom: '-1px',
+      left: '0px',
+      right: '0px',
+      height: '2px',
+      background: 'var(--primary-color)',
+      borderRadius: '2px',
+      zIndex: 20,
+      pointerEvents: 'none',
+      boxShadow: '0 0 4px var(--primary-color)'
+    }}
+  >
+    <div style={{
+      position: 'absolute',
+      left: '-2px',
+      top: '-2px',
+      width: '6px',
+      height: '6px',
+      borderRadius: '50%',
+      background: 'var(--primary-color)'
+    }} />
+  </div>
+);
+
+const LayerTopDropZone = ({ isLayerDragging }: { isLayerDragging: boolean }) => {
+  const { setNodeRef, isOver } = useDroppable({
+    id: 'layer-top',
+    data: { type: 'layer-top' },
+    disabled: !isLayerDragging
+  });
+
+  if (!isLayerDragging) return null;
+
+  return (
+    <div 
+      ref={setNodeRef}
+      style={{
+        height: '10px',
+        marginTop: '-5px',
+        marginBottom: '2px',
+        position: 'relative'
+      }}
+    >
+      {isOver && <DropIndicator />}
+    </div>
+  );
+};
+
 const SortablePin = memo(({ 
   pin, 
   onPinClick, 
@@ -377,7 +426,8 @@ const SortablePin = memo(({
   onToggleSelect,
   customColors,
   allLayers,
-  isAnySelectedDragging
+  isAnySelectedDragging,
+  isAnyPinDragging
 }: { 
   pin: Pin, 
   onPinClick: (pin: Pin) => void,
@@ -393,15 +443,16 @@ const SortablePin = memo(({
   onToggleSelect?: (id: string) => void,
   customColors?: string[],
   allLayers: PinLayer[],
-  isAnySelectedDragging: boolean
+  isAnySelectedDragging: boolean,
+  isAnyPinDragging?: boolean
 }) => {
   const {
     attributes,
     listeners,
     setNodeRef,
-    transform,
     transition,
-    isDragging
+    isDragging,
+    isOver
   } = useSortable({ 
     id: pin.id,
     data: { type: 'pin', pin },
@@ -531,6 +582,7 @@ const SortablePin = memo(({
   }, [isTarget, pin.id, pin.address, pin.lat, pin.lng, isFetchingAddress, onUpdatePin]);
 
   const isItemInDraggingBundle = isAnySelectedDragging && isSelected;
+  const isDropTarget = isOver && !!isAnyPinDragging && !isDragging && !isItemInDraggingBundle;
   const prevIsEditingRef = useRef(isEditing);
   const prevIsTargetRef = useRef(isTarget);
 
@@ -573,13 +625,11 @@ const SortablePin = memo(({
   }, [isEditing, isTarget, pin.id]);
 
   const style = {
-    transform: transform ? CSS.Transform.toString(transform) : undefined,
     transition,
     zIndex: isDragging ? 10 : undefined,
-    opacity: isDragging ? 0 : (isItemInDraggingBundle ? 0 : 1),
+    opacity: isDragging ? 0.35 : (isItemInDraggingBundle ? 0.35 : 1),
     position: 'relative' as const,
     pointerEvents: (isDragging || isItemInDraggingBundle) ? 'none' as const : undefined,
-    // Keep in layout flow (no display:none) to avoid layout shifts that misalign the DragOverlay
   };
 
   const currentColor = COLORS.find(c => c.name === pin.color)?.value || pin.color || '#2A81CB';
@@ -856,6 +906,7 @@ const SortablePin = memo(({
           </div>
         </div>
       )}
+      {isDropTarget && <DropIndicator />}
     </li>
   );
 });
@@ -872,7 +923,8 @@ const DefaultLayerHeader = memo(({
   onToggleLayerVisibility,
   onToggleNavIds,
   layersCount,
-  children
+  children,
+  isAnyPinDragging
 }: {
   defaultPins: Pin[];
   collapsedLayerIds?: Set<string | null>;
@@ -886,6 +938,7 @@ const DefaultLayerHeader = memo(({
   onToggleNavIds?: (ids: string[], force?: boolean) => void;
   layersCount: number;
   children?: React.ReactNode;
+  isAnyPinDragging?: boolean;
 }) => {
   const { setNodeRef, isOver } = useDroppable({
     id: 'default',
@@ -895,11 +948,13 @@ const DefaultLayerHeader = memo(({
 
   const isCollapsed = !!collapsedLayerIds?.has(null);
   const isHighlighted = isOver && !isLayerDragging && isCollapsed;
+  const isDropTarget = isOver && !!isAnyPinDragging && !isCollapsed && !isLayerDragging;
 
   return (
-    <div ref={setNodeRef} style={{ marginTop: layersCount > 0 ? '0.3rem' : '0' }}>
+    <div style={{ marginTop: layersCount > 0 ? '0.3rem' : '0' }}>
       <div 
         id="default"
+        ref={setNodeRef}
         style={{ 
           position: 'sticky', 
           top: 0, 
@@ -935,7 +990,7 @@ const DefaultLayerHeader = memo(({
                 background: 'transparent', 
                 border: 'none', 
                 color: hiddenLayerIds?.has(null) ? 'var(--text-secondary)' : 'var(--primary-color)', 
-                opacity: hiddenLayerIds?.has(null) ? 0.45 : 1,
+                opacity: hiddenLayerIds?.has(null) ? 0.45 : 1, 
                 cursor: 'pointer', 
                 padding: '1px 3px', 
                 display: 'flex', 
@@ -965,6 +1020,7 @@ const DefaultLayerHeader = memo(({
             )}
           </div>
         </div>
+        {isDropTarget && <DropIndicator />}
       </div>
       {children}
     </div>
@@ -997,7 +1053,8 @@ const SortableLayer = memo(({
   isExpanded,
   onToggleExpand,
   isAnySelectedDragging,
-  isLayerDragging
+  isLayerDragging,
+  isAnyPinDragging
 }: { 
   layer: PinLayer,
   layerPins: Pin[],
@@ -1024,7 +1081,8 @@ const SortableLayer = memo(({
   isExpanded: boolean,
   onToggleExpand: () => void,
   isAnySelectedDragging: boolean,
-  isLayerDragging: boolean
+  isLayerDragging: boolean,
+  isAnyPinDragging?: boolean
 }) => {
   const [localIsEditingName, setLocalIsEditingName] = useState(false);
   const isEditingName = editingLayerId !== undefined 
@@ -1056,24 +1114,6 @@ const SortableLayer = memo(({
     };
   }, []);
 
-  const handleLayerNameChange = (val: string) => {
-    setLocalLayerName(val);
-    if (layerDebounceTimerRef.current) {
-      clearTimeout(layerDebounceTimerRef.current);
-    }
-    layerDebounceTimerRef.current = setTimeout(() => {
-      onUpdateLayer(layer.id, { name: val });
-    }, 250);
-  };
-
-  const handleLayerNameBlur = () => {
-    if (layerDebounceTimerRef.current) {
-      clearTimeout(layerDebounceTimerRef.current);
-      layerDebounceTimerRef.current = null;
-    }
-    onUpdateLayer(layer.id, { name: localLayerName });
-  };
-
   const layerNameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1099,9 +1139,8 @@ const SortableLayer = memo(({
   const {
     attributes,
     listeners,
-    setNodeRef,
-    transform,
-    transition,
+    setDraggableNodeRef,
+    setDroppableNodeRef,
     isDragging,
     isOver
   } = useSortable({ 
@@ -1110,24 +1149,27 @@ const SortableLayer = memo(({
     disabled: readOnly
   });
 
-  const style = {
-    transform: transform ? CSS.Transform.toString(transform) : undefined,
-    transition,
+  const style: React.CSSProperties = {
     marginBottom: '0.2rem',
-    opacity: isDragging ? 0.3 : 1,
-    zIndex: isDragging ? 100 : 0
+    visibility: isDragging ? 'hidden' : 'visible',
+    position: 'relative'
   };
 
+  const pinIds = useMemo(() => layerPins.map(p => p.id), [layerPins]);
   const isAllSelected = layerPins.length > 0 && layerPins.every(p => selectedNavIds?.has(p.id));
   const isSomeSelected = layerPins.some(p => selectedNavIds?.has(p.id));
   const isHighlighted = isOver && !isExpanded && !isDragging && !isLayerDragging;
+  const isPinDropTarget = isOver && !!isAnyPinDragging && !isDragging && !isLayerDragging;
+  const isLayerDropTarget = isOver && !!isLayerDragging && !isDragging;
 
   return (
-    <div ref={setNodeRef} style={style}>
-      <div style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 5,
+    <div ref={setDraggableNodeRef} style={style}>
+      <div 
+        ref={setDroppableNodeRef}
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 5,
         background: isHighlighted ? 'var(--bg-color)' : (isEditingName ? 'var(--bg-color)' : 'var(--surface-color)'),
         borderRadius: '0 0 var(--radius-sm) var(--radius-sm)',
         border: isHighlighted ? '1px solid var(--primary-color)' : (isEditingName ? '1px solid var(--primary-color)' : '1px solid transparent'),
@@ -1162,85 +1204,118 @@ const SortableLayer = memo(({
                 background: 'transparent', 
                 border: 'none', 
                 color: isHidden ? 'var(--text-secondary)' : 'var(--primary-color)', 
-                opacity: isHidden ? 0.45 : 1,
+                opacity: isHidden ? 0.45 : 1, 
                 cursor: 'pointer', 
                 padding: '1px 3px', 
                 display: 'flex', 
                 alignItems: 'center' 
               }}
-              title={isHidden ? "Show layer on map" : "Hide layer on map"}
+              title={isHidden ? "Show layer" : "Hide layer"}
             >
               {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
             </button>
-            <input 
-              type="checkbox" 
-              checked={isAllSelected} 
-              ref={el => { if (el) el.indeterminate = isSomeSelected && !isAllSelected; }}
-              onChange={(e) => {
-                const checked = e.target.checked;
-                onToggleNavIds?.(layerPins.map(p => p.id), checked);
-              }}
-              style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
-              onClick={(e) => e.stopPropagation()}
-              title="Select all in layer for navigation"
-            />
+            {layerPins.length > 0 ? (
+              <input 
+                type="checkbox" 
+                checked={isAllSelected}
+                ref={el => { if (el) el.indeterminate = isSomeSelected && !isAllSelected; }}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  onToggleNavIds?.(layerPins.map(p => p.id), checked);
+                }}
+                style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
+                onClick={(e) => e.stopPropagation()}
+                title="Select all in layer for navigation"
+              />
+            ) : (
+              <div style={{ width: '9px', height: '9px' }} />
+            )}
             {!readOnly && (
               <div style={{ display: 'flex', gap: '2px' }}>
-              {isEditingName && (
+                {isEditingName && (
+                  <button 
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      let msg = 'Are you sure you want to delete this layer?';
+                      if (layerPins.length > 0) {
+                        msg += ` The ${layerPins.length} pin${layerPins.length === 1 ? '' : 's'} inside it will be moved to the default layer.`;
+                      }
+                      if (window.confirm(msg)) {
+                        onRemoveLayer(layer.id); 
+                      }
+                    }}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--error-color)', cursor: 'pointer', padding: '0px 3px', display: 'flex', alignItems: 'center' }}
+                    className="delete-layer-btn"
+                    title="Delete Layer"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
                 <button 
-                  onClick={(e) => { 
-                    e.stopPropagation(); 
-                    let msg = 'Are you sure you want to delete this layer?';
-                    if (layerPins.length > 0) {
-                      msg += ` The ${layerPins.length} pin${layerPins.length === 1 ? '' : 's'} inside it will be moved to the default layer.`;
-                    }
-                    if (window.confirm(msg)) {
-                      onRemoveLayer(layer.id); 
-                    }
-                  }}
-                  style={{ background: 'transparent', border: 'none', color: 'var(--error-color)', cursor: 'pointer', padding: '0px 3px', display: 'flex', alignItems: 'center' }}
-                  className="delete-layer-btn"
-                  title="Delete Layer"
-                >
-                  <Trash2 size={12} />
-                </button>
-              )}
-              <button 
                   onClick={(e) => { e.stopPropagation(); setIsEditingName(!isEditingName); }}
                   style={{ background: 'transparent', color: isEditingName ? 'var(--text-primary)' : 'var(--primary-color)', border: 'none', padding: '0px 3px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-              >
-                {isEditingName ? <X size={12} /> : <Pencil size={12} />}
-              </button>
-            </div>
-          )}
+                  title={isEditingName ? "Cancel editing" : "Edit layer name"}
+                >
+                  {isEditingName ? <X size={12} /> : <Pencil size={12} />}
+                </button>
+              </div>
+            )}
           </div>
         </div>
-        
+
+        {/* Quick inline editing input */}
         {isEditingName && !readOnly && (
-          <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '0', borderTop: '1px solid var(--border-color)', fontSize: '0.7rem' }}>
-            <div style={{ marginBottom: '5px' }}>
+          <div style={{ padding: '0.2rem 0.4rem 0.3rem 0.4rem', borderTop: '1px solid var(--border-color)', background: 'var(--surface-color)', borderRadius: '0 0 var(--radius-sm) var(--radius-sm)' }}>
+            <div style={{ marginBottom: '2px' }}>
               <label htmlFor={`label-${layer.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>NAME</label>
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <input 
                   ref={layerNameInputRef}
                   id={`label-${layer.id}`}
                   type="text" 
-                  value={localLayerName} 
-                  onChange={(e) => handleLayerNameChange(e.target.value)}
-                  onBlur={handleLayerNameBlur}
-                  onFocus={(e) => e.target.select()}
+                  value={localLayerName}
+                  placeholder="Layer name..."
+                  onChange={(e) => {
+                    const newName = e.target.value;
+                    setLocalLayerName(newName);
+                    if (layerDebounceTimerRef.current) clearTimeout(layerDebounceTimerRef.current);
+                    layerDebounceTimerRef.current = setTimeout(() => {
+                      onUpdateLayer(layer.id, { name: newName });
+                    }, 300);
+                  }}
+                  onBlur={() => {
+                    if (layerDebounceTimerRef.current) clearTimeout(layerDebounceTimerRef.current);
+                    setIsEditingName(false);
+                    if (localLayerName !== layer.name) {
+                      onUpdateLayer(layer.id, { name: localLayerName });
+                    }
+                  }}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && localLayerName.trim()) {
-                      handleLayerNameBlur();
+                    if (e.key === 'Enter') {
+                      if (layerDebounceTimerRef.current) clearTimeout(layerDebounceTimerRef.current);
+                      setIsEditingName(false);
+                      if (localLayerName !== layer.name) {
+                        onUpdateLayer(layer.id, { name: localLayerName });
+                      }
+                    } else if (e.key === 'Escape') {
+                      if (layerDebounceTimerRef.current) clearTimeout(layerDebounceTimerRef.current);
+                      setLocalLayerName(layer.name);
                       setIsEditingName(false);
                     }
                   }}
-                  className="input-field"
-                  style={{ padding: '2px 24px 2px 4px', fontSize: '0.7rem', width: '100%' }}
-                  autoFocus
+                  style={{
+                    width: '100%',
+                    padding: '2px 18px 2px 4px',
+                    fontSize: '0.65rem',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--primary-color)',
+                    background: 'var(--bg-color)',
+                    color: 'var(--text-primary)',
+                    boxSizing: 'border-box'
+                  }}
                 />
                 {localLayerName && (
-                  <button
+                  <button 
                     onMouseDown={(e) => {
                       e.preventDefault();
                       setLocalLayerName('');
@@ -1248,7 +1323,6 @@ const SortableLayer = memo(({
                       onUpdateLayer(layer.id, { name: '' });
                     }}
                     style={{ position: 'absolute', right: '4px', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '0' }}
-                    title="Clear name"
                   >
                     <X size={11} />
                   </button>
@@ -1257,12 +1331,13 @@ const SortableLayer = memo(({
             </div>
           </div>
         )}
-
+        {isPinDropTarget && <DropIndicator />}
       </div>
+      {isLayerDropTarget && <DropIndicator />}
       
       {isExpanded && (
         <div style={{ paddingLeft: '0.2rem', borderLeft: '1px solid var(--border-color)', marginTop: '0px', marginLeft: '0.4rem' }}>
-          <SortableContext items={layerPins.map(p => p.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext items={pinIds} strategy={verticalListSortingStrategy}>
             <ul style={{ listStyle: 'none', padding: 0, margin: 0, paddingTop: '4px', minHeight: '10px' }}>
               {layerPins.map(pin => (
                 <SortablePin 
@@ -1282,6 +1357,7 @@ const SortableLayer = memo(({
                   customColors={customColors}
                   allLayers={allLayers}
                   isAnySelectedDragging={isAnySelectedDragging}
+                  isAnyPinDragging={isAnyPinDragging}
                 />
               ))}
             </ul>
@@ -1635,6 +1711,9 @@ const Sidebar = ({
     return { defaultPins: defaultList, layerPinsMap: map };
   }, [pins, layers]);
 
+  const layerIds = useMemo(() => layers.map(layer => layer.id), [layers]);
+  const defaultPinIds = useMemo(() => defaultPins.map(p => p.id), [defaultPins]);
+
   const selectedPins = useMemo(() => {
     if (!selectedNavIds || selectedNavIds.size === 0) return [];
     return pins
@@ -1695,28 +1774,154 @@ const Sidebar = ({
   const activePinId = activePin?.id;
   const isAnySelectedDragging = !!(activePinId && selectedNavIds?.has(activePinId));
   const isDragActive = !!(activePinId || activeLayer);
+  const isAnyPinDragging = !!activePinId;
 
   const customCollisionDetection = (args: any) => {
-    const pointerCollisions = closestCorners(args);
-    if (args.active.data.current?.type === 'layer' && pointerCollisions.length > 0) {
-      const firstCollision = pointerCollisions[0];
-      const container = args.droppableContainers.find((c: any) => c.id === firstCollision.id);
-      
-      if (container?.data.current?.type === 'pin') {
-        const pinLayerId = container.data.current.pin.layerId;
-        if (pinLayerId) {
-          const layerContainer = args.droppableContainers.find((c: any) => c.id === pinLayerId);
-          if (layerContainer) {
-            return [{
-              id: pinLayerId,
-              data: { droppableContainer: layerContainer }
-            }];
-          }
+    const { droppableContainers, pointerCoordinates, active, collisionRect } = args;
+    if (!pointerCoordinates && !collisionRect) return [];
+
+    const isLayerDrag = active.data.current?.type === 'layer';
+    const containerRect = scrollContainerRef.current?.getBoundingClientRect();
+    const collisions: any[] = [];
+
+    // Filter droppable containers: if dragging a layer, only consider regular layers and layer-top (exclude pins and default layer)
+    const allowedContainers = isLayerDrag
+      ? droppableContainers.filter((c: any) => (c.data.current?.type === 'layer' || c.data.current?.type === 'layer-top') && c.id !== 'default')
+      : droppableContainers;
+
+    const firstLayerId = layers[0]?.id;
+
+    // Check direct pointer containment using live bounding client rects
+    for (const container of allowedContainers) {
+      if (container.disabled) continue;
+      const baseNode = container.node.current;
+      if (!baseNode) continue;
+
+      let rect: { top: number; bottom: number; left: number; right: number; height: number };
+
+      if (isLayerDrag) {
+        if (container.id === 'layer-top') {
+          const firstLayerNode = allowedContainers.find((c: any) => c.id === firstLayerId)?.node.current;
+          const firstHeaderRect = firstLayerNode?.getBoundingClientRect();
+          const splitY = firstHeaderRect ? firstHeaderRect.top + firstHeaderRect.height / 2 : (containerRect ? containerRect.top + 20 : 0);
+          const topBound = containerRect ? containerRect.top - 200 : -1000;
+          rect = {
+            top: topBound,
+            bottom: splitY,
+            left: containerRect ? containerRect.left : 0,
+            right: containerRect ? containerRect.right : window.innerWidth,
+            height: splitY - topBound
+          };
+        } else if (container.id === firstLayerId) {
+          const fullNode = baseNode.parentElement || baseNode;
+          const fullRect = fullNode.getBoundingClientRect();
+          const headerRect = baseNode.getBoundingClientRect();
+          const splitY = headerRect.top + headerRect.height / 2;
+          rect = {
+            top: splitY,
+            bottom: fullRect.bottom,
+            left: fullRect.left,
+            right: fullRect.right,
+            height: fullRect.bottom - splitY
+          };
+        } else if (container.data.current?.type === 'layer' && baseNode.parentElement) {
+          rect = baseNode.parentElement.getBoundingClientRect();
+        } else {
+          rect = baseNode.getBoundingClientRect();
         }
-        return [];
+      } else {
+        rect = baseNode.getBoundingClientRect();
+      }
+
+      // Only consider elements that are currently visible within the scroll container
+      if (containerRect && container.id !== 'layer-top' && (rect.bottom < containerRect.top || rect.top > containerRect.bottom)) {
+        continue;
+      }
+
+      if (pointerCoordinates) {
+        if (
+          pointerCoordinates.y >= rect.top &&
+          pointerCoordinates.y <= rect.bottom &&
+          pointerCoordinates.x >= rect.left &&
+          pointerCoordinates.x <= rect.right
+        ) {
+          const centerY = rect.top + rect.height / 2;
+          const dist = Math.abs(pointerCoordinates.y - centerY);
+          collisions.push({
+            id: container.id,
+            data: { droppableContainer: container, value: dist }
+          });
+        }
       }
     }
-    return pointerCollisions;
+
+    if (collisions.length > 0) {
+      collisions.sort((a, b) => a.data.value - b.data.value);
+      return collisions;
+    }
+
+    // Fallback: If pointer is in margins/padding, find the closest visible container by vertical distance
+    const fallbackCollisions: any[] = [];
+    const refY = pointerCoordinates ? pointerCoordinates.y : (collisionRect ? collisionRect.top + collisionRect.height / 2 : 0);
+
+    for (const container of allowedContainers) {
+      if (container.disabled) continue;
+      const baseNode = container.node.current;
+      if (!baseNode) continue;
+
+      let rect: { top: number; bottom: number; left: number; right: number; height: number };
+
+      if (isLayerDrag) {
+        if (container.id === 'layer-top') {
+          const firstLayerNode = allowedContainers.find((c: any) => c.id === firstLayerId)?.node.current;
+          const firstHeaderRect = firstLayerNode?.getBoundingClientRect();
+          const splitY = firstHeaderRect ? firstHeaderRect.top + firstHeaderRect.height / 2 : (containerRect ? containerRect.top + 20 : 0);
+          const topBound = containerRect ? containerRect.top - 200 : -1000;
+          rect = {
+            top: topBound,
+            bottom: splitY,
+            left: containerRect ? containerRect.left : 0,
+            right: containerRect ? containerRect.right : window.innerWidth,
+            height: splitY - topBound
+          };
+        } else if (container.id === firstLayerId) {
+          const fullNode = baseNode.parentElement || baseNode;
+          const fullRect = fullNode.getBoundingClientRect();
+          const headerRect = baseNode.getBoundingClientRect();
+          const splitY = headerRect.top + headerRect.height / 2;
+          rect = {
+            top: splitY,
+            bottom: fullRect.bottom,
+            left: fullRect.left,
+            right: fullRect.right,
+            height: fullRect.bottom - splitY
+          };
+        } else if (container.data.current?.type === 'layer' && baseNode.parentElement) {
+          rect = baseNode.parentElement.getBoundingClientRect();
+        } else {
+          rect = baseNode.getBoundingClientRect();
+        }
+      } else {
+        rect = baseNode.getBoundingClientRect();
+      }
+
+      // Only consider visible elements
+      if (containerRect && container.id !== 'layer-top' && (rect.bottom < containerRect.top || rect.top > containerRect.bottom)) {
+        continue;
+      }
+
+      const dist = refY < rect.top 
+        ? rect.top - refY 
+        : (refY > rect.bottom ? refY - rect.bottom : 0);
+
+      fallbackCollisions.push({
+        id: container.id,
+        data: { droppableContainer: container, value: dist }
+      });
+    }
+
+    fallbackCollisions.sort((a, b) => a.data.value - b.data.value);
+    return fallbackCollisions;
   };
 
   return (
@@ -1728,7 +1933,11 @@ const Sidebar = ({
         onDragOver={onDragOver}
         onDragEnd={handleDragEndInternal}
         onDragCancel={handleDragCancelInternal}
-        autoScroll={false}
+        autoScroll={{
+          threshold: { x: 0, y: 0.05 },
+          acceleration: 10,
+          canScroll: (element) => element === scrollContainerRef.current || (element instanceof HTMLElement && element.classList.contains('pin-list')),
+        }}
       >
         {(() => {
           const menuContent = (
@@ -2210,7 +2419,8 @@ const Sidebar = ({
             WebkitOverflowScrolling: 'touch',
             overscrollBehaviorY: 'contain'
           }}>
-          <SortableContext items={layers.map(layer => layer.id)} strategy={verticalListSortingStrategy}>
+          <LayerTopDropZone isLayerDragging={!!activeLayer} />
+          <SortableContext items={layerIds} strategy={verticalListSortingStrategy}>
             {layers.map((layer) => (
               <SortableLayer
                 key={layer.id}
@@ -2240,6 +2450,7 @@ const Sidebar = ({
                 onToggleExpand={() => onToggleExpand?.(layer.id)}
                 isAnySelectedDragging={isAnySelectedDragging}
                 isLayerDragging={!!activeLayer}
+                isAnyPinDragging={isAnyPinDragging}
               />
             ))}
           </SortableContext>
@@ -2251,6 +2462,7 @@ const Sidebar = ({
             isDefaultSomeSelected={isDefaultSomeSelected}
             readOnly={readOnly}
             isLayerDragging={!!activeLayer}
+            isAnyPinDragging={isAnyPinDragging}
             onToggleExpand={onToggleExpand}
             onToggleLayerVisibility={onToggleLayerVisibility}
             onToggleNavIds={onToggleNavIds}
@@ -2258,7 +2470,7 @@ const Sidebar = ({
           >
             {!collapsedLayerIds?.has(null) && (
               <div style={{ paddingLeft: '0.2rem', borderLeft: '1px solid var(--border-color)', marginTop: '0px', marginLeft: '0.4rem' }}>
-                <SortableContext items={defaultPins.map(p => p.id)} strategy={verticalListSortingStrategy} disabled={readOnly}>
+                <SortableContext items={defaultPinIds} strategy={verticalListSortingStrategy} disabled={readOnly}>
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0, paddingTop: '2px', minHeight: defaultPins.length === 0 ? '24px' : '10px' }}>
                     {defaultPins.map((pin) => (
                       <SortablePin 
@@ -2278,6 +2490,7 @@ const Sidebar = ({
                         onToggleSelect={onToggleNavId}
                         allLayers={layers}
                         isAnySelectedDragging={isAnySelectedDragging}
+                        isAnyPinDragging={isAnyPinDragging}
                       />
                     ))}
                     {defaultPins.length === 0 && layers.length === 0 && (

@@ -1173,47 +1173,8 @@ export function MapEditor() {
     }
   }, []);
 
-  const handleDragOver = useCallback((event: any) => {
-    if (userRoleRef.current === 'view' || isOfflineRef.current) return;
-    const { active, over } = event;
-    if (!over) return;
-
-    if (active.data.current?.type === 'pin') {
-      const activeId = active.id as string;
-      const overId = over.id as string;
-      const overData = over.data.current;
-      const currentPins = pinsRef.current;
-
-      const activePin = currentPins.find(p => p.id === activeId);
-      if (!activePin) return;
-
-      let newLayerId: string | undefined = activePin.layerId;
-      if (overData?.type === 'layer' || overId === 'default') {
-        newLayerId = overId === 'default' ? undefined : (overData?.layer?.id || overId);
-      } else if (overData?.type === 'pin') {
-        newLayerId = overData.pin.layerId;
-      }
-
-      // ONLY update state in onDragOver if the layer actually changed (moving between layers)
-      // This provides immediate visual feedback of layer changes.
-      // We prevent moving into collapsed layers during drag to avoid unmounting the active item.
-      if (newLayerId !== activePin.layerId && !collapsedLayerIdsRef.current.has(newLayerId || null)) {
-        setPins((prevPins) => {
-          const selected = selectedNavIdsRef.current;
-          const pinsToMoveIds = selected.has(activeId) 
-            ? Array.from(selected) 
-            : [activeId];
-          
-          const movedPins = pinsToMoveIds.map(id => prevPins.find(p => p.id === id)).filter(Boolean) as Pin[];
-          const otherPins = prevPins.filter(p => !pinsToMoveIds.includes(p.id));
-          
-          // Move the bundle to the new layer (just append to end during hover for visual feedback)
-          const updatedMovedPins = movedPins.map(p => ({ ...p, layerId: newLayerId }));
-          const result = [...otherPins, ...updatedMovedPins];
-          return result.map((p, i) => ({ ...p, position: i }));
-        });
-      }
-    }
+  const handleDragOver = useCallback((_event: any) => {
+    // No-op during drag. Visual drop lines are rendered in components based on dnd-kit's isOver state.
   }, []);
 
   const handleDragStart = useCallback((event: any) => {
@@ -1258,16 +1219,8 @@ export function MapEditor() {
     dragStartPinsRef.current = null;
 
     if (active.data.current?.type === 'layer') {
-      const overData = over.data.current;
-      let targetLayerId = over.id as string;
-      
-      if (overData?.type === 'pin') {
-        if (overData.pin.layerId) {
-          targetLayerId = overData.pin.layerId;
-        } else {
-          return;
-        }
-      }
+      const targetLayerId = over.id as string;
+      if (targetLayerId === 'default') return;
       
       setLayers(prev => {
         const next = reorderLayers(prev, active.id as string, targetLayerId);

@@ -1,5 +1,4 @@
 import type { Pin, PinLayer } from '@shared/interfaces';
-import { arrayMove } from '@dnd-kit/sortable';
 
 export function isSameLayer(l1?: string | null, l2?: string | null): boolean {
   if (!l1 && !l2) return true;
@@ -37,23 +36,16 @@ export function reorderPins(
     const movedPins = pinsToMoveIds.map(id => prevPins.find(p => p.id === id)).filter(Boolean) as Pin[];
     const otherPins = prevPins.filter(p => !pinsToMoveIds.includes(p.id));
     
-    const activeIndex = prevPins.findIndex(p => p.id === activeId);
-    const overIndex = prevPins.findIndex(p => p.id === overId);
-    
-    let targetIndex;
+    let targetIndex: number;
     if (overType === 'pin') {
-        targetIndex = otherPins.findIndex(p => p.id === overId);
-        // Standard sortable behavior: land AFTER the target if we were dragging DOWN
-        if (activeIndex < overIndex) {
-            targetIndex += 1;
-        }
+        const overIndex = otherPins.findIndex(p => p.id === overId);
+        targetIndex = overIndex !== -1 ? overIndex + 1 : otherPins.length;
     } else {
-        // Dropped on a layer header: append to the end of that layer
+        // Dropped on a layer header: insert at the beginning (top) of that layer
         const targetLayerId = overLayerId === 'default' ? undefined : overLayerId;
-        const pinsInTargetLayer = otherPins.filter(p => isSameLayer(p.layerId, targetLayerId));
-        if (pinsInTargetLayer.length > 0) {
-            const lastPin = pinsInTargetLayer[pinsInTargetLayer.length - 1];
-            targetIndex = otherPins.findIndex(p => p.id === lastPin.id) + 1;
+        const firstPinIndex = otherPins.findIndex(p => isSameLayer(p.layerId, targetLayerId));
+        if (firstPinIndex !== -1) {
+            targetIndex = firstPinIndex;
         } else {
             targetIndex = otherPins.length;
         }
@@ -78,12 +70,22 @@ export function reorderLayers(
     overId: string
 ): PinLayer[] {
     if (activeId === overId) return prevLayers;
+    if (activeId === 'default' || overId === 'default') return prevLayers;
     
-    const oldIndex = prevLayers.findIndex((i) => i.id === activeId);
-    const newIndex = prevLayers.findIndex((i) => i.id === overId);
+    const otherLayers = prevLayers.filter((i) => i.id !== activeId);
+    const movedLayer = prevLayers.find((i) => i.id === activeId);
+    if (!movedLayer) return prevLayers;
     
-    if (oldIndex === -1 || newIndex === -1) return prevLayers;
+    let targetIndex: number;
+    if (overId === 'layer-top') {
+        targetIndex = 0;
+    } else {
+        const overIndex = otherLayers.findIndex((i) => i.id === overId);
+        if (overIndex === -1) return prevLayers;
+        targetIndex = overIndex + 1;
+    }
     
-    const newItems = arrayMove(prevLayers, oldIndex, newIndex);
-    return newItems.map((item, index) => ({ ...item, position: index }));
+    const result = [...otherLayers];
+    result.splice(Math.max(0, targetIndex), 0, movedLayer);
+    return result.map((item, index) => ({ ...item, position: index }));
 }

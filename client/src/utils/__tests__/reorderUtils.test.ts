@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reorderPins, isSameLayer, comparePinPositions } from '../reorderUtils';
+import { reorderPins, reorderLayers, isSameLayer, comparePinPositions } from '../reorderUtils';
 import { Pin } from '@shared/interfaces';
 
 describe('reorderUtils', () => {
@@ -9,38 +9,27 @@ describe('reorderUtils', () => {
         { id: '3', label: 'P3', layerId: 'G2', position: 2, lat: 0, lng: 0 }
     ] as any;
 
-    it('should reorder within the same layer (dragging down)', () => {
+    it('should reorder within the same layer (placing after target pin)', () => {
         const result = reorderPins(pins, '1', '2', 'pin', 'G1', new Set());
         expect(result[0].id).toBe('2');
         expect(result[1].id).toBe('1');
         expect(result[1].position).toBe(1);
     });
 
-    it('should reorder within the same layer (dragging up)', () => {
-        const result = reorderPins(pins, '2', '1', 'pin', 'G1', new Set());
-        expect(result[0].id).toBe('2');
-        expect(result[1].id).toBe('1');
-    });
-
-    it('should move to another layer and land at the end when dropped on header', () => {
+    it('should move to top of layer when dropped on layer header', () => {
         const result = reorderPins(pins, '3', 'G1', 'layer', 'G1', new Set());
-        expect(result[2].id).toBe('3');
-        expect(result[2].layerId).toBe('G1');
-        expect(result[2].position).toBe(2);
+        expect(result[0].id).toBe('3');
+        expect(result[0].layerId).toBe('G1');
+        expect(result[0].position).toBe(0);
+        expect(result[1].id).toBe('1');
+        expect(result[2].id).toBe('2');
     });
 
-    it('should move to another layer and land BEFORE a pin when dragging up', () => {
-        // Mock state after onDragOver moved it to the end of G1
-        const intermediatePins: Pin[] = [
-            { id: '1', label: 'P1', layerId: 'G1', position: 0, lat: 0, lng: 0 },
-            { id: '2', label: 'P2', layerId: 'G1', position: 1, lat: 0, lng: 0 },
-            { id: '3', label: 'P3', layerId: 'G1', position: 2, lat: 0, lng: 0 }
-        ] as any;
-        
-        // Drag 3 up to 1. ActiveIndex (2) > OverIndex (0). Should land BEFORE 1.
-        const result = reorderPins(intermediatePins, '3', '1', 'pin', 'G1', new Set());
-        expect(result[0].id).toBe('3');
-        expect(result[1].id).toBe('1');
+    it('should move to another layer and place after target pin', () => {
+        const result = reorderPins(pins, '3', '1', 'pin', 'G1', new Set());
+        expect(result[0].id).toBe('1');
+        expect(result[1].id).toBe('3');
+        expect(result[1].layerId).toBe('G1');
         expect(result[2].id).toBe('2');
     });
 
@@ -76,5 +65,27 @@ describe('reorderUtils', () => {
         expect(defaultPins.length).toBe(2);
         expect(defaultPins.map(p => p.id)).toContain('1');
         expect(defaultPins.map(p => p.id)).toContain('2');
+    });
+
+    it('should reorder layers by placing after target layer', () => {
+        const layers = [{ id: 'L1', name: 'L1', position: 0 }, { id: 'L2', name: 'L2', position: 1 }, { id: 'L3', name: 'L3', position: 2 }] as any;
+        const result = reorderLayers(layers, 'L1', 'L2');
+        expect(result[0].id).toBe('L2');
+        expect(result[1].id).toBe('L1');
+        expect(result[2].id).toBe('L3');
+    });
+
+    it('should move layer to first position when dropped on layer-top', () => {
+        const layers = [{ id: 'L1', name: 'L1', position: 0 }, { id: 'L2', name: 'L2', position: 1 }, { id: 'L3', name: 'L3', position: 2 }] as any;
+        const result = reorderLayers(layers, 'L3', 'layer-top');
+        expect(result[0].id).toBe('L3');
+        expect(result[1].id).toBe('L1');
+        expect(result[2].id).toBe('L2');
+    });
+
+    it('should not allow moving or targeting default layer', () => {
+        const layers = [{ id: 'L1', name: 'L1', position: 0 }, { id: 'L2', name: 'L2', position: 1 }] as any;
+        expect(reorderLayers(layers, 'default', 'L1')).toEqual(layers);
+        expect(reorderLayers(layers, 'L1', 'default')).toEqual(layers);
     });
 });
