@@ -109,6 +109,7 @@ describe('Sidebar', () => {
     
     fireEvent.click(screen.getByLabelText('Edit'));
     const textarea = screen.getByLabelText(/description/i);
+    expect(textarea).toHaveAttribute('rows', '1');
     
     fireEvent.change(textarea, { target: { value: 'New description' } });
     fireEvent.blur(textarea);

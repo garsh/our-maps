@@ -188,14 +188,13 @@ const ICONS: { type: PinIcon; Icon: LucideIcon | any }[] = [
 ];
 
 const ADDRESS_TEXTAREA_MAX_PX = 120;
-const DESCRIPTION_TEXTAREA_MIN_PX = 64;
 const PIN_TEXTAREA_STYLE: CSSProperties = {
   display: 'block',
   margin: 0,
   padding: '2px 4px',
   fontSize: '0.6rem',
   fontFamily: 'inherit',
-  lineHeight: 1.3,
+  lineHeight: 1.25,
   overflow: 'hidden',
   resize: 'none'
 };
@@ -203,7 +202,8 @@ const PIN_TEXTAREA_STYLE: CSSProperties = {
 const fitTextarea = (el: HTMLTextAreaElement | null, minHeight: number, maxHeight: number) => {
   if (!el) return;
   el.style.height = 'auto';
-  const needed = el.scrollHeight + 4;
+  const borderOffset = Math.max(0, el.offsetHeight - el.clientHeight);
+  const needed = el.scrollHeight + borderOffset;
   const finalHeight = Math.min(Math.max(needed, minHeight), maxHeight);
   el.style.height = `${finalHeight}px`;
   el.style.overflowY = needed > maxHeight ? 'auto' : 'hidden';
@@ -448,7 +448,7 @@ const SortablePin = memo(({
   useEffect(() => {
     if (!isEditing) return;
     fitTextarea(addressTextareaRef.current, 0, ADDRESS_TEXTAREA_MAX_PX);
-    fitTextarea(descriptionTextareaRef.current, DESCRIPTION_TEXTAREA_MIN_PX, Math.round(window.innerHeight * 0.7));
+    fitTextarea(descriptionTextareaRef.current, 0, Math.round(window.innerHeight * 0.7));
   }, [isEditing, pin.id, localAddress, localDescription]);
 
   const flushField = useCallback((field: 'label' | 'address' | 'description') => {
@@ -775,7 +775,7 @@ const SortablePin = memo(({
                 value={pin.layerId || ''} 
                 onChange={(e) => onUpdatePin(pin.id, { layerId: e.target.value || undefined })}
                 className="input-field"
-                style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit', background: 'var(--surface-color)', color: 'var(--text-primary)' }}
+                style={{ padding: '2px 4px 2px 1px', fontSize: '0.6rem', fontFamily: 'inherit', background: 'var(--surface-color)', color: 'var(--text-primary)' }}
             >
                 <option value="">Default Layer</option>
                 {allLayers.map(g => (
@@ -841,12 +841,13 @@ const SortablePin = memo(({
             <textarea 
               id={`desc-${pin.id}`}
               ref={descriptionTextareaRef}
+              rows={1}
               value={localDescription} 
               onFocus={() => { focusedFieldRef.current = 'description'; }}
               onChange={(e) => handleFieldChange('description', e.target.value)}
               onBlur={() => handleFieldBlur('description')}
               className="input-field"
-              style={{ ...PIN_TEXTAREA_STYLE, minHeight: DESCRIPTION_TEXTAREA_MIN_PX, maxHeight: '70vh' }}
+              style={{ ...PIN_TEXTAREA_STYLE, maxHeight: '70vh' }}
             />
           </div>
         </div>
