@@ -1,7 +1,24 @@
-import type { PinColor, PinIcon } from '@shared/interfaces';
+import type { Pin, PinColor, PinIcon } from '@shared/interfaces';
 
 export const DEFAULT_PIN_COLOR: PinColor = 'blue';
 export const DEFAULT_PIN_ICON: PinIcon = 'default';
+
+export function arePinsEqual(a?: Pin | null, b?: Pin | null): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return (
+    a.id === b.id &&
+    a.lat === b.lat &&
+    a.lng === b.lng &&
+    (a.label || '') === (b.label || '') &&
+    (a.description || '') === (b.description || '') &&
+    (a.address || '') === (b.address || '') &&
+    (a.color || 'blue') === (b.color || 'blue') &&
+    (a.icon || 'default') === (b.icon || 'default') &&
+    (a.position || 0) === (b.position || 0) &&
+    (a.layerId || undefined) === (b.layerId || undefined)
+  );
+}
 
 export const COLOR_CODES: Record<string, string> = {
   blue: '#2A81CB',

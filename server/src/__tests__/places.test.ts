@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import request from 'supertest';
 import { app } from '../index';
 import { setDbName, closeDb } from '../db';
+import { clearPlacesCacheForTests } from '../routes/places';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -32,6 +33,7 @@ describe('Places API Proxy Endpoints', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    clearPlacesCacheForTests();
   });
 
   it('should return 401 if unauthorized', async () => {
@@ -216,6 +218,74 @@ describe('Places API Proxy Endpoints', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.address).toBe('Google Geocoded Address');
+
+    delete process.env.GOOGLE_MAPS_API_KEY;
+  });
+
+  it('should serve repeated search requests from the in-memory cache without additional fetch calls', async () => {
+    process.env.GOOGLE_MAPS_API_KEY = 'mock-google-key-value';
+
+    const mockGoogleResults = {
+      places: [
+        {
+          id: 'place-cached-1',
+          displayName: { text: 'Cached Place', languageCode: 'en' },
+          formattedAddress: '100 Cached St',
+          location: { latitude: 10.0, longitude: 20.0 }
+        }
+      ]
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return {
+        json: async () => mockGoogleResults
+      } as Response;
+    });
+
+    const res1 = await request(app)
+      .get('/api/places/search?q=cached-place&bounds=10,20,30,40')
+      .set(authHeader);
+    expect(res1.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // Second request with same query and bounds should hit cache
+    const res2 = await request(app)
+      .get('/api/places/search?q=cached-place&bounds=10,20,30,40')
+      .set(authHeader);
+    expect(res2.status).toBe(200);
+    expect(res2.body).toEqual(res1.body);
+    expect(fetchSpy).toHaveBeenCalledTimes(1); // No new network call
+
+    delete process.env.GOOGLE_MAPS_API_KEY;
+  });
+
+  it('should serve repeated reverse geocode requests from the in-memory cache', async () => {
+    process.env.GOOGLE_MAPS_API_KEY = 'mock-google-key-value';
+
+    const mockGoogleGeocode = {
+      status: 'OK',
+      results: [{ formatted_address: 'Cached Address 123' }]
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return {
+        json: async () => mockGoogleGeocode
+      } as Response;
+    });
+
+    const res1 = await request(app)
+      .get('/api/places/reverse-geocode?lat=40.7128&lng=-74.0060')
+      .set(authHeader);
+    expect(res1.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // Second request for identical / close coordinates should hit cache
+    const res2 = await request(app)
+      .get('/api/places/reverse-geocode?lat=40.7128&lng=-74.0060')
+      .set(authHeader);
+    expect(res2.status).toBe(200);
+    expect(res2.body.address).toBe('Cached Address 123');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
 
     delete process.env.GOOGLE_MAPS_API_KEY;
   });

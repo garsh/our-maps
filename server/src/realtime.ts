@@ -123,11 +123,27 @@ async function updateEntityPositions(
   idOrder: string[],
   mapId: string
 ) {
-  const stmt = await db.prepare(`UPDATE ${table} SET position = ? WHERE id = ? AND map_id = ?`);
-  for (let i = 0; i < idOrder.length; i++) {
-    await stmt.run(i, idOrder[i], mapId);
+  if (!idOrder || idOrder.length === 0) return;
+
+  const chunkSize = 500;
+  for (let chunkStart = 0; chunkStart < idOrder.length; chunkStart += chunkSize) {
+    const chunk = idOrder.slice(chunkStart, chunkStart + chunkSize);
+    const whenClauses = chunk.map(() => 'WHEN ? THEN ?').join(' ');
+    const inPlaceholders = chunk.map(() => '?').join(', ');
+
+    const params: any[] = [];
+    chunk.forEach((id, idx) => {
+      params.push(id, chunkStart + idx);
+    });
+    params.push(mapId, ...chunk);
+
+    await db.run(
+      `UPDATE ${table} 
+       SET position = CASE id ${whenClauses} END 
+       WHERE map_id = ? AND id IN (${inPlaceholders})`,
+      ...params
+    );
   }
-  await stmt.finalize();
 }
 
 export async function handlePinsReorder(data: PinsReorderPayload) {
@@ -153,11 +169,17 @@ export async function handlePinMoveLayer(data: PinMoveLayerPayload) {
   await db.run('BEGIN TRANSACTION');
   try {
     const targetLayer = targetLayerId || null;
-    const updateLayerStmt = await db.prepare('UPDATE pins SET layer_id = ? WHERE id = ? AND map_id = ?');
-    for (const pinId of pinIds) {
-      await updateLayerStmt.run(targetLayer, pinId, mapId);
+    const chunkSize = 500;
+    for (let i = 0; i < pinIds.length; i += chunkSize) {
+      const chunk = pinIds.slice(i, i + chunkSize);
+      const placeholders = chunk.map(() => '?').join(', ');
+      await db.run(
+        `UPDATE pins SET layer_id = ? WHERE map_id = ? AND id IN (${placeholders})`,
+        targetLayer,
+        mapId,
+        ...chunk
+      );
     }
-    await updateLayerStmt.finalize();
 
     if (Array.isArray(destPinOrder) && destPinOrder.length > 0) {
       await updateEntityPositions(db, 'pins', destPinOrder, mapId);
@@ -242,12 +264,22 @@ export async function handleLayerDelete(data: LayerDeletePayload) {
     const pinsToMove = await db.all('SELECT id FROM pins WHERE layer_id = ? AND map_id = ? ORDER BY position ASC, id ASC', layerId, mapId);
 
     if (pinsToMove.length > 0) {
-      const stmt = await db.prepare('UPDATE pins SET layer_id = NULL, position = ? WHERE id = ? AND map_id = ?');
-      for (const pin of pinsToMove) {
-        await stmt.run(currentPos, pin.id, mapId);
-        currentPos += 1;
+      const pinIds = pinsToMove.map(p => p.id);
+      const chunkSize = 500;
+      for (let chunkStart = 0; chunkStart < pinIds.length; chunkStart += chunkSize) {
+        const chunk = pinIds.slice(chunkStart, chunkStart + chunkSize);
+        const whenClauses = chunk.map(() => 'WHEN ? THEN ?').join(' ');
+        const inPlaceholders = chunk.map(() => '?').join(', ');
+        const params: any[] = [];
+        chunk.forEach((id, idx) => {
+          params.push(id, currentPos + chunkStart + idx);
+        });
+        params.push(mapId, ...chunk);
+        await db.run(
+          `UPDATE pins SET layer_id = NULL, position = CASE id ${whenClauses} END WHERE map_id = ? AND id IN (${inPlaceholders})`,
+          ...params
+        );
       }
-      await stmt.finalize();
     }
 
     await db.run('DELETE FROM pin_layers WHERE id = ? AND map_id = ?', layerId, mapId);

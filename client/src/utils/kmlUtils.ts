@@ -68,7 +68,6 @@ export const parseKmlHierarchy = (kmlDoc: Document): { pins: Pin[], layers: PinL
   const layers: PinLayer[] = [];
   const layerMap = new Map<string, string>(); // name -> id
 
-
   const getOrCreateLayerId = (folderName: string): string => {
     if (layerMap.has(folderName)) {
       return layerMap.get(folderName)!;
@@ -83,16 +82,29 @@ export const parseKmlHierarchy = (kmlDoc: Document): { pins: Pin[], layers: PinL
     return newId;
   };
 
-  // Helper to parse a Placemark element
+  // Helper to parse a Placemark element using fast direct child iteration
   const parsePlacemark = (placemark: Element, layerId?: string) => {
-    const name = placemark.querySelector('name')?.textContent || 'Imported Pin';
-    const description = placemark.querySelector('description')?.textContent || '';
-    
-    // Extract coordinates
-    const point = placemark.querySelector('Point');
-    if (!point) return; // Only interested in Points for now
-    
-    const coordinates = point.querySelector('coordinates')?.textContent?.trim();
+    let name = 'Imported Pin';
+    let description = '';
+    let coordinates: string | undefined;
+
+    for (let i = 0; i < placemark.children.length; i++) {
+      const child = placemark.children[i];
+      const tag = child.tagName;
+      if (tag === 'name') {
+        name = child.textContent?.trim() || 'Imported Pin';
+      } else if (tag === 'description') {
+        description = child.textContent || '';
+      } else if (tag === 'Point') {
+        for (let j = 0; j < child.children.length; j++) {
+          if (child.children[j].tagName === 'coordinates') {
+            coordinates = child.children[j].textContent?.trim();
+            break;
+          }
+        }
+      }
+    }
+
     if (!coordinates) return;
 
     const [lngStr, latStr] = coordinates.split(',');
@@ -101,10 +113,6 @@ export const parseKmlHierarchy = (kmlDoc: Document): { pins: Pin[], layers: PinL
 
     if (isNaN(lat) || isNaN(lng)) return;
 
-    // Extract styles (basic logic)
-    // Real parsing of styles is complex in KML, we default to blue for now
-    // unless description/name suggests otherwise or we enhance this later.
-    
     pins.push({
       id: generateId(),
       lat,
@@ -127,9 +135,11 @@ export const parseKmlHierarchy = (kmlDoc: Document): { pins: Pin[], layers: PinL
       if (tagName === 'Folder') {
         // Extract folder name from direct child
         let folderName = 'Untitled Layer';
-        const nameNode = Array.from(child.children).find(c => c.tagName === 'name');
-        if (nameNode && nameNode.textContent) {
-          folderName = nameNode.textContent;
+        for (let j = 0; j < child.children.length; j++) {
+          if (child.children[j].tagName === 'name') {
+            folderName = child.children[j].textContent?.trim() || 'Untitled Layer';
+            break;
+          }
         }
 
         const layerId = getOrCreateLayerId(folderName);

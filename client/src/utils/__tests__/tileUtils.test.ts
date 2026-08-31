@@ -20,6 +20,7 @@ describe('tileUtils', () => {
                             objectStore: (name: string) => {
                                 const txStore = getStore(name);
                                 return {
+                                    indexNames: { contains: (idx: string) => idx === 'mapId_status' || idx === 'status' || idx === 'mapId' },
                                     put: (val: any, key?: any) => {
                                         txStore.set(key !== undefined ? key : (val?.id ?? val?.url), val);
                                         const r: any = {};
@@ -57,6 +58,24 @@ describe('tileUtils', () => {
                                         return r;
                                     },
                                     index: (idxName?: string) => ({
+                                        count: (query?: any) => {
+                                            const r: any = { readyState: 'done' };
+                                            setTimeout(() => {
+                                                let values = Array.from(txStore.values());
+                                                if (query !== undefined && query !== null) {
+                                                    if (Array.isArray(query)) {
+                                                        const [mId, st] = query;
+                                                        values = values.filter((v: any) => v.mapId === mId && v.status === st);
+                                                    } else {
+                                                        const target = typeof query === 'object' && query?.lower !== undefined ? query.lower : query;
+                                                        values = values.filter((v: any) => (idxName && v?.[idxName] === target) || v?.mapId === target);
+                                                    }
+                                                }
+                                                r.result = values.length;
+                                                r.onsuccess && r.onsuccess();
+                                            });
+                                            return r;
+                                        },
                                         getAll: (query?: any) => {
                                             const r: any = {};
                                             setTimeout(() => {

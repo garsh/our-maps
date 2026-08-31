@@ -35,6 +35,7 @@ import { getManifestStats } from './utils/tileUtils';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
 import { tileWorkerManager } from './utils/tileWorkerManager';
 import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer } from './utils/pinHover';
+import { arePinsEqual } from './utils/mapUtils';
 import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
@@ -772,7 +773,7 @@ export function MapEditor() {
         serverPinMap.forEach((serverPin, pinId) => {
           const localPin = localPinMap.get(pinId);
           if (localPin) {
-            const isModified = JSON.stringify(localPin) !== JSON.stringify(serverPin);
+            const isModified = !arePinsEqual(localPin, serverPin);
             if (isModified) {
               mergedPins.push(localPin);
               socketRef.current?.emit('pin-update', { mapId: currentMapId, pinId, updates: localPin });

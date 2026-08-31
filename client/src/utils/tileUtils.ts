@@ -33,7 +33,7 @@ const DB_NAME = 'MapTilesDB_v2';
 const MANIFEST_STORE = 'manifest';
 const TILE_STORE = 'tiles';
 const MAP_STORE = 'maps';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 function keyRangeOnly(key: string): any {
     return typeof IDBKeyRange !== 'undefined' ? IDBKeyRange.only(key) : key;
@@ -66,12 +66,20 @@ export async function openDB(): Promise<IDBDatabase> {
     if (!dbPromise) {
         dbPromise = new Promise((resolve, reject) => {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
-            request.onupgradeneeded = () => {
+            request.onupgradeneeded = (event: any) => {
                 const db = request.result;
+                let manifest: IDBObjectStore;
                 if (!db.objectStoreNames.contains(MANIFEST_STORE)) {
-                    const manifest = db.createObjectStore(MANIFEST_STORE, { keyPath: 'url' });
+                    manifest = db.createObjectStore(MANIFEST_STORE, { keyPath: 'url' });
                     manifest.createIndex('status', 'status', { unique: false });
                     manifest.createIndex('mapId', 'mapId', { unique: false });
+                } else if (event?.target?.transaction) {
+                    manifest = event.target.transaction.objectStore(MANIFEST_STORE);
+                } else {
+                    manifest = (request as any).transaction?.objectStore(MANIFEST_STORE);
+                }
+                if (manifest && !manifest.indexNames.contains('mapId_status')) {
+                    manifest.createIndex('mapId_status', ['mapId', 'status'], { unique: false });
                 }
                 if (!db.objectStoreNames.contains(TILE_STORE)) {
                     db.createObjectStore(TILE_STORE);
@@ -132,27 +140,33 @@ export async function getOfflineMap(mapId: string): Promise<MapData | null> {
 export async function addToManifest(entries: ManifestEntry[]): Promise<void> {
     if (!entries || entries.length === 0) return;
     const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction(MANIFEST_STORE, 'readwrite');
-        const store = transaction.objectStore(MANIFEST_STORE);
+    const CHUNK_SIZE = 1000;
 
-        entries.forEach(entry => {
-            if (entry.status === 'completed') {
-                store.put(entry);
-            } else {
-                const getReq = store.get(entry.url);
-                getReq.onsuccess = () => {
-                    const existing = getReq.result as ManifestEntry | undefined;
-                    if (!existing || existing.status !== 'completed') {
-                        store.put(entry);
-                    }
-                };
-            }
+    for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
+        const chunk = entries.slice(i, i + CHUNK_SIZE);
+        await new Promise<void>((resolve, reject) => {
+            const transaction = db.transaction(MANIFEST_STORE, 'readwrite');
+            const store = transaction.objectStore(MANIFEST_STORE);
+
+            chunk.forEach(entry => {
+                if (entry.status === 'completed') {
+                    store.put(entry);
+                } else {
+                    const getReq = store.get(entry.url);
+                    getReq.onsuccess = () => {
+                        const existing = getReq.result as ManifestEntry | undefined;
+                        if (!existing || existing.status !== 'completed') {
+                            store.put(entry);
+                        }
+                    };
+                }
+            });
+
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
         });
-
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-    });
+    }
 }
 
 
@@ -180,6 +194,35 @@ export async function getManifestStats(mapId: string): Promise<{ total: number, 
             const transaction = db.transaction(MANIFEST_STORE, 'readonly');
             const store = transaction.objectStore(MANIFEST_STORE);
             const index = store.index('mapId');
+
+            if (store.indexNames && store.indexNames.contains('mapId_status')) {
+                const compoundIndex = store.index('mapId_status');
+                const totalReq = index.count(keyRangeOnly(mapId));
+                const completedReq = compoundIndex.count(keyRangeOnly([mapId, 'completed'] as any));
+
+                let total: number | null = null;
+                let completed: number | null = null;
+
+                const checkDone = () => {
+                    if (total !== null && completed !== null) {
+                        resolve({ total, completed });
+                    }
+                };
+
+                totalReq.onsuccess = () => {
+                    total = totalReq.result || 0;
+                    checkDone();
+                };
+                totalReq.onerror = () => reject(totalReq.error);
+
+                completedReq.onsuccess = () => {
+                    completed = completedReq.result || 0;
+                    checkDone();
+                };
+                completedReq.onerror = () => reject(completedReq.error);
+                return;
+            }
+
             const request = index.getAll(keyRangeOnly(mapId));
 
             request.onsuccess = () => {
@@ -227,6 +270,54 @@ export async function getMapDownloadStatuses(mapIds?: string[]): Promise<Map<str
         return new Promise((resolve, reject) => {
             const transaction = db.transaction(MANIFEST_STORE, 'readonly');
             const store = transaction.objectStore(MANIFEST_STORE);
+
+            if (mapIds && mapIds.length > 0 && store.indexNames && store.indexNames.contains('mapId_status')) {
+                const compoundIndex = store.index('mapId_status');
+                const mapIdIndex = store.index('mapId');
+                let pendingCount = mapIds.length;
+
+                if (pendingCount === 0) {
+                    resolve(resultMap);
+                    return;
+                }
+
+                mapIds.forEach(mapId => {
+                    const totalReq = mapIdIndex.count(keyRangeOnly(mapId));
+                    const completedReq = compoundIndex.count(keyRangeOnly([mapId, 'completed'] as any));
+
+                    let total: number | null = null;
+                    let completed: number | null = null;
+
+                    const checkDone = () => {
+                        if (total !== null && completed !== null) {
+                            if (total > 0) {
+                                resultMap.set(mapId, {
+                                    isComplete: completed === total,
+                                    isPartial: completed > 0 && completed < total
+                                });
+                            }
+                            pendingCount--;
+                            if (pendingCount === 0) {
+                                resolve(resultMap);
+                            }
+                        }
+                    };
+
+                    totalReq.onsuccess = () => {
+                        total = totalReq.result || 0;
+                        checkDone();
+                    };
+                    totalReq.onerror = () => reject(totalReq.error);
+
+                    completedReq.onsuccess = () => {
+                        completed = completedReq.result || 0;
+                        checkDone();
+                    };
+                    completedReq.onerror = () => reject(completedReq.error);
+                });
+                return;
+            }
+
             const request = store.getAll();
 
             request.onsuccess = () => {

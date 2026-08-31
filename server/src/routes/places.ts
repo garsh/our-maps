@@ -18,6 +18,62 @@ const STATE_ABBREVIATIONS: Record<string, string> = {
 
 const router = Router();
 
+interface CacheEntry<T> {
+  value: T;
+  expiresAt: number;
+}
+
+class SimpleLRUCache<T> {
+  private cache = new Map<string, CacheEntry<T>>();
+  private maxEntries: number;
+  private defaultTtlMs: number;
+
+  constructor(maxEntries = 500, defaultTtlMs = 60 * 60 * 1000) {
+    this.maxEntries = maxEntries;
+    this.defaultTtlMs = defaultTtlMs;
+  }
+
+  get(key: string): T | undefined {
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return undefined;
+    }
+    // Refresh LRU order
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    return entry.value;
+  }
+
+  set(key: string, value: T, ttlMs?: number): void {
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.maxEntries) {
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.cache.delete(oldestKey);
+      }
+    }
+    this.cache.set(key, {
+      value,
+      expiresAt: Date.now() + (ttlMs ?? this.defaultTtlMs),
+    });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
+export const searchCache = new SimpleLRUCache<any[]>(500, 60 * 60 * 1000);
+export const reverseGeocodeCache = new SimpleLRUCache<{ address: string | null }>(1000, 24 * 60 * 60 * 1000);
+
+export function clearPlacesCacheForTests(): void {
+  searchCache.clear();
+  reverseGeocodeCache.clear();
+}
+
 // Rate pacing queue for upstream OSM Nominatim fallback (max 1 req/sec)
 let nominatimQueue: Promise<void> = Promise.resolve();
 let lastNominatimRequestTime = 0;
@@ -85,6 +141,12 @@ router.get('/search', async (req: AuthRequest, res) => {
     return res.status(400).json({ error: 'Query is required' });
   }
 
+  const cacheKey = `${query.trim().toLowerCase()}:${boundsParam || ''}`;
+  const cachedResults = searchCache.get(cacheKey);
+  if (cachedResults) {
+    return res.json(cachedResults);
+  }
+
   const apiKey = process.env.GOOGLE_MAPS_API_KEY?.trim();
   const clamped = parseAndClampBounds(boundsParam);
 
@@ -123,7 +185,9 @@ router.get('/search', async (req: AuthRequest, res) => {
         formatted = formatted.filter((item: any) => isWithinBounds(item.lat, item.lon, clamped));
       }
 
-      return res.json(formatted.slice(0, 10));
+      const finalResults = formatted.slice(0, 10);
+      searchCache.set(cacheKey, finalResults);
+      return res.json(finalResults);
     } catch (err: any) {
       console.error('[Places API] Nominatim fallback failed:', err);
       return res.status(502).json({ error: 'Search failed' });
@@ -189,7 +253,9 @@ router.get('/search', async (req: AuthRequest, res) => {
       formatted = formatted.filter((item: any) => isWithinBounds(item.lat, item.lon, clamped));
     }
 
-    return res.json(formatted.slice(0, 10));
+    const finalResults = formatted.slice(0, 10);
+    searchCache.set(cacheKey, finalResults);
+    return res.json(finalResults);
   } catch (err: any) {
     console.error('[Places API] Google search failed:', err);
     return res.status(502).json({ error: 'Search failed' });
@@ -203,6 +269,17 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
 
   if (!lat || !lng) {
     return res.status(400).json({ error: 'Latitude and longitude are required' });
+  }
+
+  const latNum = parseFloat(lat);
+  const lngNum = parseFloat(lng);
+  const geoCacheKey = (!isNaN(latNum) && !isNaN(lngNum)) 
+    ? `${latNum.toFixed(4)},${lngNum.toFixed(4)}` 
+    : `${lat},${lng}`;
+
+  const cachedGeocode = reverseGeocodeCache.get(geoCacheKey);
+  if (cachedGeocode) {
+    return res.json(cachedGeocode);
   }
 
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -219,7 +296,9 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
       });
       const data = await response.json();
       const { address } = formatNominatimAddress(data);
-      return res.json({ address: address || null });
+      const result = { address: address || null };
+      reverseGeocodeCache.set(geoCacheKey, result);
+      return res.json(result);
     } catch (err: any) {
       console.error('[Places API] Nominatim fallback reverse geocode failed:', err);
       return res.status(502).json({ error: 'Reverse geocode failed' });
@@ -238,7 +317,9 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
 
     const rawAddress = data.results?.[0]?.formatted_address || null;
     const address = rawAddress ? stripCountrySuffix(rawAddress) : null;
-    return res.json({ address });
+    const result = { address };
+    reverseGeocodeCache.set(geoCacheKey, result);
+    return res.json(result);
   } catch (err: any) {
     console.error('[Places API] Google reverse geocode failed:', err);
     return res.status(502).json({ error: 'Reverse geocode failed' });
