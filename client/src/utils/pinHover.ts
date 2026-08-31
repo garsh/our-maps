@@ -88,6 +88,19 @@ export function subscribeHoveredPin(listener: (id: string | null) => void): () =
   };
 }
 
+export function useHoveredPinId(): string | null {
+  const [currentHoveredId, setCurrentHoveredId] = useState<string | null>(() => hoveredId);
+
+  useEffect(() => {
+    setCurrentHoveredId(hoveredId);
+    return subscribeHoveredPin((id) => {
+      setCurrentHoveredId(id);
+    });
+  }, []);
+
+  return currentHoveredId;
+}
+
 export function useIsPinHovered(pinId: string): boolean {
   const [isHovered, setIsHovered] = useState(() => hoveredId === pinId);
 

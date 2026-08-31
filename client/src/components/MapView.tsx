@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
-import Map, { Marker, AttributionControl, type MapRef } from 'react-map-gl/maplibre';
+import Map, { Marker, AttributionControl, Source, Layer, type MapRef } from 'react-map-gl/maplibre';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
@@ -14,8 +14,9 @@ import { reverseGeocode } from '../utils/geocoding';
 import type { MapTheme } from './Sidebar';
 
 import { getTile } from '../utils/tileUtils';
-import { clearHoveredPin, getHoveredPinId, useIsPinHovered, hasFinePointer } from '../utils/pinHover';
+import { clearHoveredPin, getHoveredPinId, useIsPinHovered, useHoveredPinId, hasFinePointer } from '../utils/pinHover';
 import { setMapViewportBounds } from '../utils/mapViewport';
+import { ensurePinImages, getPinIconKey } from '../utils/pinIconSprite';
 
 let globalPMTilesProtocol: Protocol | null = null;
 let currentMapHasOfflineTiles = false;
@@ -501,6 +502,7 @@ const MapView = ({
     const map = instance.getMap();
     if (map && typeof map.setMissingStyleImageResolver === 'function') {
       map.setMissingStyleImageResolver((id: string) => {
+        if (id.startsWith('pin-')) return;
         if (!map.hasImage(id)) {
           try {
             map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
@@ -1064,6 +1066,49 @@ const MapView = ({
     [pins, hiddenLayerIds]
   );
 
+  const hoveredPinId = useHoveredPinId();
+
+  const activeOverlayPins = useMemo(() => {
+    return visiblePins.filter((pin) => {
+      return (
+        pin.id === targetPinId ||
+        pin.id === editingPinId ||
+        pin.id === hoveredPinId
+      );
+    });
+  }, [visiblePins, targetPinId, editingPinId, hoveredPinId]);
+
+  const pinsGeoJson = useMemo(() => {
+    // If a pin is actively being drag-edited, exclude it from the GeoJSON layer to avoid duplicate ghost marker
+    const isDragEditing = (pinId: string) => !readOnly && editingPinId === pinId;
+
+    return {
+      type: 'FeatureCollection' as const,
+      features: visiblePins
+        .filter((pin) => !isDragEditing(pin.id))
+        .map((pin) => ({
+          type: 'Feature' as const,
+          id: pin.id,
+          geometry: {
+            type: 'Point' as const,
+            coordinates: [pin.lng, pin.lat] as [number, number],
+          },
+          properties: {
+            id: pin.id,
+            iconKey: getPinIconKey(pin.color, pin.icon),
+          },
+        })),
+    };
+  }, [visiblePins, editingPinId, readOnly]);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const map = mapRef.current.getMap();
+    if (map) {
+      ensurePinImages(map, visiblePins);
+    }
+  }, [visiblePins, isMapLoaded]);
+
   // Calculate immediate initial view state using native bounds & fitBoundsOptions so the map opens instantly focused on frame 1
   const initialViewState = useRef(
     (() => {
@@ -1220,6 +1265,7 @@ const MapView = ({
     const map = e.target || mapRef.current?.getMap();
     if (map && typeof map.setMissingStyleImageResolver === 'function') {
       map.setMissingStyleImageResolver((id: string) => {
+        if (id.startsWith('pin-')) return;
         if (!map.hasImage(id)) {
           try {
             map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
@@ -1227,8 +1273,11 @@ const MapView = ({
         }
       });
     }
+    if (map) {
+      ensurePinImages(map, visiblePins);
+    }
     updateBounds();
-  }, [updateBounds]);
+  }, [updateBounds, visiblePins]);
 
   const applyBoundsToFit = useCallback(
     (bounds: [[number, number], [number, number]] | null, animate = true) => {
@@ -1398,7 +1447,45 @@ const MapView = ({
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-          onTouchCancel={handleTouchEnd}
+          interactiveLayerIds={['pins-symbol-layer']}
+          onMouseEnter={(e: maplibregl.MapLayerMouseEvent) => {
+            if (hasFinePointer()) {
+              const hoveredFeature = e.features && e.features[0];
+              if (hoveredFeature && hoveredFeature.layer.id === 'pins-symbol-layer') {
+                const pinId = hoveredFeature.properties?.id;
+                if (pinId) {
+                  if (mapRef.current) {
+                    mapRef.current.getMap().getCanvas().style.cursor = 'pointer';
+                  }
+                  onHoverPinRef.current?.(pinId);
+                }
+              }
+            }
+          }}
+          onMouseMove={(e: maplibregl.MapLayerMouseEvent) => {
+            if (hasFinePointer()) {
+              const hoveredFeature = e.features && e.features[0];
+              if (hoveredFeature && hoveredFeature.layer.id === 'pins-symbol-layer') {
+                const pinId = hoveredFeature.properties?.id;
+                if (pinId) {
+                  if (mapRef.current) {
+                    mapRef.current.getMap().getCanvas().style.cursor = 'pointer';
+                  }
+                  onHoverPinRef.current?.(pinId);
+                }
+              } else {
+                if (mapRef.current) {
+                  mapRef.current.getMap().getCanvas().style.cursor = '';
+                }
+              }
+            }
+          }}
+          onMouseLeave={() => {
+            if (mapRef.current) {
+              mapRef.current.getMap().getCanvas().style.cursor = '';
+            }
+            onHoverPinRef.current?.(null);
+          }}
           onContextMenu={(e: maplibregl.MapLayerMouseEvent) => {
             if (readOnly) return;
             if (e.originalEvent) e.originalEvent.preventDefault();
@@ -1409,6 +1496,15 @@ const MapView = ({
             if (pendingContextLocation) {
               setPendingContextLocation(null);
             }
+            const clickedFeature = e.features && e.features[0];
+            if (clickedFeature && clickedFeature.layer.id === 'pins-symbol-layer') {
+              const pinId = clickedFeature.properties?.id;
+              const clickedPin = visiblePins.find((p) => p.id === pinId);
+              if (clickedPin) {
+                handlePinClickStable(clickedPin);
+                return;
+              }
+            }
             if (!e.defaultPrevented) {
               onBackgroundClick?.();
             }
@@ -1418,7 +1514,24 @@ const MapView = ({
           {isTrackingLocation && userLocation && (
             <UserLocationMarker position={userLocation} />
           )}
-          {visiblePins.map((pin) => {
+
+          {/* WebGL Symbol Layer for GPU-accelerated Pin Rendering */}
+          <Source id="pins-source" type="geojson" data={pinsGeoJson}>
+            <Layer
+              id="pins-symbol-layer"
+              type="symbol"
+              layout={{
+                'icon-image': ['get', 'iconKey'],
+                'icon-anchor': 'bottom',
+                'icon-allow-overlap': true,
+                'icon-ignore-placement': true,
+                'icon-size': 0.67,
+              }}
+            />
+          </Source>
+
+          {/* Hybrid DOM Markers for Selected, Hovered, or Drag-Edited Pins */}
+          {activeOverlayPins.map((pin) => {
             const isSelected = targetPinId === pin.id || editingPinId === pin.id;
             const isEditing = !readOnly && editingPinId === pin.id;
             return (

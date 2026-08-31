@@ -38,11 +38,14 @@ const mockMapInstance = {
     getBounds: mockGetBounds,
     project: mockProject,
     getContainer: mockGetContainer,
+    getCanvas: () => ({ style: {} }),
     easeTo: mockEaseTo,
     flyTo: mockFlyTo,
     fitBounds: vi.fn(),
     setTerrain: vi.fn(),
     triggerRepaint: vi.fn(),
+    hasImage: vi.fn(() => false),
+    addImage: vi.fn(),
     isStyleLoaded: vi.fn(() => true),
     isMoving: vi.fn(() => false),
     once: vi.fn(),
@@ -71,6 +74,8 @@ vi.mock('react-map-gl/maplibre', () => {
       return <div data-testid="react-map-gl-mock">{children}</div>;
     },
     Marker: ({ children }: any) => <div data-testid="marker-mock">{children}</div>,
+    Source: ({ children }: any) => <div data-testid="source-mock">{children}</div>,
+    Layer: () => null,
     AttributionControl: () => null,
   };
 });
@@ -153,7 +158,7 @@ describe('MapView Compass and Tilt Indicator', () => {
       { id: 'pin-1', lat: 10, lng: 20, label: 'Test Pin', color: 'blue' as const, position: 0 }
     ];
 
-    const { container } = render(
+    render(
       <MapView
         pins={mockPins}
         onMapClick={vi.fn()}
@@ -163,14 +168,17 @@ describe('MapView Compass and Tilt Indicator', () => {
       />
     );
 
-    const pinElement = container.querySelector('.leaflet-marker-icon');
-    expect(pinElement).toBeInTheDocument();
-
-    fireEvent.mouseEnter(pinElement!);
+    act(() => {
+      capturedMapProps.current?.onMouseEnter?.({
+        features: [{ layer: { id: 'pins-symbol-layer' }, properties: { id: 'pin-1' } }],
+      });
+    });
     expect(mockOnHoverPin).toHaveBeenCalledWith('pin-1');
 
-    fireEvent.mouseLeave(pinElement!);
-    expect(mockOnHoverPin).toHaveBeenCalledWith(null, 'pin-1');
+    act(() => {
+      capturedMapProps.current?.onMouseLeave?.();
+    });
+    expect(mockOnHoverPin).toHaveBeenCalledWith(null);
   });
 
   it('clears hover on pan via a stable onMove handler without React hover props', () => {

@@ -7,6 +7,7 @@ import {
   clearHoveredPin,
   subscribeHoveredPin,
   useIsPinHovered,
+  useHoveredPinId,
   resetPinHoverForTests,
   hasFinePointer,
   setLastPointerTypeForTests,
@@ -91,6 +92,17 @@ describe('pinHover', () => {
     act(() => setHoveredPin('pin-b'));
     expect(pinA.current).toBe(false);
     expect(pinB.current).toBe(true);
+  });
+
+  it('subscribes and updates useHoveredPinId correctly', () => {
+    const { result } = renderHook(() => useHoveredPinId());
+    expect(result.current).toBeNull();
+
+    act(() => setHoveredPin('pin-test'));
+    expect(result.current).toBe('pin-test');
+
+    act(() => clearHoveredPin());
+    expect(result.current).toBeNull();
   });
 
   it('detects fine pointer capability vs touch pointer correctly', () => {
