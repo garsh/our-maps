@@ -63,6 +63,7 @@ const renderAddressParts = (title: string, address: string = '') => {
 const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHoverSearchResult, onHoverPin, onSearchAreaStateChange }: SearchBarProps) => {
   const [query, setQuery] = useState('');
   const [globalResults, setResults] = useState<SearchResult[]>([]);
+  const [localResults, setLocalResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [lastSearchedBounds, setLastSearchedBounds] = useState<string | null>(null);
   const [storeBounds, setStoreBounds] = useState<string | null>(() => getMapViewportBounds());
@@ -99,11 +100,11 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     });
   }, [pins]);
 
-  const localResults = useMemo((): SearchResult[] => {
-    if (!query.trim()) return [];
-    let searchResults = fuse.search(query);
+  const computeLocalResults = useCallback((searchQuery: string, boundsToUse?: string | null): SearchResult[] => {
+    if (!searchQuery.trim()) return [];
+    let searchResults = fuse.search(searchQuery);
 
-    const clamped = parseAndClampBounds(effectiveBounds);
+    const clamped = parseAndClampBounds(boundsToUse);
     if (clamped) {
       searchResults = searchResults.filter((result) =>
         isWithinBounds(result.item.lat, result.item.lng, clamped)
@@ -123,14 +124,13 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
         pinId: result.item.id
       };
     });
-  }, [query, fuse, effectiveBounds]);
+  }, [fuse]);
 
   const executeGlobalSearch = useCallback(async (searchQuery: string, boundsToUse?: string | null) => {
     if (searchQuery.trim().length < 3) {
       abortControllerRef.current?.abort();
       setResults([]);
       setIsSearching(false);
-      setLastSearchedBounds(null);
       return;
     }
 
@@ -141,10 +141,9 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     setIsSearching(true);
     const bounds = boundsToUse ?? mapBoundsRef.current ?? getMapViewportBounds();
     try {
-      const formatted = await apiService.search(searchQuery, bounds, controller.signal);
+      const formatted = await apiService.search(searchQuery.trim(), bounds, controller.signal);
       if (!controller.signal.aborted) {
         setResults(formatted);
-        setLastSearchedBounds(bounds || null);
       }
     } catch (error: any) {
       if (error?.name !== 'AbortError' && !controller.signal.aborted) {
@@ -157,21 +156,62 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     }
   }, []);
 
-  // Debounced global search triggered solely on query text changes
-  useEffect(() => {
-    if (query.trim().length < 3) {
+  const handleQueryChange = (val: string) => {
+    setQuery(val);
+    const trimmed = val.trim();
+    if (!trimmed) {
+      setLocalResults([]);
       setResults([]);
       setIsSearching(false);
       setLastSearchedBounds(null);
       return;
     }
 
+    const bounds = mapBoundsRef.current ?? getMapViewportBounds();
+    setLocalResults(computeLocalResults(trimmed, bounds));
+    setLastSearchedBounds(bounds || null);
+  };
+
+  const handleSearchThisArea = useCallback(() => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    const bounds = mapBoundsRef.current ?? getMapViewportBounds();
+    setLocalResults(computeLocalResults(trimmed, bounds));
+    setLastSearchedBounds(bounds || null);
+    if (trimmed.length >= 3) {
+      executeGlobalSearch(trimmed, bounds);
+    }
+  }, [query, computeLocalResults, executeGlobalSearch]);
+
+  // Debounced global search triggered solely on query text changes
+  const prevQueryRef = useRef(query);
+  useEffect(() => {
+    if (prevQueryRef.current === query) return;
+    prevQueryRef.current = query;
+
+    if (query.trim().length < 3) {
+      setResults([]);
+      setIsSearching(false);
+      return;
+    }
+
     const handler = setTimeout(() => {
-      executeGlobalSearch(query, mapBoundsRef.current);
+      executeGlobalSearch(query.trim(), mapBoundsRef.current);
     }, debounceMs);
 
     return () => clearTimeout(handler);
   }, [query, debounceMs, executeGlobalSearch]);
+
+  const prevPinsRef = useRef(pins);
+  // If pins change while a query is active, recompute local results using the last searched bounds
+  useEffect(() => {
+    if (prevPinsRef.current !== pins) {
+      prevPinsRef.current = pins;
+      if (query.trim() && lastSearchedBounds) {
+        setLocalResults(computeLocalResults(query.trim(), lastSearchedBounds));
+      }
+    }
+  }, [pins, computeLocalResults, query, lastSearchedBounds]);
 
   // Notify parent of "Search this area" pill availability when user pans/zooms after an initial search
   useEffect(() => {
@@ -184,16 +224,14 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
       ) {
         onSearchAreaStateChange({
           showPill: true,
-          onSearchThisArea: () => {
-            executeGlobalSearch(query, mapBoundsRef.current);
-          },
+          onSearchThisArea: handleSearchThisArea,
           isSearching,
         });
       } else {
         onSearchAreaStateChange(null);
       }
     }
-  }, [query, effectiveBounds, lastSearchedBounds, isSearching, onSearchAreaStateChange, executeGlobalSearch]);
+  }, [query, effectiveBounds, lastSearchedBounds, isSearching, onSearchAreaStateChange, handleSearchThisArea]);
 
   useEffect(() => {
     return () => {
@@ -202,10 +240,9 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
   }, [onSearchAreaStateChange]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && query.trim().length >= 3) {
+    if (e.key === 'Enter' && query.trim()) {
       e.preventDefault();
-      const bounds = mapBounds ?? getMapViewportBounds() ?? mapBoundsRef.current;
-      executeGlobalSearch(query, bounds);
+      handleSearchThisArea();
     }
   };
 
@@ -227,7 +264,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
         <input
           type="text"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => handleQueryChange(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Search..."
           disabled={disabled}
@@ -249,8 +286,10 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
            <button 
              onClick={() => {
                setQuery('');
+               setLocalResults([]);
                setResults([]);
                setLastSearchedBounds(null);
+               prevQueryRef.current = '';
              }}
              style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', display: 'flex', padding: 0 }}
            >

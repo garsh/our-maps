@@ -229,14 +229,28 @@ describe('SearchBar', () => {
     );
   });
 
-  it('filters local pins from the viewport bounds store when mapBounds is not passed', async () => {
+  it('keeps local search results frozen during viewport panning until Search this area is triggered', async () => {
     const mixedPins = [
       { id: '1', lat: 10.8, lng: 20.8, label: 'Coffee Spot', description: 'In bounds', position: 0 },
       { id: '4', lat: 50.0, lng: 80.0, label: 'Distant Coffee', description: 'Out of bounds', position: 3 }
     ];
 
+    let searchAreaHandler: (() => void) | undefined;
+    const mockOnSearchAreaStateChange = vi.fn((state) => {
+      if (state?.onSearchThisArea) {
+        searchAreaHandler = state.onSearchThisArea;
+      }
+    });
+
     setMapViewportBounds('19,11,21,9');
-    render(<SearchBar onAddPin={mockOnAddPin} pins={mixedPins} />);
+    render(
+      <SearchBar 
+        onAddPin={mockOnAddPin} 
+        pins={mixedPins} 
+        debounceMs={10} 
+        onSearchAreaStateChange={mockOnSearchAreaStateChange} 
+      />
+    );
 
     fireEvent.change(screen.getByPlaceholderText(/Search.../i), { target: { value: 'Coffee' } });
 
@@ -245,8 +259,24 @@ describe('SearchBar', () => {
       expect(screen.queryByText('Distant Coffee')).not.toBeInTheDocument();
     });
 
+    // Move viewport to new area
     act(() => {
       setMapViewportBounds('79,51,81,49');
+    });
+
+    // Local results must remain frozen on the previous area
+    expect(screen.getByText('Coffee Spot')).toBeInTheDocument();
+    expect(screen.queryByText('Distant Coffee')).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(mockOnSearchAreaStateChange).toHaveBeenCalledWith(
+        expect.objectContaining({ showPill: true })
+      );
+    });
+
+    // Trigger search in the new area
+    act(() => {
+      searchAreaHandler?.();
     });
 
     await waitFor(() => {

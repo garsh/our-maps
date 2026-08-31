@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, saveMapOffline, getOfflineMap, removeMapDownload, saveTile, saveTileBatch, getTile, addToManifest, getManifestStats, getMapDownloadStatuses, resetDBForTesting, openDB } from '../tileUtils';
+import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, countUniqueTiles, saveMapOffline, getOfflineMap, removeMapDownload, saveTile, saveTileBatch, getTile, addToManifest, getManifestStats, getMapDownloadStatuses, resetDBForTesting, openDB } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('tileUtils', () => {
@@ -180,6 +180,32 @@ describe('tileUtils', () => {
 
         const boxes = getSurgicalBoxes(pins);
         expect(boxes.length).toBe(2);
+    });
+
+    it('should transitively merge overlapping surgical boxes', () => {
+        // P1 and P3 are far from each other, but P2 bridges them
+        const pins: Pin[] = [
+            { id: '1', lat: 45.000, lng: -74.000, label: 'P1', position: 0 },
+            { id: '2', lat: 45.030, lng: -74.030, label: 'P2', position: 1 },
+            { id: '3', lat: 45.060, lng: -74.060, label: 'P3', position: 2 }
+        ] as any;
+
+        const boxes = getSurgicalBoxes(pins);
+        expect(boxes.length).toBe(1);
+        expect(boxes[0].north).toBeGreaterThanOrEqual(45.06);
+        expect(boxes[0].south).toBeLessThanOrEqual(45.00);
+    });
+
+    it('should accurately count unique tiles across overlapping boxes', () => {
+        const bbox = { north: 45.1, south: 44.9, east: -73.9, west: -74.1 };
+        const box1 = { north: 45.01, south: 44.99, east: -73.99, west: -74.01 };
+        const box2 = { north: 45.02, south: 45.00, east: -73.98, west: -74.00 };
+
+        const count = countUniqueTiles(bbox, [box1, box2]);
+        expect(count).toBeGreaterThan(0);
+        // Ensure that passing identical duplicate boxes does not increase the unique count
+        const countDuplicate = countUniqueTiles(bbox, [box1, box2, box1, box2]);
+        expect(countDuplicate).toBe(count);
     });
 
     it('should save, retrieve, and remove offline map metadata', async () => {

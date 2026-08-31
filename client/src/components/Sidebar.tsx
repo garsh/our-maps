@@ -54,7 +54,7 @@ import {
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { exportMap, importMapFile } from '../utils/fileUtils';
 import { 
-  countTiles, 
+  countUniqueTiles,
   estimateSizeMB, 
   getSurgicalBoxes, 
   getPinsBoundingBox,
@@ -1577,7 +1577,7 @@ const Sidebar = ({
     }
 
     const surgicalBoxes = getSurgicalBoxes(pins);
-    const totalCount = countTiles(bbox, 1, 10) + surgicalBoxes.reduce((acc, box) => acc + countTiles(box, 11, 15), 0);
+    const totalCount = countUniqueTiles(bbox, surgicalBoxes);
     const estimatedSizeMB = estimateSizeMB(totalCount);
 
     // Hard Safety Cap: > 50,000 tiles (~1 GB)

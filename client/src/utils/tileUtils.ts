@@ -437,6 +437,8 @@ export async function removeMapDownload(mapId: string): Promise<void> {
 
             // Collect tile URLs required by remaining offline maps
             const neededUrls = new Set<string>();
+            const tileOwnerMap = new Map<string, string>();
+
             otherMaps.forEach(map => {
                 if (!map.pins) return;
                 const bbox = getPinsBoundingBox(map.pins);
@@ -445,7 +447,12 @@ export async function removeMapDownload(mapId: string): Promise<void> {
                         ...getTilesForArea(bbox, 1, 10),
                         ...getSurgicalBoxes(map.pins).flatMap(box => getTilesForArea(box, 11, 15))
                     ];
-                    tiles.forEach(t => neededUrls.add(t.url));
+                    tiles.forEach(t => {
+                        neededUrls.add(t.url);
+                        if (!tileOwnerMap.has(t.url)) {
+                            tileOwnerMap.set(t.url, map.id);
+                        }
+                    });
                 }
             });
 
@@ -461,13 +468,10 @@ export async function removeMapDownload(mapId: string): Promise<void> {
                         if (secondary) tileStore.delete(secondary);
                         manifestStore.delete(entry.url);
                     } else {
-                        // Re-assign manifest entry to the first remaining map that needs it
-                        const newOwner = otherMaps.find(m => {
-                            const bbox = getPinsBoundingBox(m.pins || []);
-                            return Boolean(bbox);
-                        });
-                        if (newOwner) {
-                            entry.mapId = newOwner.id;
+                        // Re-assign manifest entry to the remaining map that needs it
+                        const newOwnerId = tileOwnerMap.get(entry.url);
+                        if (newOwnerId) {
+                            entry.mapId = newOwnerId;
                             manifestStore.put(entry);
                         }
                     }
@@ -714,38 +718,90 @@ export function getPinsBoundingBox(pins: Pin[]): BoundingBox | null {
     };
 }
 
-export function getSurgicalBoxes(pins: Pin[]): BoundingBox[] {
-    const highDetailBoxes: BoundingBox[] = [];
-    
-    pins.forEach(pin => {
-        const newBox: BoundingBox = {
-            north: pin.lat + 0.01,
-            east: pin.lng + 0.01,
-            south: pin.lat - 0.01,
-            west: pin.lng - 0.01
-        };
-        
-        let merged = false;
-        for (let i = 0; i < highDetailBoxes.length; i++) {
-            if (shouldMerge(highDetailBoxes[i], newBox)) {
-                highDetailBoxes[i] = mergeBoxes(highDetailBoxes[i], newBox);
-                merged = true;
-                break;
+export function countUniqueTiles(bbox: BoundingBox, surgicalBoxes: BoundingBox[] = []): number {
+    const tileKeys = new Set<string>();
+
+    for (let z = 1; z <= 10; z++) {
+        const xMin = longToX(bbox.west, z);
+        const xMax = longToX(bbox.east, z);
+        const yMin = latToY(bbox.north, z);
+        const yMax = latToY(bbox.south, z);
+        const xStart = Math.min(xMin, xMax);
+        const xEnd = Math.max(xMin, xMax);
+        const yStart = Math.min(yMin, yMax);
+        const yEnd = Math.max(yMin, yMax);
+
+        for (let x = xStart; x <= xEnd; x++) {
+            for (let y = yStart; y <= yEnd; y++) {
+                tileKeys.add(`${z}/${x}/${y}`);
             }
         }
-        if (!merged) highDetailBoxes.push(newBox);
-    });
+    }
 
-    return highDetailBoxes;
+    for (const box of surgicalBoxes) {
+        for (let z = 11; z <= 15; z++) {
+            const xMin = longToX(box.west, z);
+            const xMax = longToX(box.east, z);
+            const yMin = latToY(box.north, z);
+            const yMax = latToY(box.south, z);
+            const xStart = Math.min(xMin, xMax);
+            const xEnd = Math.max(xMin, xMax);
+            const yStart = Math.min(yMin, yMax);
+            const yEnd = Math.max(yMin, yMax);
+
+            for (let x = xStart; x <= xEnd; x++) {
+                for (let y = yStart; y <= yEnd; y++) {
+                    tileKeys.add(`${z}/${x}/${y}`);
+                }
+            }
+        }
+    }
+
+    return tileKeys.size;
 }
 
-function shouldMerge(b1: BoundingBox, b2: BoundingBox): boolean {
-    const overlap = !(b1.west > b2.east || b1.east < b2.west || b1.north < b2.south || b1.south > b2.north);
-    if (overlap) return true;
-    const center1 = { lat: (b1.north + b1.south) / 2, lng: (b1.east + b1.west) / 2 };
-    const center2 = { lat: (b2.north + b2.south) / 2, lng: (b2.east + b2.west) / 2 };
-    const dist = Math.sqrt(Math.pow(center1.lat - center2.lat, 2) + Math.pow(center1.lng - center2.lng, 2));
-    return dist < 0.05;
+export function getSurgicalBoxes(pins: Pin[]): BoundingBox[] {
+    if (!pins || pins.length === 0) return [];
+    
+    let boxes: BoundingBox[] = pins.map(pin => ({
+        north: pin.lat + 0.01,
+        east: pin.lng + 0.01,
+        south: pin.lat - 0.01,
+        west: pin.lng - 0.01
+    }));
+
+    let mergedAny = true;
+    while (mergedAny) {
+        mergedAny = false;
+        const nextBoxes: BoundingBox[] = [];
+
+        for (const box of boxes) {
+            let merged = false;
+            for (let i = 0; i < nextBoxes.length; i++) {
+                if (shouldMerge(nextBoxes[i], box)) {
+                    nextBoxes[i] = mergeBoxes(nextBoxes[i], box);
+                    merged = true;
+                    mergedAny = true;
+                    break;
+                }
+            }
+            if (!merged) {
+                nextBoxes.push(box);
+            }
+        }
+        boxes = nextBoxes;
+    }
+
+    return boxes;
+}
+
+function shouldMerge(b1: BoundingBox, b2: BoundingBox, threshold = 0.025): boolean {
+    return !(
+        b1.west - threshold > b2.east ||
+        b1.east + threshold < b2.west ||
+        b1.north + threshold < b2.south ||
+        b1.south - threshold > b2.north
+    );
 }
 
 function mergeBoxes(b1: BoundingBox, b2: BoundingBox): BoundingBox {
