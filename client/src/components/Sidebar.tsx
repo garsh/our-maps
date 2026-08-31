@@ -1791,14 +1791,16 @@ const Sidebar = ({
 
     if (isLayerDrag) {
       const firstLayerId = layers[0]?.id;
+      const firstLayerContainer = firstLayerId ? allowedContainers.find((c: any) => c.id === firstLayerId) : undefined;
+      const firstLayerNode = firstLayerContainer?.node.current;
+      const firstHeaderRect = firstLayerNode ? firstLayerNode.getBoundingClientRect() : null;
+
       for (const container of allowedContainers) {
         if (container.disabled) continue;
         const baseNode = container.node.current;
         if (!baseNode) continue;
 
         if (container.id === 'layer-top') {
-          const firstLayerNode = allowedContainers.find((c: any) => c.id === firstLayerId)?.node.current;
-          const firstHeaderRect = firstLayerNode?.getBoundingClientRect();
           const splitY = firstHeaderRect ? firstHeaderRect.top + firstHeaderRect.height / 2 : (containerRect ? containerRect.top + 20 : 0);
           const topBound = containerRect ? containerRect.top - 200 : -1000;
           containerRectMap.set(container.id, {
@@ -1811,8 +1813,7 @@ const Sidebar = ({
         } else if (container.id === firstLayerId) {
           const fullNode = baseNode.parentElement || baseNode;
           const fullRect = fullNode.getBoundingClientRect();
-          const headerRect = baseNode.getBoundingClientRect();
-          const splitY = headerRect.top + headerRect.height / 2;
+          const splitY = firstHeaderRect ? firstHeaderRect.top + firstHeaderRect.height / 2 : fullRect.top;
           containerRectMap.set(container.id, {
             top: splitY,
             bottom: fullRect.bottom,

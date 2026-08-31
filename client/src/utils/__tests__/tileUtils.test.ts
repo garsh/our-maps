@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, saveMapOffline, getOfflineMap, removeMapDownload, saveTile, getTile, addToManifest, getManifestStats, getMapDownloadStatuses, resetDBForTesting, openDB } from '../tileUtils';
+import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, saveMapOffline, getOfflineMap, removeMapDownload, saveTile, saveTileBatch, getTile, addToManifest, getManifestStats, getMapDownloadStatuses, resetDBForTesting, openDB } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('tileUtils', () => {
@@ -287,5 +287,31 @@ describe('tileUtils', () => {
         const statusesFiltered = await getMapDownloadStatuses(['map-1']);
         expect(statusesFiltered.get('map-1')).toEqual({ isComplete: true, isPartial: false });
         expect(statusesFiltered.has('map-2')).toBe(false);
+    });
+
+    it('should save a batch of tiles and update manifest entries in a single transaction', async () => {
+        const url1 = `${window.location.origin}/maps/tile/10/100/200.mvt`;
+        const url2 = `${window.location.origin}/maps/tile/10/101/200.mvt`;
+        const blob1 = new Blob(['tile-1-data'], { type: 'application/x-protobuf' });
+        const blob2 = new Blob(['tile-2-data'], { type: 'application/x-protobuf' });
+
+        await addToManifest([
+            { url: url1, x: 100, y: 200, z: 10, status: 'pending', mapId: 'batch-map', updatedAt: Date.now() },
+            { url: url2, x: 101, y: 200, z: 10, status: 'pending', mapId: 'batch-map', updatedAt: Date.now() },
+        ]);
+
+        await saveTileBatch([
+            { url: url1, blob: blob1, status: 'completed' },
+            { url: url2, blob: blob2, status: 'completed' },
+        ]);
+
+        const retrievedTile1 = await getTile(url1);
+        const retrievedTile2 = await getTile(url2);
+        expect(retrievedTile1).not.toBeNull();
+        expect(retrievedTile2).not.toBeNull();
+
+        const stats = await getManifestStats('batch-map');
+        expect(stats.total).toBe(2);
+        expect(stats.completed).toBe(2);
     });
 });

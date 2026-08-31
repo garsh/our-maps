@@ -409,6 +409,53 @@ export function getTileKeys(url: string): { primary: string; secondary?: string 
     return { primary: url };
 }
 
+export interface TileBatchItem {
+    url: string;
+    blob?: Blob | null;
+    status: TileStatus;
+}
+
+export async function saveTileBatch(items: TileBatchItem[]): Promise<void> {
+    if (!items || items.length === 0) return;
+    for (const item of items) {
+        const { primary, secondary } = getTileKeys(item.url);
+        tileMissCache.delete(primary);
+        if (secondary) tileMissCache.delete(secondary);
+    }
+
+    const db = await openDB();
+    const transaction = db.transaction([TILE_STORE, MANIFEST_STORE], 'readwrite');
+    const tileStore = transaction.objectStore(TILE_STORE);
+    const manifestStore = transaction.objectStore(MANIFEST_STORE);
+    const now = Date.now();
+
+    for (const item of items) {
+        if (item.blob) {
+            const { primary, secondary } = getTileKeys(item.url);
+            tileStore.put(item.blob, primary);
+            if (secondary) {
+                tileStore.put(item.blob, secondary);
+            }
+        }
+
+        const getReq = manifestStore.get(item.url);
+        getReq.onsuccess = () => {
+            const entry = getReq.result as ManifestEntry;
+            if (entry) {
+                entry.status = item.status;
+                entry.updatedAt = now;
+                manifestStore.put(entry);
+            }
+        };
+    }
+
+    return new Promise((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
+    });
+}
+
 export async function saveTile(url: string, blob: Blob): Promise<void> {
     const { primary, secondary } = getTileKeys(url);
     tileMissCache.delete(primary);

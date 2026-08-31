@@ -1,4 +1,4 @@
-import { addToManifest, getPendingFromManifest, saveTile, updateManifestStatus } from '../utils/tileUtils';
+import { addToManifest, getPendingFromManifest, saveTileBatch, type TileBatchItem } from '../utils/tileUtils';
 import { PMTiles } from 'pmtiles';
 
 let pmtilesInstance: PMTiles | null = null;
@@ -44,11 +44,27 @@ self.onmessage = async (e) => {
 
             const CONCURRENCY = 6;
             const MAX_RETRIES = 3;
-            const queue = [...pending];
+            const BATCH_SIZE = 50;
+            let queueIndex = 0;
+            let writeBuffer: TileBatchItem[] = [];
+
+            const flushBuffer = async () => {
+                if (writeBuffer.length === 0) return;
+                const toWrite = writeBuffer;
+                writeBuffer = [];
+                await saveTileBatch(toWrite);
+            };
+
+            const queueTileWrite = async (item: TileBatchItem) => {
+                writeBuffer.push(item);
+                if (writeBuffer.length >= BATCH_SIZE) {
+                    await flushBuffer();
+                }
+            };
             
             const workers = Array(CONCURRENCY).fill(null).map(async () => {
-                while (queue.length > 0) {
-                    const entry = queue.shift();
+                while (queueIndex < pending.length) {
+                    const entry = pending[queueIndex++];
                     if (!entry) break;
 
                     let success = false;
@@ -60,9 +76,9 @@ self.onmessage = async (e) => {
                             const tileResult = await pmt.getZxy(targetZoom, entry.x, entry.y);
                             if (tileResult && tileResult.data) {
                                 const blob = new Blob([tileResult.data]);
-                                await saveTile(entry.url, blob);
+                                await queueTileWrite({ url: entry.url, blob, status: 'completed' });
                             } else {
-                                await updateManifestStatus(entry.url, 'completed');
+                                await queueTileWrite({ url: entry.url, status: 'completed' });
                             }
                             success = true;
                         } catch {
@@ -74,7 +90,7 @@ self.onmessage = async (e) => {
                     }
 
                     if (!success) {
-                        await updateManifestStatus(entry.url, 'error');
+                        await queueTileWrite({ url: entry.url, status: 'error' });
                     }
 
                     completedCount++;
@@ -85,6 +101,7 @@ self.onmessage = async (e) => {
             });
 
             await Promise.all(workers);
+            await flushBuffer();
             self.postMessage({ type: 'complete' });
         } catch (error: any) {
             self.postMessage({ type: 'error', error: error.message });
