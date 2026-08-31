@@ -435,26 +435,37 @@ export async function removeMapDownload(mapId: string): Promise<void> {
                 return;
             }
 
-            // Collect tile URLs required by remaining offline maps
-            const neededUrls = new Set<string>();
-            const tileOwnerMap = new Map<string, string>();
+            // Pre-calculate bounding boxes for remaining offline maps (0 MB in-memory tile allocations)
+            interface MapTileCriteria {
+                id: string;
+                bbox: BoundingBox | null;
+                surgicalBoxes: BoundingBox[];
+            }
 
-            otherMaps.forEach(map => {
-                if (!map.pins) return;
-                const bbox = getPinsBoundingBox(map.pins);
-                if (bbox) {
-                    const tiles = [
-                        ...getTilesForArea(bbox, 1, 10),
-                        ...getSurgicalBoxes(map.pins).flatMap(box => getTilesForArea(box, 11, 15))
-                    ];
-                    tiles.forEach(t => {
-                        neededUrls.add(t.url);
-                        if (!tileOwnerMap.has(t.url)) {
-                            tileOwnerMap.set(t.url, map.id);
+            const remainingCriteria: MapTileCriteria[] = otherMaps
+                .filter(map => map.pins && map.pins.length > 0)
+                .map(map => ({
+                    id: map.id,
+                    bbox: getPinsBoundingBox(map.pins),
+                    surgicalBoxes: getSurgicalBoxes(map.pins)
+                }));
+
+            const isTileNeededByRemaining = (entry: ManifestEntry): string | null => {
+                for (const criteria of remainingCriteria) {
+                    if (entry.z <= 10 && criteria.bbox) {
+                        if (isTileInBoundingBox(entry.x, entry.y, entry.z, criteria.bbox)) {
+                            return criteria.id;
                         }
-                    });
+                    } else if (entry.z >= 11 && criteria.surgicalBoxes.length > 0) {
+                        for (const box of criteria.surgicalBoxes) {
+                            if (isTileInBoundingBox(entry.x, entry.y, entry.z, box)) {
+                                return criteria.id;
+                            }
+                        }
+                    }
                 }
-            });
+                return null;
+            };
 
             const index = manifestStore.index('mapId');
             const request = index.getAll(keyRangeOnly(mapId));
@@ -462,18 +473,16 @@ export async function removeMapDownload(mapId: string): Promise<void> {
             request.onsuccess = () => {
                 const entries = request.result as ManifestEntry[];
                 entries.forEach(entry => {
-                    if (!neededUrls.has(entry.url)) {
+                    const remainingOwnerId = isTileNeededByRemaining(entry);
+                    if (!remainingOwnerId) {
                         const { primary, secondary } = getTileKeys(entry.url);
                         tileStore.delete(primary);
                         if (secondary) tileStore.delete(secondary);
                         manifestStore.delete(entry.url);
                     } else {
                         // Re-assign manifest entry to the remaining map that needs it
-                        const newOwnerId = tileOwnerMap.get(entry.url);
-                        if (newOwnerId) {
-                            entry.mapId = newOwnerId;
-                            manifestStore.put(entry);
-                        }
+                        entry.mapId = remainingOwnerId;
+                        manifestStore.put(entry);
                     }
                 });
             };
@@ -482,6 +491,18 @@ export async function removeMapDownload(mapId: string): Promise<void> {
         transaction.oncomplete = () => resolve();
         transaction.onerror = () => reject(transaction.error);
     });
+}
+
+function isTileInBoundingBox(x: number, y: number, z: number, box: BoundingBox): boolean {
+    const xMin = longToX(box.west, z);
+    const xMax = longToX(box.east, z);
+    const yMin = latToY(box.north, z);
+    const yMax = latToY(box.south, z);
+    const xStart = Math.min(xMin, xMax);
+    const xEnd = Math.max(xMin, xMax);
+    const yStart = Math.min(yMin, yMax);
+    const yEnd = Math.max(yMin, yMax);
+    return x >= xStart && x <= xEnd && y >= yStart && y <= yEnd;
 }
 
 
@@ -719,8 +740,9 @@ export function getPinsBoundingBox(pins: Pin[]): BoundingBox | null {
 }
 
 export function countUniqueTiles(bbox: BoundingBox, surgicalBoxes: BoundingBox[] = []): number {
-    const tileKeys = new Set<string>();
+    let count = 0;
 
+    // Zoom 1 to 10: Disjoint from zoom 11..15, compute strictly in O(1) arithmetic without string allocations
     for (let z = 1; z <= 10; z++) {
         const xMin = longToX(bbox.west, z);
         const xMax = longToX(bbox.east, z);
@@ -730,13 +752,15 @@ export function countUniqueTiles(bbox: BoundingBox, surgicalBoxes: BoundingBox[]
         const xEnd = Math.max(xMin, xMax);
         const yStart = Math.min(yMin, yMax);
         const yEnd = Math.max(yMin, yMax);
-
-        for (let x = xStart; x <= xEnd; x++) {
-            for (let y = yStart; y <= yEnd; y++) {
-                tileKeys.add(`${z}/${x}/${y}`);
-            }
-        }
+        count += ((xEnd - xStart + 1) * (yEnd - yStart + 1));
     }
+
+    if (surgicalBoxes.length === 0) {
+        return count;
+    }
+
+    // Zoom 11 to 15: Use packed numeric keys to eliminate string allocations
+    const surgicalKeys = new Set<number>();
 
     for (const box of surgicalBoxes) {
         for (let z = 11; z <= 15; z++) {
@@ -751,31 +775,120 @@ export function countUniqueTiles(bbox: BoundingBox, surgicalBoxes: BoundingBox[]
 
             for (let x = xStart; x <= xEnd; x++) {
                 for (let y = yStart; y <= yEnd; y++) {
-                    tileKeys.add(`${z}/${x}/${y}`);
+                    surgicalKeys.add((z * 1073741824) + (x * 32768) + y);
                 }
             }
         }
     }
 
-    return tileKeys.size;
+    return count + surgicalKeys.size;
+}
+
+class DisjointSet {
+    parent: number[];
+    constructor(size: number) {
+        this.parent = Array.from({ length: size }, (_, i) => i);
+    }
+    find(i: number): number {
+        let root = i;
+        while (root !== this.parent[root]) {
+            root = this.parent[root];
+        }
+        let curr = i;
+        while (curr !== root) {
+            const next = this.parent[curr];
+            this.parent[curr] = root;
+            curr = next;
+        }
+        return root;
+    }
+    union(i: number, j: number): void {
+        const rootI = this.find(i);
+        const rootJ = this.find(j);
+        if (rootI !== rootJ) {
+            this.parent[rootI] = rootJ;
+        }
+    }
 }
 
 export function getSurgicalBoxes(pins: Pin[]): BoundingBox[] {
     if (!pins || pins.length === 0) return [];
     
-    let boxes: BoundingBox[] = pins.map(pin => ({
+    const boxes: BoundingBox[] = pins.map(pin => ({
         north: pin.lat + 0.01,
         east: pin.lng + 0.01,
         south: pin.lat - 0.01,
         west: pin.lng - 0.01
     }));
 
+    const n = boxes.length;
+    if (n <= 1) return boxes;
+
+    // Spatial hash grid to find candidate overlapping box pairs in O(N) time
+    const CELL_SIZE = 0.05; // > threshold(0.025) + initial box width(0.02)
+    const grid = new Map<string, number[]>();
+    const dsu = new DisjointSet(n);
+
+    for (let i = 0; i < n; i++) {
+        const box = boxes[i];
+        const minRow = Math.floor(box.south / CELL_SIZE);
+        const maxRow = Math.floor(box.north / CELL_SIZE);
+        const minCol = Math.floor(box.west / CELL_SIZE);
+        const maxCol = Math.floor(box.east / CELL_SIZE);
+
+        const checked = new Set<number>();
+
+        for (let r = minRow - 1; r <= maxRow + 1; r++) {
+            for (let c = minCol - 1; c <= maxCol + 1; c++) {
+                const cellKey = `${r},${c}`;
+                const cellMembers = grid.get(cellKey);
+                if (cellMembers) {
+                    for (const candidateIdx of cellMembers) {
+                        if (!checked.has(candidateIdx)) {
+                            checked.add(candidateIdx);
+                            if (shouldMerge(boxes[i], boxes[candidateIdx])) {
+                                dsu.union(i, candidateIdx);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Register box i in its intersected grid cells
+        for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+                const cellKey = `${r},${c}`;
+                let cellMembers = grid.get(cellKey);
+                if (!cellMembers) {
+                    cellMembers = [];
+                    grid.set(cellKey, cellMembers);
+                }
+                cellMembers.push(i);
+            }
+        }
+    }
+
+    // Merge connected components
+    const componentMap = new Map<number, BoundingBox>();
+    for (let i = 0; i < n; i++) {
+        const root = dsu.find(i);
+        const existing = componentMap.get(root);
+        if (existing) {
+            componentMap.set(root, mergeBoxes(existing, boxes[i]));
+        } else {
+            componentMap.set(root, boxes[i]);
+        }
+    }
+
+    let mergedBoxes = Array.from(componentMap.values());
+
+    // Final convergence pass for cases where merged clusters expanded into each other
     let mergedAny = true;
-    while (mergedAny) {
+    while (mergedAny && mergedBoxes.length > 1) {
         mergedAny = false;
         const nextBoxes: BoundingBox[] = [];
-
-        for (const box of boxes) {
+        for (const box of mergedBoxes) {
             let merged = false;
             for (let i = 0; i < nextBoxes.length; i++) {
                 if (shouldMerge(nextBoxes[i], box)) {
@@ -789,10 +902,10 @@ export function getSurgicalBoxes(pins: Pin[]): BoundingBox[] {
                 nextBoxes.push(box);
             }
         }
-        boxes = nextBoxes;
+        mergedBoxes = nextBoxes;
     }
 
-    return boxes;
+    return mergedBoxes;
 }
 
 function shouldMerge(b1: BoundingBox, b2: BoundingBox, threshold = 0.025): boolean {

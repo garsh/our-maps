@@ -28,36 +28,80 @@ function pinPlacemarkXml(pin: Pin): string {
  */
 export function mapDataToKml(mapData: MapData): string {
   const sortedLayers = [...mapData.layers].sort((a, b) => a.position - b.position);
-  const knownLayerIds = new Set(sortedLayers.map((layer) => layer.id));
+  const layerOrder = new Map<string, { name: string; order: number }>();
+  sortedLayers.forEach((layer, idx) => {
+    layerOrder.set(layer.id, { name: layer.name, order: idx });
+  });
 
-  const foldersXml = sortedLayers.map((layer) => {
-    const layerPins = mapData.pins
-      .filter((pin) => pin.layerId === layer.id)
-      .sort((a, b) => a.position - b.position)
-      .map(pinPlacemarkXml)
-      .join('\n');
-    return `    <Folder>
-      <name>${escapeXml(layer.name)}</name>
-${layerPins}
-    </Folder>`;
-  }).join('\n');
+  const sortedPins = [...mapData.pins].sort((a, b) => {
+    const orderA = a.layerId !== undefined && layerOrder.has(a.layerId)
+      ? layerOrder.get(a.layerId)!.order
+      : Number.MAX_SAFE_INTEGER;
+    const orderB = b.layerId !== undefined && layerOrder.has(b.layerId)
+      ? layerOrder.get(b.layerId)!.order
+      : Number.MAX_SAFE_INTEGER;
+    if (orderA !== orderB) return orderA - orderB;
+    return (a.position ?? 0) - (b.position ?? 0);
+  });
 
-  const ungroupedXml = mapData.pins
-    .filter((pin) => !pin.layerId || !knownLayerIds.has(pin.layerId))
-    .sort((a, b) => a.position - b.position)
-    .map(pinPlacemarkXml)
-    .join('\n');
+  const chunks: string[] = [
+    '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n  <Document>\n',
+    `    <name>${escapeXml(mapData.name || 'Untitled Map')}</name>\n`
+  ];
 
-  const body = [foldersXml, ungroupedXml].filter(Boolean).join('\n');
+  const processedLayers = new Set<string>();
+  let currentLayerId: string | null = null;
+  let inFolder = false;
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document>
-    <name>${escapeXml(mapData.name || 'Untitled Map')}</name>
-${body}
-  </Document>
-</kml>
-`;
+  for (const pin of sortedPins) {
+    const pinKnownLayerId = pin.layerId && layerOrder.has(pin.layerId) ? pin.layerId : null;
+
+    if (pinKnownLayerId !== currentLayerId) {
+      if (inFolder) {
+        chunks.push('    </Folder>\n');
+        inFolder = false;
+      }
+
+      // Emit any empty layers in sorted order before this layer
+      const targetOrder = pinKnownLayerId !== null
+        ? layerOrder.get(pinKnownLayerId)!.order
+        : sortedLayers.length;
+
+      for (let i = 0; i < targetOrder; i++) {
+        const l = sortedLayers[i];
+        if (!processedLayers.has(l.id)) {
+          chunks.push(`    <Folder>\n      <name>${escapeXml(l.name)}</name>\n    </Folder>\n`);
+          processedLayers.add(l.id);
+        }
+      }
+
+      if (pinKnownLayerId !== null) {
+        const lInfo = layerOrder.get(pinKnownLayerId)!;
+        chunks.push(`    <Folder>\n      <name>${escapeXml(lInfo.name)}</name>\n`);
+        inFolder = true;
+        processedLayers.add(pinKnownLayerId);
+      }
+
+      currentLayerId = pinKnownLayerId;
+    }
+
+    chunks.push(pinPlacemarkXml(pin) + '\n');
+  }
+
+  if (inFolder) {
+    chunks.push('    </Folder>\n');
+  }
+
+  // Emit any remaining empty layers that had no pins
+  for (const l of sortedLayers) {
+    if (!processedLayers.has(l.id)) {
+      chunks.push(`    <Folder>\n      <name>${escapeXml(l.name)}</name>\n    </Folder>\n`);
+      processedLayers.add(l.id);
+    }
+  }
+
+  chunks.push('  </Document>\n</kml>\n');
+  return chunks.join('');
 }
 
 /**

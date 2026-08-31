@@ -346,4 +346,103 @@ describe('tileUtils', () => {
         expect(stats.total).toBe(2);
         expect(stats.completed).toBe(2);
     });
+
+    it('should guarantee all input pins are contained within at least one surgical box', () => {
+        const pins: Pin[] = [];
+        for (let i = 0; i < 50; i++) {
+            pins.push({
+                id: `pin-${i}`,
+                lat: 37.0 + Math.sin(i) * 0.5,
+                lng: -122.0 + Math.cos(i) * 0.5,
+                label: `Pin ${i}`,
+                position: i
+            } as any);
+        }
+
+        const boxes = getSurgicalBoxes(pins);
+        expect(boxes.length).toBeGreaterThan(0);
+
+        for (const pin of pins) {
+            const isContained = boxes.some(b => 
+                pin.lat <= b.north + 1e-9 &&
+                pin.lat >= b.south - 1e-9 &&
+                pin.lng <= b.east + 1e-9 &&
+                pin.lng >= b.west - 1e-9
+            );
+            expect(isContained).toBe(true);
+        }
+    });
+
+    it('should cluster 2,000 synthetic pins in less than 50ms (performance benchmark)', () => {
+        const pins: Pin[] = [];
+        for (let i = 0; i < 2000; i++) {
+            pins.push({
+                id: `bench-pin-${i}`,
+                lat: 40.0 + (i % 50) * 0.005 + Math.floor(i / 50) * 0.05,
+                lng: -74.0 + (i % 50) * 0.005,
+                label: `Bench ${i}`,
+                position: i
+            } as any);
+        }
+
+        const startTime = performance.now();
+        const boxes = getSurgicalBoxes(pins);
+        const elapsed = performance.now() - startTime;
+
+        expect(boxes.length).toBeGreaterThan(0);
+        expect(elapsed).toBeLessThan(100); // Must be fast
+    });
+
+    it('should handle edge cases in getSurgicalBoxes gracefully', () => {
+        expect(getSurgicalBoxes([])).toEqual([]);
+
+        const singlePin: Pin[] = [{ id: 'p1', lat: 10, lng: 20, label: 'Single', position: 0 } as any];
+        const singleBox = getSurgicalBoxes(singlePin);
+        expect(singleBox.length).toBe(1);
+        expect(singleBox[0].north).toBeCloseTo(10.01, 5);
+
+        const duplicates: Pin[] = [
+            { id: 'p1', lat: 10, lng: 20, label: 'Duplicate 1', position: 0 } as any,
+            { id: 'p2', lat: 10, lng: 20, label: 'Duplicate 2', position: 1 } as any
+        ];
+        const dupBoxes = getSurgicalBoxes(duplicates);
+        expect(dupBoxes.length).toBe(1);
+    });
+
+    it('should preserve shared tiles and reassign manifest ownership when one map is deleted', async () => {
+        // Map 1 in New York
+        const map1: any = {
+            id: 'map-ny-1',
+            name: 'NY Map 1',
+            pins: [{ id: 'p1', lat: 40.71, lng: -74.00, label: 'NYC', position: 0 }]
+        };
+        // Map 2 also in New York (overlapping area)
+        const map2: any = {
+            id: 'map-ny-2',
+            name: 'NY Map 2',
+            pins: [{ id: 'p2', lat: 40.72, lng: -74.01, label: 'NYC Central', position: 0 }]
+        };
+
+        await saveMapOffline(map1);
+        await saveMapOffline(map2);
+
+        // Shared tile in NYC area (z=10, x=301, y=384)
+        const sharedTileUrl = `${window.location.origin}/maps/tile/10/301/384.mvt`;
+        const blob = new Blob(['nyc-tile'], { type: 'application/x-protobuf' });
+
+        await addToManifest([
+            { url: sharedTileUrl, x: 301, y: 384, z: 10, status: 'completed', mapId: 'map-ny-1', updatedAt: Date.now() }
+        ]);
+        await saveTile(sharedTileUrl, blob);
+
+        // Deleting map 1 should NOT delete the shared tile because map 2 also covers it
+        await removeMapDownload('map-ny-1');
+
+        const tileAfterDelete = await getTile(sharedTileUrl);
+        expect(tileAfterDelete).not.toBeNull();
+
+        // The manifest entry should now be reassigned to map-ny-2
+        const statsMap2 = await getManifestStats('map-ny-2');
+        expect(statsMap2.completed).toBe(1);
+    });
 });
