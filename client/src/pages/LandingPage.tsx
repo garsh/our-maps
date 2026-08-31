@@ -22,7 +22,7 @@ export default function LandingPage() {
   const [maps, setMaps] = useState<MapSummary[]>([]);
   const [downloadStatuses, setDownloadStatuses] = useState<Map<string, MapDownloadStatus>>(new Map());
   const [loading, setLoading] = useState(true);
-  const [isOffline, setIsOffline] = useState(false);
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' ? !navigator.onLine : false);
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [showSignOutDialog, setShowSignOutDialog] = useState(false);
@@ -30,7 +30,8 @@ export default function LandingPage() {
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const handleMapClick = (mapId: string) => {
-    if (isOffline) {
+    const currentlyOffline = isOffline || (typeof navigator !== 'undefined' && !navigator.onLine);
+    if (currentlyOffline) {
       const status = downloadStatuses.get(mapId);
       if (!status || (!status.isComplete && !status.isPartial)) {
         setShowOfflineInterstitial(true);
@@ -51,6 +52,19 @@ export default function LandingPage() {
   };
 
   const fetchMaps = async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setIsOffline(true);
+      const cachedData = getStoredJson<MapSummary[] | null>('cached_maps', null);
+      if (cachedData) {
+        setMaps(cachedData);
+        fetchDownloadedMapStatuses(cachedData);
+      } else {
+        fetchDownloadedMapStatuses();
+      }
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const data = await apiService.getMaps();
@@ -80,8 +94,13 @@ export default function LandingPage() {
   useEffect(() => {
     fetchMaps();
     
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => {
+      setIsOffline(false);
+      fetchMaps();
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+    };
     
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);

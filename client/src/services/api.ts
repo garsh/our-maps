@@ -10,6 +10,9 @@ const getHeaders = () => {
 };
 
 const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 3): Promise<Response> => {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    throw new Error('Offline: No network connection');
+  }
   try {
     const res = await fetch(url, { credentials: 'include', ...options });
     if (!res.ok && retries > 0 && res.status >= 500) {
@@ -19,7 +22,7 @@ const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 
     }
     return res;
   } catch (err: any) {
-    if (err?.name === 'AbortError') {
+    if (err?.name === 'AbortError' || (typeof navigator !== 'undefined' && !navigator.onLine)) {
       throw err;
     }
     if (retries > 0) {
