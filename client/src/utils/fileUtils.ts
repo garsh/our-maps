@@ -1,5 +1,6 @@
-import type { MapData, Pin, PinLayer, PinIcon } from '@shared/interfaces';
+import type { MapData, Pin, PinLayer } from '@shared/interfaces';
 import { mapDataToKml, parseKmlHierarchy } from './kmlUtils';
+import { isValidPinColor, isValidPinIcon, DEFAULT_PIN_COLOR, DEFAULT_PIN_ICON } from './mapUtils';
 
 /**
  * Converts MapData to a GeoJSON FeatureCollection
@@ -94,13 +95,8 @@ export const geoJSONToData = (geojson: any): { pins: Pin[], layers: PinLayer[] }
         }
       }
 
-      const validIcons: PinIcon[] = ['default', 'hotel', 'restaurant', 'airport', 'car', 'bus', 'boat', 'train', 'gas', 'charging', 'shopping'];
-
-      // Lenient color validation to support hex codes
-      const color = (props.color && (props.color.startsWith('#') || ['blue', 'red', 'green', 'orange', 'violet'].includes(props.color))) 
-        ? props.color 
-        : 'blue';
-      const icon = validIcons.includes(props.icon) ? props.icon : 'default';
+      const color = isValidPinColor(props.color) ? props.color : DEFAULT_PIN_COLOR;
+      const icon = isValidPinIcon(props.icon) ? props.icon : DEFAULT_PIN_ICON;
 
       pins.push({
         id: props.id || generateId(),

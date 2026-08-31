@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authMiddleware, type AuthRequest } from '../auth';
+import { parseAndClampBounds, isWithinBounds } from '../../../shared/geoUtils';
 
 const STATE_ABBREVIATIONS: Record<string, string> = {
   'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR', 'California': 'CA',
@@ -74,47 +75,6 @@ export function formatNominatimAddress(item: any): { title: string; address: str
   return { title, address };
 }
 
-interface ClampedBounds {
-  boundWest: number;
-  boundEast: number;
-  boundNorth: number;
-  boundSouth: number;
-  minLat: number;
-  maxLat: number;
-  minLng: number;
-  maxLng: number;
-}
-
-function parseAndClampBounds(bounds?: string): ClampedBounds | null {
-  if (!bounds) return null;
-  const parts = bounds.split(',').map(Number);
-  if (parts.length !== 4 || parts.some((n) => isNaN(n))) return null;
-
-  const [west, north, east, south] = parts;
-  const minLat = Math.min(north, south);
-  const maxLat = Math.max(north, south);
-  const minLng = Math.min(west, east);
-  const maxLng = Math.max(west, east);
-
-  return {
-    boundWest: Math.max(-180, minLng),
-    boundEast: Math.min(180, maxLng),
-    boundNorth: Math.min(90, maxLat),
-    boundSouth: Math.max(-90, minLat),
-    minLat,
-    maxLat,
-    minLng,
-    maxLng,
-  };
-}
-
-function isWithinBounds(latStr: string, lonStr: string, bounds: ClampedBounds | null): boolean {
-  if (!bounds) return true;
-  const lat = parseFloat(latStr);
-  const lon = parseFloat(lonStr);
-  if (isNaN(lat) || isNaN(lon)) return true;
-  return lat >= bounds.boundSouth && lat <= bounds.boundNorth && lon >= bounds.boundWest && lon <= bounds.boundEast;
-}
 
 // GET /api/places/search?q=QUERY&bounds=BOUNDS
 router.get('/search', async (req: AuthRequest, res) => {

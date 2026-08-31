@@ -96,3 +96,77 @@ export function reorderLayers(
     result.splice(Math.max(0, targetIndex), 0, movedLayer);
     return result.map((item, index) => ({ ...item, position: index }));
 }
+
+/**
+ * Dispatches socket events for moving pins between layers or reordering within a layer.
+ */
+export function emitPinMoveOrReorderEvents(
+  socket: { emit: (event: string, data: any) => void } | null | undefined,
+  mapId: string,
+  allPins: Pin[],
+  movedPinIds: string[],
+  startLayersMap: Map<string, string | undefined>,
+  targetLayerId: string | undefined,
+  preferredPrimarySourceLayer?: string | undefined
+) {
+  if (!socket || !mapId || movedPinIds.length === 0) return;
+
+  const changedLayerPins = movedPinIds.filter(
+    (pId) => !isSameLayer(startLayersMap.get(pId), targetLayerId)
+  );
+  const destLayerPins = allPins
+    .filter((p) => isSameLayer(p.layerId, targetLayerId))
+    .sort(comparePinPositions);
+
+  if (changedLayerPins.length > 0) {
+    // Identify all distinct source layers that lost pins
+    const sourceLayers = new Set<string | undefined>();
+    movedPinIds.forEach((pId) => {
+      const srcLayer = startLayersMap.get(pId);
+      if (!isSameLayer(srcLayer, targetLayerId)) {
+        sourceLayers.add(srcLayer);
+      }
+    });
+
+    const primarySourceLayer =
+      preferredPrimarySourceLayer !== undefined && sourceLayers.has(preferredPrimarySourceLayer)
+        ? preferredPrimarySourceLayer
+        : (sourceLayers.values().next().value as string | undefined);
+
+    const primarySourcePins =
+      primarySourceLayer !== undefined && !isSameLayer(primarySourceLayer, targetLayerId)
+        ? allPins.filter((p) => isSameLayer(p.layerId, primarySourceLayer)).sort(comparePinPositions)
+        : undefined;
+
+    socket.emit('pin-move-layer', {
+      mapId,
+      pinIds: changedLayerPins,
+      targetLayerId: targetLayerId === undefined ? null : targetLayerId,
+      destPinOrder: destLayerPins.map((p) => p.id),
+      sourceLayerId: primarySourceLayer === undefined ? null : primarySourceLayer,
+      sourcePinOrder: primarySourcePins?.map((p) => p.id),
+    });
+
+    // If pins were moved from multiple distinct source layers, emit pins-reorder for the other source layers
+    sourceLayers.forEach((srcLayer) => {
+      if (srcLayer !== primarySourceLayer) {
+        const remainingPins = allPins
+          .filter((p) => isSameLayer(p.layerId, srcLayer))
+          .sort(comparePinPositions);
+        socket.emit('pins-reorder', {
+          mapId,
+          layerId: srcLayer === undefined ? null : srcLayer,
+          pinOrder: remainingPins.map((p) => p.id),
+        });
+      }
+    });
+  } else {
+    // Same-layer reorder only
+    socket.emit('pins-reorder', {
+      mapId,
+      layerId: targetLayerId === undefined ? null : targetLayerId,
+      pinOrder: destLayerPins.map((p) => p.id),
+    });
+  }
+}
+

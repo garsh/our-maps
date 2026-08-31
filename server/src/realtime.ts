@@ -117,6 +117,19 @@ export async function handlePinDelete(data: PinDeletePayload) {
   await db.run('DELETE FROM pins WHERE id = ? AND map_id = ?', pinId, mapId);
 }
 
+async function updateEntityPositions(
+  db: any,
+  table: 'pins' | 'pin_layers',
+  idOrder: string[],
+  mapId: string
+) {
+  const stmt = await db.prepare(`UPDATE ${table} SET position = ? WHERE id = ? AND map_id = ?`);
+  for (let i = 0; i < idOrder.length; i++) {
+    await stmt.run(i, idOrder[i], mapId);
+  }
+  await stmt.finalize();
+}
+
 export async function handlePinsReorder(data: PinsReorderPayload) {
   const db = await getDb();
   const { mapId, pinOrder } = data;
@@ -124,11 +137,7 @@ export async function handlePinsReorder(data: PinsReorderPayload) {
 
   await db.run('BEGIN TRANSACTION');
   try {
-    const stmt = await db.prepare('UPDATE pins SET position = ? WHERE id = ? AND map_id = ?');
-    for (let i = 0; i < pinOrder.length; i++) {
-      await stmt.run(i, pinOrder[i], mapId);
-    }
-    await stmt.finalize();
+    await updateEntityPositions(db, 'pins', pinOrder, mapId);
     await db.run('COMMIT');
   } catch (error) {
     await db.run('ROLLBACK');
@@ -151,19 +160,11 @@ export async function handlePinMoveLayer(data: PinMoveLayerPayload) {
     await updateLayerStmt.finalize();
 
     if (Array.isArray(destPinOrder) && destPinOrder.length > 0) {
-      const destOrderStmt = await db.prepare('UPDATE pins SET position = ? WHERE id = ? AND map_id = ?');
-      for (let i = 0; i < destPinOrder.length; i++) {
-        await destOrderStmt.run(i, destPinOrder[i], mapId);
-      }
-      await destOrderStmt.finalize();
+      await updateEntityPositions(db, 'pins', destPinOrder, mapId);
     }
 
     if (Array.isArray(sourcePinOrder) && sourcePinOrder.length > 0) {
-      const srcOrderStmt = await db.prepare('UPDATE pins SET position = ? WHERE id = ? AND map_id = ?');
-      for (let i = 0; i < sourcePinOrder.length; i++) {
-        await srcOrderStmt.run(i, sourcePinOrder[i], mapId);
-      }
-      await srcOrderStmt.finalize();
+      await updateEntityPositions(db, 'pins', sourcePinOrder, mapId);
     }
 
     await db.run('COMMIT');
@@ -264,11 +265,7 @@ export async function handleLayersReorder(data: LayersReorderPayload) {
 
   await db.run('BEGIN TRANSACTION');
   try {
-    const stmt = await db.prepare('UPDATE pin_layers SET position = ? WHERE id = ? AND map_id = ?');
-    for (let i = 0; i < layerOrder.length; i++) {
-      await stmt.run(i, layerOrder[i], mapId);
-    }
-    await stmt.finalize();
+    await updateEntityPositions(db, 'pin_layers', layerOrder, mapId);
     await db.run('COMMIT');
   } catch (error) {
     await db.run('ROLLBACK');

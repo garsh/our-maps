@@ -50,4 +50,4 @@ export interface MapData {
 }
 
 export * from './types/socket';
-
+export * from './geoUtils';

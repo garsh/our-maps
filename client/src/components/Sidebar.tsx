@@ -68,6 +68,7 @@ import { tileWorkerManager } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
 import { comparePinPositions } from '../utils/reorderUtils';
 import { getMapViewportBounds } from '../utils/mapViewport';
+import { PIN_COLORS, resolvePinColorCode } from '../utils/mapUtils';
 
 class MouseSensor extends PointerSensor {
   static activators = [
@@ -137,18 +138,6 @@ interface SidebarProps {
   onSearchAreaStateChange?: (state: SearchAreaState | null) => void;
 }
 
-const COLORS = [
-  { name: 'blue', value: '#2A81CB' },
-  { name: 'red', value: '#CB2B3E' },
-  { name: 'green', value: '#2AAD27' },
-  { name: 'orange', value: '#CB8427' },
-  { name: 'violet', value: '#9C2BCB' },
-  { name: 'gold', value: '#FFD700' },
-  { name: 'pink', value: '#FF69B4' },
-  { name: 'teal', value: '#008080' },
-  { name: 'brown', value: '#8B4513' },
-  { name: 'black', value: '#000000' }
-];
 
 const CustomBoatIcon = ({ size, color }: any) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -322,7 +311,7 @@ const TruncatedTooltip = ({ text, style }: { text: string, style?: React.CSSProp
 };
 
 const StaticPin = ({ pin, isSelected }: { pin: Pin, isSelected?: boolean }) => {
-  const currentColor = COLORS.find(c => c.name === pin.color)?.value || pin.color || '#2A81CB';
+  const currentColor = resolvePinColorCode(pin.color);
   return (
     <div style={{ 
       padding: '0 0.15rem', 
@@ -596,7 +585,7 @@ const SortablePin = memo(({
     pointerEvents: (isDragging || isItemInDraggingBundle) ? 'none' as const : undefined,
   };
 
-  const currentColor = COLORS.find(c => c.name === pin.color)?.value || pin.color || '#2A81CB';
+  const currentColor = resolvePinColorCode(pin.color);
 
   return (
     <li 
@@ -808,7 +797,7 @@ const SortablePin = memo(({
           <div style={{ marginBottom: '5px' }}>
             <label style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Color</label>
             <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '1px', justifyContent: 'space-between' }}>
-              {COLORS.map(color => (
+              {PIN_COLORS.map(color => (
                 <ColorSwatch
                   key={color.name}
                   color={color.value}
@@ -828,7 +817,7 @@ const SortablePin = memo(({
               <div style={{ position: 'relative', flex: 1, minWidth: 0, height: '16px' }}>
                 <input 
                   type="color"
-                  value={(!pin.color || COLORS.some(c => c.name === pin.color)) ? '#9C2BCB' : pin.color}
+                  value={(!pin.color || PIN_COLORS.some(c => c.name === pin.color)) ? '#9C2BCB' : pin.color}
                   onChange={(e) => {
                     onUpdatePin(pin.id, { color: e.target.value });
                   }}

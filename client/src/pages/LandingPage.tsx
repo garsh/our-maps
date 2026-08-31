@@ -5,6 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { apiService } from '../services/api';
 import { Map as MapIcon, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download, Sun, Moon } from 'lucide-react';
 import { getMapDownloadStatuses, type MapDownloadStatus } from '../utils/tileUtils';
+import { getStoredJson, setStoredJson } from '../utils/storageUtils';
 
 interface MapSummary {
   id: string;
@@ -55,7 +56,7 @@ export default function LandingPage() {
       const data = await apiService.getMaps();
       setMaps(data);
       setIsOffline(false);
-      localStorage.setItem('cached_maps', JSON.stringify(data));
+      setStoredJson('cached_maps', data);
       fetchDownloadedMapStatuses(data);
     } catch (error: any) {
       console.error('Failed to fetch maps', error);
@@ -64,9 +65,8 @@ export default function LandingPage() {
         return;
       }
       setIsOffline(true);
-      const cached = localStorage.getItem('cached_maps');
-      if (cached) {
-        const cachedData = JSON.parse(cached);
+      const cachedData = getStoredJson<MapSummary[] | null>('cached_maps', null);
+      if (cachedData) {
         setMaps(cachedData);
         fetchDownloadedMapStatuses(cachedData);
       } else {
@@ -110,8 +110,9 @@ export default function LandingPage() {
       } else {
         await apiService.removeShare(id, user!.id);
       }
-      setMaps(maps.filter(m => m.id !== id));
-      localStorage.setItem('cached_maps', JSON.stringify(maps.filter(m => m.id !== id)));
+      const updatedMaps = maps.filter(m => m.id !== id);
+      setMaps(updatedMaps);
+      setStoredJson('cached_maps', updatedMaps);
     } catch (error) {
       console.error('Failed to perform action on map', error);
       alert('Failed to perform action on map');

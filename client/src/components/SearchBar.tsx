@@ -3,6 +3,7 @@ import type { Pin } from '@shared/interfaces';
 import Fuse from 'fuse.js';
 import { Search, MapPin, Loader2, X, Plus } from 'lucide-react';
 import { apiService } from '../services/api';
+import { parseAndClampBounds, isWithinBounds } from '@shared/geoUtils';
 import { getMapViewportBounds, subscribeMapViewportBounds } from '../utils/mapViewport';
 
 interface SearchResult {
@@ -102,23 +103,11 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     if (!query.trim()) return [];
     let searchResults = fuse.search(query);
 
-    if (effectiveBounds) {
-      const parts = effectiveBounds.split(',').map(Number);
-      if (parts.length === 4 && parts.every((n) => !isNaN(n))) {
-        const [west, north, east, south] = parts;
-        const minLat = Math.min(north, south);
-        const maxLat = Math.max(north, south);
-        const minLng = Math.min(west, east);
-        const maxLng = Math.max(west, east);
-
-        searchResults = searchResults.filter(
-          (result) =>
-            result.item.lat >= minLat &&
-            result.item.lat <= maxLat &&
-            result.item.lng >= minLng &&
-            result.item.lng <= maxLng
-        );
-      }
+    const clamped = parseAndClampBounds(effectiveBounds);
+    if (clamped) {
+      searchResults = searchResults.filter((result) =>
+        isWithinBounds(result.item.lat, result.item.lng, clamped)
+      );
     }
 
     return searchResults.slice(0, 5).map(result => {

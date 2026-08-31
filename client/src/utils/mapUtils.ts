@@ -1,7 +1,9 @@
 import type { PinColor, PinIcon } from '@shared/interfaces';
 
-export const COLOR_CODES: Record<PinColor, string> = {
-  black: '#000000',
+export const DEFAULT_PIN_COLOR: PinColor = 'blue';
+export const DEFAULT_PIN_ICON: PinIcon = 'default';
+
+export const COLOR_CODES: Record<string, string> = {
   blue: '#2A81CB',
   red: '#CB2B3E',
   green: '#2AAD27',
@@ -11,7 +13,39 @@ export const COLOR_CODES: Record<PinColor, string> = {
   pink: '#FF69B4',
   teal: '#008080',
   brown: '#8B4513',
+  black: '#000000',
 };
+
+export const PIN_COLORS = Object.entries(COLOR_CODES).map(([name, value]) => ({ name, value }));
+
+export const VALID_PIN_ICONS: readonly PinIcon[] = [
+  'default',
+  'hotel',
+  'restaurant',
+  'airport',
+  'car',
+  'bus',
+  'boat',
+  'train',
+  'gas',
+  'charging',
+  'shopping',
+] as const;
+
+export function isValidPinIcon(icon?: string | null): icon is PinIcon {
+  return typeof icon === 'string' && (VALID_PIN_ICONS as readonly string[]).includes(icon);
+}
+
+export function isValidPinColor(color?: string | null): boolean {
+  if (!color || typeof color !== 'string') return false;
+  return color.startsWith('#') || color in COLOR_CODES;
+}
+
+export function resolvePinColorCode(color?: string | null): string {
+  if (!color) return COLOR_CODES[DEFAULT_PIN_COLOR];
+  if (color.startsWith('#')) return color;
+  return COLOR_CODES[color] || COLOR_CODES[DEFAULT_PIN_COLOR];
+}
 
 export const ICON_SVG_PATHS: Record<Exclude<PinIcon, 'default'>, string> = {
   hotel: '<path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/>',

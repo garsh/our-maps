@@ -58,3 +58,59 @@ export async function canFit(mb: number): Promise<{ ok: boolean, message?: strin
 
     return { ok: true };
 }
+
+/**
+ * Safely reads and parses a JSON item from localStorage with error handling.
+ */
+export function getStoredJson<T>(key: string, defaultValue: T): T {
+    if (typeof window === 'undefined' || !window.localStorage) return defaultValue;
+    try {
+        const raw = localStorage.getItem(key);
+        if (raw === null || raw === undefined) return defaultValue;
+        return JSON.parse(raw) as T;
+    } catch (err) {
+        console.warn(`[storageUtils] Failed to parse localStorage key "${key}":`, err);
+        return defaultValue;
+    }
+}
+
+/**
+ * Safely writes a JSON serializable value to localStorage with error handling.
+ */
+export function setStoredJson<T>(key: string, value: T): boolean {
+    if (typeof window === 'undefined' || !window.localStorage) return false;
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+        return true;
+    } catch (err) {
+        console.warn(`[storageUtils] Failed to write to localStorage key "${key}":`, err);
+        return false;
+    }
+}
+
+/**
+ * Safely reads a boolean value from localStorage with a default fallback.
+ */
+export function getStoredBoolean(key: string, defaultValue: boolean): boolean {
+    if (typeof window === 'undefined' || !window.localStorage) return defaultValue;
+    try {
+        const raw = localStorage.getItem(key);
+        if (raw === null) return defaultValue;
+        return raw === 'true';
+    } catch {
+        return defaultValue;
+    }
+}
+
+/**
+ * Safely writes a boolean value to localStorage.
+ */
+export function setStoredBoolean(key: string, value: boolean): boolean {
+    if (typeof window === 'undefined' || !window.localStorage) return false;
+    try {
+        localStorage.setItem(key, String(value));
+        return true;
+    } catch {
+        return false;
+    }
+}

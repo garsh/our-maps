@@ -7,8 +7,8 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 maplibregl.setWorkerUrl(workerUrl);
 import { Protocol } from 'pmtiles';
 import { layers as protomapsLayers, namedFlavor } from '@protomaps/basemaps';
-import type { Pin, PinColor, PinIcon } from '@shared/interfaces';
-import { COLOR_CODES, ICON_SVG_PATHS, getPreviewMarkerHTML } from '../utils/mapUtils';
+import type { Pin, PinIcon } from '@shared/interfaces';
+import { ICON_SVG_PATHS, getPreviewMarkerHTML, resolvePinColorCode } from '../utils/mapUtils';
 import { Locate } from 'lucide-react';
 import { reverseGeocode } from '../utils/geocoding';
 import type { MapTheme } from './Sidebar';
@@ -149,8 +149,7 @@ const PinMarker = memo(({
 }: PinMarkerProps) => {
   const isHovered = useIsPinHovered(pin.id);
   const showHighlight = isSelected || isHovered;
-  const isHex = pin.color?.startsWith('#');
-  const colorCode = isHex ? pin.color : (COLOR_CODES[pin.color as PinColor] || COLOR_CODES.blue);
+  const colorCode = resolvePinColorCode(pin.color);
   const iconPath = pin.icon && pin.icon !== 'default' ? ICON_SVG_PATHS[pin.icon as Exclude<PinIcon, 'default'>] : null;
 
   const lastGeocodeCoordsRef = useRef<{ lat: number; lng: number } | null>(null);

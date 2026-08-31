@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reorderPins, reorderLayers, isSameLayer, comparePinPositions } from '../reorderUtils';
+import { reorderPins, reorderLayers, isSameLayer, comparePinPositions, emitPinMoveOrReorderEvents } from '../reorderUtils';
 import { Pin } from '@shared/interfaces';
 
 describe('reorderUtils', () => {
@@ -102,4 +102,48 @@ describe('reorderUtils', () => {
         expect(reorderLayers(layers, 'default', 'L1')).toEqual(layers);
         expect(reorderLayers(layers, 'L1', 'default')).toEqual(layers);
     });
+
+    describe('emitPinMoveOrReorderEvents', () => {
+        it('should emit pins-reorder when moved within the same layer', () => {
+            const emitted: Array<{ event: string; data: any }> = [];
+            const mockSocket = {
+                emit: (event: string, data: any) => emitted.push({ event, data }),
+            };
+            const currentPins: Pin[] = [
+                { id: '1', label: 'P1', layerId: 'L1', position: 0, lat: 0, lng: 0 },
+                { id: '2', label: 'P2', layerId: 'L1', position: 1, lat: 0, lng: 0 },
+            ];
+            const startMap = new Map<string, string | undefined>([['1', 'L1']]);
+            emitPinMoveOrReorderEvents(mockSocket, 'map1', currentPins, ['1'], startMap, 'L1');
+
+            expect(emitted).toHaveLength(1);
+            expect(emitted[0].event).toBe('pins-reorder');
+            expect(emitted[0].data).toEqual({
+                mapId: 'map1',
+                layerId: 'L1',
+                pinOrder: ['1', '2'],
+            });
+        });
+
+        it('should emit pin-move-layer when moving across layers', () => {
+            const emitted: Array<{ event: string; data: any }> = [];
+            const mockSocket = {
+                emit: (event: string, data: any) => emitted.push({ event, data }),
+            };
+            const currentPins: Pin[] = [
+                { id: '1', label: 'P1', layerId: 'L2', position: 0, lat: 0, lng: 0 },
+                { id: '2', label: 'P2', layerId: 'L1', position: 0, lat: 0, lng: 0 },
+            ];
+            const startMap = new Map<string, string | undefined>([['1', 'L1']]);
+            emitPinMoveOrReorderEvents(mockSocket, 'map1', currentPins, ['1'], startMap, 'L2', 'L1');
+
+            expect(emitted.some(e => e.event === 'pin-move-layer')).toBe(true);
+            const moveEvent = emitted.find(e => e.event === 'pin-move-layer')!;
+            expect(moveEvent.data.mapId).toBe('map1');
+            expect(moveEvent.data.pinIds).toEqual(['1']);
+            expect(moveEvent.data.targetLayerId).toBe('L2');
+            expect(moveEvent.data.sourceLayerId).toBe('L1');
+        });
+    });
 });
+

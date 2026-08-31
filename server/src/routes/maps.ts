@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { getDb } from '../db';
-import type { Pin, MapData, MapPermission, PinLayer } from '@shared/interfaces';
+import type { Pin, MapData, MapPermission, PinLayer, PinIcon } from '@shared/interfaces';
 import { authMiddleware, type AuthRequest } from '../auth';
 import { getMapRole, canEditMap } from '../permissions';
-import { MapCreateSchema, MapUpdateSchema, ShareSchema } from '../schemas';
+import { MapCreateSchema, MapUpdateSchema, ShareSchema, PinSchema, LayerSchema } from '../schemas';
 import { z } from 'zod';
 
 const router = Router();
@@ -190,6 +190,123 @@ async function getExistingIds(
   return existingSet;
 }
 
+interface SyncEntitiesResult {
+  layers: PinLayer[];
+  pins: Pin[];
+}
+
+export type MapSyncPinInput = z.infer<typeof PinSchema>;
+export type MapSyncLayerInput = z.infer<typeof LayerSchema>;
+
+export async function syncMapLayersAndPins(
+  db: any,
+  mapId: string,
+  layers?: MapSyncLayerInput[],
+  pins?: MapSyncPinInput[],
+  options?: { isNewMap?: boolean }
+): Promise<SyncEntitiesResult> {
+  const isNew = options?.isNewMap ?? false;
+  const layerMapFilter = isNew ? undefined : { mapId, notEqual: true };
+  const pinMapFilter = isNew ? undefined : { mapId, notEqual: true };
+
+  const finalLayers: PinLayer[] = [];
+  const layerIdMap = new Map<string, string>();
+
+  if (layers !== undefined && layers.length > 0) {
+    const processedLayerIds = new Set<string>();
+    const conflictingLayerIds = await getExistingIds(db, 'pin_layers', layers.map(l => l.id), layerMapFilter);
+
+    for (const layer of layers) {
+      let layerId = layer.id;
+      if (!layerId || processedLayerIds.has(layerId) || conflictingLayerIds.has(layerId)) {
+        const newLayerId = crypto.randomUUID();
+        if (layerId) layerIdMap.set(layerId, newLayerId);
+        layerId = newLayerId;
+      }
+      processedLayerIds.add(layerId);
+      finalLayers.push({ id: layerId, name: layer.name, position: layer.position ?? 0 });
+    }
+
+    const layerStmt = await db.prepare(`
+      INSERT INTO pin_layers (id, map_id, name, position) 
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET 
+        map_id = excluded.map_id,
+        name = excluded.name,
+        position = excluded.position
+    `);
+    for (const layer of finalLayers) {
+      await layerStmt.run(layer.id, mapId, layer.name, layer.position);
+    }
+    await layerStmt.finalize();
+  }
+
+  const finalPins: Pin[] = [];
+  if (pins !== undefined && pins.length > 0) {
+    const processedPinIds = new Set<string>();
+    const conflictingPinIds = await getExistingIds(db, 'pins', pins.map(p => p.id), pinMapFilter);
+
+    for (const pin of pins) {
+      let pinId = pin.id;
+      if (!pinId || processedPinIds.has(pinId) || conflictingPinIds.has(pinId)) {
+        pinId = crypto.randomUUID();
+      }
+      processedPinIds.add(pinId);
+
+      let targetLayerId = pin.layerId || null;
+      if (targetLayerId && layerIdMap.has(targetLayerId)) {
+        targetLayerId = layerIdMap.get(targetLayerId)!;
+      }
+      finalPins.push({
+        id: pinId,
+        lat: pin.lat,
+        lng: pin.lng,
+        label: pin.label || '',
+        description: pin.description || '',
+        address: pin.address || '',
+        layerId: targetLayerId || undefined,
+        color: pin.color || 'blue',
+        icon: (pin.icon as PinIcon) || 'default',
+        position: pin.position ?? 0,
+      });
+    }
+
+    const pinStmt = await db.prepare(`
+      INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET 
+        map_id = excluded.map_id,
+        layer_id = excluded.layer_id,
+        lat = excluded.lat,
+        lng = excluded.lng,
+        label = excluded.label,
+        description = excluded.description,
+        address = excluded.address,
+        color = excluded.color,
+        icon = excluded.icon,
+        position = excluded.position
+    `);
+    for (const pin of finalPins) {
+      await pinStmt.run(
+        pin.id,
+        mapId,
+        pin.layerId || null,
+        pin.lat,
+        pin.lng,
+        pin.label || null,
+        pin.description || null,
+        pin.address || null,
+        pin.color || 'blue',
+        pin.icon || 'default',
+        pin.position || 0
+      );
+    }
+    await pinStmt.finalize();
+  }
+
+  return { layers: finalLayers, pins: finalPins };
+}
+
 // POST new map
 router.post('/', async (req: AuthRequest, res) => {
   try {
@@ -203,54 +320,13 @@ router.post('/', async (req: AuthRequest, res) => {
     try {
       await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', id, name, userId);
       
-      const finalGroups: PinLayer[] = [];
-      const layerIdMap = new Map<string, string>();
-      const processedLayerIds = new Set<string>();
-
-      if (layers && layers.length > 0) {
-        const existingLayerIds = await getExistingIds(db, 'pin_layers', layers.map(l => l.id));
-        for (const layer of layers) {
-          let layerId = layer.id;
-          if (!layerId || processedLayerIds.has(layerId) || existingLayerIds.has(layerId)) {
-            const newLayerId = crypto.randomUUID();
-            if (layerId) layerIdMap.set(layerId, newLayerId);
-            layerId = newLayerId;
-          }
-          processedLayerIds.add(layerId);
-          finalGroups.push({ ...layer, id: layerId });
-        }
-
-        const layerStmt = await db.prepare('INSERT INTO pin_layers (id, map_id, name, position) VALUES (?, ?, ?, ?)');
-        for (const layer of finalGroups) {
-          await layerStmt.run(layer.id, id, layer.name, layer.position);
-        }
-        await layerStmt.finalize();
-      }
-
-      const finalPins: Pin[] = [];
-      if (pins && pins.length > 0) {
-        const processedPinIds = new Set<string>();
-        const existingPinIds = await getExistingIds(db, 'pins', pins.map(p => p.id));
-        for (const pin of pins) {
-          let pinId = pin.id;
-          if (!pinId || processedPinIds.has(pinId) || existingPinIds.has(pinId)) {
-            pinId = crypto.randomUUID();
-          }
-          processedPinIds.add(pinId);
-
-          let targetLayerId = pin.layerId || null;
-          if (targetLayerId && layerIdMap.has(targetLayerId)) {
-            targetLayerId = layerIdMap.get(targetLayerId)!;
-          }
-          finalPins.push({ ...pin, id: pinId, layerId: targetLayerId || undefined } as Pin);
-        }
-
-        const stmt = await db.prepare('INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        for (const pin of finalPins) {
-          await stmt.run(pin.id, id, pin.layerId || null, pin.lat, pin.lng, pin.label || null, pin.description || null, pin.address || null, pin.color || 'blue', pin.icon || 'default', pin.position);
-        }
-        await stmt.finalize();
-      }
+      const { layers: finalGroups, pins: finalPins } = await syncMapLayersAndPins(
+        db,
+        id,
+        layers,
+        pins,
+        { isNewMap: true }
+      );
 
       // Update access time for creator
       await db.run(`
@@ -305,83 +381,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
         await db.run('UPDATE maps SET name = ? WHERE id = ?', name, mapId);
       }
 
-      const layerIdMap = new Map<string, string>();
-      // 1. Sync Groups: Upsert and Diff
-      if (layers !== undefined) {
-        const finalGroups: PinLayer[] = [];
-        const processedLayerIds = new Set<string>();
-        const otherMapLayerIds = await getExistingIds(db, 'pin_layers', layers.map(l => l.id), { mapId, notEqual: true });
-
-        for (const layer of layers) {
-          let layerId = layer.id;
-          if (!layerId || processedLayerIds.has(layerId) || otherMapLayerIds.has(layerId)) {
-            const newLayerId = crypto.randomUUID();
-            if (layerId) layerIdMap.set(layerId, newLayerId);
-            layerId = newLayerId;
-          }
-          processedLayerIds.add(layerId);
-          finalGroups.push({ ...layer, id: layerId });
-        }
-
-        const layerStmt = await db.prepare(`
-          INSERT INTO pin_layers (id, map_id, name, position) 
-          VALUES (?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET 
-            map_id = excluded.map_id,
-            name = excluded.name,
-            position = excluded.position
-        `);
-        for (const layer of finalGroups) {
-          await layerStmt.run(layer.id, mapId, layer.name, layer.position);
-        }
-        await layerStmt.finalize();
-      }
-
-      // 2. Sync Pins: Upsert provided pins
-      if (pins !== undefined) {
-        const finalPins: Pin[] = [];
-        const processedPinIds = new Set<string>();
-        const otherMapPinIds = await getExistingIds(db, 'pins', pins.map(p => p.id), { mapId, notEqual: true });
-
-        for (const pin of pins) {
-          let pinId = pin.id;
-          if (!pinId || processedPinIds.has(pinId) || otherMapPinIds.has(pinId)) {
-            pinId = crypto.randomUUID();
-          }
-          processedPinIds.add(pinId);
-
-          let targetLayerId = pin.layerId || null;
-          if (targetLayerId && layerIdMap.has(targetLayerId)) {
-            targetLayerId = layerIdMap.get(targetLayerId)!;
-          }
-          finalPins.push({ ...pin, id: pinId, layerId: targetLayerId || undefined } as Pin);
-        }
-
-        // Upsert provided pins
-        const pinStmt = await db.prepare(`
-          INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position) 
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET 
-            map_id = excluded.map_id,
-            layer_id = excluded.layer_id,
-            lat = excluded.lat,
-            lng = excluded.lng,
-            label = excluded.label,
-            description = excluded.description,
-            address = excluded.address,
-            color = excluded.color,
-            icon = excluded.icon,
-            position = excluded.position
-        `);
-        for (const pin of finalPins) {
-          await pinStmt.run(
-            pin.id, mapId, pin.layerId || null, pin.lat, pin.lng, pin.label || null, 
-            pin.description || null, pin.address || null, 
-            pin.color || 'blue', pin.icon || 'default', pin.position
-          );
-        }
-        await pinStmt.finalize();
-      }
+      await syncMapLayersAndPins(db, mapId, layers, pins, { isNewMap: false });
 
       await db.run('COMMIT');
 

@@ -11,9 +11,9 @@ Welcome! This file provides essential context, rules, and workflows for the Our 
 We use Vitest for unit/integration tests and Playwright for E2E tests.
 Only run these tests when the user requests it.
 If you think a test would be useful to confirm a particular change, ask the user to run it and print out the command to be run.
-- **Client Tests**: `cd client && npm run test && cd ..`
-- **Server Tests**: `cd server && npm run test && cd ..`
-- **E2E Tests**: `npx playwright test` (from the project root)
+- **Client Tests**: `npm --prefix client run test`
+- **Server Tests**: `npm --prefix server run test`
+- **E2E Tests**: `npx playwright test`
 
 ## Deployment Workflow
 The application is deployed using Docker Compose, which builds both the frontend and backend into a single image (`our-maps`) alongside a `caddy-proxy` container for TLS/SSL.

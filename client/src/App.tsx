@@ -29,9 +29,10 @@ import type {
 import type { DragEndEvent } from '@dnd-kit/core'
 import { Loader2, Map as MapIcon, RotateCw } from 'lucide-react';
 import type { SearchAreaState } from './components/SearchBar';
-import { reorderPins, reorderLayers, isSameLayer, comparePinPositions } from './utils/reorderUtils';
+import { reorderPins, reorderLayers, isSameLayer, emitPinMoveOrReorderEvents } from './utils/reorderUtils';
 import { generateId } from './utils/fileUtils';
 import { getManifestStats } from './utils/tileUtils';
+import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
 import { tileWorkerManager } from './utils/tileWorkerManager';
 import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer } from './utils/pinHover';
 import { io, Socket } from 'socket.io-client';
@@ -77,47 +78,39 @@ export function MapEditor() {
   const { theme: mapTheme, setTheme: handleThemeChange } = useTheme();
 
   const [showHillshade, setShowHillshade] = useState<boolean>(() => {
-    const saved = localStorage.getItem('ourmaps_hillshade');
-    return saved !== null ? saved === 'true' : true;
+    return getStoredBoolean('ourmaps_hillshade', true);
   });
 
   const handleToggleHillshade = useCallback((enabled: boolean) => {
     setShowHillshade(enabled);
-    localStorage.setItem('ourmaps_hillshade', String(enabled));
+    setStoredBoolean('ourmaps_hillshade', enabled);
   }, []);
 
   const [show3DTerrain, setShow3DTerrain] = useState<boolean>(() => {
-    const saved = localStorage.getItem('ourmaps_3d_terrain');
-    if (saved !== null) return saved === 'true';
-    const legacy = localStorage.getItem('ourmaps_3d');
-    return legacy !== null ? legacy === 'true' : true;
+    return getStoredBoolean('ourmaps_3d_terrain', getStoredBoolean('ourmaps_3d', true));
   });
 
   const handleToggle3DTerrain = useCallback((enabled: boolean) => {
     setShow3DTerrain(enabled);
-    localStorage.setItem('ourmaps_3d_terrain', String(enabled));
+    setStoredBoolean('ourmaps_3d_terrain', enabled);
   }, []);
 
   const [show3DBuildings, setShow3DBuildings] = useState<boolean>(() => {
-    const saved = localStorage.getItem('ourmaps_3d_buildings');
-    if (saved !== null) return saved === 'true';
-    const legacy = localStorage.getItem('ourmaps_3d');
-    return legacy !== null ? legacy === 'true' : true;
+    return getStoredBoolean('ourmaps_3d_buildings', getStoredBoolean('ourmaps_3d', true));
   });
 
   const handleToggle3DBuildings = useCallback((enabled: boolean) => {
     setShow3DBuildings(enabled);
-    localStorage.setItem('ourmaps_3d_buildings', String(enabled));
+    setStoredBoolean('ourmaps_3d_buildings', enabled);
   }, []);
 
   const [showSatellite, setShowSatellite] = useState<boolean>(() => {
-    const saved = localStorage.getItem('ourmaps_satellite');
-    return saved !== null ? saved === 'true' : false;
+    return getStoredBoolean('ourmaps_satellite', false);
   });
 
   const handleToggleSatellite = useCallback((enabled: boolean) => {
     setShowSatellite(enabled);
-    localStorage.setItem('ourmaps_satellite', String(enabled));
+    setStoredBoolean('ourmaps_satellite', enabled);
   }, []);
 
   // Mobile layout states
@@ -296,9 +289,9 @@ export function MapEditor() {
   const [hiddenLayerIds, setHiddenLayerIds] = useState<Set<string | null>>(() => {
     const mapIdVal = id || null;
     if (mapIdVal) {
-      const savedVisibility = localStorage.getItem(`ourmaps_visibility_${mapIdVal}`);
+      const savedVisibility = getStoredJson<string[] | null>(`ourmaps_visibility_${mapIdVal}`, null);
       if (savedVisibility) {
-        return new Set(JSON.parse(savedVisibility));
+        return new Set(savedVisibility);
       }
     }
     return new Set();
@@ -306,17 +299,16 @@ export function MapEditor() {
   const [collapsedLayerIds, setCollapsedLayerIds] = useState<Set<string | null>>(() => {
     const mapIdVal = id || null;
     if (mapIdVal) {
-      const savedCollapsed = localStorage.getItem(`ourmaps_collapsed_${mapIdVal}`);
+      const savedCollapsed = getStoredJson<string[] | null>(`ourmaps_collapsed_${mapIdVal}`, null);
       if (savedCollapsed) {
-        return new Set(JSON.parse(savedCollapsed));
+        return new Set(savedCollapsed);
       }
     }
     return new Set();
   });
   
   const [customColors, setCustomColors] = useState<string[]>(() => {
-    const saved = localStorage.getItem('customColors');
-    return saved ? JSON.parse(saved) : [];
+    return getStoredJson<string[]>('customColors', []);
   });
 
   const selectedNavIdsRef = useRef(selectedNavIds);
@@ -337,16 +329,16 @@ export function MapEditor() {
   // Load persistent UI state when mapId changes
   useEffect(() => {
     if (mapId) {
-      const savedVisibility = localStorage.getItem(`ourmaps_visibility_${mapId}`);
+      const savedVisibility = getStoredJson<string[] | null>(`ourmaps_visibility_${mapId}`, null);
       if (savedVisibility) {
-        setHiddenLayerIds(new Set(JSON.parse(savedVisibility)));
+        setHiddenLayerIds(new Set(savedVisibility));
       } else {
         setHiddenLayerIds(new Set());
       }
 
-      const savedCollapsed = localStorage.getItem(`ourmaps_collapsed_${mapId}`);
+      const savedCollapsed = getStoredJson<string[] | null>(`ourmaps_collapsed_${mapId}`, null);
       if (savedCollapsed) {
-        setCollapsedLayerIds(new Set(JSON.parse(savedCollapsed)));
+        setCollapsedLayerIds(new Set(savedCollapsed));
       } else {
         setCollapsedLayerIds(new Set()); // All layers expanded by default on a new device
       }
@@ -356,19 +348,19 @@ export function MapEditor() {
   // Persist visibility changes
   useEffect(() => {
     if (mapId) {
-      localStorage.setItem(`ourmaps_visibility_${mapId}`, JSON.stringify(Array.from(hiddenLayerIds)));
+      setStoredJson(`ourmaps_visibility_${mapId}`, Array.from(hiddenLayerIds));
     }
   }, [hiddenLayerIds, mapId]);
 
   // Persist collapse changes
   useEffect(() => {
     if (mapId) {
-      localStorage.setItem(`ourmaps_collapsed_${mapId}`, JSON.stringify(Array.from(collapsedLayerIds)));
+      setStoredJson(`ourmaps_collapsed_${mapId}`, Array.from(collapsedLayerIds));
     }
   }, [collapsedLayerIds, mapId]);
 
   useEffect(() => {
-    localStorage.setItem('customColors', JSON.stringify(customColors));
+    setStoredJson('customColors', customColors);
   }, [customColors]);
 
   // Track offline tile status for the currently open map
@@ -1112,20 +1104,16 @@ export function MapEditor() {
       if ('layerId' in updates) {
         const targetLayerId = updates.layerId;
         const updatedPins = currentPins.map(p => p.id === targetId ? { ...p, ...computedUpdates } : p);
-        
-        const destLayerPins = updatedPins.filter(p => isSameLayer(p.layerId, targetLayerId)).sort(comparePinPositions);
-        const sourceLayerPins = !isSameLayer(originalLayerId, targetLayerId)
-          ? updatedPins.filter(p => isSameLayer(p.layerId, originalLayerId)).sort(comparePinPositions)
-          : undefined;
-
-        socketRef.current?.emit('pin-move-layer', {
+        const startMap = new Map<string, string | undefined>([[targetId, originalLayerId]]);
+        emitPinMoveOrReorderEvents(
+          socketRef.current,
           mapId,
-          pinIds: [targetId],
-          targetLayerId: targetLayerId === undefined ? null : targetLayerId,
-          destPinOrder: destLayerPins.map(p => p.id),
-          sourceLayerId: originalLayerId === undefined ? null : originalLayerId,
-          sourcePinOrder: sourceLayerPins?.map(p => p.id),
-        });
+          updatedPins,
+          [targetId],
+          startMap,
+          targetLayerId,
+          originalLayerId
+        );
       } else {
         socketRef.current?.emit('pin-update', { mapId, pinId: targetId, updates: computedUpdates });
       }
@@ -1157,43 +1145,14 @@ export function MapEditor() {
     setPins(updatedPins);
 
     if (mapId) {
-      const changedLayerPins = pinIds.filter(pId => !isSameLayer(startLayersMap.get(pId), targetLayerId));
-      const destLayerPins = updatedPins.filter(p => isSameLayer(p.layerId, targetLayerId)).sort(comparePinPositions);
-
-      if (changedLayerPins.length > 0) {
-        const sourceLayers = new Set<string | undefined>();
-        pinIds.forEach(pId => {
-          const srcLayer = startLayersMap.get(pId);
-          if (!isSameLayer(srcLayer, targetLayerId)) {
-            sourceLayers.add(srcLayer);
-          }
-        });
-
-        const primarySourceLayer = sourceLayers.values().next().value as string | undefined;
-        const primarySourcePins = primarySourceLayer !== undefined && !isSameLayer(primarySourceLayer, targetLayerId)
-          ? updatedPins.filter(p => isSameLayer(p.layerId, primarySourceLayer)).sort(comparePinPositions)
-          : undefined;
-
-        socketRef.current?.emit('pin-move-layer', {
-          mapId,
-          pinIds: changedLayerPins,
-          targetLayerId: targetLayerId === undefined ? null : targetLayerId,
-          destPinOrder: destLayerPins.map(p => p.id),
-          sourceLayerId: primarySourceLayer === undefined ? null : primarySourceLayer,
-          sourcePinOrder: primarySourcePins?.map(p => p.id),
-        });
-
-        sourceLayers.forEach(srcLayer => {
-          if (srcLayer !== primarySourceLayer) {
-            const remainingPins = updatedPins.filter(p => isSameLayer(p.layerId, srcLayer)).sort(comparePinPositions);
-            socketRef.current?.emit('pins-reorder', {
-              mapId,
-              layerId: srcLayer === undefined ? null : srcLayer,
-              pinOrder: remainingPins.map(p => p.id),
-            });
-          }
-        });
-      }
+      emitPinMoveOrReorderEvents(
+        socketRef.current,
+        mapId,
+        updatedPins,
+        pinIds,
+        startLayersMap,
+        targetLayerId
+      );
     }
   }, [userRole, isOffline, mapId]);
 
@@ -1359,56 +1318,15 @@ export function MapEditor() {
       setPins(next);
 
       if (currentMapId) {
-        const changedLayerPins = pinsToMoveIds.filter(pId => !isSameLayer(startLayersMap.get(pId), overLayerId));
-        const destLayerPins = next.filter(p => isSameLayer(p.layerId, overLayerId));
-
-        if (changedLayerPins.length > 0) {
-          // Identify all distinct source layers that lost pins
-          const sourceLayers = new Set<string | undefined>();
-          pinsToMoveIds.forEach(pId => {
-            const srcLayer = startLayersMap.get(pId);
-            if (!isSameLayer(srcLayer, overLayerId)) {
-              sourceLayers.add(srcLayer);
-            }
-          });
-
-          // Primary source layer (from the active dragged pin)
-          const primarySourceLayer = sourceLayers.has(originalLayerId)
-            ? originalLayerId
-            : (sourceLayers.values().next().value as string | undefined);
-
-          const primarySourcePins = primarySourceLayer !== undefined && !isSameLayer(primarySourceLayer, overLayerId)
-            ? next.filter(p => isSameLayer(p.layerId, primarySourceLayer)).sort(comparePinPositions)
-            : undefined;
-
-          socketRef.current?.emit('pin-move-layer', {
-            mapId: currentMapId,
-            pinIds: changedLayerPins,
-            targetLayerId: overLayerId === undefined ? null : overLayerId,
-            destPinOrder: destLayerPins.map(p => p.id),
-            sourceLayerId: primarySourceLayer === undefined ? null : primarySourceLayer,
-            sourcePinOrder: primarySourcePins?.map(p => p.id),
-          });
-
-          // If pins were moved from multiple distinct source layers, emit pins-reorder for the other source layers
-          sourceLayers.forEach(srcLayer => {
-            if (srcLayer !== primarySourceLayer) {
-              const remainingPins = next.filter(p => isSameLayer(p.layerId, srcLayer)).sort(comparePinPositions);
-              socketRef.current?.emit('pins-reorder', {
-                mapId: currentMapId,
-                layerId: srcLayer === undefined ? null : srcLayer,
-                pinOrder: remainingPins.map(p => p.id),
-              });
-            }
-          });
-        } else {
-          // Same-layer reorder only
-          socketRef.current?.emit('pins-reorder', { 
-            mapId: currentMapId, 
-            layerId: overLayerId === undefined ? null : overLayerId, 
-            pinOrder: destLayerPins.map(p => p.id) 
-          });
-        }
+        emitPinMoveOrReorderEvents(
+          socketRef.current,
+          currentMapId,
+          next,
+          pinsToMoveIds,
+          startLayersMap,
+          overLayerId,
+          originalLayerId
+        );
       }
     }
   }, []);
