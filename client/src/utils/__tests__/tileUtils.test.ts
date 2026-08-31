@@ -57,6 +57,12 @@ describe('tileUtils', () => {
                                         setTimeout(() => r.onsuccess && r.onsuccess());
                                         return r;
                                     },
+                                    clear: () => {
+                                        txStore.clear();
+                                        const r: any = {};
+                                        setTimeout(() => r.onsuccess && r.onsuccess());
+                                        return r;
+                                    },
                                     index: (idxName?: string) => ({
                                         count: (query?: any) => {
                                             const r: any = { readyState: 'done' };

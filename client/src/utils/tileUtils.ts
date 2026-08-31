@@ -265,86 +265,131 @@ export async function getMapDownloadStatuses(mapIds?: string[]): Promise<Map<str
     try {
         const db = await openDB();
         const resultMap = new Map<string, MapDownloadStatus>();
-        const targetMapIdSet = mapIds && mapIds.length > 0 ? new Set(mapIds) : null;
 
         return new Promise((resolve, reject) => {
-            const transaction = db.transaction(MANIFEST_STORE, 'readonly');
-            const store = transaction.objectStore(MANIFEST_STORE);
+            const hasMapIds = Array.isArray(mapIds) && mapIds.length > 0;
+            const transaction = db.transaction([MANIFEST_STORE, MAP_STORE], 'readonly');
+            const manifestStore = transaction.objectStore(MANIFEST_STORE);
+            const mapStore = transaction.objectStore(MAP_STORE);
+            const compoundIndex = manifestStore.indexNames.contains('mapId_status') ? manifestStore.index('mapId_status') : null;
+            const mapIdIndex = manifestStore.indexNames.contains('mapId') ? manifestStore.index('mapId') : null;
 
-            if (mapIds && mapIds.length > 0 && store.indexNames && store.indexNames.contains('mapId_status')) {
-                const compoundIndex = store.index('mapId_status');
-                const mapIdIndex = store.index('mapId');
-                let pendingCount = mapIds.length;
-
-                if (pendingCount === 0) {
+            const processMapIdList = (targetIds: string[]) => {
+                if (targetIds.length === 0) {
                     resolve(resultMap);
                     return;
                 }
 
-                mapIds.forEach(mapId => {
-                    const totalReq = mapIdIndex.count(keyRangeOnly(mapId));
-                    const completedReq = compoundIndex.count(keyRangeOnly([mapId, 'completed'] as any));
+                let pendingCount = targetIds.length;
+                targetIds.forEach(mapId => {
+                    const mapGetReq = mapStore.get(mapId);
+                    let hasOfflineMapRecord = false;
 
-                    let total: number | null = null;
-                    let completed: number | null = null;
+                    const runManifestCheck = () => {
+                        if (mapIdIndex && compoundIndex) {
+                            const totalReq = mapIdIndex.count(keyRangeOnly(mapId));
+                            const completedReq = compoundIndex.count(keyRangeOnly([mapId, 'completed'] as any));
 
-                    const checkDone = () => {
-                        if (total !== null && completed !== null) {
-                            if (total > 0) {
-                                resultMap.set(mapId, {
-                                    isComplete: completed === total,
-                                    isPartial: completed > 0 && completed < total
-                                });
-                            }
-                            pendingCount--;
-                            if (pendingCount === 0) {
-                                resolve(resultMap);
-                            }
+                            let total: number | null = null;
+                            let completed: number | null = null;
+
+                            const checkDone = () => {
+                                if (total !== null && completed !== null) {
+                                    if (total > 0) {
+                                        resultMap.set(mapId, {
+                                            isComplete: completed === total,
+                                            isPartial: completed > 0 && completed < total
+                                        });
+                                    } else if (hasOfflineMapRecord) {
+                                        // Map is saved offline and all shared tiles are already cached
+                                        resultMap.set(mapId, {
+                                            isComplete: true,
+                                            isPartial: false
+                                        });
+                                    }
+                                    pendingCount--;
+                                    if (pendingCount === 0) {
+                                        resolve(resultMap);
+                                    }
+                                }
+                            };
+
+                            totalReq.onsuccess = () => {
+                                total = totalReq.result || 0;
+                                checkDone();
+                            };
+                            totalReq.onerror = () => reject(totalReq.error);
+
+                            completedReq.onsuccess = () => {
+                                completed = completedReq.result || 0;
+                                checkDone();
+                            };
+                            completedReq.onerror = () => reject(completedReq.error);
+                        } else {
+                            const req = mapIdIndex ? mapIdIndex.openCursor(keyRangeOnly(mapId)) : manifestStore.openCursor();
+                            let total = 0;
+                            let completed = 0;
+                            req.onsuccess = (e: any) => {
+                                const cursor = (e && e.target) ? e.target.result : (req ? req.result : null);
+                                if (cursor) {
+                                    total++;
+                                    if (cursor.value?.status === 'completed') completed++;
+                                    cursor.continue();
+                                } else {
+                                    if (total > 0) {
+                                        resultMap.set(mapId, {
+                                            isComplete: completed === total,
+                                            isPartial: completed > 0 && completed < total
+                                        });
+                                    } else if (hasOfflineMapRecord) {
+                                        resultMap.set(mapId, {
+                                            isComplete: true,
+                                            isPartial: false
+                                        });
+                                    }
+                                    pendingCount--;
+                                    if (pendingCount === 0) {
+                                        resolve(resultMap);
+                                    }
+                                }
+                            };
+                            req.onerror = () => reject(req.error);
                         }
                     };
 
-                    totalReq.onsuccess = () => {
-                        total = totalReq.result || 0;
-                        checkDone();
+                    mapGetReq.onsuccess = () => {
+                        hasOfflineMapRecord = Boolean(mapGetReq.result);
+                        runManifestCheck();
                     };
-                    totalReq.onerror = () => reject(totalReq.error);
-
-                    completedReq.onsuccess = () => {
-                        completed = completedReq.result || 0;
-                        checkDone();
+                    mapGetReq.onerror = () => {
+                        hasOfflineMapRecord = false;
+                        runManifestCheck();
                     };
-                    completedReq.onerror = () => reject(completedReq.error);
                 });
-                return;
-            }
-
-            const request = store.getAll();
-
-            request.onsuccess = () => {
-                const all = request.result as ManifestEntry[];
-                const mapStats = new Map<string, { total: number; completed: number }>();
-                all.forEach(entry => {
-                    if (!entry.mapId) return;
-                    if (targetMapIdSet && !targetMapIdSet.has(entry.mapId)) return;
-                    const current = mapStats.get(entry.mapId) || { total: 0, completed: 0 };
-                    current.total++;
-                    if (entry.status === 'completed') {
-                        current.completed++;
-                    }
-                    mapStats.set(entry.mapId, current);
-                });
-
-                mapStats.forEach((stats, mapId) => {
-                    if (stats.total > 0) {
-                        resultMap.set(mapId, {
-                            isComplete: stats.completed === stats.total,
-                            isPartial: stats.completed > 0 && stats.completed < stats.total
-                        });
-                    }
-                });
-                resolve(resultMap);
             };
-            request.onerror = () => reject(request.error);
+
+            if (hasMapIds) {
+                processMapIdList(mapIds!);
+            } else {
+                const mapKeysReq = mapStore.getAllKeys();
+                mapKeysReq.onsuccess = () => {
+                    const discoveredIds = (mapKeysReq.result as string[]) || [];
+                    if (discoveredIds.length > 0) {
+                        processMapIdList(discoveredIds);
+                    } else if (typeof manifestStore.getAll === 'function') {
+                        const allReq = manifestStore.getAll();
+                        allReq.onsuccess = () => {
+                            const allEntries = (allReq.result as ManifestEntry[]) || [];
+                            const uniqueIds = Array.from(new Set(allEntries.map(entry => entry.mapId).filter((id): id is string => Boolean(id))));
+                            processMapIdList(uniqueIds);
+                        };
+                        allReq.onerror = () => reject(allReq.error);
+                    } else {
+                        resolve(resultMap);
+                    }
+                };
+                mapKeysReq.onerror = () => reject(mapKeysReq.error);
+            }
         });
     } catch {
         return new Map();
@@ -354,6 +399,8 @@ export async function getMapDownloadStatuses(mapIds?: string[]): Promise<Map<str
 export async function isMapDownloaded(mapId: string): Promise<boolean> {
     if (!mapId || typeof indexedDB === 'undefined') return false;
     try {
+        const offlineMap = await getOfflineMap(mapId);
+        if (offlineMap) return true;
         const { total, completed } = await getManifestStats(mapId);
         return total > 0 && completed > 0;
     } catch {
@@ -373,15 +420,59 @@ export async function removeMapDownload(mapId: string): Promise<void> {
 
         mapStore.delete(mapId);
 
-        const index = manifestStore.index('mapId');
-        const request = index.getAll(keyRangeOnly(mapId));
+        const otherMapsReq = mapStore.getAll();
+        otherMapsReq.onsuccess = () => {
+            const otherMaps = (otherMapsReq.result as MapData[]) || [];
 
-        request.onsuccess = () => {
-            const entries = request.result as ManifestEntry[];
-            entries.forEach(entry => {
-                tileStore.delete(entry.url);
-                manifestStore.delete(entry.url);
+            // If no other offline maps remain, cleanly clear all stored tile data
+            if (otherMaps.length === 0) {
+                if (typeof manifestStore.clear === 'function') {
+                    manifestStore.clear();
+                }
+                if (typeof tileStore.clear === 'function') {
+                    tileStore.clear();
+                }
+                return;
+            }
+
+            // Collect tile URLs required by remaining offline maps
+            const neededUrls = new Set<string>();
+            otherMaps.forEach(map => {
+                if (!map.pins) return;
+                const bbox = getPinsBoundingBox(map.pins);
+                if (bbox) {
+                    const tiles = [
+                        ...getTilesForArea(bbox, 1, 10),
+                        ...getSurgicalBoxes(map.pins).flatMap(box => getTilesForArea(box, 11, 15))
+                    ];
+                    tiles.forEach(t => neededUrls.add(t.url));
+                }
             });
+
+            const index = manifestStore.index('mapId');
+            const request = index.getAll(keyRangeOnly(mapId));
+
+            request.onsuccess = () => {
+                const entries = request.result as ManifestEntry[];
+                entries.forEach(entry => {
+                    if (!neededUrls.has(entry.url)) {
+                        const { primary, secondary } = getTileKeys(entry.url);
+                        tileStore.delete(primary);
+                        if (secondary) tileStore.delete(secondary);
+                        manifestStore.delete(entry.url);
+                    } else {
+                        // Re-assign manifest entry to the first remaining map that needs it
+                        const newOwner = otherMaps.find(m => {
+                            const bbox = getPinsBoundingBox(m.pins || []);
+                            return Boolean(bbox);
+                        });
+                        if (newOwner) {
+                            entry.mapId = newOwner.id;
+                            manifestStore.put(entry);
+                        }
+                    }
+                });
+            };
         };
 
         transaction.oncomplete = () => resolve();
@@ -563,6 +654,10 @@ function latToY(lat: number, zoom: number): number {
 
 export function getTilesForArea(box: BoundingBox, minZoom: number, maxZoom: number): TileInfo[] {
     const tiles: TileInfo[] = [];
+    const origin = typeof window !== 'undefined' 
+        ? window.location.origin 
+        : (typeof self !== 'undefined' && self.location ? self.location.origin : '');
+
     for (let z = minZoom; z <= maxZoom; z++) {
         const xMin = longToX(box.west, z);
         const xMax = longToX(box.east, z);
@@ -578,7 +673,7 @@ export function getTilesForArea(box: BoundingBox, minZoom: number, maxZoom: numb
             for (let y = yStart; y <= yEnd; y++) {
                 tiles.push({
                     x, y, z,
-                    url: `${window.location.origin}/maps/tile/${z}/${x}/${y}.mvt`
+                    url: `${origin}/maps/tile/${z}/${x}/${y}.mvt`
                 });
             }
         }

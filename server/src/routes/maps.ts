@@ -18,16 +18,20 @@ router.get('/', async (req: AuthRequest, res) => {
   const db = await getDb();
 
   // Get owned maps and shared maps, ordered by last access
-  // Use LEFT JOIN to avoid losing maps if a user was deleted or if using mock IDs
+  // Use indexed CTE to avoid full-table scans across LEFT JOIN OR conditions
   const maps = await db.all(`
+    WITH accessible_maps AS (
+      SELECT id FROM maps WHERE owner_id = ?
+      UNION
+      SELECT map_id AS id FROM map_permissions WHERE user_id = ?
+    )
     SELECT m.*, u.name as owner_name, uma.last_accessed_at
-    FROM maps m
+    FROM accessible_maps am
+    JOIN maps m ON am.id = m.id
     LEFT JOIN users u ON m.owner_id = u.id
-    LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
     LEFT JOIN user_map_access uma ON m.id = uma.map_id AND uma.user_id = ?
-    WHERE m.owner_id = ? OR mp.user_id = ?
     ORDER BY uma.last_accessed_at DESC NULLS LAST, m.name ASC
-  `, userId, userId, userId, userId);
+  `, userId, userId, userId);
 
   res.json(maps.map(m => ({
     id: m.id,

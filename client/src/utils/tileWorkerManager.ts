@@ -1,4 +1,5 @@
-import { removeMapDownload, getManifestEntries, getManifestStats, type TileInfo } from './tileUtils';
+import { removeMapDownload, getManifestEntries, getManifestStats, type TileInfo, type BoundingBox } from './tileUtils';
+import type { Pin } from '@shared/interfaces';
 
 export interface DownloadProgressState {
   mapId: string;
@@ -7,6 +8,13 @@ export interface DownloadProgressState {
   hasPartialDownload: boolean;
   downloadProgress: number | null;
   tileStats: { completed: number; total: number } | null;
+}
+
+export interface StartDownloadParams {
+  bbox?: BoundingBox | null;
+  pins?: Pin[];
+  tiles?: TileInfo[];
+  totalTiles?: number;
 }
 
 type ProgressCallback = (state: DownloadProgressState) => void;
@@ -54,7 +62,7 @@ class TileWorkerManager {
     this.subscribers.forEach(cb => cb(state));
   }
 
-  public async startDownload(mapId: string, tiles: TileInfo[]) {
+  public async startDownload(mapId: string, params: TileInfo[] | StartDownloadParams) {
     // If worker is already downloading this map, don't restart it
     if (this.activeMapId === mapId && this.isDownloading && this.activeWorker) {
       this.notifySubscribers();
@@ -69,8 +77,23 @@ class TileWorkerManager {
 
     this.activeMapId = mapId;
     this.isDownloading = true;
-    const totalTiles = tiles.length;
-    let initialCompleted = tiles.filter((t: any) => t.status === 'completed').length;
+
+    let tilesList: TileInfo[] | undefined;
+    let bbox: BoundingBox | null | undefined;
+    let pins: Pin[] | undefined;
+    let totalTiles = 0;
+
+    if (Array.isArray(params)) {
+      tilesList = params;
+      totalTiles = params.length;
+    } else {
+      tilesList = params.tiles;
+      bbox = params.bbox;
+      pins = params.pins;
+      totalTiles = params.totalTiles || (params.tiles ? params.tiles.length : 0);
+    }
+
+    let initialCompleted = tilesList ? tilesList.filter((t: any) => t.status === 'completed').length : 0;
     if (initialCompleted === 0 && mapId) {
       const stats = await getManifestStats(mapId);
       if (stats.completed > 0) {
@@ -87,19 +110,25 @@ class TileWorkerManager {
     worker.postMessage({
       type: 'start-download',
       mapId,
-      tiles
+      tiles: tilesList,
+      bbox,
+      pins,
+      totalTiles
     });
 
     worker.onmessage = (e) => {
-      const { type, progress, error } = e.data;
+      const { type, progress, error, total, completed } = e.data;
       if (type === 'progress') {
+        const actualTotal = total || totalTiles;
+        const actualCompleted = completed !== undefined ? completed : Math.round(progress * actualTotal);
         this.downloadProgress = progress;
-        this.tileStats = { total: totalTiles, completed: Math.round(progress * totalTiles) };
+        this.tileStats = { total: actualTotal, completed: actualCompleted };
         this.notifySubscribers();
       } else if (type === 'complete') {
+        const actualTotal = total || totalTiles;
         this.isDownloading = false;
         this.downloadProgress = null;
-        this.tileStats = { total: totalTiles, completed: totalTiles };
+        this.tileStats = { total: actualTotal, completed: actualTotal };
         this.notifySubscribers();
         worker.terminate();
         if (this.activeWorker === worker) {

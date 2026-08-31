@@ -342,22 +342,19 @@ async function ensureUserExists(user: User) {
 const SHARED_COLLABORATORS_FROM = `
   FROM users
   WHERE email != ? AND id IN (
-    SELECT owner_id FROM maps WHERE id IN (
-      SELECT id FROM maps WHERE owner_id = ?
+    WITH user_maps AS (
+      SELECT id AS map_id FROM maps WHERE owner_id = ?
       UNION
-      SELECT p.map_id FROM map_permissions p JOIN maps m ON p.map_id = m.id WHERE p.user_id = ?
+      SELECT map_id FROM map_permissions WHERE user_id = ?
     )
+    SELECT owner_id AS user_id FROM maps WHERE id IN (SELECT map_id FROM user_maps)
     UNION
-    SELECT p2.user_id FROM map_permissions p2 JOIN maps m2 ON p2.map_id = m2.id WHERE p2.map_id IN (
-      SELECT id FROM maps WHERE owner_id = ?
-      UNION
-      SELECT p3.map_id FROM map_permissions p3 JOIN maps m3 ON p3.map_id = m3.id WHERE p3.user_id = ?
-    )
+    SELECT user_id FROM map_permissions WHERE map_id IN (SELECT map_id FROM user_maps)
   )
 `;
 
 function sharedCollaboratorParams(email: string, userId: string) {
-  return [email, userId, userId, userId, userId];
+  return [email, userId, userId];
 }
 
 export async function sharedContactsHandler(req: AuthRequest, res: Response) {

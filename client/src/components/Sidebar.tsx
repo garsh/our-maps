@@ -56,10 +56,11 @@ import { exportMap, importMapFile } from '../utils/fileUtils';
 import { 
   countTiles, 
   estimateSizeMB, 
-  getTilesForArea, 
   getSurgicalBoxes, 
   getPinsBoundingBox,
   getManifestStats,
+  getMapDownloadStatuses,
+  getOfflineMap,
   saveMapOffline,
   type BoundingBox 
 } from '../utils/tileUtils';
@@ -1520,25 +1521,30 @@ const Sidebar = ({
         if (status) {
           updateFromState(status);
         } else {
-          getManifestStats(mapId).then((stats) => {
-            setTileStats(stats);
-            if (stats.total > 0) {
-              if (stats.completed === stats.total) {
-                setIsDownloaded(true);
-                setHasPartialDownload(false);
-                setIsDownloading(false);
-                setDownloadProgress(null);
-              } else {
-                setIsDownloaded(false);
-                setHasPartialDownload(true);
-                setIsDownloading(false);
-                setDownloadProgress(stats.completed / stats.total);
-              }
+          Promise.all([
+            getManifestStats(mapId),
+            getMapDownloadStatuses([mapId]),
+            getOfflineMap(mapId)
+          ]).then(([stats, statusMap, offlineMap]) => {
+            const mapStatus = statusMap.get(mapId);
+            if (mapStatus?.isComplete || (offlineMap && stats.total === 0)) {
+              setIsDownloaded(true);
+              setHasPartialDownload(false);
+              setIsDownloading(false);
+              setDownloadProgress(null);
+              setTileStats(stats.total > 0 ? stats : { total: stats.total, completed: stats.completed });
+            } else if (mapStatus?.isPartial || stats.completed > 0) {
+              setIsDownloaded(false);
+              setHasPartialDownload(true);
+              setIsDownloading(false);
+              setDownloadProgress(stats.total > 0 ? stats.completed / stats.total : 0.5);
+              setTileStats(stats);
             } else {
               setIsDownloaded(false);
               setHasPartialDownload(false);
               setIsDownloading(false);
               setDownloadProgress(null);
+              setTileStats(null);
             }
           });
         }
@@ -1570,8 +1576,15 @@ const Sidebar = ({
         };
     }
 
-    const totalCount = countTiles(bbox, 1, 10) + getSurgicalBoxes(pins).reduce((acc, box) => acc + countTiles(box, 11, 15), 0);
+    const surgicalBoxes = getSurgicalBoxes(pins);
+    const totalCount = countTiles(bbox, 1, 10) + surgicalBoxes.reduce((acc, box) => acc + countTiles(box, 11, 15), 0);
     const estimatedSizeMB = estimateSizeMB(totalCount);
+
+    // Hard Safety Cap: > 50,000 tiles (~1 GB)
+    if (totalCount > 50000) {
+        alert(`Selected download area is too large for offline caching (${totalCount.toLocaleString()} tiles, approx. ${estimatedSizeMB.toFixed(0)} MB). Please zoom in or add specific pins to download this region.`);
+        return;
+    }
 
     const storageStatus = await canFit(estimatedSizeMB);
     if (!storageStatus.ok) {
@@ -1579,19 +1592,14 @@ const Sidebar = ({
         return;
     }
     
-    if (storageStatus.message) {
+    // Soft Warning Threshold: > 10,000 tiles (~200 MB)
+    if (totalCount > 10000) {
+        const proceed = window.confirm(`This map region covers ${totalCount.toLocaleString()} tiles (approx. ${estimatedSizeMB.toFixed(0)} MB) and may take over a minute to download. Do you want to proceed?`);
+        if (!proceed) return;
+    } else if (storageStatus.message) {
         // Show warning but allow proceeding
         console.warn(storageStatus.message);
     }
-
-    const allTiles = [
-        ...getTilesForArea(bbox, 1, 10),
-        ...getSurgicalBoxes(pins).flatMap(box => getTilesForArea(box, 11, 15))
-    ];
-
-    const uniqueTilesMap = new Map();
-    allTiles.forEach(tile => uniqueTilesMap.set(tile.url, tile));
-    const uniqueTiles = Array.from(uniqueTilesMap.values());
 
     const currentMapData: MapData = {
       id: mapId,
@@ -1603,7 +1611,7 @@ const Sidebar = ({
     };
     await saveMapOffline(currentMapData);
 
-    tileWorkerManager.startDownload(mapId, uniqueTiles);
+    tileWorkerManager.startDownload(mapId, { bbox, pins, totalTiles: totalCount });
   };
 
   const handleRemoveDownload = async () => {

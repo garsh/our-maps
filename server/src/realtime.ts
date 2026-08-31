@@ -60,9 +60,6 @@ export async function handlePinUpdate(data: PinUpdatePayload) {
   const { mapId, pinId, updates } = data;
   if (!mapId || !pinId || !updates) return;
 
-  const existing = await db.get('SELECT * FROM pins WHERE id = ? AND map_id = ?', pinId, mapId);
-  if (!existing) return; // Target pin deleted, ignore safely
-
   const setClauses: string[] = [];
   const params: any[] = [];
 
@@ -228,9 +225,6 @@ export async function handleLayerUpdate(data: LayerUpdatePayload) {
   const db = await getDb();
   const { mapId, layerId, updates } = data;
   if (!mapId || !layerId || !updates) return;
-
-  const existing = await db.get('SELECT * FROM pin_layers WHERE id = ? AND map_id = ?', layerId, mapId);
-  if (!existing) return;
 
   const setClauses: string[] = [];
   const params: any[] = [];

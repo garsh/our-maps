@@ -1,4 +1,4 @@
-import { addToManifest, getPendingFromManifest, saveTileBatch, type TileBatchItem } from '../utils/tileUtils';
+import { addToManifest, getPendingFromManifest, saveTileBatch, getTilesForArea, getSurgicalBoxes, type TileBatchItem, type TileInfo, type BoundingBox } from '../utils/tileUtils';
 import { PMTiles } from 'pmtiles';
 
 let pmtilesInstance: PMTiles | null = null;
@@ -12,12 +12,37 @@ function getPMTilesInstance(): PMTiles {
 }
 
 self.onmessage = async (e) => {
-    const { type, mapId, tiles } = e.data;
+    const { type, mapId, tiles, bbox, pins, totalTiles: requestedTotal } = e.data;
 
     if (type === 'start-download') {
         try {
+            let tileEntries: TileInfo[] = [];
+            if (Array.isArray(tiles) && tiles.length > 0) {
+                tileEntries = tiles;
+            } else if (bbox) {
+                const boxes: Array<{ box: BoundingBox; minZ: number; maxZ: number }> = [
+                    { box: bbox, minZ: 1, maxZ: 10 }
+                ];
+                if (Array.isArray(pins) && pins.length > 0) {
+                    const surgical = getSurgicalBoxes(pins);
+                    surgical.forEach(sBox => {
+                        boxes.push({ box: sBox, minZ: 11, maxZ: 15 });
+                    });
+                }
+                const seenUrls = new Set<string>();
+                for (const { box, minZ, maxZ } of boxes) {
+                    const generated = getTilesForArea(box, minZ, maxZ);
+                    for (const t of generated) {
+                        if (!seenUrls.has(t.url)) {
+                            seenUrls.add(t.url);
+                            tileEntries.push(t);
+                        }
+                    }
+                }
+            }
+
             // 1. Add to manifest
-            await addToManifest(tiles.map((t: any) => ({
+            await addToManifest(tileEntries.map((t: any) => ({
                 status: 'pending',
                 ...t,
                 mapId,
@@ -26,8 +51,8 @@ self.onmessage = async (e) => {
 
             // 2. Get resumable pending
             const pending = await getPendingFromManifest(mapId);
-            const total = tiles.length;
-            let completedCount = total - pending.length;
+            const total = requestedTotal || tileEntries.length || pending.length;
+            let completedCount = Math.max(0, total - pending.length);
 
             if (pending.length === 0) {
                 self.postMessage({ type: 'progress', progress: 1.0 });
@@ -95,14 +120,19 @@ self.onmessage = async (e) => {
 
                     completedCount++;
                     if (completedCount % 5 === 0 || completedCount === total) {
-                        self.postMessage({ type: 'progress', progress: completedCount / total });
+                        self.postMessage({ 
+                            type: 'progress', 
+                            progress: completedCount / total,
+                            completed: completedCount,
+                            total
+                        });
                     }
                 }
             });
 
             await Promise.all(workers);
             await flushBuffer();
-            self.postMessage({ type: 'complete' });
+            self.postMessage({ type: 'complete', total });
         } catch (error: any) {
             self.postMessage({ type: 'error', error: error.message });
         }

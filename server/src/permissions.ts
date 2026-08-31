@@ -14,17 +14,18 @@ export async function getMapRole(userId: string, mapId: string): Promise<MapRole
   if (!userId || !mapId) return null;
 
   const db = await getDb();
-  const map = await db.get('SELECT owner_id FROM maps WHERE id = ?', mapId);
-  if (!map) return null;
-
-  if (map.owner_id === userId) return 'owner';
-
-  const perm = await db.get(
-    'SELECT role FROM map_permissions WHERE map_id = ? AND user_id = ?',
-    mapId,
-    userId
+  const row = await db.get(
+    `SELECT m.owner_id, mp.role
+     FROM maps m
+     LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
+     WHERE m.id = ?`,
+    userId,
+    mapId
   );
-  if (perm?.role === 'edit' || perm?.role === 'view') return perm.role;
+  if (!row) return null;
+
+  if (row.owner_id === userId) return 'owner';
+  if (row.role === 'edit' || row.role === 'view') return row.role;
 
   return null;
 }
