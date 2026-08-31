@@ -333,7 +333,7 @@ const StaticPin = ({ pin, isSelected }: { pin: Pin, isSelected?: boolean }) => {
       boxShadow: 'var(--shadow-md)',
       display: 'flex', 
       alignItems: 'center',
-      opacity: 0.9
+      opacity: 0.25
     }}>
       <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
         <div style={{ marginRight: '0px', color: '#bbb', padding: '1px 1px', marginLeft: '-2px' }}>
@@ -591,7 +591,7 @@ const SortablePin = memo(({
   const style = {
     transition,
     zIndex: isDragging ? 10 : undefined,
-    opacity: isDragging ? 0.35 : (isItemInDraggingBundle ? 0.35 : 1),
+    opacity: isDragging ? 0.25 : (isItemInDraggingBundle ? 0.25 : 1),
     position: 'relative' as const,
     pointerEvents: (isDragging || isItemInDraggingBundle) ? 'none' as const : undefined,
   };
@@ -2721,7 +2721,7 @@ const Sidebar = ({
             sideEffects: defaultDropAnimationSideEffects({
                 styles: {
                     active: {
-                        opacity: '0.3', 
+                        opacity: '0.25', 
                     },
                 },
             }),
@@ -2772,7 +2772,7 @@ const Sidebar = ({
               }
               if (activeLayer) {
                 return (
-                  <div style={{ width: '240px', background: 'var(--surface-color)', color: 'var(--text-primary)', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.9, boxShadow: 'var(--shadow-md)', marginLeft: '12px', transform: `scale(${dragOverlayScale})`, transformOrigin: 'top left' }}>
+                  <div style={{ width: '240px', background: 'var(--surface-color)', color: 'var(--text-primary)', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.25, boxShadow: 'var(--shadow-md)', marginLeft: '12px', transform: `scale(${dragOverlayScale})`, transformOrigin: 'top left' }}>
                     <div style={{ fontWeight: '700', fontSize: '0.65rem' }}>{activeLayer.name}</div>
                   </div>
                 );
