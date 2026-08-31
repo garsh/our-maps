@@ -460,10 +460,34 @@ describe('Sidebar', () => {
 
     // Delete button should now be rendered
     const deleteBtn = screen.getByTitle('Delete Layer');
+
+    // Simulate mousedown with preventDefault check
+    const mouseDownEvent = fireEvent.mouseDown(deleteBtn);
+    expect(mouseDownEvent).toBe(false); // defaultPrevented is true when fireEvent returns false
+
     fireEvent.click(deleteBtn);
 
     expect(confirmSpy).toHaveBeenCalled();
     expect(onRemoveLayer).toHaveBeenCalledWith('layer-test-1');
+
+    confirmSpy.mockRestore();
+  });
+
+  it('does not call onRemoveLayer when Delete Layer confirmation is cancelled', () => {
+    const onRemoveLayer = vi.fn();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const layers = [{ id: 'layer-test-1', name: 'Test Layer', position: 0 }];
+
+    render(<TestWrapper handlers={{ layers, onRemoveLayer }} />);
+
+    const layerName = screen.getByText(/Test Layer/i);
+    fireEvent.doubleClick(layerName);
+
+    const deleteBtn = screen.getByTitle('Delete Layer');
+    fireEvent.click(deleteBtn);
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(onRemoveLayer).not.toHaveBeenCalled();
 
     confirmSpy.mockRestore();
   });

@@ -1193,13 +1193,16 @@ const SortableLayer = memo(({
               <div style={{ display: 'flex', gap: '2px' }}>
                 {isEditingName && (
                   <button 
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => { 
                       e.stopPropagation(); 
+                      if (layerDebounceTimerRef.current) clearTimeout(layerDebounceTimerRef.current);
                       let msg = 'Are you sure you want to delete this layer?';
                       if (layerPins.length > 0) {
                         msg += ` The ${layerPins.length} pin${layerPins.length === 1 ? '' : 's'} inside it will be moved to the default layer.`;
                       }
                       if (window.confirm(msg)) {
+                        setIsEditingName(false);
                         onRemoveLayer(layer.id); 
                       }
                     }}
@@ -1211,7 +1214,15 @@ const SortableLayer = memo(({
                   </button>
                 )}
                 <button 
-                  onClick={(e) => { e.stopPropagation(); setIsEditingName(!isEditingName); }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    if (layerDebounceTimerRef.current) clearTimeout(layerDebounceTimerRef.current);
+                    if (isEditingName) {
+                      setLocalLayerName(layer.name);
+                    }
+                    setIsEditingName(!isEditingName); 
+                  }}
                   style={{ background: 'transparent', color: isEditingName ? 'var(--text-primary)' : 'var(--primary-color)', border: 'none', padding: '0px 3px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                   title={isEditingName ? "Cancel editing" : "Edit layer name"}
                 >
