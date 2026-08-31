@@ -1603,8 +1603,8 @@ const MapView = ({
         }}
         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface-color)')}
-        title={isTrackingLocation ? "Stop location tracking" : "Find my location"}
-        aria-label={isTrackingLocation ? "Stop location tracking" : "Find my location"}
+        title={!isTrackingLocation ? 'Find my location' : userLocation ? 'Stop location tracking' : 'Locating...'}
+        aria-label={!isTrackingLocation ? 'Find my location' : userLocation ? 'Stop location tracking' : 'Locating...'}
         aria-pressed={isTrackingLocation}
       >
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1617,6 +1617,11 @@ const MapView = ({
                 height: '8px',
                 borderRadius: '50%',
                 backgroundColor: '#4285F4',
+                ...(userLocation
+                  ? {}
+                  : {
+                      animation: 'locatePulse 1.4s ease-in-out infinite',
+                    }),
               }}
             />
           )}
@@ -1624,6 +1629,16 @@ const MapView = ({
       </button>
 
       <style>{`
+        @keyframes locatePulse {
+          0%, 100% {
+            transform: scale(0.35);
+            opacity: 0.25;
+          }
+          50% {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
         @keyframes pulse {
           0% { box-shadow: 0 0 0 0 rgba(66, 133, 244, 0.7); }
           70% { box-shadow: 0 0 0 15px rgba(66, 133, 244, 0); }

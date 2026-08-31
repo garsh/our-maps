@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import MapView, { isPinInPaddedViewport } from '../MapView';
 import { getHoveredPinId, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
@@ -238,7 +238,11 @@ describe('MapView Compass and Tilt Indicator', () => {
   });
 
   it('toggles location tracking on and off when location button is clicked', () => {
-    const mockWatchPosition = vi.fn().mockReturnValue(12345);
+    let watchSuccessCb: ((pos: any) => void) | null = null;
+    const mockWatchPosition = vi.fn().mockImplementation((success) => {
+      watchSuccessCb = success;
+      return 12345;
+    });
     const mockClearWatch = vi.fn();
     Object.defineProperty(global.navigator, 'geolocation', {
       value: {
@@ -264,6 +268,15 @@ describe('MapView Compass and Tilt Indicator', () => {
     fireEvent.click(locatorButton);
 
     expect(mockWatchPosition).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: /Locating\.\.\./i })).toHaveAttribute('aria-pressed', 'true');
+
+    // Simulate geolocation lock
+    act(() => {
+      watchSuccessCb?.({
+        coords: { latitude: 37.7749, longitude: -122.4194 },
+      });
+    });
+
     expect(screen.getByRole('button', { name: /Stop location tracking/i })).toHaveAttribute('aria-pressed', 'true');
 
     fireEvent.click(screen.getByRole('button', { name: /Stop location tracking/i }));
