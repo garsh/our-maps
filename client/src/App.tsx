@@ -1313,7 +1313,8 @@ export function MapEditor() {
         over.id as string, 
         overData?.type === 'pin' ? 'pin' : 'layer',
         overLayerId,
-        selected
+        selected,
+        collapsedLayerIdsRef.current
       );
 
       setPins(next);

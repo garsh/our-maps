@@ -21,33 +21,61 @@ export function reorderPins(
     overId: string,
     overType: 'pin' | 'layer',
     overLayerId: string | undefined,
-    selectedNavIds: Set<string>
+    selectedNavIds: Set<string>,
+    collapsedLayerIds?: Set<string | null>
 ): Pin[] {
-    const pinsToMoveIds = selectedNavIds.has(activeId) 
-        ? Array.from(selectedNavIds) 
-        : [activeId];
+    const movingSet = selectedNavIds.has(activeId) 
+        ? selectedNavIds 
+        : new Set([activeId]);
     
     // If we dropped on something that is part of the moving bundle,
     // we should keep the current visual state.
-    if (pinsToMoveIds.includes(overId)) {
+    if (movingSet.has(overId)) {
         return prevPins;
     }
 
-    const movedPins = pinsToMoveIds.map(id => prevPins.find(p => p.id === id)).filter(Boolean) as Pin[];
-    const otherPins = prevPins.filter(p => !pinsToMoveIds.includes(p.id));
+    const otherPins: Pin[] = [];
+    const pinMap = new Map<string, Pin>();
+    for (const p of prevPins) {
+        if (movingSet.has(p.id)) {
+            pinMap.set(p.id, p);
+        } else {
+            otherPins.push(p);
+        }
+    }
+
+    const movedPins: Pin[] = [];
+    for (const id of movingSet) {
+        const p = pinMap.get(id);
+        if (p) movedPins.push(p);
+    }
     
     let targetIndex: number;
     if (overType === 'pin') {
         const overIndex = otherPins.findIndex(p => p.id === overId);
         targetIndex = overIndex !== -1 ? overIndex + 1 : otherPins.length;
     } else {
-        // Dropped on a layer header: insert at the beginning (top) of that layer
         const targetLayerId = overLayerId === 'default' ? undefined : overLayerId;
-        const firstPinIndex = otherPins.findIndex(p => isSameLayer(p.layerId, targetLayerId));
-        if (firstPinIndex !== -1) {
-            targetIndex = firstPinIndex;
+        const isCollapsed = collapsedLayerIds?.has(targetLayerId ?? null);
+
+        if (isCollapsed) {
+            // Dropped on a closed (collapsed) layer: insert at the END of that layer
+            let lastPinIndex = -1;
+            for (let i = otherPins.length - 1; i >= 0; i--) {
+                if (isSameLayer(otherPins[i].layerId, targetLayerId)) {
+                    lastPinIndex = i;
+                    break;
+                }
+            }
+            targetIndex = lastPinIndex !== -1 ? lastPinIndex + 1 : otherPins.length;
         } else {
-            targetIndex = otherPins.length;
+            // Dropped on an open (expanded) layer header: insert at the BEGINNING (top) of that layer
+            const firstPinIndex = otherPins.findIndex(p => isSameLayer(p.layerId, targetLayerId));
+            if (firstPinIndex !== -1) {
+                targetIndex = firstPinIndex;
+            } else {
+                targetIndex = otherPins.length;
+            }
         }
     }
 

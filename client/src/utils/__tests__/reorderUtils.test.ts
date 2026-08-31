@@ -16,13 +16,37 @@ describe('reorderUtils', () => {
         expect(result[1].position).toBe(1);
     });
 
-    it('should move to top of layer when dropped on layer header', () => {
-        const result = reorderPins(pins, '3', 'G1', 'layer', 'G1', new Set());
+    it('should move to top of layer when dropped on layer header of an open layer', () => {
+        const result = reorderPins(pins, '3', 'G1', 'layer', 'G1', new Set(), new Set());
         expect(result[0].id).toBe('3');
         expect(result[0].layerId).toBe('G1');
         expect(result[0].position).toBe(0);
         expect(result[1].id).toBe('1');
         expect(result[2].id).toBe('2');
+    });
+
+    it('should append to end of layer when dropped on layer header of a closed layer', () => {
+        const collapsed = new Set(['G1']);
+        const result = reorderPins(pins, '3', 'G1', 'layer', 'G1', new Set(), collapsed);
+        expect(result[0].id).toBe('1');
+        expect(result[1].id).toBe('2');
+        expect(result[2].id).toBe('3');
+        expect(result[2].layerId).toBe('G1');
+        expect(result[2].position).toBe(2);
+    });
+
+    it('should append to end of default layer when dropped on closed default layer header', () => {
+        const mixedPins: Pin[] = [
+            { id: '1', label: 'P1', layerId: 'G1', position: 0, lat: 0, lng: 0 },
+            { id: '2', label: 'P2', layerId: undefined, position: 0, lat: 0, lng: 0 },
+            { id: '3', label: 'P3', layerId: undefined, position: 1, lat: 0, lng: 0 }
+        ] as any;
+        const collapsed = new Set<string | null>([null]);
+        const result = reorderPins(mixedPins, '1', 'default', 'layer', undefined, new Set(), collapsed);
+        const defaultPins = result.filter(p => !p.layerId);
+        expect(defaultPins.length).toBe(3);
+        expect(defaultPins[2].id).toBe('1');
+        expect(defaultPins[2].position).toBe(2);
     });
 
     it('should move to another layer and place after target pin', () => {
