@@ -957,21 +957,28 @@ const DefaultLayerHeader = memo(({
             >
               {hiddenLayerIds?.has(null) ? <EyeOff size={11} /> : <Eye size={11} />}
             </button>
-            {defaultPins.length > 0 ? (
-              <input 
-                type="checkbox" 
-                checked={isDefaultAllSelected}
-                ref={el => { if (el) el.indeterminate = isDefaultSomeSelected && !isDefaultAllSelected; }}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  onToggleNavIds?.(defaultPins.map(p => p.id), checked);
-                }}
-                style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
-                title="Select all in default layer for navigation"
-              />
-            ) : (
-              <div style={{ width: '9px', height: '9px' }} />
-            )}
+            <input 
+              type="checkbox" 
+              checked={defaultPins.length > 0 ? isDefaultAllSelected : false}
+              disabled={defaultPins.length === 0}
+              tabIndex={defaultPins.length === 0 ? -1 : undefined}
+              aria-hidden={defaultPins.length === 0 ? "true" : undefined}
+              ref={el => { if (el) el.indeterminate = defaultPins.length > 0 && isDefaultSomeSelected && !isDefaultAllSelected; }}
+              onChange={(e) => {
+                if (defaultPins.length === 0) return;
+                const checked = e.target.checked;
+                onToggleNavIds?.(defaultPins.map(p => p.id), checked);
+              }}
+              style={{ 
+                cursor: defaultPins.length > 0 ? 'pointer' : 'default', 
+                accentColor: 'var(--primary-color)', 
+                width: '9px', 
+                height: '9px',
+                visibility: defaultPins.length > 0 ? 'visible' : 'hidden',
+                pointerEvents: defaultPins.length > 0 ? 'auto' : 'none'
+              }}
+              title={defaultPins.length > 0 ? "Select all in default layer for navigation" : undefined}
+            />
             {!readOnly && (
               <div style={{ width: '18px' }} />
             )}
@@ -1173,22 +1180,29 @@ const SortableLayer = memo(({
             >
               {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
             </button>
-            {layerPins.length > 0 ? (
-              <input 
-                type="checkbox" 
-                checked={isAllSelected}
-                ref={el => { if (el) el.indeterminate = isSomeSelected && !isAllSelected; }}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  onToggleNavIds?.(layerPins.map(p => p.id), checked);
-                }}
-                style={{ cursor: 'pointer', accentColor: 'var(--primary-color)', width: '9px', height: '9px' }}
-                onClick={(e) => e.stopPropagation()}
-                title="Select all in layer for navigation"
-              />
-            ) : (
-              <div style={{ width: '9px', height: '9px' }} />
-            )}
+            <input 
+              type="checkbox" 
+              checked={layerPins.length > 0 ? isAllSelected : false}
+              disabled={layerPins.length === 0}
+              tabIndex={layerPins.length === 0 ? -1 : undefined}
+              aria-hidden={layerPins.length === 0 ? "true" : undefined}
+              ref={el => { if (el) el.indeterminate = layerPins.length > 0 && isSomeSelected && !isAllSelected; }}
+              onChange={(e) => {
+                if (layerPins.length === 0) return;
+                const checked = e.target.checked;
+                onToggleNavIds?.(layerPins.map(p => p.id), checked);
+              }}
+              style={{ 
+                cursor: layerPins.length > 0 ? 'pointer' : 'default', 
+                accentColor: 'var(--primary-color)', 
+                width: '9px', 
+                height: '9px',
+                visibility: layerPins.length > 0 ? 'visible' : 'hidden',
+                pointerEvents: layerPins.length > 0 ? 'auto' : 'none'
+              }}
+              onClick={(e) => e.stopPropagation()}
+              title={layerPins.length > 0 ? "Select all in layer for navigation" : undefined}
+            />
             {!readOnly && (
               <div style={{ display: 'flex', gap: '2px' }}>
                 {isEditingName && (

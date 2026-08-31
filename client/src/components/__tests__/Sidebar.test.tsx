@@ -606,6 +606,22 @@ describe('Sidebar', () => {
     expect(screen.getByText(/Go\s*\(\s*1\s*\)/i)).toBeInTheDocument();
   });
 
+  it('renders a hidden disabled checkbox placeholder for empty layers to preserve button alignment', () => {
+    const layers = [{ id: 'empty-layer', name: 'Empty Layer', position: 0 }];
+    const { container } = render(<TestWrapper handlers={{ layers, pins: [] }} />);
+
+    // Active navigation checkboxes with titles should not exist for empty layers
+    expect(screen.queryByTitle('Select all in layer for navigation')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Select all in default layer for navigation')).not.toBeInTheDocument();
+
+    // But hidden disabled checkbox placeholders should exist to preserve alignment
+    const hiddenCheckboxes = container.querySelectorAll('input[type="checkbox"][disabled]');
+    expect(hiddenCheckboxes.length).toBeGreaterThanOrEqual(2);
+    hiddenCheckboxes.forEach((cb) => {
+      expect(cb).toHaveStyle({ visibility: 'hidden' });
+    });
+  });
+
   it('shows matching search results in SearchBar dropdown', () => {
     const layers = [
       { id: 'layer-1', name: 'Food', position: 0 },
