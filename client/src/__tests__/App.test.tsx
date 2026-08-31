@@ -70,7 +70,7 @@ describe('App Components Error Handling', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/map not found or access denied/i)).toBeInTheDocument();
+      expect(screen.getByText(/No Data/i)).toBeInTheDocument();
     });
   });
 
@@ -96,7 +96,7 @@ describe('App Components Error Handling', () => {
 
     // Wait for map to load
     await waitFor(() => {
-      expect(screen.getByText(/Map Synced/i)).toBeInTheDocument();
+      expect(screen.getByText(/Synced/i)).toBeInTheDocument();
     });
 
 
@@ -117,7 +117,7 @@ describe('App Components Error Handling', () => {
 
     // Wait for the debounced save to fail
     await waitFor(() => {
-      expect(screen.getByText(/Changes NOT synced/i)).toBeInTheDocument();
+      expect(screen.getByText(/NOT Synced/i)).toBeInTheDocument();
     }, { timeout: 4000 });
 
   }, 10000);
@@ -205,7 +205,7 @@ describe('App Components Error Handling', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/Map Synced/i)).toBeInTheDocument();
+      expect(screen.getByText(/Synced/i)).toBeInTheDocument();
     });
 
     const resizer = container.querySelector('.resizer-handle') as HTMLElement;
@@ -285,7 +285,7 @@ describe('App Components Error Handling', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/Map Synced/i)).toBeInTheDocument();
+      expect(screen.getByText(/Synced/i)).toBeInTheDocument();
     });
 
     const handle = container.querySelector('.bottom-sheet-drag-handle') as HTMLElement;

@@ -439,7 +439,6 @@ export function MapEditor() {
     setPreviewLocation(lat !== null && lng !== null ? { lat, lng } : null);
   }, []);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const isRemoteUpdateRef = useRef(false);
   const isInitialLoadRef = useRef(false);
   const hasLoadedRef = useRef(false);
@@ -864,7 +863,7 @@ export function MapEditor() {
       setIsDirty(false);
     } catch (err) {
       console.error('Failed to load map', err);
-      setError('Map not found or access denied');
+      setError('No Data');
       setTimeout(() => navigate('/'), 2000);
     } finally {
       if (!silent) {
@@ -897,7 +896,7 @@ export function MapEditor() {
       }
     } catch (err) {
       console.error('Failed to save map', err);
-      setError('Changes NOT synced');
+      setError('NOT Synced');
     } finally {
       setIsSaving(false);
     }
@@ -1351,8 +1350,6 @@ export function MapEditor() {
       }
     }
     if (data.layers) setLayers(data.layers);
-    setSuccessMessage('Map imported! Auto-saving...');
-    setTimeout(() => setSuccessMessage(null), 3000);
   }, []);
 
   const sidebarWidthRef = useRef(sidebarWidth);
@@ -1440,7 +1437,7 @@ export function MapEditor() {
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            color: (isOffline || error) ? '#ffbdad' : (successMessage ? '#b8ffd1' : (mapTheme === 'dark' ? '#cbd5e1' : 'white')),
+            color: (isOffline || error) ? '#ffbdad' : (mapTheme === 'dark' ? '#cbd5e1' : 'white'),
             fontWeight: '600',
             whiteSpace: 'nowrap',
             cursor: error ? 'pointer' : 'default',
@@ -1450,7 +1447,7 @@ export function MapEditor() {
           }}>
             <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: (isOffline || error) ? '#ff4d4f' : (isSaving || isDirty ? '#ffcc00' : '#4ade80'), flexShrink: 0 }} />
             <span>
-              {isOffline ? 'Offline' : (error || successMessage || (isSaving ? 'Saving changes...' : (isDirty ? 'Pending Updates...' : 'Map Synced')))}
+              {isOffline ? 'Offline' : (error || (isSaving ? 'Saving...' : (isDirty ? 'Pending...' : 'Synced')))}
             </span>
           </button>
         )}
