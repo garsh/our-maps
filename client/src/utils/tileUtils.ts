@@ -299,30 +299,37 @@ export async function removeMapDownload(mapId: string): Promise<void> {
 }
 
 
-export async function saveTile(url: string, blob: Blob): Promise<void> {
-    tileMissCache.delete(url);
+export function getTileKeys(url: string): { primary: string; secondary?: string } {
     if (url.startsWith('http://') || url.startsWith('https://')) {
         try {
             const pathname = new URL(url).pathname;
-            tileMissCache.delete(pathname);
-        } catch {}
+            return { primary: url, secondary: pathname };
+        } catch {
+            return { primary: url };
+        }
     } else if (url.startsWith('/')) {
         try {
-            const fullUrl = `${window.location.origin}${url}`;
-            tileMissCache.delete(fullUrl);
-        } catch {}
+            const fullUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}${url}`;
+            return { primary: url, secondary: fullUrl };
+        } catch {
+            return { primary: url };
+        }
     }
+    return { primary: url };
+}
+
+export async function saveTile(url: string, blob: Blob): Promise<void> {
+    const { primary, secondary } = getTileKeys(url);
+    tileMissCache.delete(primary);
+    if (secondary) tileMissCache.delete(secondary);
 
     const db = await openDB();
     const transaction = db.transaction([TILE_STORE, MANIFEST_STORE], 'readwrite');
     
     const tileStore = transaction.objectStore(TILE_STORE);
-    tileStore.put(blob, url);
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-        try {
-            const pathname = new URL(url).pathname;
-            tileStore.put(blob, pathname);
-        } catch {}
+    tileStore.put(blob, primary);
+    if (secondary) {
+        tileStore.put(blob, secondary);
     }
 
     const manifestStore = transaction.objectStore(MANIFEST_STORE);
@@ -343,7 +350,8 @@ export async function saveTile(url: string, blob: Blob): Promise<void> {
 }
 
 export async function getTile(url: string): Promise<Blob | null> {
-    if (tileMissCache.has(url)) {
+    const { primary, secondary } = getTileKeys(url);
+    if (tileMissCache.has(primary) || (secondary && tileMissCache.has(secondary))) {
         return null;
     }
     try {
@@ -351,61 +359,30 @@ export async function getTile(url: string): Promise<Blob | null> {
         return new Promise((resolve, reject) => {
             const transaction = db.transaction(TILE_STORE, 'readonly');
             const store = transaction.objectStore(TILE_STORE);
-            const request = store.get(url);
+            const request = store.get(primary);
             request.onsuccess = () => {
                 if (request.result) {
                     resolve(request.result);
                     return;
                 }
-                try {
-                    if (url.startsWith('http://') || url.startsWith('https://')) {
-                        const pathname = new URL(url).pathname;
-                        if (tileMissCache.has(pathname)) {
-                            recordTileMiss(url);
+                if (secondary) {
+                    const secReq = store.get(secondary);
+                    secReq.onsuccess = () => {
+                        if (secReq.result) {
+                            resolve(secReq.result);
+                        } else {
+                            recordTileMiss(primary);
+                            recordTileMiss(secondary);
                             resolve(null);
-                            return;
                         }
-                        const pathReq = store.get(pathname);
-                        pathReq.onsuccess = () => {
-                            if (pathReq.result) {
-                                resolve(pathReq.result);
-                            } else {
-                                recordTileMiss(url);
-                                recordTileMiss(pathname);
-                                resolve(null);
-                            }
-                        };
-                        pathReq.onerror = () => {
-                            recordTileMiss(url);
-                            resolve(null);
-                        };
-                    } else if (url.startsWith('/')) {
-                        const fullUrl = `${window.location.origin}${url}`;
-                        if (tileMissCache.has(fullUrl)) {
-                            recordTileMiss(url);
-                            resolve(null);
-                            return;
-                        }
-                        const fullReq = store.get(fullUrl);
-                        fullReq.onsuccess = () => {
-                            if (fullReq.result) {
-                                resolve(fullReq.result);
-                            } else {
-                                recordTileMiss(url);
-                                recordTileMiss(fullUrl);
-                                resolve(null);
-                            }
-                        };
-                        fullReq.onerror = () => {
-                            recordTileMiss(url);
-                            resolve(null);
-                        };
-                    } else {
-                        recordTileMiss(url);
+                    };
+                    secReq.onerror = () => {
+                        recordTileMiss(primary);
+                        recordTileMiss(secondary);
                         resolve(null);
-                    }
-                } catch {
-                    recordTileMiss(url);
+                    };
+                } else {
+                    recordTileMiss(primary);
                     resolve(null);
                 }
             };

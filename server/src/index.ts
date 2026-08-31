@@ -200,41 +200,20 @@ io.on('connection', (socket: Socket) => {
 
 
 // Serve maps directory (PMTiles, fonts, sprites) with HTTP Range Request and CORS support
-const candidateMapsDirs = [
+const searchRoots = [
+  process.cwd(),
+  path.resolve(__dirname, '../..'),
+  path.resolve(__dirname, '../../..'),
+];
+const searchSubdirs = [
+  'data/maps', 'data/sprites', 'data/fonts', 'data',
+  'server/public/maps', 'server/public/sprites', 'server/public/fonts', 'server/public',
+  'public/maps', 'public/sprites', 'public/fonts', 'public'
+];
+const candidateMapsDirs: string[] = Array.from(new Set([
   process.env.MAPS_DIR,
-
-  // Relative to process.cwd()
-  path.resolve(process.cwd(), 'data/maps'),
-  path.resolve(process.cwd(), 'data/sprites'),
-  path.resolve(process.cwd(), 'data/fonts'),
-  path.resolve(process.cwd(), 'data'),
-  path.resolve(process.cwd(), 'server/public/maps'),
-  path.resolve(process.cwd(), 'server/public/sprites'),
-  path.resolve(process.cwd(), 'server/public/fonts'),
-  path.resolve(process.cwd(), 'server/public'),
-  path.resolve(process.cwd(), 'public/maps'),
-  path.resolve(process.cwd(), 'public/sprites'),
-  path.resolve(process.cwd(), 'public/fonts'),
-  path.resolve(process.cwd(), 'public'),
-
-  // Relative to __dirname (dev ts-node in src/ vs prod dist/server/src/)
-  path.resolve(__dirname, '../../data/maps'),
-  path.resolve(__dirname, '../../data/sprites'),
-  path.resolve(__dirname, '../../data/fonts'),
-  path.resolve(__dirname, '../../data'),
-  path.resolve(__dirname, '../public/maps'),
-  path.resolve(__dirname, '../public/sprites'),
-  path.resolve(__dirname, '../public/fonts'),
-  path.resolve(__dirname, '../public'),
-  path.resolve(__dirname, '../../../data/maps'),
-  path.resolve(__dirname, '../../../data/sprites'),
-  path.resolve(__dirname, '../../../data/fonts'),
-  path.resolve(__dirname, '../../../data'),
-  path.resolve(__dirname, '../../../public/maps'),
-  path.resolve(__dirname, '../../../public/sprites'),
-  path.resolve(__dirname, '../../../public/fonts'),
-  path.resolve(__dirname, '../../../public'),
-].filter(Boolean) as string[];
+  ...searchRoots.flatMap(root => searchSubdirs.map(sub => path.resolve(root, sub)))
+].filter(Boolean) as string[]));
 
 const mapsDir = candidateMapsDirs.find((d) => fs.existsSync(d)) || candidateMapsDirs[0];
 

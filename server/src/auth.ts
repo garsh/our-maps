@@ -55,27 +55,34 @@ export function parseCookies(header?: string): Record<string, string> {
   return out;
 }
 
-function sessionCookieOptions() {
+function sessionCookieOptions(maxAge?: number) {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax' as const,
     path: '/',
-    maxAge: SESSION_MAX_AGE_MS,
+    ...(maxAge !== undefined ? { maxAge } : {}),
   };
 }
 
 export function setSessionCookie(res: Response, sessionId: string) {
-  res.cookie(SESSION_COOKIE, sessionId, sessionCookieOptions());
+  res.cookie(SESSION_COOKIE, sessionId, sessionCookieOptions(SESSION_MAX_AGE_MS));
 }
 
 export function clearSessionCookie(res: Response) {
-  res.clearCookie(SESSION_COOKIE, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-  });
+  res.clearCookie(SESSION_COOKIE, sessionCookieOptions());
+}
+
+function decodeBase64User(token: string): User | null {
+  try {
+    const rawPayload = token.includes('.') ? token.split('.')[1] : token;
+    const decoded = Buffer.from(rawPayload, 'base64').toString('utf8');
+    const user = JSON.parse(decoded);
+    if (!user.id && user.sub) user.id = user.sub;
+    return isValidUser(user) ? user : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function createSession(userId: string): Promise<string> {
@@ -163,14 +170,10 @@ export async function authenticateToken(
   }
 
   if (!token.includes('.') && isMockAuthAllowed()) {
-    try {
-      const user = JSON.parse(Buffer.from(token, 'base64').toString());
-      if (isValidUser(user)) {
-        await ensureUserExists(user);
-        return user;
-      }
-    } catch {
-      // Fall through to JWT verification
+    const user = decodeBase64User(token);
+    if (user) {
+      await ensureUserExists(user);
+      return user;
     }
   }
 
@@ -200,27 +203,12 @@ export async function authenticateToken(
       throw new AuthError(`Authentication failed: ${jwtErr.message}`);
     }
 
-    try {
-      let user;
-      if (token.includes('.')) {
-        const payload = token.split('.')[1];
-        const decoded = Buffer.from(payload, 'base64').toString('utf8');
-        user = JSON.parse(decoded);
-        if (!user.id && user.sub) user.id = user.sub;
-      } else {
-        const decoded = Buffer.from(token, 'base64').toString('utf8');
-        user = JSON.parse(decoded);
-      }
-
-      if (!isValidUser(user)) {
-        throw new Error('invalid token');
-      }
-
+    const user = decodeBase64User(token);
+    if (user) {
       await ensureUserExists(user);
       return user;
-    } catch {
-      throw new AuthError('Invalid token');
     }
+    throw new AuthError('Invalid token');
   }
 }
 

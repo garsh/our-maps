@@ -39,16 +39,94 @@ async function throttleNominatim(): Promise<void> {
 // Apply auth middleware to require login for proxy requests
 router.use(authMiddleware);
 
+function stripCountrySuffix(address?: string | null): string {
+  if (!address) return '';
+  return address.replace(/,\s*(USA|United States|United States of America)$/i, '').trim();
+}
+
+export function formatNominatimAddress(item: any): { title: string; address: string } {
+  let title = '';
+  let address = item.display_name || '';
+
+  if (item.address) {
+    const firstPart = (item.display_name || '').split(',')[0].trim();
+    let road = item.address.road || '';
+    if (item.address.house_number && road) road = `${item.address.house_number} ${road}`;
+
+    const parts = [];
+    if (firstPart !== item.address.house_number && !road.startsWith(firstPart)) {
+      title = firstPart;
+    }
+    if (road) parts.push(road);
+
+    const city = item.address.city || item.address.town || item.address.village || item.address.suburb;
+    let state = item.address.state;
+    if (state && STATE_ABBREVIATIONS[state]) {
+      state = STATE_ABBREVIATIONS[state];
+    }
+    const postcode = item.address.postcode;
+
+    parts.push(city, state, postcode);
+    const validParts = parts.filter(Boolean).map((s: any) => String(s).trim());
+    address = Array.from(new Set(validParts)).join(', ');
+  }
+
+  return { title, address };
+}
+
+interface ClampedBounds {
+  boundWest: number;
+  boundEast: number;
+  boundNorth: number;
+  boundSouth: number;
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+}
+
+function parseAndClampBounds(bounds?: string): ClampedBounds | null {
+  if (!bounds) return null;
+  const parts = bounds.split(',').map(Number);
+  if (parts.length !== 4 || parts.some((n) => isNaN(n))) return null;
+
+  const [west, north, east, south] = parts;
+  const minLat = Math.min(north, south);
+  const maxLat = Math.max(north, south);
+  const minLng = Math.min(west, east);
+  const maxLng = Math.max(west, east);
+
+  return {
+    boundWest: Math.max(-180, minLng),
+    boundEast: Math.min(180, maxLng),
+    boundNorth: Math.min(90, maxLat),
+    boundSouth: Math.max(-90, minLat),
+    minLat,
+    maxLat,
+    minLng,
+    maxLng,
+  };
+}
+
+function isWithinBounds(latStr: string, lonStr: string, bounds: ClampedBounds | null): boolean {
+  if (!bounds) return true;
+  const lat = parseFloat(latStr);
+  const lon = parseFloat(lonStr);
+  if (isNaN(lat) || isNaN(lon)) return true;
+  return lat >= bounds.boundSouth && lat <= bounds.boundNorth && lon >= bounds.boundWest && lon <= bounds.boundEast;
+}
+
 // GET /api/places/search?q=QUERY&bounds=BOUNDS
 router.get('/search', async (req: AuthRequest, res) => {
   const query = req.query.q as string;
-  const bounds = req.query.bounds as string; // west,north,east,south
+  const boundsParam = req.query.bounds as string;
 
   if (!query) {
     return res.status(400).json({ error: 'Query is required' });
   }
 
   const apiKey = process.env.GOOGLE_MAPS_API_KEY?.trim();
+  const clamped = parseAndClampBounds(boundsParam);
 
   if (!apiKey) {
     if (process.env.NODE_ENV !== 'test') {
@@ -57,29 +135,12 @@ router.get('/search', async (req: AuthRequest, res) => {
     try {
       await throttleNominatim();
       let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=30&addressdetails=1`;
-      let boundWest = -180, boundEast = 180, boundNorth = 90, boundSouth = -90;
-      let hasBounds = false;
       
-      if (bounds) {
-        const parts = bounds.split(',').map(Number);
-        if (parts.length === 4 && parts.every(n => !isNaN(n))) {
-          const [west, north, east, south] = parts;
-          const minLat = Math.min(north, south);
-          const maxLat = Math.max(north, south);
-          const minLng = Math.min(west, east);
-          const maxLng = Math.max(west, east);
-          
-          boundWest = Math.max(-180, minLng);
-          boundEast = Math.min(180, maxLng);
-          boundNorth = Math.min(90, maxLat);
-          boundSouth = Math.max(-90, minLat);
-          hasBounds = true;
-          
-          const boundedViewbox = `${boundWest},${boundNorth},${boundEast},${boundSouth}`;
-          url += `&viewbox=${encodeURIComponent(boundedViewbox)}&bounded=1`;
-        } else {
-          url += `&viewbox=${encodeURIComponent(bounds)}&bounded=1`;
-        }
+      if (clamped) {
+        const boundedViewbox = `${clamped.boundWest},${clamped.boundNorth},${clamped.boundEast},${clamped.boundSouth}`;
+        url += `&viewbox=${encodeURIComponent(boundedViewbox)}&bounded=1`;
+      } else if (boundsParam) {
+        url += `&viewbox=${encodeURIComponent(boundsParam)}&bounded=1`;
       }
       
       const response = await fetch(url, {
@@ -87,30 +148,7 @@ router.get('/search', async (req: AuthRequest, res) => {
       });
       const data = await response.json();
       let formatted = data.map((item: any) => {
-        let title = '';
-        let address = item.display_name;
-        if (item.address) {
-          const firstPart = item.display_name.split(',')[0].trim();
-          let road = item.address.road || '';
-          if (item.address.house_number && road) road = `${item.address.house_number} ${road}`;
-          
-          const parts = [];
-          if (firstPart !== item.address.house_number && !road.startsWith(firstPart)) {
-            title = firstPart;
-          }
-          if (road) parts.push(road);
-          
-          const city = item.address.city || item.address.town || item.address.village || item.address.suburb;
-          let state = item.address.state;
-          if (state && STATE_ABBREVIATIONS[state]) {
-            state = STATE_ABBREVIATIONS[state];
-          }
-          const postcode = item.address.postcode;
-          
-          parts.push(city, state, postcode);
-          const validParts = parts.filter(Boolean).map(s => String(s).trim());
-          address = Array.from(new Set(validParts)).join(', ');
-        }
+        const { title, address } = formatNominatimAddress(item);
         return {
           place_id: item.place_id,
           title,
@@ -121,13 +159,8 @@ router.get('/search', async (req: AuthRequest, res) => {
         };
       });
 
-      if (hasBounds) {
-        formatted = formatted.filter((item: any) => {
-          const lat = parseFloat(item.lat);
-          const lon = parseFloat(item.lon);
-          if (isNaN(lat) || isNaN(lon)) return true;
-          return lat >= boundSouth && lat <= boundNorth && lon >= boundWest && lon <= boundEast;
-        });
+      if (clamped) {
+        formatted = formatted.filter((item: any) => isWithinBounds(item.lat, item.lon, clamped));
       }
 
       return res.json(formatted.slice(0, 10));
@@ -139,51 +172,30 @@ router.get('/search', async (req: AuthRequest, res) => {
 
   try {
     const url = 'https://places.googleapis.com/v1/places:searchText';
-
     const body: Record<string, any> = {
       textQuery: query,
       maxResultCount: 10
     };
 
-    let boundWest = -180, boundEast = 180, boundNorth = 90, boundSouth = -90;
-    let hasBounds = false;
-
-    if (bounds) {
-      // bounds: west,north,east,south
-      const parts = bounds.split(',').map(Number);
-      if (parts.length === 4 && parts.every((n) => !isNaN(n))) {
-        const [west, north, east, south] = parts;
-        const minLat = Math.min(north, south);
-        const maxLat = Math.max(north, south);
-        const minLng = Math.min(west, east);
-        const maxLng = Math.max(west, east);
-
-        const height = Math.abs(maxLat - minLat);
-
-        boundWest = Math.max(-180, minLng);
-        boundEast = Math.min(180, maxLng);
-        boundNorth = Math.min(90, maxLat);
-        boundSouth = Math.max(-90, minLat);
-        hasBounds = true;
-
-        if (boundEast - boundWest <= 180 && boundSouth <= boundNorth) {
-          body.locationRestriction = {
-            rectangle: {
-              low: { latitude: boundSouth, longitude: boundWest },
-              high: { latitude: boundNorth, longitude: boundEast }
-            }
-          };
-        } else {
-          const centerLat = (minLat + maxLat) / 2;
-          const centerLng = (minLng + maxLng) / 2;
-          const radius = Math.max(500, Math.min(50000, Math.round(height * 111000)));
-          body.locationBias = {
-            circle: {
-              center: { latitude: centerLat, longitude: centerLng },
-              radius
-            }
-          };
-        }
+    if (clamped) {
+      const height = Math.abs(clamped.maxLat - clamped.minLat);
+      if (clamped.boundEast - clamped.boundWest <= 180 && clamped.boundSouth <= clamped.boundNorth) {
+        body.locationRestriction = {
+          rectangle: {
+            low: { latitude: clamped.boundSouth, longitude: clamped.boundWest },
+            high: { latitude: clamped.boundNorth, longitude: clamped.boundEast }
+          }
+        };
+      } else {
+        const centerLat = (clamped.minLat + clamped.maxLat) / 2;
+        const centerLng = (clamped.minLng + clamped.maxLng) / 2;
+        const radius = Math.max(500, Math.min(50000, Math.round(height * 111000)));
+        body.locationBias = {
+          circle: {
+            center: { latitude: centerLat, longitude: centerLng },
+            radius
+          }
+        };
       }
     }
 
@@ -204,26 +216,17 @@ router.get('/search', async (req: AuthRequest, res) => {
     }
 
     const results = data.places || [];
-    let formatted = results.map((item: any) => {
-      let formattedAddress = item.formattedAddress || '';
-      formattedAddress = formattedAddress.replace(/,\s*(USA|United States|United States of America)$/i, '');
-      return {
-        place_id: item.id || '',
-        title: item.displayName?.text || '',
-        address: formattedAddress,
-        lat: item.location?.latitude?.toString() || '0',
-        lon: item.location?.longitude?.toString() || '0',
-        type: 'global'
-      };
-    });
+    let formatted = results.map((item: any) => ({
+      place_id: item.id || '',
+      title: item.displayName?.text || '',
+      address: stripCountrySuffix(item.formattedAddress),
+      lat: item.location?.latitude?.toString() || '0',
+      lon: item.location?.longitude?.toString() || '0',
+      type: 'global'
+    }));
 
-    if (hasBounds) {
-      formatted = formatted.filter((item: any) => {
-        const lat = parseFloat(item.lat);
-        const lon = parseFloat(item.lon);
-        if (isNaN(lat) || isNaN(lon)) return true;
-        return lat >= boundSouth && lat <= boundNorth && lon >= boundWest && lon <= boundEast;
-      });
+    if (clamped) {
+      formatted = formatted.filter((item: any) => isWithinBounds(item.lat, item.lon, clamped));
     }
 
     return res.json(formatted.slice(0, 10));
@@ -255,30 +258,8 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
         headers: { 'User-Agent': 'OurMaps-App/1.0' }
       });
       const data = await response.json();
-      let cleanAddress = data.display_name || null;
-      if (data.address) {
-        const firstPart = (data.display_name || '').split(',')[0].trim();
-        let road = data.address.road || '';
-        if (data.address.house_number && road) road = `${data.address.house_number} ${road}`;
-        
-        const parts = [];
-        if (firstPart !== data.address.house_number && !road.startsWith(firstPart)) {
-          parts.push(firstPart);
-        }
-        if (road) parts.push(road);
-        
-        const city = data.address.city || data.address.town || data.address.village || data.address.suburb;
-        let state = data.address.state;
-        if (state && STATE_ABBREVIATIONS[state]) {
-          state = STATE_ABBREVIATIONS[state];
-        }
-        const postcode = data.address.postcode;
-        
-        parts.push(city, state, postcode);
-        const validParts = parts.filter(Boolean).map(s => String(s).trim());
-        cleanAddress = Array.from(new Set(validParts)).join(', ');
-      }
-      return res.json({ address: cleanAddress });
+      const { address } = formatNominatimAddress(data);
+      return res.json({ address: address || null });
     } catch (err: any) {
       console.error('[Places API] Nominatim fallback reverse geocode failed:', err);
       return res.status(502).json({ error: 'Reverse geocode failed' });
@@ -295,10 +276,8 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
       return res.status(502).json({ error: 'Reverse geocode failed' });
     }
 
-    let address = data.results?.[0]?.formatted_address || null;
-    if (address) {
-      address = address.replace(/,\s*(USA|United States|United States of America)$/i, '');
-    }
+    const rawAddress = data.results?.[0]?.formatted_address || null;
+    const address = rawAddress ? stripCountrySuffix(rawAddress) : null;
     return res.json({ address });
   } catch (err: any) {
     console.error('[Places API] Google reverse geocode failed:', err);

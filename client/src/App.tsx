@@ -181,12 +181,7 @@ export function MapEditor() {
     const headerHeight = headerRef.current ? headerRef.current.getBoundingClientRect().height : 44;
     const handleHeight = 28;
     const maxH = Math.max(100, window.innerHeight - headerHeight - handleHeight);
-    const minH = 0;
-    return { minH, maxH };
-  };
-
-  const getSheetBounds = () => {
-    return sheetBoundsRef.current;
+    return { minH: 0, maxH };
   };
 
   const startSheetDrag = (e: React.PointerEvent) => {
@@ -211,7 +206,7 @@ export function MapEditor() {
     if (Math.abs(deltaY) > 3) {
       sheetDragStart.current.moved = true;
     }
-    const { minH, maxH } = getSheetBounds();
+    const { minH, maxH } = sheetBoundsRef.current;
     const newH = Math.max(minH, Math.min(maxH, sheetDragStart.current.height + deltaY));
     currentDragHeight.current = newH;
 
@@ -244,7 +239,7 @@ export function MapEditor() {
     const elapsed = Math.max(1, Date.now() - sheetDragStart.current.time);
     const velocity = totalDeltaY / elapsed; // px per ms
 
-    const { minH, maxH } = getSheetBounds();
+    const { minH, maxH } = sheetBoundsRef.current;
     const standardHeight = getStandardSheetHeight();
     const isAtStandardHeight = Math.abs(sheetHeight - standardHeight) <= 5;
     let finalH = currentDragHeight.current;
@@ -1383,7 +1378,7 @@ export function MapEditor() {
             : (sourceLayers.values().next().value as string | undefined);
 
           const primarySourcePins = primarySourceLayer !== undefined && !isSameLayer(primarySourceLayer, overLayerId)
-            ? next.filter(p => isSameLayer(p.layerId, primarySourceLayer))
+            ? next.filter(p => isSameLayer(p.layerId, primarySourceLayer)).sort(comparePinPositions)
             : undefined;
 
           socketRef.current?.emit('pin-move-layer', {
@@ -1398,7 +1393,7 @@ export function MapEditor() {
           // If pins were moved from multiple distinct source layers, emit pins-reorder for the other source layers
           sourceLayers.forEach(srcLayer => {
             if (srcLayer !== primarySourceLayer) {
-              const remainingPins = next.filter(p => isSameLayer(p.layerId, srcLayer));
+              const remainingPins = next.filter(p => isSameLayer(p.layerId, srcLayer)).sort(comparePinPositions);
               socketRef.current?.emit('pins-reorder', {
                 mapId: currentMapId,
                 layerId: srcLayer === undefined ? null : srcLayer,
