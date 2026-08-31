@@ -192,6 +192,10 @@ describe('Sidebar', () => {
     fireEvent.pointerEnter(pinRow, { pointerType: 'mouse' });
     expect(onHoverPin).toHaveBeenCalledWith('1');
 
+    onHoverPin.mockClear();
+    fireEvent.pointerMove(pinRow, { pointerType: 'mouse' });
+    expect(onHoverPin).toHaveBeenCalledWith('1');
+
     setHoveredPin('1');
     expect(pinRow).toHaveClass(PIN_HOVER_CLASS);
   });

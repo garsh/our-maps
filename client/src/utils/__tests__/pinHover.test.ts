@@ -8,6 +8,8 @@ import {
   subscribeHoveredPin,
   useIsPinHovered,
   resetPinHoverForTests,
+  hasFinePointer,
+  setLastPointerTypeForTests,
 } from '../pinHover';
 
 describe('pinHover', () => {
@@ -89,5 +91,16 @@ describe('pinHover', () => {
     act(() => setHoveredPin('pin-b'));
     expect(pinA.current).toBe(false);
     expect(pinB.current).toBe(true);
+  });
+
+  it('detects fine pointer capability vs touch pointer correctly', () => {
+    setLastPointerTypeForTests('mouse');
+    expect(hasFinePointer()).toBe(true);
+
+    setLastPointerTypeForTests('touch');
+    expect(hasFinePointer()).toBe(false);
+
+    setLastPointerTypeForTests('mouse');
+    expect(hasFinePointer()).toBe(true);
   });
 });

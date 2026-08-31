@@ -33,7 +33,7 @@ import { reorderPins, reorderLayers, isSameLayer, comparePinPositions } from './
 import { generateId } from './utils/fileUtils';
 import { getManifestStats } from './utils/tileUtils';
 import { tileWorkerManager } from './utils/tileWorkerManager';
-import { clearHoveredPin, getHoveredPinId, setHoveredPin } from './utils/pinHover';
+import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer } from './utils/pinHover';
 import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
@@ -978,7 +978,15 @@ export function MapEditor() {
       });
     }
 
-    setTargetPinId(prev => prev === pinId ? null : pinId);
+    setTargetPinId(prev => {
+      if (prev === pinId) {
+        if (!isHoverBlockedRef.current && hasFinePointer()) {
+          setHoveredPin(pinId);
+        }
+        return null;
+      }
+      return pinId;
+    });
   }, []);
 
   const handlePinClick = useCallback((pin: Pin) => {
@@ -1010,6 +1018,7 @@ export function MapEditor() {
   const handleHoverPin = useCallback((id: string | null, leavingPinId?: string) => {
     if (isHoverBlockedRef.current && id !== null) return;
     if (id !== null) {
+      if (!hasFinePointer()) return;
       const target = targetPinIdRef.current;
       const editing = editingPinIdRef.current;
       if (target && pinsRef.current.some(p => p.id === target)) return;

@@ -4,7 +4,42 @@ export const PIN_HOVER_CLASS = 'pin-hovered';
 
 let hoveredId: string | null = null;
 let lastHoveredEl: HTMLElement | null = null;
+let lastPointerType: string = 'mouse';
 const listeners = new Set<(id: string | null) => void>();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(
+    'pointerdown',
+    (e: PointerEvent) => {
+      if (e.pointerType) lastPointerType = e.pointerType;
+    },
+    { capture: true, passive: true }
+  );
+
+  window.addEventListener(
+    'pointermove',
+    (e: PointerEvent) => {
+      if (e.pointerType) lastPointerType = e.pointerType;
+    },
+    { capture: true, passive: true }
+  );
+}
+
+export function hasFinePointer(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (lastPointerType === 'touch') return false;
+  if (typeof window.matchMedia === 'function') {
+    const mq = window.matchMedia('(hover: hover) and (pointer: fine)');
+    if (mq && typeof mq.matches === 'boolean') {
+      return mq.matches;
+    }
+  }
+  return true;
+}
+
+export function setLastPointerTypeForTests(type: string) {
+  lastPointerType = type;
+}
 
 export function getHoveredPinId(): string | null {
   return hoveredId;
@@ -69,6 +104,7 @@ export function useIsPinHovered(pinId: string): boolean {
 export function resetPinHoverForTests() {
   hoveredId = null;
   lastHoveredEl = null;
+  lastPointerType = 'mouse';
   listeners.clear();
   if (typeof document !== 'undefined') {
     document.querySelectorAll(`.${PIN_HOVER_CLASS}`).forEach((el) => {

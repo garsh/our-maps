@@ -618,6 +618,9 @@ const SortablePin = memo(({
       onPointerEnter={(e) => {
         if (!isHoverBlocked && e.pointerType === 'mouse') onHoverPin?.(pin.id);
       }}
+      onPointerMove={(e) => {
+        if (!isHoverBlocked && e.pointerType === 'mouse') onHoverPin?.(pin.id);
+      }}
       onPointerLeave={(e) => {
         if (e.pointerType === 'mouse') onHoverPin?.(null, pin.id);
       }}

@@ -2,7 +2,7 @@ import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { MapEditor, clampSidebarWidth } from '../App';
-import { PIN_HOVER_CLASS } from '../utils/pinHover';
+import { PIN_HOVER_CLASS, getHoveredPinId, setLastPointerTypeForTests } from '../utils/pinHover';
 import LandingPage from '../pages/LandingPage';
 import { apiService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -319,6 +319,122 @@ describe('App Components Error Handling', () => {
 
     const pinList = container.querySelector('.pin-list');
     expect(pinList?.classList.contains('pin-hover-blocked')).toBe(true);
+  });
+
+  it('restores hover state on desktop when deselecting a pin by clicking it', async () => {
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [
+        { id: 'pin-1', lat: 10, lng: 20, label: 'My Pin', position: 0 }
+      ],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    window.innerWidth = 1200;
+    window.innerHeight = 800;
+
+    const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('My Pin')).toBeInTheDocument();
+    });
+
+    const pinItem = container.querySelector('#pin-pin-1') || screen.getByText('My Pin').closest('li');
+    expect(pinItem).toBeTruthy();
+
+    // 1. Click pin to open info card (select)
+    fireEvent.click(screen.getByText('My Pin'));
+
+    // 2. Click pin label again to close info card (deselect)
+    fireEvent.click(screen.getByText('My Pin'));
+
+    // On desktop, the pin should now be hovered
+    expect(getHoveredPinId()).toBe('pin-1');
+  });
+
+  it('restores hover state when deselecting a pin by clicking it even at mobile window dimensions', async () => {
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [
+        { id: 'pin-1', lat: 10, lng: 20, label: 'My Pin', position: 0 }
+      ],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    window.innerWidth = 400;
+    window.innerHeight = 800;
+
+    const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('My Pin')).toBeInTheDocument();
+    });
+
+    // 1. Click pin to open info card (select)
+    fireEvent.click(screen.getByText('My Pin'));
+
+    // 2. Click pin label again to close info card (deselect)
+    fireEvent.click(screen.getByText('My Pin'));
+
+    // Pin should be hovered regardless of window width
+    expect(getHoveredPinId()).toBe('pin-1');
+  });
+
+  it('does not leave pin hovered on deselect when pointer is touch', async () => {
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [
+        { id: 'pin-1', lat: 10, lng: 20, label: 'My Pin', position: 0 }
+      ],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    setLastPointerTypeForTests('touch');
+
+    const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('My Pin')).toBeInTheDocument();
+    });
+
+    // 1. Tap pin to open info card (select)
+    fireEvent.click(screen.getByText('My Pin'));
+
+    // 2. Tap pin label again to close info card (deselect)
+    fireEvent.click(screen.getByText('My Pin'));
+
+    // On touch device, pin should NOT be hovered
+    expect(getHoveredPinId()).toBeNull();
   });
 });
 

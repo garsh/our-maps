@@ -14,7 +14,7 @@ import { reverseGeocode } from '../utils/geocoding';
 import type { MapTheme } from './Sidebar';
 
 import { getTile } from '../utils/tileUtils';
-import { clearHoveredPin, getHoveredPinId, useIsPinHovered } from '../utils/pinHover';
+import { clearHoveredPin, getHoveredPinId, useIsPinHovered, hasFinePointer } from '../utils/pinHover';
 import { setMapViewportBounds } from '../utils/mapViewport';
 
 let globalPMTilesProtocol: Protocol | null = null;
@@ -181,7 +181,15 @@ const PinMarker = memo(({
   }, [onPinClick, pin]);
 
   const handleMouseEnter = useCallback(() => {
-    onHoverPin?.(pin.id);
+    if (hasFinePointer()) {
+      onHoverPin?.(pin.id);
+    }
+  }, [onHoverPin, pin.id]);
+
+  const handleMouseMove = useCallback(() => {
+    if (hasFinePointer()) {
+      onHoverPin?.(pin.id);
+    }
   }, [onHoverPin, pin.id]);
 
   const handleMouseLeave = useCallback(() => {
@@ -207,6 +215,7 @@ const PinMarker = memo(({
         }}
         onClick={handleClick}
         onMouseEnter={handleMouseEnter}
+        onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
       >
         {showHighlight && (
