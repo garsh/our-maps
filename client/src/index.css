@@ -316,6 +316,15 @@ button:active {
 }
 
 /* Map↔list pin hover is applied via a class on #pin-{id} so App/Sidebar do not re-render. */
+.pin-list-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 34px;
+}
+
+.pin-list-item.pin-editing {
+  content-visibility: visible;
+}
+
 .pin-list-item.pin-hovered {
   background: rgba(72, 61, 139, 0.05);
   box-shadow: 0 0 0 1px var(--primary-color);

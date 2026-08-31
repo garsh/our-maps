@@ -403,59 +403,21 @@ const LayerTopDropZone = ({ isLayerDragging }: { isLayerDragging: boolean }) => 
   );
 };
 
-const SortablePin = memo(({ 
-  pin, 
-  onPinClick, 
-  onRemovePin, 
+interface PinEditFormProps {
+  pin: Pin;
+  onUpdatePin: (id: string, updates: Partial<Pin>) => void;
+  allLayers: PinLayer[];
+  customColors?: string[];
+  onAddCustomColor?: (color: string) => void;
+}
+
+const PinEditForm = memo(({
+  pin,
   onUpdatePin,
-  isEditing,
-  isTarget,
-  setEditingPinId,
-  readOnly,
-  onHoverPin,
-  onAddCustomColor,
-  isSelected,
-  onToggleSelect,
-  customColors,
   allLayers,
-  isAnySelectedDragging,
-  isAnyPinDragging,
-  isHoverBlocked
-}: { 
-  pin: Pin, 
-  onPinClick: (pin: Pin) => void,
-  onRemovePin: (id: string) => void,
-  onUpdatePin: (id: string, updates: Partial<Pin>) => void,
-  isEditing: boolean,
-  isTarget: boolean,
-  setEditingPinId: (id: string | null) => void,
-  readOnly: boolean,
-  onHoverPin?: (id: string | null, leavingPinId?: string) => void,
-  onAddCustomColor?: (color: string) => void,
-  isSelected?: boolean,
-  onToggleSelect?: (id: string) => void,
-  customColors?: string[],
-  allLayers: PinLayer[],
-  isAnySelectedDragging: boolean,
-  isAnyPinDragging?: boolean,
-  isHoverBlocked?: boolean
-}) => {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transition,
-    isDragging,
-    isOver
-  } = useSortable({ 
-    id: pin.id,
-    data: { type: 'pin', pin },
-    disabled: readOnly
-  });
-
-  const [isFetchingAddress, setIsFetchingAddress] = useState(false);
-  const fetchingCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
-
+  customColors,
+  onAddCustomColor
+}: PinEditFormProps) => {
   const [localLabel, setLocalLabel] = useState(pin.label || '');
   const [localAddress, setLocalAddress] = useState(pin.address || '');
   const [localDescription, setLocalDescription] = useState(pin.description || '');
@@ -489,10 +451,9 @@ const SortablePin = memo(({
   }, [pin.description]);
 
   useEffect(() => {
-    if (!isEditing) return;
     fitTextarea(addressTextareaRef.current, 0, ADDRESS_TEXTAREA_MAX_PX);
     fitTextarea(descriptionTextareaRef.current, 0, Math.round(window.innerHeight * 0.7));
-  }, [isEditing, pin.id, localAddress, localDescription]);
+  }, [pin.id, localAddress, localDescription]);
 
   const flushField = useCallback((field: 'label' | 'address' | 'description') => {
     if (debounceTimerRef.current) {
@@ -558,6 +519,177 @@ const SortablePin = memo(({
       e.currentTarget.blur();
     }
   };
+
+  return (
+    <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '2px', borderTop: '1px solid var(--divider-color)', fontSize: '0.7rem' }}>
+      <div style={{ marginBottom: '5px' }}>
+        <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Name</label>
+        <input 
+          id={`label-${pin.id}`}
+          type="text" 
+          value={localLabel} 
+          onFocus={() => { focusedFieldRef.current = 'label'; }}
+          onChange={(e) => handleFieldChange('label', e.target.value)}
+          onKeyDown={handleLabelKeyDown}
+          onBlur={() => handleFieldBlur('label')}
+          className="input-field"
+          style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit' }}
+        />
+      </div>
+
+      <div style={{ marginBottom: '5px' }}>
+        <label htmlFor={`address-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Address</label>
+        <textarea 
+          id={`address-${pin.id}`}
+          ref={addressTextareaRef}
+          rows={1}
+          value={localAddress} 
+          onFocus={() => { focusedFieldRef.current = 'address'; }}
+          onChange={(e) => handleFieldChange('address', e.target.value)}
+          onBlur={() => handleFieldBlur('address')}
+          className="input-field"
+          style={PIN_TEXTAREA_STYLE}
+          placeholder="Fetch address from map or type here..."
+        />
+      </div>
+
+      <div style={{ marginBottom: '5px' }}>
+        <label style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Layer</label>
+        <select 
+            value={pin.layerId || ''} 
+            onChange={(e) => onUpdatePin(pin.id, { layerId: e.target.value || undefined })}
+            className="input-field"
+            style={{ padding: '2px 4px 2px 1px', fontSize: '0.6rem', fontFamily: 'inherit', background: 'var(--surface-color)', color: 'var(--text-primary)' }}
+        >
+            <option value="">Default Layer</option>
+            {allLayers.map(g => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+        </select>
+      </div>
+
+      <div style={{ marginBottom: '5px' }}>
+        <label style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Color</label>
+        <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '1px', justifyContent: 'space-between' }}>
+          {PIN_COLORS.map(color => (
+            <ColorSwatch
+              key={color.name}
+              color={color.value}
+              ariaLabel={`color-${color.name}`}
+              isSelected={pin.color === color.name || (!pin.color && color.name === 'blue')}
+              onClick={() => onUpdatePin(pin.id, { color: color.name })}
+            />
+          ))}
+          {(customColors || []).map(color => (
+            <ColorSwatch
+              key={color}
+              color={color}
+              isSelected={pin.color === color}
+              onClick={() => onUpdatePin(pin.id, { color })}
+            />
+          ))}
+          <div style={{ position: 'relative', flex: 1, minWidth: 0, height: '16px' }}>
+            <input 
+              type="color"
+              value={(!pin.color || PIN_COLORS.some(c => c.name === pin.color)) ? '#9C2BCB' : pin.color}
+              onChange={(e) => {
+                onUpdatePin(pin.id, { color: e.target.value });
+              }}
+              onBlur={(e) => onAddCustomColor?.(e.target.value)}
+              style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 2 }}
+            />
+            <div style={{ width: '100%', height: '100%', borderRadius: '4px', background: 'var(--bg-color)', border: '1px dashed var(--border-color)', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: 'var(--text-secondary)' }}>
+              +
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: '5px' }}>
+        <label style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Icon</label>
+        <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '1px', justifyContent: 'space-between' }}>
+          {ICONS.map(({ type, Icon }) => (
+            <IconButton 
+              key={type}
+              type={type}
+              Icon={Icon}
+              isSelected={pin.icon === type || (!pin.icon && type === 'default')}
+              onClick={() => onUpdatePin(pin.id, { icon: type })}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: '5px' }}>
+        <label htmlFor={`desc-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Description</label>
+        <textarea 
+          id={`desc-${pin.id}`}
+          ref={descriptionTextareaRef}
+          rows={1}
+          value={localDescription} 
+          onFocus={() => { focusedFieldRef.current = 'description'; }}
+          onChange={(e) => handleFieldChange('description', e.target.value)}
+          onBlur={() => handleFieldBlur('description')}
+          className="input-field"
+          style={{ ...PIN_TEXTAREA_STYLE, maxHeight: '70vh' }}
+        />
+      </div>
+    </div>
+  );
+});
+
+const SortablePin = memo(({ 
+  pin, 
+  onPinClick, 
+  onRemovePin, 
+  onUpdatePin,
+  isEditing,
+  isTarget,
+  setEditingPinId,
+  readOnly,
+  onHoverPin,
+  onAddCustomColor,
+  isSelected,
+  onToggleSelect,
+  customColors,
+  allLayers,
+  isAnySelectedDragging,
+  isAnyPinDragging,
+  isHoverBlocked
+}: { 
+  pin: Pin, 
+  onPinClick: (pin: Pin) => void,
+  onRemovePin: (id: string) => void,
+  onUpdatePin: (id: string, updates: Partial<Pin>) => void,
+  isEditing: boolean,
+  isTarget: boolean,
+  setEditingPinId: (id: string | null) => void,
+  readOnly: boolean,
+  onHoverPin?: (id: string | null, leavingPinId?: string) => void,
+  onAddCustomColor?: (color: string) => void,
+  isSelected?: boolean,
+  onToggleSelect?: (id: string) => void,
+  customColors?: string[],
+  allLayers: PinLayer[],
+  isAnySelectedDragging: boolean,
+  isAnyPinDragging?: boolean,
+  isHoverBlocked?: boolean
+}) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transition,
+    isDragging,
+    isOver
+  } = useSortable({ 
+    id: pin.id,
+    data: { type: 'pin', pin },
+    disabled: readOnly
+  });
+
+  const [isFetchingAddress, setIsFetchingAddress] = useState(false);
+  const fetchingCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     if (isTarget && !pin.address && !isFetchingAddress) {
@@ -652,7 +784,8 @@ const SortablePin = memo(({
                 {pin.description && (!isTarget && !isEditing) && (
                   <div style={{ fontSize: '0.5rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '-1px', lineHeight: '1' }}>{pin.description}</div>
                 )}
-              </div>            </div>
+              </div>
+            </div>
           </div>
         </div>
         <div style={{ display: 'flex', gap: '2px', marginLeft: '4px', alignItems: 'center' }}>
@@ -748,120 +881,13 @@ const SortablePin = memo(({
       )}
 
       {isEditing && !readOnly && (
-        <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '2px', borderTop: '1px solid var(--divider-color)', fontSize: '0.7rem' }}>
-          <div style={{ marginBottom: '5px' }}>
-            <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Name</label>
-            <input 
-              id={`label-${pin.id}`}
-              type="text" 
-              value={localLabel} 
-              onFocus={() => { focusedFieldRef.current = 'label'; }}
-              onChange={(e) => handleFieldChange('label', e.target.value)}
-              onKeyDown={handleLabelKeyDown}
-              onBlur={() => handleFieldBlur('label')}
-              className="input-field"
-              style={{ padding: '2px 4px', fontSize: '0.6rem', fontFamily: 'inherit' }}
-            />
-          </div>
-
-          <div style={{ marginBottom: '5px' }}>
-            <label htmlFor={`address-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Address</label>
-            <textarea 
-              id={`address-${pin.id}`}
-              ref={addressTextareaRef}
-              rows={1}
-              value={localAddress} 
-              onFocus={() => { focusedFieldRef.current = 'address'; }}
-              onChange={(e) => handleFieldChange('address', e.target.value)}
-              onBlur={() => handleFieldBlur('address')}
-              className="input-field"
-              style={PIN_TEXTAREA_STYLE}
-              placeholder="Fetch address from map or type here..."
-            />
-          </div>
-
-          <div style={{ marginBottom: '5px' }}>
-            <label style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Layer</label>
-            <select 
-                value={pin.layerId || ''} 
-                onChange={(e) => onUpdatePin(pin.id, { layerId: e.target.value || undefined })}
-                className="input-field"
-                style={{ padding: '2px 4px 2px 1px', fontSize: '0.6rem', fontFamily: 'inherit', background: 'var(--surface-color)', color: 'var(--text-primary)' }}
-            >
-                <option value="">Default Layer</option>
-                {allLayers.map(g => (
-                    <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-            </select>
-          </div>
-
-          <div style={{ marginBottom: '5px' }}>
-            <label style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Color</label>
-            <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '1px', justifyContent: 'space-between' }}>
-              {PIN_COLORS.map(color => (
-                <ColorSwatch
-                  key={color.name}
-                  color={color.value}
-                  ariaLabel={`color-${color.name}`}
-                  isSelected={pin.color === color.name || (!pin.color && color.name === 'blue')}
-                  onClick={() => onUpdatePin(pin.id, { color: color.name })}
-                />
-              ))}
-              {(customColors || []).map(color => (
-                <ColorSwatch
-                  key={color}
-                  color={color}
-                  isSelected={pin.color === color}
-                  onClick={() => onUpdatePin(pin.id, { color })}
-                />
-              ))}
-              <div style={{ position: 'relative', flex: 1, minWidth: 0, height: '16px' }}>
-                <input 
-                  type="color"
-                  value={(!pin.color || PIN_COLORS.some(c => c.name === pin.color)) ? '#9C2BCB' : pin.color}
-                  onChange={(e) => {
-                    onUpdatePin(pin.id, { color: e.target.value });
-                  }}
-                  onBlur={(e) => onAddCustomColor?.(e.target.value)}
-                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 2 }}
-                />
-                <div style={{ width: '100%', height: '100%', borderRadius: '4px', background: 'var(--bg-color)', border: '1px dashed var(--border-color)', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: 'var(--text-secondary)' }}>
-                  +
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginBottom: '5px' }}>
-            <label style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Icon</label>
-            <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '1px', justifyContent: 'space-between' }}>
-              {ICONS.map(({ type, Icon }) => (
-                <IconButton 
-                  key={type}
-                  type={type}
-                  Icon={Icon}
-                  isSelected={pin.icon === type || (!pin.icon && type === 'default')}
-                  onClick={() => onUpdatePin(pin.id, { icon: type })}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div style={{ marginBottom: '5px' }}>
-            <label htmlFor={`desc-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Description</label>
-            <textarea 
-              id={`desc-${pin.id}`}
-              ref={descriptionTextareaRef}
-              rows={1}
-              value={localDescription} 
-              onFocus={() => { focusedFieldRef.current = 'description'; }}
-              onChange={(e) => handleFieldChange('description', e.target.value)}
-              onBlur={() => handleFieldBlur('description')}
-              className="input-field"
-              style={{ ...PIN_TEXTAREA_STYLE, maxHeight: '70vh' }}
-            />
-          </div>
-        </div>
+        <PinEditForm
+          pin={pin}
+          onUpdatePin={onUpdatePin}
+          allLayers={allLayers}
+          customColors={customColors}
+          onAddCustomColor={onAddCustomColor}
+        />
       )}
       {isDropTarget && <DropIndicator />}
     </li>
