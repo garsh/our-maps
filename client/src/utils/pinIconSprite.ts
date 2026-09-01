@@ -2,11 +2,24 @@ import type { Pin, PinIcon } from '@shared/interfaces';
 import { ICON_SVG_PATHS, resolvePinColorCode } from './mapUtils';
 
 const registeredImages = new Set<string>();
+const pendingImages = new Map<string, Promise<boolean>>();
 
 export function getPinIconKey(color?: string | null, icon?: string | null): string {
   const colorCode = resolvePinColorCode(color);
   const iconName = (icon && icon in ICON_SVG_PATHS) ? icon : 'default';
   return `pin-${colorCode}-${iconName}`;
+}
+
+/** Parse `pin-#2A81CB-default` into color + icon. Returns null for non-pin ids. */
+export function parsePinIconKey(key: string): { colorCode: string; iconKey: string } | null {
+  if (!key.startsWith('pin-')) return null;
+  const rest = key.slice(4);
+  const lastDash = rest.lastIndexOf('-');
+  if (lastDash <= 0 || lastDash === rest.length - 1) return null;
+  const colorCode = rest.slice(0, lastDash);
+  const iconKey = rest.slice(lastDash + 1);
+  if (!colorCode || !iconKey) return null;
+  return { colorCode, iconKey };
 }
 
 export function buildPinSvg(colorCode: string, iconKey: string): string {
@@ -68,49 +81,69 @@ async function loadSvgImage(svgString: string): Promise<any> {
 }
 
 /**
+ * Registers a single pin sprite on the map, keyed like `pin-#2A81CB-default`.
+ * Safe to call from MapLibre's missing-image resolver: waits until addImage
+ * has completed (or the image is already present) before resolving.
+ * Returns true if this call newly registered the image.
+ */
+export async function ensurePinImageByKey(map: any, key: string): Promise<boolean> {
+  if (!map || !key) return false;
+  if (typeof map.hasImage === 'function' && map.hasImage(key)) {
+    registeredImages.add(key);
+    return false;
+  }
+
+  const inflight = pendingImages.get(key);
+  if (inflight) {
+    await inflight;
+    return false;
+  }
+
+  const parsed = parsePinIconKey(key);
+  if (!parsed) return false;
+
+  const promise = (async (): Promise<boolean> => {
+    try {
+      const svg = buildPinSvg(parsed.colorCode, parsed.iconKey);
+      const img = await loadSvgImage(svg);
+      if (typeof map.hasImage === 'function' && map.hasImage(key)) {
+        registeredImages.add(key);
+        return false;
+      }
+      map.addImage(key, img, { pixelRatio: 2 });
+      registeredImages.add(key);
+      return true;
+    } catch (err) {
+      console.warn(`Failed to register pin icon sprite for ${key}:`, err);
+      return false;
+    } finally {
+      pendingImages.delete(key);
+    }
+  })();
+
+  pendingImages.set(key, promise);
+  return promise;
+}
+
+/**
  * Ensures all unique color/icon combination images used by the given pins
  * are registered in the MapLibre map instance.
  */
 export async function ensurePinImages(map: any, pins: Pin[]): Promise<void> {
   if (!map || !pins || pins.length === 0) return;
 
-  const neededKeys = new Map<string, { colorCode: string; iconKey: string }>();
-
+  const keys = new Set<string>();
   for (const pin of pins) {
-    const colorCode = resolvePinColorCode(pin.color);
-    const iconKey = (pin.icon && pin.icon in ICON_SVG_PATHS) ? pin.icon : 'default';
-    const key = `pin-${colorCode}-${iconKey}`;
-
-    if (!map.hasImage(key) || !registeredImages.has(key)) {
-      neededKeys.set(key, { colorCode, iconKey });
-    }
+    keys.add(getPinIconKey(pin.color, pin.icon));
   }
 
-  if (neededKeys.size === 0) return;
-
-  let addedAny = false;
-  const loadPromises = Array.from(neededKeys.entries()).map(async ([key, { colorCode, iconKey }]) => {
-    try {
-      const svg = buildPinSvg(colorCode, iconKey);
-      const img = await loadSvgImage(svg);
-      if (map.hasImage(key)) {
-        map.removeImage(key);
-      }
-      map.addImage(key, img, { pixelRatio: 2 });
-      registeredImages.add(key);
-      addedAny = true;
-    } catch (err) {
-      console.warn(`Failed to register pin icon sprite for ${key}:`, err);
-    }
-  });
-
-  await Promise.all(loadPromises);
-
-  if (addedAny && typeof map.triggerRepaint === 'function') {
+  const results = await Promise.all([...keys].map((key) => ensurePinImageByKey(map, key)));
+  if (results.some(Boolean) && typeof map.triggerRepaint === 'function') {
     map.triggerRepaint();
   }
 }
 
 export function clearRegisteredImages(): void {
   registeredImages.clear();
+  pendingImages.clear();
 }

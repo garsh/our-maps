@@ -46,6 +46,7 @@ const mockMapInstance = {
     triggerRepaint: vi.fn(),
     hasImage: vi.fn(() => false),
     addImage: vi.fn(),
+    setMissingStyleImageResolver: vi.fn(),
     isStyleLoaded: vi.fn(() => true),
     isMoving: vi.fn(() => false),
     once: vi.fn(),

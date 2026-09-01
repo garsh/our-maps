@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getPinIconKey, buildPinSvg, ensurePinImages, clearRegisteredImages } from '../pinIconSprite';
+import { getPinIconKey, parsePinIconKey, buildPinSvg, ensurePinImages, ensurePinImageByKey, clearRegisteredImages } from '../pinIconSprite';
 import type { Pin } from '@shared/interfaces';
 
 describe('pinIconSprite', () => {
@@ -11,6 +11,14 @@ describe('pinIconSprite', () => {
     expect(getPinIconKey('blue', 'default')).toBe('pin-#2A81CB-default');
     expect(getPinIconKey('red', 'hotel')).toBe('pin-#CB2B3E-hotel');
     expect(getPinIconKey('#123456', 'restaurant')).toBe('pin-#123456-restaurant');
+  });
+
+  it('parses pin icon keys produced by getPinIconKey', () => {
+    expect(parsePinIconKey('pin-#2A81CB-default')).toEqual({ colorCode: '#2A81CB', iconKey: 'default' });
+    expect(parsePinIconKey('pin-#CB2B3E-hotel')).toEqual({ colorCode: '#CB2B3E', iconKey: 'hotel' });
+    expect(parsePinIconKey('pin-#123456-restaurant')).toEqual({ colorCode: '#123456', iconKey: 'restaurant' });
+    expect(parsePinIconKey('not-a-pin')).toBeNull();
+    expect(parsePinIconKey('pin-')).toBeNull();
   });
 
   it('builds SVG containing color code and icon paths', () => {
@@ -39,5 +47,38 @@ describe('pinIconSprite', () => {
 
     expect(mockMap.hasImage('pin-#2A81CB-default')).toBe(true);
     expect(mockMap.hasImage('pin-#CB2B3E-hotel')).toBe(true);
+  });
+
+  it('registers a pin image from its style key (missing-image resolver path)', async () => {
+    const addedImages = new Map<string, any>();
+    const addImage = vi.fn((key: string, img: any) => addedImages.set(key, img));
+    const mockMap = {
+      hasImage: (key: string) => addedImages.has(key),
+      addImage,
+    };
+
+    const added = await ensurePinImageByKey(mockMap as any, 'pin-#2A81CB-default');
+
+    expect(added).toBe(true);
+    expect(mockMap.hasImage('pin-#2A81CB-default')).toBe(true);
+    expect(addImage).toHaveBeenCalledTimes(1);
+  });
+
+  it('dedupes concurrent registration of the same pin image key', async () => {
+    const addedImages = new Map<string, any>();
+    const addImage = vi.fn((key: string, img: any) => addedImages.set(key, img));
+    const mockMap = {
+      hasImage: (key: string) => addedImages.has(key),
+      addImage,
+    };
+
+    const key = 'pin-#2A81CB-default';
+    await Promise.all([
+      ensurePinImageByKey(mockMap as any, key),
+      ensurePinImageByKey(mockMap as any, key),
+    ]);
+
+    expect(addImage).toHaveBeenCalledTimes(1);
+    expect(mockMap.hasImage(key)).toBe(true);
   });
 });

@@ -16,7 +16,22 @@ import type { MapTheme } from './Sidebar';
 import { getTile } from '../utils/tileUtils';
 import { clearHoveredPin, getHoveredPinId, useIsPinHovered, useHoveredPinId, hasFinePointer } from '../utils/pinHover';
 import { setMapViewportBounds } from '../utils/mapViewport';
-import { ensurePinImages, getPinIconKey } from '../utils/pinIconSprite';
+import { ensurePinImageByKey, ensurePinImages, getPinIconKey } from '../utils/pinIconSprite';
+
+function attachMissingImageResolver(map: any) {
+  if (!map || typeof map.setMissingStyleImageResolver !== 'function') return;
+  map.setMissingStyleImageResolver(async (id: string) => {
+    if (typeof id === 'string' && id.startsWith('pin-')) {
+      await ensurePinImageByKey(map, id);
+      return;
+    }
+    if (!map.hasImage(id)) {
+      try {
+        map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
+      } catch {}
+    }
+  });
+}
 
 let globalPMTilesProtocol: Protocol | null = null;
 let currentMapHasOfflineTiles = false;
@@ -546,17 +561,7 @@ const MapView = ({
   const setMapRef = useCallback((instance: MapRef | null) => {
     mapRef.current = instance;
     if (!instance) return;
-    const map = instance.getMap();
-    if (map && typeof map.setMissingStyleImageResolver === 'function') {
-      map.setMissingStyleImageResolver((id: string) => {
-        if (id.startsWith('pin-')) return;
-        if (!map.hasImage(id)) {
-          try {
-            map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
-          } catch {}
-        }
-      });
-    }
+    attachMissingImageResolver(instance.getMap());
   }, []);
   const lastTargetPinId = useRef<string | null>(null);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
@@ -1298,16 +1303,7 @@ const MapView = ({
   const handleMapLoad = useCallback((e: any) => {
     setIsMapLoaded(true);
     const map = e.target || mapRef.current?.getMap();
-    if (map && typeof map.setMissingStyleImageResolver === 'function') {
-      map.setMissingStyleImageResolver((id: string) => {
-        if (id.startsWith('pin-')) return;
-        if (!map.hasImage(id)) {
-          try {
-            map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
-          } catch {}
-        }
-      });
-    }
+    attachMissingImageResolver(map);
     if (map) {
       ensurePinImages(map, visiblePins);
     }
