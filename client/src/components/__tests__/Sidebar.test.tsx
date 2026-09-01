@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import Sidebar from '../Sidebar';
+import Sidebar, { computeCustomCollisionDetection } from '../Sidebar';
 import { useState } from 'react';
 import * as dndSortable from '@dnd-kit/sortable';
 import * as dndCore from '@dnd-kit/core';
@@ -804,5 +804,109 @@ describe('Sidebar', () => {
     fireEvent.click(layerOptions[0]);
 
     expect(onMovePinsToLayer).toHaveBeenCalledWith(['1', '2'], 'layer-1');
+  });
+
+  it('caches collision detection geometry to avoid repeated getBoundingClientRect layout thrashing', () => {
+    const pins = [
+      { id: 'p1', lat: 10, lng: 20, label: 'Pin 1', position: 0 },
+      { id: 'p2', lat: 11, lng: 21, label: 'Pin 2', position: 1 },
+    ];
+
+    const collisionCacheRef = { current: null };
+    const mockScrollContainer = {
+      getBoundingClientRect: () => ({ top: 0, bottom: 500, left: 0, right: 300, width: 300, height: 500 }),
+      scrollTop: 0
+    } as any;
+
+    const node1GetBoundingClientRect = vi.fn().mockReturnValue({ top: 100, bottom: 150, left: 0, right: 300, height: 50, width: 300 });
+    const node2GetBoundingClientRect = vi.fn().mockReturnValue({ top: 150, bottom: 200, left: 0, right: 300, height: 50, width: 300 });
+
+    const droppableContainers = [
+      { id: 'p1', disabled: false, node: { current: { getBoundingClientRect: node1GetBoundingClientRect } }, data: { current: { type: 'pin', pin: pins[0] } } },
+      { id: 'p2', disabled: false, node: { current: { getBoundingClientRect: node2GetBoundingClientRect } }, data: { current: { type: 'pin', pin: pins[1] } } },
+    ];
+
+    const active = { id: 'p1', data: { current: { type: 'pin', pin: pins[0] } } };
+
+    // Frame 1: Pointer moves to (50, 120)
+    const collisions1 = computeCustomCollisionDetection({
+      droppableContainers,
+      pointerCoordinates: { x: 50, y: 120 },
+      active,
+      collisionRect: null
+    }, {
+      layers: [],
+      scrollContainer: mockScrollContainer,
+      collisionCacheRef
+    });
+    expect(collisions1.length).toBeGreaterThan(0);
+    expect(node1GetBoundingClientRect).toHaveBeenCalledTimes(1);
+    expect(node2GetBoundingClientRect).toHaveBeenCalledTimes(1);
+
+    // Frame 2: Pointer moves to (50, 130) in subsequent animation frame
+    const collisions2 = computeCustomCollisionDetection({
+      droppableContainers,
+      pointerCoordinates: { x: 50, y: 130 },
+      active,
+      collisionRect: null
+    }, {
+      layers: [],
+      scrollContainer: mockScrollContainer,
+      collisionCacheRef
+    });
+    expect(collisions2.length).toBeGreaterThan(0);
+    // Verified: No additional getBoundingClientRect calls on subsequent pointer movement frames!
+    expect(node1GetBoundingClientRect).toHaveBeenCalledTimes(1);
+    expect(node2GetBoundingClientRect).toHaveBeenCalledTimes(1);
+  });
+
+  it('accurately resolves collision when dragging a pin from the bottom of the list to the top during scroll', () => {
+    const pins = [
+      { id: 'p1', lat: 10, lng: 20, label: 'Pin 1', position: 0 },
+      { id: 'p2', lat: 11, lng: 21, label: 'Pin 2', position: 1 },
+      { id: 'p3', lat: 12, lng: 22, label: 'Pin 3', position: 2 },
+    ];
+
+    const collisionCacheRef = { current: null };
+    const mockScrollContainer = {
+      getBoundingClientRect: () => ({ top: 0, bottom: 500, left: 0, right: 300, width: 300, height: 500 }),
+      scrollTop: 1000 // Initial drag starts at bottom of list
+    } as any;
+
+    const droppableContainers = [
+      { id: 'p1', disabled: false, node: { current: { getBoundingClientRect: () => ({ top: 0 - mockScrollContainer.scrollTop, bottom: 50 - mockScrollContainer.scrollTop, left: 0, right: 300, height: 50, width: 300 }) } }, data: { current: { type: 'pin', pin: pins[0] } } },
+      { id: 'p2', disabled: false, node: { current: { getBoundingClientRect: () => ({ top: 50 - mockScrollContainer.scrollTop, bottom: 100 - mockScrollContainer.scrollTop, left: 0, right: 300, height: 50, width: 300 }) } }, data: { current: { type: 'pin', pin: pins[1] } } },
+      { id: 'p3', disabled: false, node: { current: { getBoundingClientRect: () => ({ top: 1000 - mockScrollContainer.scrollTop, bottom: 1050 - mockScrollContainer.scrollTop, left: 0, right: 300, height: 50, width: 300 }) } }, data: { current: { type: 'pin', pin: pins[2] } } },
+    ];
+
+    const active = { id: 'p3', data: { current: { type: 'pin', pin: pins[2] } } };
+
+    // Initial frame at bottom: pointer at (50, 35) in viewport matches p3 (viewport top: 0, bottom: 50)
+    const initialCollision = computeCustomCollisionDetection({
+      droppableContainers,
+      pointerCoordinates: { x: 50, y: 35 },
+      active,
+      collisionRect: null
+    }, {
+      layers: [],
+      scrollContainer: mockScrollContainer,
+      collisionCacheRef
+    });
+    expect(initialCollision[0].id).toBe('p3');
+
+    // User moves pointer to top and auto-scroll brings scrollTop to 0
+    mockScrollContainer.scrollTop = 0;
+    const topCollision = computeCustomCollisionDetection({
+      droppableContainers,
+      pointerCoordinates: { x: 50, y: 35 },
+      active,
+      collisionRect: null
+    }, {
+      layers: [],
+      scrollContainer: mockScrollContainer,
+      collisionCacheRef
+    });
+    // At scrollTop = 0 and pointer at y=35 -> matches p1 (viewport top: 0, bottom: 50)!
+    expect(topCollision[0].id).toBe('p1');
   });
 });

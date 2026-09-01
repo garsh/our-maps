@@ -362,7 +362,7 @@ const DropIndicator = () => (
       height: '2px',
       background: 'var(--primary-color)',
       borderRadius: '2px',
-      zIndex: 20,
+      zIndex: 50,
       pointerEvents: 'none',
       boxShadow: '0 0 4px var(--primary-color)'
     }}
@@ -395,7 +395,8 @@ const LayerTopDropZone = ({ isLayerDragging }: { isLayerDragging: boolean }) => 
         height: '10px',
         marginTop: '-5px',
         marginBottom: '2px',
-        position: 'relative'
+        position: 'relative',
+        zIndex: isOver ? 10 : undefined
       }}
     >
       {isOver && <DropIndicator />}
@@ -712,7 +713,7 @@ const SortablePin = memo(({
 
   const style = {
     transition,
-    zIndex: isDragging ? 10 : undefined,
+    zIndex: isDragging ? 10 : (isDropTarget ? 50 : undefined),
     opacity: isDragging ? 0.25 : (isItemInDraggingBundle ? 0.25 : 1),
     position: 'relative' as const,
     pointerEvents: (isDragging || isItemInDraggingBundle) ? 'none' as const : undefined,
@@ -723,7 +724,7 @@ const SortablePin = memo(({
   return (
     <li 
       id={`pin-${pin.id}`}
-      className={`pin-list-item${isEditing ? ' pin-editing' : ''}`}
+      className={`pin-list-item${isEditing ? ' pin-editing' : ''}${isDropTarget ? ' pin-drop-target' : ''}`}
       ref={setNodeRef} 
       style={{ 
         ...style, 
@@ -735,7 +736,8 @@ const SortablePin = memo(({
         border: isEditing ? '1px solid var(--primary-color)' : '1px solid transparent',
         boxShadow: isTarget ? '0 0 0 1px var(--primary-color)' : undefined,
         transition: 'all 0.1s ease',
-        cursor: 'default'
+        cursor: 'default',
+        contentVisibility: isDropTarget ? 'visible' : undefined,
       }}
       onPointerEnter={(e) => {
         if (!isHoverBlocked && e.pointerType === 'mouse') onHoverPin?.(pin.id);
@@ -1141,18 +1143,19 @@ const SortableLayer = memo(({
     disabled: readOnly
   });
 
-  const style: React.CSSProperties = {
-    marginBottom: '0.2rem',
-    visibility: isDragging ? 'hidden' : 'visible',
-    position: 'relative'
-  };
-
   const pinIds = useMemo(() => layerPins.map(p => p.id), [layerPins]);
   const isAllSelected = layerPins.length > 0 && layerPins.every(p => selectedNavIds?.has(p.id));
   const isSomeSelected = layerPins.some(p => selectedNavIds?.has(p.id));
   const isHighlighted = isOver && !isExpanded && !isDragging && !isLayerDragging;
   const isPinDropTarget = isOver && !!isAnyPinDragging && !isDragging && !isLayerDragging;
   const isLayerDropTarget = isOver && !!isLayerDragging && !isDragging;
+
+  const style: React.CSSProperties = {
+    marginBottom: '0.2rem',
+    visibility: isDragging ? 'hidden' : 'visible',
+    position: 'relative',
+    zIndex: isLayerDropTarget ? 10 : undefined
+  };
 
   return (
     <div ref={setDraggableNodeRef} style={style}>
@@ -1378,6 +1381,240 @@ const SortableLayer = memo(({
     </div>
   );
 });
+
+export interface CollisionCache {
+  activeId: string | number | null;
+  isLayerDrag: boolean;
+  scrollTop: number;
+  containerCount: number;
+  containerRectMap: Map<string, { top: number; bottom: number; left: number; right: number; height: number }>;
+}
+
+export function computeCustomCollisionDetection(
+  args: any,
+  options: {
+    layers: PinLayer[];
+    scrollContainer: HTMLElement | null;
+    collisionCacheRef: { current: CollisionCache | null };
+  }
+) {
+  const { droppableContainers, pointerCoordinates, active, collisionRect } = args;
+  if (!pointerCoordinates && !collisionRect) return [];
+
+  const { layers, scrollContainer, collisionCacheRef } = options;
+  const isLayerDrag = active.data.current?.type === 'layer';
+  const containerEl = scrollContainer;
+  const containerRect = containerEl?.getBoundingClientRect();
+  const scrollTop = containerEl?.scrollTop || 0;
+
+  // Filter droppable containers: if dragging a layer, only consider regular layers and layer-top (exclude pins and default layer)
+  const allowedContainers = isLayerDrag
+    ? droppableContainers.filter((c: any) => (c.data.current?.type === 'layer' || c.data.current?.type === 'layer-top') && c.id !== 'default')
+    : droppableContainers;
+
+  let cache = collisionCacheRef.current;
+  let containerRectMap: Map<string, { top: number; bottom: number; left: number; right: number; height: number }>;
+
+  if (
+    cache &&
+    cache.activeId === active.id &&
+    cache.isLayerDrag === isLayerDrag &&
+    cache.scrollTop === scrollTop &&
+    cache.containerCount === allowedContainers.length
+  ) {
+    containerRectMap = cache.containerRectMap;
+  } else {
+    containerRectMap = new Map();
+
+    if (isLayerDrag) {
+      const firstLayerId = layers[0]?.id;
+      const firstLayerContainer = firstLayerId ? allowedContainers.find((c: any) => c.id === firstLayerId) : undefined;
+      const firstLayerNode = firstLayerContainer?.node.current;
+      const firstHeaderRect = firstLayerNode ? firstLayerNode.getBoundingClientRect() : null;
+
+      for (const container of allowedContainers) {
+        if (container.disabled) continue;
+        const baseNode = container.node.current;
+        if (!baseNode) continue;
+
+        if (container.id === 'layer-top') {
+          const splitY = firstHeaderRect ? firstHeaderRect.top + firstHeaderRect.height / 2 : (containerRect ? containerRect.top + 20 : 0);
+          const topBound = containerRect ? containerRect.top - 200 : -1000;
+          containerRectMap.set(container.id, {
+            top: topBound,
+            bottom: splitY,
+            left: containerRect ? containerRect.left : 0,
+            right: containerRect ? containerRect.right : (typeof window !== 'undefined' ? window.innerWidth : 1000),
+            height: splitY - topBound
+          });
+        } else if (container.id === firstLayerId) {
+          const fullNode = baseNode.parentElement || baseNode;
+          const fullRect = fullNode.getBoundingClientRect();
+          const splitY = firstHeaderRect ? firstHeaderRect.top + firstHeaderRect.height / 2 : fullRect.top;
+          containerRectMap.set(container.id, {
+            top: splitY,
+            bottom: fullRect.bottom,
+            left: fullRect.left,
+            right: fullRect.right,
+            height: fullRect.bottom - splitY
+          });
+        } else if (container.data.current?.type === 'layer' && baseNode.parentElement) {
+          const fullRect = baseNode.parentElement.getBoundingClientRect();
+          containerRectMap.set(container.id, fullRect);
+        } else {
+          containerRectMap.set(container.id, baseNode.getBoundingClientRect());
+        }
+      }
+    } else {
+      // Pin dragging: Group active droppable nodes by layer to compute midpoint split
+      const layerGroups = new Map<string, { header?: { container: any; rect: DOMRect }; pins: Array<{ container: any; rect: DOMRect }> }>();
+
+      for (const container of allowedContainers) {
+        if (container.disabled) continue;
+        const baseNode = container.node.current;
+        if (!baseNode) continue;
+        const rect = baseNode.getBoundingClientRect();
+
+        const type = container.data.current?.type;
+        if (type === 'layer' || container.id === 'default') {
+          const layerKey = container.id;
+          if (!layerGroups.has(layerKey)) {
+            layerGroups.set(layerKey, { pins: [] });
+          }
+          layerGroups.get(layerKey)!.header = { container, rect };
+        } else if (type === 'pin') {
+          const pinLayerKey = container.data.current?.pin?.layerId || 'default';
+          if (!layerGroups.has(pinLayerKey)) {
+            layerGroups.set(pinLayerKey, { pins: [] });
+          }
+          layerGroups.get(pinLayerKey)!.pins.push({ container, rect });
+        }
+      }
+
+      // Ordered list of layer IDs matching visual sidebar structure
+      const orderedLayerIds = [...layers.map(l => l.id), 'default'];
+      const visibleLayerIds = orderedLayerIds.filter(id => layerGroups.has(id));
+
+      for (let idx = 0; idx < visibleLayerIds.length; idx++) {
+        const layerId = visibleLayerIds[idx];
+        const group = layerGroups.get(layerId)!;
+        const sortedPins = group.pins.sort((a, b) => a.rect.top - b.rect.top);
+
+        const nextGroup = idx < visibleLayerIds.length - 1 ? layerGroups.get(visibleLayerIds[idx + 1]) : undefined;
+
+        const fullLeft = containerRect ? containerRect.left : (group.header ? group.header.rect.left : 0);
+        const fullRight = containerRect ? containerRect.right : (group.header ? group.header.rect.right : (typeof window !== 'undefined' ? window.innerWidth : 1000));
+
+        if (group.header) {
+          const headerRect = group.header.rect;
+          const splitTop = idx === 0 
+            ? (containerRect ? containerRect.top - 200 : headerRect.top - 50)
+            : headerRect.top;
+
+          let splitBottom: number;
+          if (sortedPins.length > 0) {
+            splitBottom = sortedPins[0].rect.top + sortedPins[0].rect.height * 0.5;
+          } else if (nextGroup && nextGroup.header) {
+            splitBottom = nextGroup.header.rect.top;
+          } else {
+            splitBottom = containerRect ? containerRect.bottom + 200 : headerRect.bottom + 50;
+          }
+
+          containerRectMap.set(group.header.container.id, {
+            top: splitTop,
+            bottom: splitBottom,
+            left: fullLeft,
+            right: fullRight,
+            height: splitBottom - splitTop
+          });
+        }
+
+        for (let i = 0; i < sortedPins.length; i++) {
+          const current = sortedPins[i];
+          const next = sortedPins[i + 1];
+          const splitTop = current.rect.top + current.rect.height * 0.5;
+          const splitBottom = next
+            ? (next.rect.top + next.rect.height * 0.5)
+            : (nextGroup && nextGroup.header
+                ? nextGroup.header.rect.top
+                : (containerRect ? containerRect.bottom + 200 : current.rect.bottom + 50));
+
+          containerRectMap.set(current.container.id, {
+            top: splitTop,
+            bottom: splitBottom,
+            left: fullLeft,
+            right: fullRight,
+            height: splitBottom - splitTop
+          });
+        }
+      }
+    }
+
+    collisionCacheRef.current = {
+      activeId: active.id,
+      isLayerDrag,
+      scrollTop,
+      containerCount: allowedContainers.length,
+      containerRectMap
+    };
+  }
+
+  const collisions: any[] = [];
+  const py = pointerCoordinates?.y;
+  const px = pointerCoordinates?.x;
+
+  if (py !== undefined && px !== undefined) {
+    for (const container of allowedContainers) {
+      if (container.disabled) continue;
+      const rect = containerRectMap.get(container.id);
+      if (!rect) continue;
+
+      if (containerRect && container.id !== 'layer-top' && (rect.bottom < containerRect.top || rect.top > containerRect.bottom)) {
+        continue;
+      }
+
+      if (py >= rect.top && py <= rect.bottom && px >= rect.left && px <= rect.right) {
+        const centerY = rect.top + rect.height / 2;
+        collisions.push({
+          id: container.id,
+          data: { droppableContainer: container, value: Math.abs(py - centerY) }
+        });
+      }
+    }
+  }
+
+  if (collisions.length > 0) {
+    collisions.sort((a, b) => a.data.value - b.data.value);
+    return collisions;
+  }
+
+  // Fallback: Closest container by vertical distance
+  const fallbackCollisions: any[] = [];
+  const refY = py ?? (collisionRect ? collisionRect.top + collisionRect.height / 2 : 0);
+
+  for (const container of allowedContainers) {
+    if (container.disabled) continue;
+    const rect = containerRectMap.get(container.id);
+    if (!rect) continue;
+
+    if (containerRect && container.id !== 'layer-top' && (rect.bottom < containerRect.top || rect.top > containerRect.bottom)) {
+      continue;
+    }
+
+    const dist = refY < rect.top ? rect.top - refY : (refY > rect.bottom ? refY - rect.bottom : 0);
+    fallbackCollisions.push({
+      id: container.id,
+      data: { droppableContainer: zoneToContainer(container), value: dist }
+    });
+  }
+
+  fallbackCollisions.sort((a, b) => a.data.value - b.data.value);
+  return fallbackCollisions;
+}
+
+function zoneToContainer(c: any) {
+  return c;
+}
 
 const Sidebar = ({
   mapId,
@@ -1806,7 +2043,10 @@ const Sidebar = ({
   const isDefaultAllSelected = defaultPins.length > 0 && defaultPins.every(p => selectedNavIds?.has(p.id));
   const isDefaultSomeSelected = defaultPins.some(p => selectedNavIds?.has(p.id));
 
+  const collisionCacheRef = useRef<CollisionCache | null>(null);
+
   const handleDragStart = (event: DragStartEvent) => {
+    collisionCacheRef.current = null;
     const { active } = event;
     if (active.data.current?.type === 'pin') {
       setActivePin(active.data.current.pin);
@@ -1817,12 +2057,14 @@ const Sidebar = ({
   };
 
   const handleDragEndInternal = (event: DragEndEvent) => {
+    collisionCacheRef.current = null;
     setActivePin(null);
     setActiveLayer(null);
     onDragEnd(event);
   };
 
   const handleDragCancelInternal = () => {
+    collisionCacheRef.current = null;
     setActivePin(null);
     setActiveLayer(null);
     onDragCancel?.();
@@ -1834,249 +2076,11 @@ const Sidebar = ({
   const isAnyPinDragging = !!activePinId;
 
   const customCollisionDetection = (args: any) => {
-    const { droppableContainers, pointerCoordinates, active, collisionRect } = args;
-    if (!pointerCoordinates && !collisionRect) return [];
-
-    const isLayerDrag = active.data.current?.type === 'layer';
-    const containerRect = scrollContainerRef.current?.getBoundingClientRect();
-
-    // Filter droppable containers: if dragging a layer, only consider regular layers and layer-top (exclude pins and default layer)
-    const allowedContainers = isLayerDrag
-      ? droppableContainers.filter((c: any) => (c.data.current?.type === 'layer' || c.data.current?.type === 'layer-top') && c.id !== 'default')
-      : droppableContainers;
-
-    if (isLayerDrag) {
-      const firstLayerId = layers[0]?.id;
-      const firstLayerContainer = firstLayerId ? allowedContainers.find((c: any) => c.id === firstLayerId) : undefined;
-      const firstLayerNode = firstLayerContainer?.node.current;
-      const firstHeaderRect = firstLayerNode ? firstLayerNode.getBoundingClientRect() : null;
-
-      const containerRectMap = new Map<string, { top: number; bottom: number; left: number; right: number; height: number }>();
-
-      for (const container of allowedContainers) {
-        if (container.disabled) continue;
-        const baseNode = container.node.current;
-        if (!baseNode) continue;
-
-        if (container.id === 'layer-top') {
-          const splitY = firstHeaderRect ? firstHeaderRect.top + firstHeaderRect.height / 2 : (containerRect ? containerRect.top + 20 : 0);
-          const topBound = containerRect ? containerRect.top - 200 : -1000;
-          containerRectMap.set(container.id, {
-            top: topBound,
-            bottom: splitY,
-            left: containerRect ? containerRect.left : 0,
-            right: containerRect ? containerRect.right : window.innerWidth,
-            height: splitY - topBound
-          });
-        } else if (container.id === firstLayerId) {
-          const fullNode = baseNode.parentElement || baseNode;
-          const fullRect = fullNode.getBoundingClientRect();
-          const splitY = firstHeaderRect ? firstHeaderRect.top + firstHeaderRect.height / 2 : fullRect.top;
-          containerRectMap.set(container.id, {
-            top: splitY,
-            bottom: fullRect.bottom,
-            left: fullRect.left,
-            right: fullRect.right,
-            height: fullRect.bottom - splitY
-          });
-        } else if (container.data.current?.type === 'layer' && baseNode.parentElement) {
-          const fullRect = baseNode.parentElement.getBoundingClientRect();
-          containerRectMap.set(container.id, fullRect);
-        } else {
-          containerRectMap.set(container.id, baseNode.getBoundingClientRect());
-        }
-      }
-
-      const collisions: any[] = [];
-      for (const container of allowedContainers) {
-        if (container.disabled) continue;
-        const rect = containerRectMap.get(container.id);
-        if (!rect) continue;
-
-        if (containerRect && container.id !== 'layer-top' && (rect.bottom < containerRect.top || rect.top > containerRect.bottom)) {
-          continue;
-        }
-
-        if (pointerCoordinates) {
-          if (
-            pointerCoordinates.y >= rect.top &&
-            pointerCoordinates.y <= rect.bottom &&
-            pointerCoordinates.x >= rect.left &&
-            pointerCoordinates.x <= rect.right
-          ) {
-            const centerY = rect.top + rect.height / 2;
-            collisions.push({
-              id: container.id,
-              data: { droppableContainer: container, value: Math.abs(pointerCoordinates.y - centerY) }
-            });
-          }
-        }
-      }
-
-      if (collisions.length > 0) {
-        collisions.sort((a, b) => a.data.value - b.data.value);
-        return collisions;
-      }
-
-      const fallbackCollisions: any[] = [];
-      const refY = pointerCoordinates ? pointerCoordinates.y : (collisionRect ? collisionRect.top + collisionRect.height / 2 : 0);
-
-      for (const container of allowedContainers) {
-        if (container.disabled) continue;
-        const rect = containerRectMap.get(container.id);
-        if (!rect) continue;
-
-        if (containerRect && container.id !== 'layer-top' && (rect.bottom < containerRect.top || rect.top > containerRect.bottom)) {
-          continue;
-        }
-
-        const dist = refY < rect.top ? rect.top - refY : (refY > rect.bottom ? refY - rect.bottom : 0);
-        fallbackCollisions.push({
-          id: container.id,
-          data: { droppableContainer: container, value: dist }
-        });
-      }
-
-      fallbackCollisions.sort((a, b) => a.data.value - b.data.value);
-      return fallbackCollisions;
-    }
-
-    // Pin dragging: Group active droppable nodes by layer to compute midpoint split
-    const layerGroups = new Map<string, { header?: { container: any; rect: DOMRect }; pins: Array<{ container: any; rect: DOMRect }> }>();
-
-    for (const container of allowedContainers) {
-      if (container.disabled) continue;
-      const baseNode = container.node.current;
-      if (!baseNode) continue;
-      const rect = baseNode.getBoundingClientRect();
-
-      const type = container.data.current?.type;
-      if (type === 'layer' || container.id === 'default') {
-        const layerKey = container.id;
-        if (!layerGroups.has(layerKey)) {
-          layerGroups.set(layerKey, { pins: [] });
-        }
-        layerGroups.get(layerKey)!.header = { container, rect };
-      } else if (type === 'pin') {
-        const pinLayerKey = container.data.current?.pin?.layerId || 'default';
-        if (!layerGroups.has(pinLayerKey)) {
-          layerGroups.set(pinLayerKey, { pins: [] });
-        }
-        layerGroups.get(pinLayerKey)!.pins.push({ container, rect });
-      }
-    }
-
-    // Ordered list of layer IDs matching visual sidebar structure
-    const orderedLayerIds = [...layers.map(l => l.id), 'default'];
-    const visibleLayerIds = orderedLayerIds.filter(id => layerGroups.has(id));
-
-    const containerRectMap = new Map<string, { top: number; bottom: number; left: number; right: number; height: number }>();
-
-    for (let idx = 0; idx < visibleLayerIds.length; idx++) {
-      const layerId = visibleLayerIds[idx];
-      const group = layerGroups.get(layerId)!;
-      const sortedPins = group.pins.sort((a, b) => a.rect.top - b.rect.top);
-
-      const nextGroup = idx < visibleLayerIds.length - 1 ? layerGroups.get(visibleLayerIds[idx + 1]) : undefined;
-
-      const fullLeft = containerRect ? containerRect.left : (group.header ? group.header.rect.left : 0);
-      const fullRight = containerRect ? containerRect.right : (group.header ? group.header.rect.right : window.innerWidth);
-
-      if (group.header) {
-        const headerRect = group.header.rect;
-        const splitTop = idx === 0 
-          ? (containerRect ? containerRect.top - 200 : headerRect.top - 50)
-          : headerRect.top;
-
-        let splitBottom: number;
-        if (sortedPins.length > 0) {
-          splitBottom = sortedPins[0].rect.top + sortedPins[0].rect.height * 0.5;
-        } else if (nextGroup && nextGroup.header) {
-          splitBottom = nextGroup.header.rect.top;
-        } else {
-          splitBottom = containerRect ? containerRect.bottom + 200 : headerRect.bottom + 50;
-        }
-
-        containerRectMap.set(group.header.container.id, {
-          top: splitTop,
-          bottom: splitBottom,
-          left: fullLeft,
-          right: fullRight,
-          height: splitBottom - splitTop
-        });
-      }
-
-      for (let i = 0; i < sortedPins.length; i++) {
-        const current = sortedPins[i];
-        const next = sortedPins[i + 1];
-        const splitTop = current.rect.top + current.rect.height * 0.5;
-        const splitBottom = next
-          ? (next.rect.top + next.rect.height * 0.5)
-          : (nextGroup && nextGroup.header
-              ? nextGroup.header.rect.top
-              : (containerRect ? containerRect.bottom + 200 : current.rect.bottom + 50));
-
-        containerRectMap.set(current.container.id, {
-          top: splitTop,
-          bottom: splitBottom,
-          left: fullLeft,
-          right: fullRight,
-          height: splitBottom - splitTop
-        });
-      }
-    }
-
-    const collisions: any[] = [];
-    const py = pointerCoordinates?.y;
-    const px = pointerCoordinates?.x;
-
-    if (py !== undefined && px !== undefined) {
-      for (const container of allowedContainers) {
-        if (container.disabled) continue;
-        const rect = containerRectMap.get(container.id);
-        if (!rect) continue;
-
-        if (containerRect && container.id !== 'layer-top' && (rect.bottom < containerRect.top || rect.top > containerRect.bottom)) {
-          continue;
-        }
-
-        if (py >= rect.top && py <= rect.bottom && px >= rect.left && px <= rect.right) {
-          const centerY = rect.top + rect.height / 2;
-          collisions.push({
-            id: container.id,
-            data: { droppableContainer: container, value: Math.abs(py - centerY) }
-          });
-        }
-      }
-    }
-
-    if (collisions.length > 0) {
-      collisions.sort((a, b) => a.data.value - b.data.value);
-      return collisions;
-    }
-
-    // Fallback: Closest container by vertical distance
-    const fallbackCollisions: any[] = [];
-    const refY = py ?? (collisionRect ? collisionRect.top + collisionRect.height / 2 : 0);
-
-    for (const container of allowedContainers) {
-      if (container.disabled) continue;
-      const rect = containerRectMap.get(container.id);
-      if (!rect) continue;
-
-      if (containerRect && container.id !== 'layer-top' && (rect.bottom < containerRect.top || rect.top > containerRect.bottom)) {
-        continue;
-      }
-
-      const dist = refY < rect.top ? rect.top - refY : (refY > rect.bottom ? refY - rect.bottom : 0);
-      fallbackCollisions.push({
-        id: container.id,
-        data: { droppableContainer: container, value: dist }
-      });
-    }
-
-    fallbackCollisions.sort((a, b) => a.data.value - b.data.value);
-    return fallbackCollisions;
+    return computeCustomCollisionDetection(args, {
+      layers,
+      scrollContainer: scrollContainerRef.current,
+      collisionCacheRef
+    });
   };
 
   return (
