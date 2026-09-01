@@ -268,6 +268,52 @@ const PinMarker = memo(({
   );
 });
 
+const PinOverlays = memo(({
+  visiblePins,
+  targetPinId,
+  editingPinId,
+  readOnly,
+  onUpdatePin,
+  onHoverPin,
+  onPinClick,
+}: {
+  visiblePins: Pin[];
+  targetPinId?: string | null;
+  editingPinId?: string | null;
+  readOnly: boolean;
+  onUpdatePin: (id: string, updates: Partial<Pin>) => void;
+  onHoverPin?: (id: string | null, leavingPinId?: string) => void;
+  onPinClick: (pin: Pin) => void;
+}) => {
+  const hoveredPinId = useHoveredPinId();
+  const overlayPins = visiblePins.filter((pin) => (
+    pin.id === targetPinId ||
+    pin.id === editingPinId ||
+    pin.id === hoveredPinId
+  ));
+
+  return (
+    <>
+      {overlayPins.map((pin) => {
+        const isSelected = targetPinId === pin.id || editingPinId === pin.id;
+        const isEditing = !readOnly && editingPinId === pin.id;
+        return (
+          <PinMarker
+            key={pin.id}
+            pin={pin}
+            onUpdatePin={onUpdatePin}
+            onHoverPin={onHoverPin}
+            onPinClick={onPinClick}
+            isSelected={isSelected}
+            isEditing={isEditing}
+            readOnly={readOnly}
+          />
+        );
+      })}
+    </>
+  );
+});
+
 const LIGHT_MINOR_ROAD_COLOR = ['interpolate', ['linear'], ['zoom'], 10, '#e2dfd7', 13.5, '#d4d0c7', 15.5, '#ffffff'];
 const DARK_MINOR_ROAD_COLOR = ['interpolate', ['linear'], ['zoom'], 9, '#36465e', 13, '#3e506c', 15.5, '#485b7a'];
 
@@ -1066,18 +1112,6 @@ const MapView = ({
     [pins, hiddenLayerIds]
   );
 
-  const hoveredPinId = useHoveredPinId();
-
-  const activeOverlayPins = useMemo(() => {
-    return visiblePins.filter((pin) => {
-      return (
-        pin.id === targetPinId ||
-        pin.id === editingPinId ||
-        pin.id === hoveredPinId
-      );
-    });
-  }, [visiblePins, targetPinId, editingPinId, hoveredPinId]);
-
   const pinsGeoJson = useMemo(() => {
     // If a pin is actively being drag-edited, exclude it from the GeoJSON layer to avoid duplicate ghost marker
     const isDragEditing = (pinId: string) => !readOnly && editingPinId === pinId;
@@ -1531,22 +1565,15 @@ const MapView = ({
           </Source>
 
           {/* Hybrid DOM Markers for Selected, Hovered, or Drag-Edited Pins */}
-          {activeOverlayPins.map((pin) => {
-            const isSelected = targetPinId === pin.id || editingPinId === pin.id;
-            const isEditing = !readOnly && editingPinId === pin.id;
-            return (
-              <PinMarker
-                key={pin.id}
-                pin={pin}
-                onUpdatePin={onUpdatePin}
-                onHoverPin={onHoverPin}
-                onPinClick={handlePinClickStable}
-                isSelected={isSelected}
-                isEditing={isEditing}
-                readOnly={readOnly}
-              />
-            );
-          })}
+          <PinOverlays
+            visiblePins={visiblePins}
+            targetPinId={targetPinId}
+            editingPinId={editingPinId}
+            readOnly={readOnly}
+            onUpdatePin={onUpdatePin}
+            onHoverPin={onHoverPin}
+            onPinClick={handlePinClickStable}
+          />
 
           {pendingContextLocation && !readOnly && (
             <Marker
@@ -1624,6 +1651,7 @@ const MapView = ({
             <Marker longitude={previewLocation.lng} latitude={previewLocation.lat} anchor="bottom">
               <div
                 className={previewMarker.className}
+                style={{ width: previewMarker.width, height: previewMarker.height, position: 'relative' }}
                 dangerouslySetInnerHTML={{ __html: previewMarker.html }}
               />
             </Marker>

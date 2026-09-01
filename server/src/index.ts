@@ -16,7 +16,7 @@ import type { User } from '@shared/interfaces';
 import placesRouter from './routes/places';
 import { googleLoginHandler, sharedContactsHandler, searchUsersHandler, authMiddleware, authenticateToken, getJwtSecret, meHandler, mockLoginHandler, logoutHandler, logoutEverywhereHandler, parseCookies, SESSION_COOKIE, getUserForSession } from './auth';
 import { getMapRole, canEditMap, canViewMap } from './permissions';
-import { resolveSafeMapFile, getSafeFontDownloadTarget, sanitizeMapFilename, getSafeMapFileSize } from './mapFiles';
+import { resolveSafeMapFile, sanitizeMapFilename, getSafeMapFileSize, ensureOnDemandFontFile } from './mapFiles';
 import { isAllowedOrigin } from './cors';
 import { getCspDirectives } from './csp';
 import { socketPayloadSchemas } from './schemas';
@@ -239,18 +239,9 @@ app.get('/maps/:filename(*)', async (req, res) => {
   // On-demand font download fallback if font file not yet on disk
   if (!foundFilePath && sanitizedName && sanitizedName.startsWith('fonts/') && sanitizedName.endsWith('.pbf')) {
     try {
-      const safeTarget = getSafeFontDownloadTarget(sanitizedName, path.resolve(process.cwd(), 'data'));
-      if (safeTarget) {
-        const upstreamUrl = `https://protomaps.github.io/basemaps-assets/${sanitizedName.split('/').map(encodeURIComponent).join('/')}`;
-        if (!fs.existsSync(safeTarget.targetDir)) {
-          fs.mkdirSync(safeTarget.targetDir, { recursive: true });
-        }
-        const response = await fetch(upstreamUrl);
-        if (response.ok) {
-          const buffer = Buffer.from(await response.arrayBuffer());
-          fs.writeFileSync(safeTarget.targetPath, buffer);
-          foundFilePath = resolveSafeMapFile(sanitizedName, candidateMapsDirs) || safeTarget.targetPath;
-        }
+      const downloaded = await ensureOnDemandFontFile(sanitizedName, path.resolve(process.cwd(), 'data'));
+      if (downloaded) {
+        foundFilePath = resolveSafeMapFile(sanitizedName, candidateMapsDirs) || downloaded;
       }
     } catch (fetchErr) {
       console.warn('[MAPS FONTS FETCH] Failed to fetch on-demand font:', fetchErr);

@@ -80,35 +80,34 @@ export const ICON_SVG_PATHS: Record<Exclude<PinIcon, 'default'>, string> = {
 export function getPreviewMarkerHTML() {
   const width = 20;
   const height = 28;
-  const scale = width / 30;
+  const pinPath = 'M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z';
+  const rainbow = 'linear-gradient(135deg, #b91c1c 0%, #c2410c 10%, #15803d 20%, #1d4ed8 30%, #6b21a8 40%, #b91c1c 50%, #c2410c 60%, #15803d 70%, #1d4ed8 80%, #6b21a8 90%, #b91c1c 100%)';
 
+  // Same 20x28 box as PinMarker so anchor=bottom puts the tip on the lat/lng.
   const html = `
     <div style="
       position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       width: ${width}px;
       height: ${height}px;
     ">
       <div style="
         position: absolute;
-        width: ${width * 3}px;
-        height: ${width * 3}px;
+        top: -20px;
+        left: -20px;
+        width: 60px;
+        height: 60px;
         border-radius: 50%;
         background: rgba(0, 0, 0, 0.12);
         z-index: -1;
+        pointer-events: none;
         animation: pulse 1.2s infinite;
-        display: flex;
-        align-items: center;
-        justify-content: center;
       ">
         <div style="
           position: absolute;
           inset: 0;
           border-radius: 50%;
           padding: 3px;
-          background: linear-gradient(135deg, #b91c1c 0%, #c2410c 10%, #15803d 20%, #1d4ed8 30%, #6b21a8 40%, #b91c1c 50%, #c2410c 60%, #15803d 70%, #1d4ed8 80%, #6b21a8 90%, #b91c1c 100%);
+          background: ${rainbow};
           background-size: 600% 600%;
           -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
           -webkit-mask-composite: xor;
@@ -116,24 +115,28 @@ export function getPreviewMarkerHTML() {
           animation: rainbowMove 30s linear infinite;
         "></div>
       </div>
-
-      <div style="
-        filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
-        transform: scale(${scale});
-        transform-origin: center bottom;
-      ">
-        <div style="
-          width: 30px;
-          height: 42px;
-          background: linear-gradient(135deg, #b91c1c 0%, #c2410c 10%, #15803d 20%, #1d4ed8 30%, #6b21a8 40%, #b91c1c 50%, #c2410c 60%, #15803d 70%, #1d4ed8 80%, #6b21a8 90%, #b91c1c 100%);
-          background-size: 600% 600%;
-          animation: rainbowMove 30s linear infinite;
-          -webkit-clip-path: path('M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z');
-          clip-path: path('M15 0C6.71573 0 0 6.71573 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.71573 23.2843 0 15 0Z');
-        "></div>
-      </div>
+      <svg
+        width="${width}"
+        height="${height}"
+        viewBox="0 0 30 42"
+        xmlns="http://www.w3.org/2000/svg"
+        style="display: block; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4)); pointer-events: none;"
+      >
+        <defs>
+          <linearGradient id="preview-pin-fill" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#b91c1c" />
+            <stop offset="20%" stop-color="#15803d" />
+            <stop offset="40%" stop-color="#1d4ed8" />
+            <stop offset="60%" stop-color="#6b21a8" />
+            <stop offset="80%" stop-color="#c2410c" />
+            <stop offset="100%" stop-color="#b91c1c" />
+          </linearGradient>
+        </defs>
+        <path d="${pinPath}" fill="url(#preview-pin-fill)" />
+        <circle cx="15" cy="15" r="6" fill="white" fill-opacity="0.9" />
+      </svg>
     </div>
   `;
 
-  return { html, className: 'leaflet-marker-icon custom-pin-modern hovered', width, height };
+  return { html, className: 'custom-pin-modern hovered', width, height };
 }

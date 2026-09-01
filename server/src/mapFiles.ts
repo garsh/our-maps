@@ -94,3 +94,54 @@ export function getSafeFontDownloadTarget(
 
   return { targetPath, targetDir: path.dirname(targetPath) };
 }
+
+const fontDownloadInflight = new Map<string, Promise<string | null>>();
+
+export function clearFontDownloadInflightForTests() {
+  fontDownloadInflight.clear();
+}
+
+export async function ensureOnDemandFontFile(
+  sanitizedName: string,
+  dataRoot: string
+): Promise<string | null> {
+  const existing = fontDownloadInflight.get(sanitizedName);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    const safeTarget = getSafeFontDownloadTarget(sanitizedName, dataRoot);
+    if (!safeTarget) return null;
+
+    try {
+      await fs.promises.access(safeTarget.targetPath);
+      return safeTarget.targetPath;
+    } catch {
+      // Download below
+    }
+
+    const upstreamUrl = `https://protomaps.github.io/basemaps-assets/${sanitizedName.split('/').map(encodeURIComponent).join('/')}`;
+    const response = await fetch(upstreamUrl);
+    if (!response.ok) return null;
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await fs.promises.mkdir(safeTarget.targetDir, { recursive: true });
+    const tempPath = `${safeTarget.targetPath}.${process.pid}.tmp`;
+    try {
+      await fs.promises.writeFile(tempPath, buffer);
+      await fs.promises.rename(tempPath, safeTarget.targetPath);
+    } catch (err) {
+      try {
+        await fs.promises.unlink(tempPath);
+      } catch {
+        // Ignore cleanup errors
+      }
+      throw err;
+    }
+    return safeTarget.targetPath;
+  })().finally(() => {
+    fontDownloadInflight.delete(sanitizedName);
+  });
+
+  fontDownloadInflight.set(sanitizedName, promise);
+  return promise;
+}

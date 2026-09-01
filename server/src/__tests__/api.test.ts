@@ -267,9 +267,27 @@ describe('API Endpoints', () => {
   });
 
   it('GET /maps/sprites/light@2x.png should return sprite image', async () => {
-    const res = await request(app).get('/maps/sprites/light@2x.png');
-    expect(res.status).toBe(200);
-    expect(res.headers['content-type']).toContain('image/png');
+    // Sprites are gitignored (`npm run setup:sprites`), so worktrees may not have them.
+    const spritesDir = path.resolve(__dirname, '../../../data/sprites');
+    const spritePath = path.join(spritesDir, 'light@2x.png');
+    const createdFixture = !fs.existsSync(spritePath);
+    if (createdFixture) {
+      const png1x1 = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64'
+      );
+      fs.mkdirSync(spritesDir, { recursive: true });
+      fs.writeFileSync(spritePath, png1x1);
+    }
+    try {
+      const res = await request(app).get('/maps/sprites/light@2x.png');
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('image/png');
+    } finally {
+      if (createdFixture && fs.existsSync(spritePath)) {
+        fs.unlinkSync(spritePath);
+      }
+    }
   });
 
   it('POST /api/maps should allow long pin labels and descriptions (> 255 characters)', async () => {

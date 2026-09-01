@@ -8,7 +8,9 @@ import {
   getSafeFontDownloadTarget,
   isPathInside,
   clearMapFilePathCache,
-  getSafeMapFileSize
+  getSafeMapFileSize,
+  ensureOnDemandFontFile,
+  clearFontDownloadInflightForTests
 } from '../mapFiles';
 
 describe('map file path sanitization', () => {
@@ -80,5 +82,46 @@ describe('safe map file resolution', () => {
     // Returns cached size on subsequent calls
     const cachedSize = await getSafeMapFileSize(filePath);
     expect(cachedSize).toBe(size);
+  });
+});
+
+describe('ensureOnDemandFontFile', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ourmaps-fonts-'));
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    clearFontDownloadInflightForTests();
+  });
+
+  afterAll(() => {
+    globalThis.fetch = originalFetch;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  it('downloads a missing glyph range once and coalesces concurrent callers', async () => {
+    const dataRoot = path.join(tempRoot, 'data-once');
+    let fetchCount = 0;
+    globalThis.fetch = (async () => {
+      fetchCount += 1;
+      return {
+        ok: true,
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer
+      } as Response;
+    }) as typeof fetch;
+
+    const [first, second] = await Promise.all([
+      ensureOnDemandFontFile('fonts/Noto Sans Regular/0-255.pbf', dataRoot),
+      ensureOnDemandFontFile('fonts/Noto Sans Regular/0-255.pbf', dataRoot)
+    ]);
+
+    expect(fetchCount).toBe(1);
+    expect(first).toBe(path.resolve(dataRoot, 'fonts/Noto Sans Regular/0-255.pbf'));
+    expect(second).toBe(first);
+    expect(fs.readFileSync(first!)).toEqual(Buffer.from([1, 2, 3]));
+  });
+
+  it('rejects font paths outside the data root', async () => {
+    const dataRoot = path.join(tempRoot, 'data-evil');
+    expect(await ensureOnDemandFontFile('fonts/../../../tmp/evil.pbf', dataRoot)).toBeNull();
   });
 });

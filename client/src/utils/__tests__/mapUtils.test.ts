@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { arePinsEqual, isValidPinColor, isValidPinIcon, resolvePinColorCode } from '../mapUtils';
+import { arePinsEqual, isValidPinColor, isValidPinIcon, resolvePinColorCode, getPreviewMarkerHTML } from '../mapUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('mapUtils', () => {
@@ -67,6 +67,17 @@ describe('mapUtils', () => {
     it('detects position changes', () => {
       const reorderedPin = { ...basePin, position: 5 };
       expect(arePinsEqual(basePin, reorderedPin)).toBe(false);
+    });
+  });
+
+  describe('getPreviewMarkerHTML', () => {
+    it('uses the same 20x28 pin box as map markers so the tip sits on the coordinate', () => {
+      const preview = getPreviewMarkerHTML();
+      expect(preview.width).toBe(20);
+      expect(preview.height).toBe(28);
+      expect(preview.html).toContain('width="20"');
+      expect(preview.html).toContain('height="28"');
+      expect(preview.html).toContain('viewBox="0 0 30 42"');
     });
   });
 
