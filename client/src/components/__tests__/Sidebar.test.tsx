@@ -313,6 +313,49 @@ describe('Sidebar', () => {
     expect(screen.queryByText(/Rename Map/i)).not.toBeInTheDocument();
   });
 
+  it('shows Edit Mode below Rename Map and toggles it without closing the menu', () => {
+    const onToggleEditMode = vi.fn();
+    render(<TestWrapper handlers={{ onToggleEditMode, editMode: true }} />);
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+
+    const rename = screen.getByText('Rename Map');
+    const editModeItem = screen.getByText('Edit Mode');
+    expect(rename.compareDocumentPosition(editModeItem) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(editModeItem);
+    expect(onToggleEditMode).toHaveBeenCalledWith(false);
+    expect(screen.getByText('Edit Mode')).toBeInTheDocument();
+    expect(screen.getByText('Rename Map')).toBeInTheDocument();
+  });
+
+  it('greys out Edit Mode and leaves it off when the user only has view permission', () => {
+    const onToggleEditMode = vi.fn();
+    render(<TestWrapper handlers={{ userRole: 'view', onToggleEditMode }} />);
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+
+    expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
+    const editModeItem = screen.getByText('Edit Mode');
+    const row = editModeItem.parentElement as HTMLElement;
+    expect(row.style.opacity).toBe('0.45');
+    expect(row.style.cursor).toBe('not-allowed');
+
+    fireEvent.click(editModeItem);
+    expect(onToggleEditMode).not.toHaveBeenCalled();
+  });
+
+  it('hides Rename Map when editMode is off for an owner and allows turning it back on', () => {
+    const onToggleEditMode = vi.fn();
+    render(<TestWrapper handlers={{ userRole: 'owner', editMode: false, onToggleEditMode }} />);
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+
+    expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Edit Mode'));
+    expect(onToggleEditMode).toHaveBeenCalledWith(true);
+  });
+
   it('renders default layer header as a droppable element with id="default"', () => {
     const { container } = render(<TestWrapper />);
     const defaultLayerHeader = container.querySelector('#default');

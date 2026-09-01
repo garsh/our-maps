@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { apiService } from '../services/api';
-import { Map as MapIcon, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download, Upload, Sun, Moon } from 'lucide-react';
+import { Map as MapIcon, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download, Upload, Sun, Moon, Eye } from 'lucide-react';
 import { getMapDownloadStatuses, type MapDownloadStatus } from '../utils/tileUtils';
 import { tileWorkerManager } from '../utils/tileWorkerManager';
 import { getStoredJson, setStoredJson } from '../utils/storageUtils';
@@ -56,7 +56,7 @@ export default function LandingPage() {
     }
   };
 
-  const handleMapClick = (mapId: string) => {
+  const handleMapClick = (mapId: string, viewMode = false) => {
     const currentlyOffline = isOffline || (typeof navigator !== 'undefined' && !navigator.onLine);
     if (currentlyOffline) {
       const status = downloadStatuses.get(mapId);
@@ -65,7 +65,7 @@ export default function LandingPage() {
         return;
       }
     }
-    navigate(`/map/${mapId}`);
+    navigate(viewMode ? `/map/${mapId}?mode=view` : `/map/${mapId}`);
   };
 
   const fetchDownloadedMapStatuses = async (mapList?: { id: string }[]) => {
@@ -548,31 +548,57 @@ export default function LandingPage() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', gap: '4px', borderTop: 'none', paddingTop: '0' }}>
-                  <button 
-                    onClick={(e) => { 
-                      if (isOffline) return;
-                      e.stopPropagation(); 
-                      setDeleteConfirm(map.id); 
-                    }}
-                    disabled={isOffline}
-                    style={{ 
-                      background: 'rgba(231, 76, 60, 0.1)', 
-                      border: 'none', 
-                      color: 'var(--error-color)', 
-                      padding: '2px', 
-                      borderRadius: '12px', 
-                      cursor: isOffline ? 'default' : 'pointer', 
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      height: '1.1rem',
-                      width: '2.2rem',
-                      visibility: isOffline ? 'hidden' : 'visible'
-                    }}
-                    title={map.ownerId === user?.id ? "Delete Map" : "Leave Map"}
-                  >
-                    <Trash2 size={12} />
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMapClick(map.id, true);
+                      }}
+                      style={{
+                        background: 'rgba(72, 61, 139, 0.1)',
+                        border: 'none',
+                        color: 'var(--primary-color)',
+                        padding: '2px',
+                        borderRadius: '12px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: '1.1rem',
+                        width: '2.2rem',
+                      }}
+                      title="Open in view mode"
+                      aria-label="Open in view mode"
+                    >
+                      <Eye size={12} />
+                    </button>
+                    <button 
+                      onClick={(e) => { 
+                        if (isOffline) return;
+                        e.stopPropagation(); 
+                        setDeleteConfirm(map.id); 
+                      }}
+                      disabled={isOffline}
+                      style={{ 
+                        background: 'rgba(231, 76, 60, 0.1)', 
+                        border: 'none', 
+                        color: 'var(--error-color)', 
+                        padding: '2px', 
+                        borderRadius: '12px', 
+                        cursor: isOffline ? 'default' : 'pointer', 
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: '1.1rem',
+                        width: '2.2rem',
+                        visibility: isOffline ? 'hidden' : 'visible'
+                      }}
+                      title={map.ownerId === user?.id ? "Delete Map" : "Leave Map"}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'center', fontSize: '0.75rem', color: '#999' }}>
                     <span>{formatDate(map.lastAccessedAt)}</span>
                   </div>

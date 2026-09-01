@@ -436,5 +436,75 @@ describe('App Components Error Handling', () => {
     // On touch device, pin should NOT be hovered
     expect(getHoveredPinId()).toBeNull();
   });
+
+  it('opens an owner map in view mode when mode=view is in the URL', async () => {
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1?mode=view']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Map')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText(/Synced/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+    expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
+    expect(screen.getByText('Edit Mode')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Edit Mode'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Rename Map')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Synced/i)).toBeInTheDocument();
+  });
+
+  it('keeps Edit Mode off and disabled for view-only collaborators', async () => {
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Shared Map',
+      pins: [],
+      layers: [],
+      userRole: 'view'
+    });
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Shared Map')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+    expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
+    const editModeItem = screen.getByText('Edit Mode');
+    expect((editModeItem.parentElement as HTMLElement).style.opacity).toBe('0.45');
+
+    fireEvent.click(editModeItem);
+    expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Synced/i)).not.toBeInTheDocument();
+  });
 });
 

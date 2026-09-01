@@ -105,6 +105,8 @@ interface SidebarProps {
   onDragCancel?: () => void;
   onDragStart?: (event: DragStartEvent) => void;
   userRole?: 'owner' | 'edit' | 'view';
+  editMode?: boolean;
+  onToggleEditMode?: (enabled: boolean) => void;
   onShare?: () => void;
   onImport?: (data: Partial<MapData>) => void;
   editingPinId: string | null;
@@ -1633,6 +1635,8 @@ const Sidebar = ({
   onDragCancel,
   onDragStart,
   userRole = 'owner',
+  editMode,
+  onToggleEditMode,
   onShare,
   onImport,
   editingPinId,
@@ -1669,7 +1673,9 @@ const Sidebar = ({
   const menuRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
-  const readOnly = userRole === 'view' || isOffline;
+  const canEdit = userRole !== 'view';
+  const isEditMode = canEdit && (editMode ?? true);
+  const readOnly = !isEditMode || isOffline;
   const [activePin, setActivePin] = useState<Pin | null>(null);
   const [activeLayer, setActiveLayer] = useState<PinLayer | null>(null);
   const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
@@ -2135,6 +2141,57 @@ const Sidebar = ({
                       Rename Map
                     </div>
                   )}
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!canEdit) return;
+                      onToggleEditMode?.(!isEditMode);
+                    }}
+                    style={{
+                      padding: '10px 16px',
+                      cursor: canEdit ? 'pointer' : 'not-allowed',
+                      opacity: canEdit ? 1 : 0.45,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '10px',
+                      borderBottom: '1px solid var(--border-color)',
+                      fontSize: '0.85rem',
+                      fontWeight: isEditMode ? '600' : '500',
+                      color: 'var(--text-primary)',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (canEdit) e.currentTarget.style.background = 'var(--bg-color)';
+                    }}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <span>Edit Mode</span>
+                    <div
+                      style={{
+                        width: '34px',
+                        height: '18px',
+                        borderRadius: '10px',
+                        background: isEditMode ? (canEdit ? '#3b82f6' : '#94a3b8') : '#e2e8f0',
+                        position: 'relative',
+                        transition: 'background 0.2s ease',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '14px',
+                          height: '14px',
+                          borderRadius: '50%',
+                          background: 'white',
+                          position: 'absolute',
+                          top: '2px',
+                          left: isEditMode ? '18px' : '2px',
+                          transition: 'left 0.2s ease',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                        }}
+                      />
+                    </div>
+                  </div>
                   {!readOnly && (
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}

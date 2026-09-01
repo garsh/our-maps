@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import MapView from './components/MapView'
 import Sidebar from './components/Sidebar'
@@ -47,6 +47,7 @@ export function clampSidebarWidth(width: number, viewportWidth: number, min = 20
 export function MapEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const socketRef = useRef<Socket | null>(null);
   
@@ -59,6 +60,8 @@ export function MapEditor() {
   const [owner, setOwner] = useState<{ id: string, name?: string, email?: string, picture?: string } | null>(null);
   const [isMapLoading, setIsMapLoading] = useState(!!id && id !== 'new');
   const [userRole, setUserRole] = useState<'owner' | 'edit' | 'view'>('owner');
+  const canEditMap = userRole !== 'view';
+  const editMode = canEditMap && searchParams.get('mode') !== 'view';
   const [permissions, setPermissions] = useState<MapPermission[]>([]);
   const [searchAreaState, setSearchAreaState] = useState<SearchAreaState | null>(null);
   
@@ -318,6 +321,8 @@ export function MapEditor() {
   collapsedLayerIdsRef.current = collapsedLayerIds;
   const userRoleRef = useRef(userRole);
   userRoleRef.current = userRole;
+  const editModeRef = useRef(editMode);
+  editModeRef.current = editMode;
   const isOfflineRef = useRef(isOffline);
   isOfflineRef.current = isOffline;
   const mapIdRef = useRef(mapId);
@@ -1023,13 +1028,29 @@ export function MapEditor() {
 
   const handleOpenShare = useCallback(() => setIsSharing(true), []);
 
+  const handleToggleEditMode = useCallback((enabled: boolean) => {
+    if (!canEditMap) return;
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (enabled) {
+        next.delete('mode');
+      } else {
+        next.set('mode', 'view');
+      }
+      return next;
+    }, { replace: true });
+    if (!enabled) {
+      setEditingPinId(null);
+    }
+  }, [canEditMap, setSearchParams]);
+
   const getNextPinPosition = (allPins: Pin[], targetLayerId?: string): number => {
     const layerPins = allPins.filter(p => isSameLayer(p.layerId, targetLayerId));
     return layerPins.length > 0 ? Math.max(...layerPins.map(p => p.position)) + 1 : 0;
   };
 
   const addPinAtLocation = useCallback((lat: number, lng: number, label?: string, address?: string, autoEdit = false) => {
-    if (userRole === 'view' || isOffline) return;
+    if (!editMode || isOffline) return;
     const currentPins = pinsRef.current;
     const idVal = generateId();
     const nextPosition = getNextPinPosition(currentPins, undefined);
@@ -1052,15 +1073,15 @@ export function MapEditor() {
     if (mapId) {
       socketRef.current?.emit('pin-create', { mapId, layerId: newPin.layerId === undefined ? null : newPin.layerId, pin: newPin });
     }
-  }, [userRole, isOffline, mapId, handleEditPin, handlePinSelect]);
+  }, [editMode, isOffline, mapId, handleEditPin, handlePinSelect]);
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
-    if (Date.now() < ignoreMapClickUntil.current || userRole === 'view' || isOffline) return;
+    if (Date.now() < ignoreMapClickUntil.current || !editMode || isOffline) return;
     addPinAtLocation(lat, lng, undefined, undefined, true);
-  }, [userRole, isOffline, addPinAtLocation]);
+  }, [editMode, isOffline, addPinAtLocation]);
 
   const removePin = useCallback((targetId: string) => {
-    if (userRole === 'view' || isOffline) return;
+    if (!editMode || isOffline) return;
     const currentPins = pinsRef.current;
 
     const remainingPins = currentPins.filter(p => p.id !== targetId);
@@ -1081,10 +1102,10 @@ export function MapEditor() {
     if (mapId) {
       socketRef.current?.emit('pin-delete', { mapId, pinId: targetId });
     }
-  }, [userRole, isOffline, mapId]);
+  }, [editMode, isOffline, mapId]);
 
   const updatePin = useCallback((targetId: string, updates: Partial<Pin>) => {
-    if (userRole === 'view' || isOffline) return;
+    if (!editMode || isOffline) return;
     
     const currentPins = pinsRef.current;
     const targetPin = currentPins.find(p => p.id === targetId);
@@ -1118,10 +1139,10 @@ export function MapEditor() {
         socketRef.current?.emit('pin-update', { mapId, pinId: targetId, updates: computedUpdates });
       }
     }
-  }, [userRole, isOffline, mapId]);
+  }, [editMode, isOffline, mapId]);
 
   const movePinsToLayer = useCallback((pinIds: string[], targetLayerId?: string) => {
-    if (userRole === 'view' || isOffline || pinIds.length === 0) return;
+    if (!editMode || isOffline || pinIds.length === 0) return;
 
     const currentPins = pinsRef.current;
     const pinIdSet = new Set(pinIds);
@@ -1154,10 +1175,10 @@ export function MapEditor() {
         targetLayerId
       );
     }
-  }, [userRole, isOffline, mapId]);
+  }, [editMode, isOffline, mapId]);
 
   const addLayer = useCallback((): PinLayer | undefined => {
-    if (userRole === 'view' || isOffline) return;
+    if (!editMode || isOffline) return;
     const newGroup: PinLayer = {
       id: generateId(),
       name: `Layer ${layers.length + 1}`,
@@ -1168,11 +1189,11 @@ export function MapEditor() {
       socketRef.current?.emit('layer-create', { mapId, layer: newGroup });
     }
     return newGroup;
-  }, [userRole, isOffline, layers.length, mapId]);
+  }, [editMode, isOffline, layers.length, mapId]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isOffline || userRole === 'view') return;
+      if (isOffline || !editMode) return;
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') {
         const target = e.target as HTMLElement | null;
         if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
@@ -1188,10 +1209,10 @@ export function MapEditor() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [addLayer, isOffline, userRole]);
+  }, [addLayer, isOffline, editMode]);
 
   const updateLayer = useCallback((targetId: string, updates: Partial<PinLayer>) => {
-    if (userRoleRef.current === 'view' || isOfflineRef.current) return;
+    if (!editModeRef.current || isOfflineRef.current) return;
     setLayers(prev => prev.map(g => g.id === targetId ? { ...g, ...updates } : g));
     const currentMapId = mapIdRef.current;
     if (currentMapId) {
@@ -1200,7 +1221,7 @@ export function MapEditor() {
   }, []);
 
   const removeLayer = useCallback((targetId: string) => {
-    if (userRoleRef.current === 'view' || isOfflineRef.current) return;
+    if (!editModeRef.current || isOfflineRef.current) return;
     setLayers(prev => prev.filter(g => g.id !== targetId));
 
     setPins(prev => {
@@ -1225,7 +1246,7 @@ export function MapEditor() {
   }, []);
 
   const handleMapNameChange = useCallback((newName: string) => {
-    if (userRoleRef.current === 'view' || isOfflineRef.current) return;
+    if (!editModeRef.current || isOfflineRef.current) return;
     setMapName(newName);
     const currentMapId = mapIdRef.current;
     if (currentMapId) {
@@ -1234,7 +1255,7 @@ export function MapEditor() {
   }, []);
 
   const handleDragStart = useCallback((event: any) => {
-    if (userRoleRef.current === 'view' || isOfflineRef.current) return;
+    if (!editModeRef.current || isOfflineRef.current) return;
     const currentPins = pinsRef.current;
     dragStartPinsRef.current = currentPins;
     const { active } = event;
@@ -1262,7 +1283,7 @@ export function MapEditor() {
   }, []);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
-    if (userRoleRef.current === 'view' || isOfflineRef.current) return;
+    if (!editModeRef.current || isOfflineRef.current) return;
     const { active, over } = event;
     
     if (!over) {
@@ -1334,7 +1355,7 @@ export function MapEditor() {
 
 
   const handleImport = useCallback((data: Partial<MapData>) => {
-    if (userRoleRef.current === 'view' || isOfflineRef.current) return;
+    if (!editModeRef.current || isOfflineRef.current) return;
     if (data.name) setMapName(data.name);
     if (data.pins) {
       setPins(data.pins);
@@ -1422,7 +1443,7 @@ export function MapEditor() {
       
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
         <div id="download-pill-container" style={{ display: 'flex', alignItems: 'center' }}></div>
-        {userRole !== 'view' && (
+        {editMode && (
           <button 
             onClick={() => {
               if (error) {
@@ -1547,6 +1568,8 @@ export function MapEditor() {
             onDragCancel={handleDragCancel}
             onDragStart={handleDragStart}
             userRole={userRole}
+            editMode={editMode}
+            onToggleEditMode={handleToggleEditMode}
             onShare={handleOpenShare}
             onImport={handleImport}
             editingPinId={editingPinId}
@@ -1630,7 +1653,7 @@ export function MapEditor() {
             targetPinId={targetPinId}
             editingPinId={editingPinId}
             boundsToFit={boundsToFit}
-            userRole={userRole}
+            userRole={editMode ? userRole : 'view'}
             isOffline={isOffline}
             onHoverPin={handleHoverPin}
             onBackgroundClick={handleBackgroundClick}

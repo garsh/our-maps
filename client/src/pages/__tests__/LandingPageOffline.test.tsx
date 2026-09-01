@@ -72,6 +72,53 @@ describe('LandingPage Offline Map Access', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/map/map-downloaded');
   });
 
+  it('opens a map in view mode from the view button without also opening as editor', async () => {
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Downloaded Map')).toBeInTheDocument();
+    });
+
+    expect(screen.getAllByLabelText('Open in view mode').length).toBeGreaterThanOrEqual(2);
+    const downloadedCard = screen.getByText('Downloaded Map').closest('.card');
+    const viewButton = downloadedCard?.querySelector('[aria-label="Open in view mode"]') as HTMLElement;
+    fireEvent.click(viewButton);
+
+    expect(mockNavigate).toHaveBeenCalledWith('/map/map-downloaded?mode=view');
+    expect(mockNavigate).not.toHaveBeenCalledWith('/map/map-downloaded');
+  });
+
+  it('shows interstitial when opening an undownloaded map in view mode while offline', async () => {
+    (apiService.getMaps as any).mockRejectedValue(new Error('Network Error'));
+    localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Online Only Map')).toBeInTheDocument();
+    });
+
+    const onlineOnlyCard = screen.getByText('Online Only Map').closest('.card');
+    const viewButton = onlineOnlyCard?.querySelector('[aria-label="Open in view mode"]') as HTMLElement;
+    expect(viewButton).toBeTruthy();
+    fireEvent.click(viewButton);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(screen.getByText('This map is not available in offline mode')).toBeInTheDocument();
+  });
+
   it('displays interstitial pop up and prevents opening undownloaded maps when offline', async () => {
     (apiService.getMaps as any).mockRejectedValue(new Error('Network Error'));
     localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
