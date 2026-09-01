@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, countUniqueTiles, saveMapOffline, getOfflineMap, removeMapDownload, saveTile, saveTileBatch, getTile, addToManifest, getPendingFromManifest, getManifestStats, getMapDownloadStatuses, resetDBForTesting, openDB } from '../tileUtils';
+import { getTilesForArea, getPendingFromTileList, getPinsBoundingBox, countTiles, getXRanges, toCanonicalTileKey, getTileKeys, saveMapOffline, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, saveTile, saveTileBatch, getTile, addToManifest, getPendingFromManifest, getManifestStats, getMapDownloadStatuses, resetDBForTesting, openDB } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('tileUtils', () => {
@@ -100,10 +100,43 @@ describe('tileUtils', () => {
                                             });
                                             return r;
                                         },
+                                        getAllKeys: (query?: any) => {
+                                            const r: any = {};
+                                            setTimeout(() => {
+                                                let values = Array.from(txStore.values());
+                                                if (query !== undefined && query !== null) {
+                                                    const target = typeof query === 'object' && query?.lower !== undefined ? query.lower : query;
+                                                    if (Array.isArray(target)) {
+                                                        const [mId, st] = target;
+                                                        values = values.filter((v: any) => v.mapId === mId && v.status === st);
+                                                    } else {
+                                                        values = values.filter((v: any) => (idxName && v?.[idxName] === target) || v?.mapId === target);
+                                                    }
+                                                }
+                                                r.result = values.map((v: any) => v.url || v.id);
+                                                r.onsuccess && r.onsuccess();
+                                            });
+                                            return r;
+                                        },
                                         openKeyCursor: () => {
                                             const r: any = {};
                                             setTimeout(() => {
-                                                r.result = null;
+                                                const values = Array.from(txStore.values());
+                                                const uniqueKeys = Array.from(new Set(values.map((v: any) => v.mapId).filter(Boolean)));
+                                                let cursorIndex = 0;
+                                                const cursor: any = {
+                                                    get key() { return uniqueKeys[cursorIndex]; },
+                                                    continue: () => {
+                                                        cursorIndex++;
+                                                        if (cursorIndex < uniqueKeys.length) {
+                                                            r.result = cursor;
+                                                        } else {
+                                                            r.result = null;
+                                                        }
+                                                        r.onsuccess && r.onsuccess();
+                                                    }
+                                                };
+                                                r.result = uniqueKeys.length > 0 ? cursor : null;
                                                 r.onsuccess && r.onsuccess();
                                             });
                                             return r;
@@ -129,7 +162,13 @@ describe('tileUtils', () => {
             return req;
         });
         (global as any).indexedDB = {
-            open: openSpy
+            open: openSpy,
+            deleteDatabase: vi.fn(() => {
+                stores.clear();
+                const req: any = {};
+                setTimeout(() => req.onsuccess && req.onsuccess());
+                return req;
+            })
         };
     });
 
@@ -176,41 +215,101 @@ describe('tileUtils', () => {
         expect(box!.south).toBeCloseTo(44.94, 5);
     });
 
-    it('should cluster surgical boxes correctly', () => {
-        const pins: Pin[] = [
-            { id: '1', lat: 45.001, lng: -74.001, label: 'P1', position: 0 },
-            { id: '2', lat: 45.002, lng: -74.002, label: 'P2', position: 1 }, // Should merge with P1
-            { id: '3', lat: 50.000, lng: -80.000, label: 'P3', position: 2 }  // Far away
-        ] as any;
-
-        const boxes = getSurgicalBoxes(pins);
-        expect(boxes.length).toBe(2);
-    });
-
-    it('should transitively merge overlapping surgical boxes', () => {
-        // P1 and P3 are far from each other, but P2 bridges them
-        const pins: Pin[] = [
-            { id: '1', lat: 45.000, lng: -74.000, label: 'P1', position: 0 },
-            { id: '2', lat: 45.030, lng: -74.030, label: 'P2', position: 1 },
-            { id: '3', lat: 45.060, lng: -74.060, label: 'P3', position: 2 }
-        ] as any;
-
-        const boxes = getSurgicalBoxes(pins);
-        expect(boxes.length).toBe(1);
-        expect(boxes[0].north).toBeGreaterThanOrEqual(45.06);
-        expect(boxes[0].south).toBeLessThanOrEqual(45.00);
-    });
-
-    it('should accurately count unique tiles across overlapping boxes', () => {
+    it('should accurately count tiles for bounding box across zoom range', () => {
         const bbox = { north: 45.1, south: 44.9, east: -73.9, west: -74.1 };
-        const box1 = { north: 45.01, south: 44.99, east: -73.99, west: -74.01 };
-        const box2 = { north: 45.02, south: 45.00, east: -73.98, west: -74.00 };
-
-        const count = countUniqueTiles(bbox, [box1, box2]);
+        const count = countTiles(bbox, 1, 15);
         expect(count).toBeGreaterThan(0);
-        // Ensure that passing identical duplicate boxes does not increase the unique count
-        const countDuplicate = countUniqueTiles(bbox, [box1, box2, box1, box2]);
-        expect(countDuplicate).toBe(count);
+
+        const zoom1to10 = countTiles(bbox, 1, 10);
+        const zoom11to15 = countTiles(bbox, 11, 15);
+        expect(count).toBe(zoom1to10 + zoom11to15);
+    });
+
+    it('should generate all tiles for area across zoom levels 1 to 15 without gaps', () => {
+        const bbox = { north: 40.75, south: 40.70, east: -73.95, west: -74.00 };
+        const tiles = getTilesForArea(bbox, 1, 15);
+        expect(tiles.length).toBe(countTiles(bbox, 1, 15));
+        
+        // Ensure every zoom level from 1 to 15 has tiles
+        const zoomsPresent = new Set(tiles.map(t => t.z));
+        for (let z = 1; z <= 15; z++) {
+            expect(zoomsPresent.has(z)).toBe(true);
+        }
+    });
+
+    it('should generate and count full bounding box coverage for zooms 1 to 15', () => {
+        const pins: Pin[] = [
+            { id: '1', lat: 20.88, lng: -156.51, label: 'Maui Pin', position: 0 },
+            { id: '2', lat: 19.72, lng: -155.11, label: 'Big Island Pin', position: 1 }
+        ] as any;
+        const bbox = getPinsBoundingBox(pins)!;
+
+        const count = countTiles(bbox, 1, 15);
+        const tiles = getTilesForArea(bbox, 1, 15);
+
+        expect(tiles.length).toBe(count);
+        expect(count).toBeGreaterThan(0);
+
+        // Verify full bbox coverage for zoom 15
+        const z15Count = countTiles(bbox, 15, 15);
+        const z15Tiles = tiles.filter(t => t.z === 15);
+        expect(z15Tiles.length).toBe(z15Count);
+    });
+
+    it('should quickly filter completed tiles with getPendingFromTileList', async () => {
+        const t1 = { x: 10, y: 20, z: 5, url: 'http://test/5/10/20.mvt' };
+        const t2 = { x: 11, y: 20, z: 5, url: 'http://test/5/11/20.mvt' };
+        
+        // When nothing completed
+        const pendingAll = await getPendingFromTileList([t1, t2], 'map-test-1');
+        expect(pendingAll.length).toBe(2);
+
+        // When t1 is completed
+        await addToManifest([{
+            url: t1.url,
+            x: t1.x,
+            y: t1.y,
+            z: t1.z,
+            status: 'completed',
+            mapId: 'map-test-1',
+            updatedAt: Date.now()
+        }]);
+
+        const pendingFiltered = await getPendingFromTileList([t1, t2], 'map-test-1');
+        expect(pendingFiltered.length).toBe(1);
+        expect(pendingFiltered[0].url).toBe(t2.url);
+    });
+
+    it('should correctly handle antimeridian crossing in getXRanges and tile generation', () => {
+        // West = 179 deg, East = -179 deg crosses the 180th meridian
+        const ranges = getXRanges(179, -179, 3); // 2^3 = 8 tiles wide [0..7]
+        expect(ranges.length).toBe(2);
+        // Should produce ranges [7, 7] and [0, 0]
+        expect(ranges[0][0]).toBe(7);
+        expect(ranges[0][1]).toBe(7);
+        expect(ranges[1][0]).toBe(0);
+        expect(ranges[1][1]).toBe(0);
+
+        const bboxCross = { north: 10, south: -10, west: 179, east: -179 };
+        const tilesCross = getTilesForArea(bboxCross, 2, 2);
+        expect(tilesCross.length).toBe(countTiles(bboxCross, 2, 2));
+        expect(tilesCross.length).toBeGreaterThan(0);
+    });
+
+    it('should correctly resolve canonical path and fallback tile keys', () => {
+        const fullHttp = 'https://ourmaps.app/maps/tile/5/10/12.mvt';
+        expect(toCanonicalTileKey(fullHttp)).toBe('/maps/tile/5/10/12.mvt');
+
+        const keysHttp = getTileKeys(fullHttp);
+        expect(keysHttp.primary).toBe('/maps/tile/5/10/12.mvt');
+        expect(keysHttp.secondary).toBe(fullHttp);
+
+        const relative = '/maps/tile/5/10/12.mvt';
+        expect(toCanonicalTileKey(relative)).toBe('/maps/tile/5/10/12.mvt');
+
+        const keysRel = getTileKeys(relative);
+        expect(keysRel.primary).toBe('/maps/tile/5/10/12.mvt');
+        expect(keysRel.secondary).toBe(`${window.location.origin}/maps/tile/5/10/12.mvt`);
     });
 
     it('should save, retrieve, and remove offline map metadata', async () => {
@@ -228,10 +327,30 @@ describe('tileUtils', () => {
         expect(retrieved).not.toBeNull();
         expect(retrieved?.name).toBe('Offline Test Map');
         expect(retrieved?.pins.length).toBe(1);
+        expect(await isMapDownloaded('offline-map-123')).toBe(true);
 
         await removeMapDownload('offline-map-123');
         const afterRemove = await getOfflineMap('offline-map-123');
         expect(afterRemove).toBeNull();
+        expect(await isMapDownloaded('offline-map-123')).toBe(false);
+    });
+
+    it('should clear all offline maps and tiles when removeAllDownloads is called', async () => {
+        const dummyMap: any = {
+            id: 'map-clear-1',
+            name: 'Clear Test Map',
+            ownerId: 'u1',
+            layers: [],
+            pins: [{ id: 'p1', mapId: 'map-clear-1', layerId: 'l1', name: 'P1', latitude: 20, longitude: -157, order: 0, syncStatus: 'synced', createdAt: '', updatedAt: '' }]
+        };
+        await saveMapOffline(dummyMap);
+        await saveTile('/maps/tile/1/0/0.mvt', new Blob(['data']));
+        expect(await isMapDownloaded('map-clear-1')).toBe(true);
+
+        await removeAllDownloads();
+
+        expect(await isMapDownloaded('map-clear-1')).toBe(false);
+        expect(await getTile('/maps/tile/1/0/0.mvt')).toBeNull();
     });
 
     it('should save tile blob and retrieve it with getTile including URL fallback matching', async () => {
@@ -281,7 +400,8 @@ describe('tileUtils', () => {
             mapId: 'map-1',
             updatedAt: Date.now()
         };
-        await addToManifest([completedEntry]);
+        const result1 = await addToManifest([completedEntry]);
+        expect(result1).toHaveLength(0);
 
         const pendingEntry = {
             url: 'https://example.com/tile1.mvt',
@@ -292,12 +412,26 @@ describe('tileUtils', () => {
             mapId: 'map-1',
             updatedAt: Date.now()
         };
-        await addToManifest([pendingEntry]);
+        const result2 = await addToManifest([pendingEntry]);
+        expect(result2).toHaveLength(0); // Already completed, not returned as pending
+
+        const newPending = {
+            url: 'https://example.com/tile2.mvt',
+            x: 2,
+            y: 2,
+            z: 3,
+            status: 'pending' as const,
+            mapId: 'map-1',
+            updatedAt: Date.now()
+        };
+        const result3 = await addToManifest([newPending]);
+        expect(result3).toHaveLength(1);
+        expect(result3[0].url).toBe('https://example.com/tile2.mvt');
 
         // Verify that completed entry remains completed
         const stats = await getManifestStats('map-1');
         expect(stats.completed).toBe(1);
-        expect(stats.total).toBe(1);
+        expect(stats.total).toBe(2);
     });
 
     it('returns download statuses for maps in single pass with or without mapId list', async () => {
@@ -352,67 +486,31 @@ describe('tileUtils', () => {
         expect(stats.completed).toBe(2);
     });
 
-    it('should guarantee all input pins are contained within at least one surgical box', () => {
-        const pins: Pin[] = [];
-        for (let i = 0; i < 50; i++) {
-            pins.push({
-                id: `pin-${i}`,
-                lat: 37.0 + Math.sin(i) * 0.5,
-                lng: -122.0 + Math.cos(i) * 0.5,
-                label: `Pin ${i}`,
-                position: i
-            } as any);
-        }
+    it('should directly save tile batch with pre-populated manifest entry without extra get query', async () => {
+        const url = `${window.location.origin}/maps/tile/10/500/600.mvt`;
+        const blob = new Blob(['direct-tile-data'], { type: 'application/x-protobuf' });
+        const entry = {
+            url,
+            x: 500,
+            y: 600,
+            z: 10,
+            status: 'pending' as const,
+            mapId: 'direct-batch-map',
+            updatedAt: Date.now()
+        };
 
-        const boxes = getSurgicalBoxes(pins);
-        expect(boxes.length).toBeGreaterThan(0);
+        await saveTileBatch([
+            { url, blob, status: 'completed', entry }
+        ]);
 
-        for (const pin of pins) {
-            const isContained = boxes.some(b => 
-                pin.lat <= b.north + 1e-9 &&
-                pin.lat >= b.south - 1e-9 &&
-                pin.lng <= b.east + 1e-9 &&
-                pin.lng >= b.west - 1e-9
-            );
-            expect(isContained).toBe(true);
-        }
+        const retrieved = await getTile(url);
+        expect(retrieved).not.toBeNull();
+
+        const stats = await getManifestStats('direct-batch-map');
+        expect(stats.total).toBe(1);
+        expect(stats.completed).toBe(1);
     });
 
-    it('should cluster 2,000 synthetic pins in less than 50ms (performance benchmark)', () => {
-        const pins: Pin[] = [];
-        for (let i = 0; i < 2000; i++) {
-            pins.push({
-                id: `bench-pin-${i}`,
-                lat: 40.0 + (i % 50) * 0.005 + Math.floor(i / 50) * 0.05,
-                lng: -74.0 + (i % 50) * 0.005,
-                label: `Bench ${i}`,
-                position: i
-            } as any);
-        }
-
-        const startTime = performance.now();
-        const boxes = getSurgicalBoxes(pins);
-        const elapsed = performance.now() - startTime;
-
-        expect(boxes.length).toBeGreaterThan(0);
-        expect(elapsed).toBeLessThan(100); // Must be fast
-    });
-
-    it('should handle edge cases in getSurgicalBoxes gracefully', () => {
-        expect(getSurgicalBoxes([])).toEqual([]);
-
-        const singlePin: Pin[] = [{ id: 'p1', lat: 10, lng: 20, label: 'Single', position: 0 } as any];
-        const singleBox = getSurgicalBoxes(singlePin);
-        expect(singleBox.length).toBe(1);
-        expect(singleBox[0].north).toBeCloseTo(10.01, 5);
-
-        const duplicates: Pin[] = [
-            { id: 'p1', lat: 10, lng: 20, label: 'Duplicate 1', position: 0 } as any,
-            { id: 'p2', lat: 10, lng: 20, label: 'Duplicate 2', position: 1 } as any
-        ];
-        const dupBoxes = getSurgicalBoxes(duplicates);
-        expect(dupBoxes.length).toBe(1);
-    });
 
     it('should preserve shared tiles and reassign manifest ownership when one map is deleted', async () => {
         // Map 1 in New York

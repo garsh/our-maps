@@ -20,12 +20,13 @@ import { ensurePinImages, getPinIconKey } from '../utils/pinIconSprite';
 
 let globalPMTilesProtocol: Protocol | null = null;
 let currentMapHasOfflineTiles = false;
+const PMTILES_TILE_REGEX = /^pmtiles:\/\/(?:.+)\/(\d+)\/(\d+)\/(\d+)$/;
 
 function setupPMTilesProtocol() {
   if (!globalPMTilesProtocol) {
     globalPMTilesProtocol = new Protocol();
     const offlineTileHandler: maplibregl.AddProtocolAction = async (params, abortController) => {
-      const match = params.url.match(/pmtiles:\/\/(.+)\/(\d+)\/(\d+)\/(\d+)/);
+      const match = params.url.match(PMTILES_TILE_REGEX);
       if (match) {
         // Fast-path: If current open map has no offline tiles and browser is online,
         // bypass IndexedDB transactions completely and fetch directly via PMTiles.
@@ -33,10 +34,10 @@ function setupPMTilesProtocol() {
           return await globalPMTilesProtocol!.tilev4(params, abortController);
         }
 
-        const [, , z, x, y] = match;
-        const tileUrl = `${window.location.origin}/maps/tile/${z}/${x}/${y}.mvt`;
+        const [, z, x, y] = match;
+        const tilePath = `/maps/tile/${z}/${x}/${y}.mvt`;
         try {
-          const blob = await getTile(tileUrl);
+          const blob = await getTile(tilePath);
           if (blob) {
             const arrayBuffer = await blob.arrayBuffer();
             return { data: new Uint8Array(arrayBuffer) };

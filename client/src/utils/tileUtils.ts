@@ -33,9 +33,9 @@ const DB_NAME = 'MapTilesDB_v2';
 const MANIFEST_STORE = 'manifest';
 const TILE_STORE = 'tiles';
 const MAP_STORE = 'maps';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
-function keyRangeOnly(key: string): any {
+function keyRangeOnly(key: any): any {
     return typeof IDBKeyRange !== 'undefined' ? IDBKeyRange.only(key) : key;
 }
 
@@ -68,18 +68,18 @@ export async function openDB(): Promise<IDBDatabase> {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
             request.onupgradeneeded = (event: any) => {
                 const db = request.result;
-                let manifest: IDBObjectStore;
+                const tx = event?.target?.transaction || (request as any).transaction;
+                let manifest: IDBObjectStore | undefined;
                 if (!db.objectStoreNames.contains(MANIFEST_STORE)) {
                     manifest = db.createObjectStore(MANIFEST_STORE, { keyPath: 'url' });
                     manifest.createIndex('status', 'status', { unique: false });
                     manifest.createIndex('mapId', 'mapId', { unique: false });
-                } else if (event?.target?.transaction) {
-                    manifest = event.target.transaction.objectStore(MANIFEST_STORE);
-                } else {
-                    manifest = (request as any).transaction?.objectStore(MANIFEST_STORE);
-                }
-                if (manifest && !manifest.indexNames.contains('mapId_status')) {
                     manifest.createIndex('mapId_status', ['mapId', 'status'], { unique: false });
+                } else if (tx) {
+                    manifest = tx.objectStore(MANIFEST_STORE);
+                    if (manifest && !manifest.indexNames.contains('mapId_status')) {
+                        manifest.createIndex('mapId_status', ['mapId', 'status'], { unique: false });
+                    }
                 }
                 if (!db.objectStoreNames.contains(TILE_STORE)) {
                     db.createObjectStore(TILE_STORE);
@@ -137,10 +137,11 @@ export async function getOfflineMap(mapId: string): Promise<MapData | null> {
     }
 }
 
-export async function addToManifest(entries: ManifestEntry[]): Promise<void> {
-    if (!entries || entries.length === 0) return;
+export async function addToManifest(entries: ManifestEntry[]): Promise<ManifestEntry[]> {
+    if (!entries || entries.length === 0) return [];
     const db = await openDB();
     const CHUNK_SIZE = 1000;
+    const pendingEntries: ManifestEntry[] = [];
 
     for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
         const chunk = entries.slice(i, i + CHUNK_SIZE);
@@ -157,6 +158,7 @@ export async function addToManifest(entries: ManifestEntry[]): Promise<void> {
                         const existing = getReq.result as ManifestEntry | undefined;
                         if (!existing || existing.status !== 'completed') {
                             store.put(entry);
+                            pendingEntries.push(entry);
                         }
                     };
                 }
@@ -167,6 +169,7 @@ export async function addToManifest(entries: ManifestEntry[]): Promise<void> {
             transaction.onabort = () => reject(transaction.error || new Error('Transaction aborted'));
         });
     }
+    return pendingEntries;
 }
 
 
@@ -224,70 +227,75 @@ export async function getManifestStats(mapId: string): Promise<{ total: number, 
     if (!mapId || typeof indexedDB === 'undefined') return { total: 0, completed: 0 };
     try {
         const db = await openDB();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction(MANIFEST_STORE, 'readonly');
-            const store = transaction.objectStore(MANIFEST_STORE);
-            const index = store.index('mapId');
+        return new Promise((resolve) => {
+            const hasManifest = db.objectStoreNames.contains(MANIFEST_STORE);
+            const stores = hasManifest ? [MAP_STORE, MANIFEST_STORE] : [MAP_STORE];
+            const transaction = db.transaction(stores, 'readonly');
+            const mapStore = transaction.objectStore(MAP_STORE);
+            const mapReq = mapStore.get(mapId);
 
-            if (store.indexNames && store.indexNames.contains('mapId_status')) {
-                const compoundIndex = store.index('mapId_status');
-                const totalReq = index.count(keyRangeOnly(mapId));
-                const completedReq = compoundIndex.count(keyRangeOnly([mapId, 'completed'] as any));
+            mapReq.onsuccess = () => {
+                const map = mapReq.result as MapData | undefined;
+                if (map && map.totalTiles !== undefined && map.completedTiles !== undefined) {
+                    resolve({ total: map.totalTiles, completed: map.completedTiles });
+                    return;
+                }
 
-                let total: number | null = null;
-                let completed: number | null = null;
+                if (hasManifest) {
+                    const manifestStore = transaction.objectStore(MANIFEST_STORE);
+                    if (manifestStore.indexNames && manifestStore.indexNames.contains('mapId_status')) {
+                        const compoundIndex = manifestStore.index('mapId_status');
+                        const index = manifestStore.index('mapId');
+                        const totalReq = index.count(keyRangeOnly(mapId));
+                        const completedReq = compoundIndex.count(keyRangeOnly([mapId, 'completed'] as any));
 
-                const checkDone = () => {
-                    if (total !== null && completed !== null) {
-                        resolve({ total, completed });
+                        let total: number | null = null;
+                        let completed: number | null = null;
+                        const checkDone = () => {
+                            if (total !== null && completed !== null) {
+                                if (total === 0 && map) {
+                                    const bbox = map.pins ? getPinsBoundingBox(map.pins) : null;
+                                    const computedTotal = bbox ? countTiles(bbox, 1, 15) : 0;
+                                    const isDone = map.isDownloaded === true;
+                                    resolve({ total: computedTotal, completed: isDone ? computedTotal : 0 });
+                                } else {
+                                    resolve({ total, completed });
+                                }
+                            }
+                        };
+                        totalReq.onsuccess = () => { total = totalReq.result || 0; checkDone(); };
+                        totalReq.onerror = () => { total = 0; checkDone(); };
+                        completedReq.onsuccess = () => { completed = completedReq.result || 0; checkDone(); };
+                        completedReq.onerror = () => { completed = 0; checkDone(); };
+                        return;
+                    } else if (manifestStore.indexNames && manifestStore.indexNames.contains('mapId')) {
+                        const index = manifestStore.index('mapId');
+                        const totalReq = index.count(keyRangeOnly(mapId));
+                        totalReq.onsuccess = () => {
+                            const total = totalReq.result || 0;
+                            resolve({ total, completed: total });
+                        };
+                        totalReq.onerror = () => resolve({ total: 0, completed: 0 });
+                        return;
                     }
-                };
+                }
 
-                totalReq.onsuccess = () => {
-                    total = totalReq.result || 0;
-                    checkDone();
-                };
-                totalReq.onerror = () => reject(totalReq.error);
-
-                completedReq.onsuccess = () => {
-                    completed = completedReq.result || 0;
-                    checkDone();
-                };
-                completedReq.onerror = () => reject(completedReq.error);
-                return;
-            }
-
-            const request = index.getAll(keyRangeOnly(mapId));
-
-            request.onsuccess = () => {
-                const all = request.result as ManifestEntry[];
-                const completed = all.filter(e => e.status === 'completed').length;
-                resolve({ total: all.length, completed });
+                if (map) {
+                    const bbox = map.pins ? getPinsBoundingBox(map.pins) : null;
+                    const total = bbox ? countTiles(bbox, 1, 15) : 0;
+                    const isDone = map.isDownloaded === true;
+                    resolve({ total, completed: isDone ? total : 0 });
+                } else {
+                    resolve({ total: 0, completed: 0 });
+                }
             };
-            request.onerror = () => reject(request.error);
+            mapReq.onerror = () => resolve({ total: 0, completed: 0 });
         });
     } catch {
         return { total: 0, completed: 0 };
     }
 }
 
-export async function getManifestEntries(mapId: string): Promise<ManifestEntry[]> {
-    if (!mapId || typeof indexedDB === 'undefined') return [];
-    try {
-        const db = await openDB();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction(MANIFEST_STORE, 'readonly');
-            const store = transaction.objectStore(MANIFEST_STORE);
-            const index = store.index('mapId');
-            const request = index.getAll(keyRangeOnly(mapId));
-
-            request.onsuccess = () => resolve(request.result as ManifestEntry[]);
-            request.onerror = () => reject(request.error);
-        });
-    } catch {
-        return [];
-    }
-}
 
 export interface MapDownloadStatus {
     isComplete: boolean;
@@ -300,130 +308,111 @@ export async function getMapDownloadStatuses(mapIds?: string[]): Promise<Map<str
         const db = await openDB();
         const resultMap = new Map<string, MapDownloadStatus>();
 
-        return new Promise((resolve, reject) => {
-            const hasMapIds = Array.isArray(mapIds) && mapIds.length > 0;
-            const transaction = db.transaction([MANIFEST_STORE, MAP_STORE], 'readonly');
-            const manifestStore = transaction.objectStore(MANIFEST_STORE);
+        return new Promise((resolve) => {
+            const hasManifest = db.objectStoreNames.contains(MANIFEST_STORE);
+            const stores = hasManifest ? [MAP_STORE, MANIFEST_STORE] : [MAP_STORE];
+            const transaction = db.transaction(stores, 'readonly');
             const mapStore = transaction.objectStore(MAP_STORE);
-            const compoundIndex = manifestStore.indexNames.contains('mapId_status') ? manifestStore.index('mapId_status') : null;
-            const mapIdIndex = manifestStore.indexNames.contains('mapId') ? manifestStore.index('mapId') : null;
+            const targetIdSet = Array.isArray(mapIds) && mapIds.length > 0 ? new Set(mapIds) : null;
 
-            const processMapIdList = (targetIds: string[]) => {
-                if (targetIds.length === 0) {
+            const mapReq = mapStore.getAll();
+
+            mapReq.onsuccess = () => {
+                const offlineMaps = (mapReq.result as MapData[]) || [];
+                const candidateIds = new Set<string>();
+
+                for (const map of offlineMaps) {
+                    if (!targetIdSet || targetIdSet.has(map.id)) {
+                        candidateIds.add(map.id);
+                        const isPartial = map.completedTiles !== undefined && map.totalTiles !== undefined && map.completedTiles < map.totalTiles;
+                        resultMap.set(map.id, { isComplete: !isPartial, isPartial });
+                    }
+                }
+
+                if (!hasManifest) {
                     resolve(resultMap);
                     return;
                 }
 
-                let pendingCount = targetIds.length;
-                targetIds.forEach(mapId => {
-                    const mapGetReq = mapStore.get(mapId);
-                    let hasOfflineMapRecord = false;
+                const manifestStore = transaction.objectStore(MANIFEST_STORE);
+                if (!manifestStore.indexNames || !manifestStore.indexNames.contains('mapId_status')) {
+                    resolve(resultMap);
+                    return;
+                }
 
-                    const runManifestCheck = () => {
-                        if (mapIdIndex && compoundIndex) {
-                            const totalReq = mapIdIndex.count(keyRangeOnly(mapId));
-                            const completedReq = compoundIndex.count(keyRangeOnly([mapId, 'completed'] as any));
-
-                            let total: number | null = null;
-                            let completed: number | null = null;
-
-                            const checkDone = () => {
-                                if (total !== null && completed !== null) {
-                                    if (total > 0) {
-                                        resultMap.set(mapId, {
-                                            isComplete: completed === total,
-                                            isPartial: completed < total
-                                        });
-                                    } else if (hasOfflineMapRecord) {
-                                        // Map is saved offline and all shared tiles are already cached
-                                        resultMap.set(mapId, {
-                                            isComplete: true,
-                                            isPartial: false
-                                        });
-                                    }
-                                    pendingCount--;
-                                    if (pendingCount === 0) {
-                                        resolve(resultMap);
-                                    }
-                                }
-                            };
-
-                            totalReq.onsuccess = () => {
-                                total = totalReq.result || 0;
-                                checkDone();
-                            };
-                            totalReq.onerror = () => reject(totalReq.error);
-
-                            completedReq.onsuccess = () => {
-                                completed = completedReq.result || 0;
-                                checkDone();
-                            };
-                            completedReq.onerror = () => reject(completedReq.error);
-                        } else {
-                            const req = mapIdIndex ? mapIdIndex.openCursor(keyRangeOnly(mapId)) : manifestStore.openCursor();
-                            let total = 0;
-                            let completed = 0;
-                            req.onsuccess = (e: any) => {
-                                const cursor = (e && e.target) ? e.target.result : (req ? req.result : null);
-                                if (cursor) {
-                                    total++;
-                                    if (cursor.value?.status === 'completed') completed++;
-                                    cursor.continue();
-                                } else {
-                                    if (total > 0) {
-                                        resultMap.set(mapId, {
-                                            isComplete: completed === total,
-                                            isPartial: completed < total
-                                        });
-                                    } else if (hasOfflineMapRecord) {
-                                        resultMap.set(mapId, {
-                                            isComplete: true,
-                                            isPartial: false
-                                        });
-                                    }
-                                    pendingCount--;
-                                    if (pendingCount === 0) {
-                                        resolve(resultMap);
-                                    }
-                                }
-                            };
-                            req.onerror = () => reject(req.error);
-                        }
-                    };
-
-                    mapGetReq.onsuccess = () => {
-                        hasOfflineMapRecord = Boolean(mapGetReq.result);
-                        runManifestCheck();
-                    };
-                    mapGetReq.onerror = () => {
-                        hasOfflineMapRecord = false;
-                        runManifestCheck();
-                    };
-                });
-            };
-
-            if (hasMapIds) {
-                processMapIdList(mapIds!);
-            } else {
-                const mapKeysReq = mapStore.getAllKeys();
-                mapKeysReq.onsuccess = () => {
-                    const discoveredIds = (mapKeysReq.result as string[]) || [];
-                    if (discoveredIds.length > 0) {
-                        processMapIdList(discoveredIds);
-                    } else if (typeof manifestStore.getAll === 'function') {
-                        const allReq = manifestStore.getAll();
-                        allReq.onsuccess = () => {
-                            const allEntries = (allReq.result as ManifestEntry[]) || [];
-                            const uniqueIds = Array.from(new Set(allEntries.map(entry => entry.mapId).filter((id): id is string => Boolean(id))));
-                            processMapIdList(uniqueIds);
-                        };
-                        allReq.onerror = () => reject(allReq.error);
-                    } else {
+                const checkCandidates = (ids: string[]) => {
+                    const idsToCheck = ids.filter(id => !resultMap.has(id));
+                    if (idsToCheck.length === 0) {
                         resolve(resultMap);
+                        return;
+                    }
+
+                    const index = manifestStore.index('mapId_status');
+                    let pendingChecks = idsToCheck.length;
+
+                    for (const id of idsToCheck) {
+                        const completedReq = index.count(keyRangeOnly([id, 'completed'] as any));
+                        const pendingReq = index.count(keyRangeOnly([id, 'pending'] as any));
+                        const errorReq = index.count(keyRangeOnly([id, 'error'] as any));
+
+                        let doneReqs = 0;
+                        let compCount = 0;
+                        let pendCount = 0;
+                        let errCount = 0;
+
+                        const checkIdDone = () => {
+                            doneReqs++;
+                            if (doneReqs === 3) {
+                                const total = compCount + pendCount + errCount;
+                                if (total > 0) {
+                                    resultMap.set(id, {
+                                        isComplete: compCount === total && total > 0,
+                                        isPartial: compCount < total
+                                    });
+                                }
+                                pendingChecks--;
+                                if (pendingChecks === 0) {
+                                    resolve(resultMap);
+                                }
+                            }
+                        };
+
+                        completedReq.onsuccess = () => { compCount = completedReq.result || 0; checkIdDone(); };
+                        completedReq.onerror = () => checkIdDone();
+                        pendingReq.onsuccess = () => { pendCount = pendingReq.result || 0; checkIdDone(); };
+                        pendingReq.onerror = () => checkIdDone();
+                        errorReq.onsuccess = () => { errCount = errorReq.result || 0; checkIdDone(); };
+                        errorReq.onerror = () => checkIdDone();
                     }
                 };
-                mapKeysReq.onerror = () => reject(mapKeysReq.error);
-            }
+
+                if (targetIdSet) {
+                    for (const id of targetIdSet) {
+                        candidateIds.add(id);
+                    }
+                    checkCandidates(Array.from(candidateIds));
+                } else if (manifestStore.indexNames.contains('mapId')) {
+                    const mapIdIndex = manifestStore.index('mapId');
+                    if (typeof (mapIdIndex as any).openKeyCursor === 'function') {
+                        const cursorReq = (mapIdIndex as any).openKeyCursor(null, 'nextunique');
+                        cursorReq.onsuccess = () => {
+                            const cursor = cursorReq.result;
+                            if (cursor) {
+                                if (cursor.key) candidateIds.add(cursor.key as string);
+                                cursor.continue();
+                            } else {
+                                checkCandidates(Array.from(candidateIds));
+                            }
+                        };
+                        cursorReq.onerror = () => checkCandidates(Array.from(candidateIds));
+                    } else {
+                        checkCandidates(Array.from(candidateIds));
+                    }
+                } else {
+                    checkCandidates(Array.from(candidateIds));
+                }
+            };
+            mapReq.onerror = () => resolve(resultMap);
         });
     } catch {
         return new Map();
@@ -432,145 +421,213 @@ export async function getMapDownloadStatuses(mapIds?: string[]): Promise<Map<str
 
 export async function isMapDownloaded(mapId: string): Promise<boolean> {
     if (!mapId || typeof indexedDB === 'undefined') return false;
-    try {
-        const offlineMap = await getOfflineMap(mapId);
-        if (offlineMap) return true;
-        const { total, completed } = await getManifestStats(mapId);
-        return total > 0 && completed > 0;
-    } catch {
-        return false;
+    const offlineMap = await getOfflineMap(mapId);
+    return Boolean(offlineMap);
+}
+
+export async function removeAllDownloads(): Promise<void> {
+    clearTileMissCache();
+    if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('cached_download_statuses');
     }
+    if (typeof indexedDB === 'undefined') return;
+
+    if (dbPromise) {
+        try {
+            const db = await dbPromise;
+            db.close();
+        } catch {
+            // ignore
+        }
+        dbPromise = null;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+        const req = indexedDB.deleteDatabase(DB_NAME);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+        req.onblocked = () => {
+            resolve();
+        };
+    });
 }
 
 export async function removeMapDownload(mapId: string): Promise<void> {
     if (!mapId) return;
     clearTileMissCache();
     const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction([MANIFEST_STORE, TILE_STORE, MAP_STORE], 'readwrite');
-        const manifestStore = transaction.objectStore(MANIFEST_STORE);
-        const tileStore = transaction.objectStore(TILE_STORE);
-        const mapStore = transaction.objectStore(MAP_STORE);
 
-        mapStore.delete(mapId);
-
-        const otherMapsReq = mapStore.getAll();
-        otherMapsReq.onsuccess = () => {
-            const otherMaps = (otherMapsReq.result as MapData[]) || [];
-
-            // If no other offline maps remain, cleanly clear all stored tile data
-            if (otherMaps.length === 0) {
-                if (typeof manifestStore.clear === 'function') {
-                    manifestStore.clear();
-                }
-                if (typeof tileStore.clear === 'function') {
-                    tileStore.clear();
-                }
-                return;
-            }
-
-            // Pre-calculate bounding boxes for remaining offline maps (0 MB in-memory tile allocations)
-            interface MapTileCriteria {
-                id: string;
-                bbox: BoundingBox | null;
-                surgicalBoxes: BoundingBox[];
-            }
-
-            const remainingCriteria: MapTileCriteria[] = otherMaps
-                .filter(map => map.pins && map.pins.length > 0)
-                .map(map => ({
-                    id: map.id,
-                    bbox: getPinsBoundingBox(map.pins),
-                    surgicalBoxes: getSurgicalBoxes(map.pins)
-                }));
-
-            const isTileNeededByRemaining = (entry: ManifestEntry): string | null => {
-                for (const criteria of remainingCriteria) {
-                    if (entry.z <= 10 && criteria.bbox) {
-                        if (isTileInBoundingBox(entry.x, entry.y, entry.z, criteria.bbox)) {
-                            return criteria.id;
-                        }
-                    } else if (entry.z >= 11 && criteria.surgicalBoxes.length > 0) {
-                        for (const box of criteria.surgicalBoxes) {
-                            if (isTileInBoundingBox(entry.x, entry.y, entry.z, box)) {
-                                return criteria.id;
-                            }
-                        }
-                    }
-                }
-                return null;
-            };
-
-            const index = manifestStore.index('mapId');
-            const request = index.getAll(keyRangeOnly(mapId));
-
-            request.onsuccess = () => {
-                const entries = request.result as ManifestEntry[];
-                entries.forEach(entry => {
-                    const remainingOwnerId = isTileNeededByRemaining(entry);
-                    if (!remainingOwnerId) {
-                        const { primary, secondary } = getTileKeys(entry.url);
-                        tileStore.delete(primary);
-                        if (secondary) tileStore.delete(secondary);
-                        manifestStore.delete(entry.url);
-                    } else {
-                        // Re-assign manifest entry to the remaining map that needs it
-                        entry.mapId = remainingOwnerId;
-                        manifestStore.put(entry);
-                    }
-                });
-            };
+    // 1. Get deleting map and delete map from MAP_STORE, then get other remaining maps
+    const { deletingMap, otherMaps } = await new Promise<{ deletingMap?: MapData; otherMaps: MapData[] }>((resolve, reject) => {
+        const tx = db.transaction(MAP_STORE, 'readwrite');
+        const mapStore = tx.objectStore(MAP_STORE);
+        const getReq = mapStore.get(mapId);
+        getReq.onsuccess = () => {
+            const deletingMap = getReq.result as MapData | undefined;
+            mapStore.delete(mapId);
+            const getAllReq = mapStore.getAll();
+            getAllReq.onsuccess = () => resolve({ deletingMap, otherMaps: (getAllReq.result as MapData[]) || [] });
+            getAllReq.onerror = () => reject(getAllReq.error);
         };
-
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
+        getReq.onerror = () => reject(getReq.error);
     });
-}
 
-function isTileInBoundingBox(x: number, y: number, z: number, box: BoundingBox): boolean {
-    const xMin = longToX(box.west, z);
-    const xMax = longToX(box.east, z);
-    const yMin = latToY(box.north, z);
-    const yMax = latToY(box.south, z);
-    const xStart = Math.min(xMin, xMax);
-    const xEnd = Math.max(xMin, xMax);
-    const yStart = Math.min(yMin, yMax);
-    const yEnd = Math.max(yMin, yMax);
-    return x >= xStart && x <= xEnd && y >= yStart && y <= yEnd;
-}
+    // 2. If no other maps exist, fast clear everything
+    if (otherMaps.length === 0) {
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction([MANIFEST_STORE, TILE_STORE], 'readwrite');
+            const manifestStore = tx.objectStore(MANIFEST_STORE);
+            const tileStore = tx.objectStore(TILE_STORE);
+            if (typeof manifestStore.clear === 'function') manifestStore.clear();
+            if (typeof tileStore.clear === 'function') tileStore.clear();
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+        return;
+    }
 
+    // 3. Pre-calculate integer tile bounds per zoom level (1..15) ONLY for overlapping remaining maps
+    const deletingBbox = deletingMap?.pins ? getPinsBoundingBox(deletingMap.pins) : null;
+    const overlappingOtherMaps = otherMaps.filter(map => {
+        if (!map.pins || map.pins.length === 0) return false;
+        if (!deletingBbox) return true; // If deleting map bbox is unknown, assume potential overlap
+        const otherBbox = getPinsBoundingBox(map.pins);
+        if (!otherBbox) return false;
 
-export function getTileKeys(url: string): { primary: string; secondary?: string } {
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-        try {
-            const pathname = new URL(url).pathname;
-            return { primary: url, secondary: pathname };
-        } catch {
-            return { primary: url };
-        }
-    } else if (url.startsWith('/')) {
-        try {
-            const fullUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}${url}`;
-            return { primary: url, secondary: fullUrl };
-        } catch {
-            return { primary: url };
+        const isDisjoint = (
+            deletingBbox.south > otherBbox.north ||
+            deletingBbox.north < otherBbox.south ||
+            deletingBbox.west > otherBbox.east ||
+            deletingBbox.east < otherBbox.west
+        );
+        return !isDisjoint;
+    });
+
+    interface PrecomputedMapRange {
+        mapId: string;
+        rangesByZoom: Array<Array<{ xStart: number; xEnd: number; yStart: number; yEnd: number }>>;
+    }
+
+    const remainingRanges: PrecomputedMapRange[] = [];
+    if (overlappingOtherMaps.length > 0) {
+        for (const map of overlappingOtherMaps) {
+            if (!map.pins || map.pins.length === 0) continue;
+            const bbox = getPinsBoundingBox(map.pins);
+            if (!bbox) continue;
+
+            const rangesByZoom: Array<Array<{ xStart: number; xEnd: number; yStart: number; yEnd: number }>> = [];
+            for (let z = 0; z <= 15; z++) {
+                if (z === 0) {
+                    rangesByZoom[0] = [];
+                    continue;
+                }
+                const yMin = latToY(bbox.north, z);
+                const yMax = latToY(bbox.south, z);
+                const yStart = Math.min(yMin, yMax);
+                const yEnd = Math.max(yMin, yMax);
+                const xRanges = getXRanges(bbox.west, bbox.east, z);
+                rangesByZoom[z] = xRanges.map(([xStart, xEnd]) => ({
+                    xStart, xEnd, yStart, yEnd
+                }));
+            }
+            remainingRanges.push({ mapId: map.id, rangesByZoom });
         }
     }
-    return { primary: url };
+
+    const isTileNeededByRemaining = (entry: ManifestEntry): string | null => {
+        if (remainingRanges.length === 0) return null;
+        const z = entry.z;
+        if (z < 1 || z > 15) return null;
+        const x = entry.x;
+        const y = entry.y;
+        for (const { mapId: remainingId, rangesByZoom } of remainingRanges) {
+            const zoomRanges = rangesByZoom[z];
+            if (zoomRanges) {
+                for (const range of zoomRanges) {
+                    if (x >= range.xStart && x <= range.xEnd && y >= range.yStart && y <= range.yEnd) {
+                        return remainingId;
+                    }
+                }
+            }
+        }
+        return null;
+    };
+
+    // 4. Fetch all manifest entries for mapId
+    const entries = await new Promise<ManifestEntry[]>((resolve, reject) => {
+        const tx = db.transaction(MANIFEST_STORE, 'readonly');
+        const manifestStore = tx.objectStore(MANIFEST_STORE);
+        const index = manifestStore.index('mapId');
+        const req = index.getAll(keyRangeOnly(mapId));
+        req.onsuccess = () => resolve((req.result as ManifestEntry[]) || []);
+        req.onerror = () => reject(req.error);
+    });
+
+    if (entries.length === 0) return;
+
+    // 5. Process deletions in fast batched transactions (BATCH_SIZE = 5,000)
+    const BATCH_SIZE = 5000;
+    for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+        const chunk = entries.slice(i, i + BATCH_SIZE);
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction([MANIFEST_STORE, TILE_STORE], 'readwrite');
+            const manifestStore = tx.objectStore(MANIFEST_STORE);
+            const tileStore = tx.objectStore(TILE_STORE);
+
+            for (const entry of chunk) {
+                const remainingOwnerId = isTileNeededByRemaining(entry);
+                if (!remainingOwnerId) {
+                    const canonicalKey = toCanonicalTileKey(entry.url);
+                    tileStore.delete(canonicalKey);
+                    if (entry.url !== canonicalKey) {
+                        tileStore.delete(entry.url);
+                    }
+                    manifestStore.delete(entry.url);
+                } else {
+                    entry.mapId = remainingOwnerId;
+                    manifestStore.put(entry);
+                }
+            }
+
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
+        });
+    }
+}
+
+export function toCanonicalTileKey(url: string): string {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        const slashIdx = url.indexOf('/', url.indexOf('//') + 2);
+        return slashIdx !== -1 ? url.slice(slashIdx) : url;
+    }
+    return url;
+}
+
+export function getTileKeys(url: string): { primary: string; secondary?: string } {
+    const canonical = toCanonicalTileKey(url);
+    if (url === canonical) {
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        return origin ? { primary: canonical, secondary: `${origin}${canonical}` } : { primary: canonical };
+    }
+    return { primary: canonical, secondary: url };
 }
 
 export interface TileBatchItem {
     url: string;
     blob?: Blob | null;
     status: TileStatus;
+    entry?: ManifestEntry;
 }
 
 export async function saveTileBatch(items: TileBatchItem[]): Promise<void> {
     if (!items || items.length === 0) return;
-    for (const item of items) {
-        const { primary, secondary } = getTileKeys(item.url);
-        tileMissCache.delete(primary);
-        if (secondary) tileMissCache.delete(secondary);
+    if (tileMissCache.size > 0) {
+        for (const item of items) {
+            const { primary, secondary } = getTileKeys(item.url);
+            tileMissCache.delete(primary);
+            if (secondary) tileMissCache.delete(secondary);
+        }
     }
 
     const db = await openDB();
@@ -581,22 +638,25 @@ export async function saveTileBatch(items: TileBatchItem[]): Promise<void> {
 
     for (const item of items) {
         if (item.blob) {
-            const { primary, secondary } = getTileKeys(item.url);
-            tileStore.put(item.blob, primary);
-            if (secondary) {
-                tileStore.put(item.blob, secondary);
-            }
+            const canonicalKey = toCanonicalTileKey(item.url);
+            tileStore.put(item.blob, canonicalKey);
         }
 
-        const getReq = manifestStore.get(item.url);
-        getReq.onsuccess = () => {
-            const entry = getReq.result as ManifestEntry;
-            if (entry) {
-                entry.status = item.status;
-                entry.updatedAt = now;
-                manifestStore.put(entry);
-            }
-        };
+        if (item.entry) {
+            item.entry.status = item.status;
+            item.entry.updatedAt = now;
+            manifestStore.put(item.entry);
+        } else {
+            const getReq = manifestStore.get(item.url);
+            getReq.onsuccess = () => {
+                const entry = getReq.result as ManifestEntry;
+                if (entry) {
+                    entry.status = item.status;
+                    entry.updatedAt = now;
+                    manifestStore.put(entry);
+                }
+            };
+        }
     }
 
     return new Promise((resolve, reject) => {
@@ -615,10 +675,7 @@ export async function saveTile(url: string, blob: Blob): Promise<void> {
     const transaction = db.transaction([TILE_STORE, MANIFEST_STORE], 'readwrite');
     
     const tileStore = transaction.objectStore(TILE_STORE);
-    tileStore.put(blob, primary);
-    if (secondary) {
-        tileStore.put(blob, secondary);
-    }
+    tileStore.put(blob, toCanonicalTileKey(url));
 
     const manifestStore = transaction.objectStore(MANIFEST_STORE);
     const getReq = manifestStore.get(url);
@@ -681,17 +738,33 @@ export async function getTile(url: string): Promise<Blob | null> {
     }
 }
 
+export function getXRanges(west: number, east: number, zoom: number): Array<[number, number]> {
+    const xMin = longToX(west, zoom);
+    const xMax = longToX(east, zoom);
+    const maxTile = (1 << zoom) - 1;
+    if (west <= east) {
+        return [[Math.min(xMin, xMax), Math.max(xMin, xMax)]];
+    } else {
+        // Crossing the antimeridian (180th meridian)
+        return [
+            [xMin, maxTile],
+            [0, xMax]
+        ];
+    }
+}
+
 export function countTiles(box: BoundingBox, minZoom: number, maxZoom: number): number {
     let count = 0;
     for (let z = minZoom; z <= maxZoom; z++) {
-        const xMin = longToX(box.west, z);
-        const xMax = longToX(box.east, z);
         const yMin = latToY(box.north, z);
         const yMax = latToY(box.south, z);
-        
-        const width = Math.abs(xMax - xMin) + 1;
         const height = Math.abs(yMax - yMin) + 1;
-        count += (width * height);
+        
+        const xRanges = getXRanges(box.west, box.east, z);
+        for (const [xStart, xEnd] of xRanges) {
+            const width = xEnd - xStart + 1;
+            count += (width * height);
+        }
     }
     return count;
 }
@@ -712,28 +785,28 @@ function latToY(lat: number, zoom: number): number {
 }
 
 export function getTilesForArea(box: BoundingBox, minZoom: number, maxZoom: number): TileInfo[] {
-    const tiles: TileInfo[] = [];
+    const totalCount = countTiles(box, minZoom, maxZoom);
+    const tiles: TileInfo[] = new Array(totalCount);
+    let index = 0;
     const origin = typeof window !== 'undefined' 
         ? window.location.origin 
         : (typeof self !== 'undefined' && self.location ? self.location.origin : '');
 
     for (let z = minZoom; z <= maxZoom; z++) {
-        const xMin = longToX(box.west, z);
-        const xMax = longToX(box.east, z);
         const yMin = latToY(box.north, z);
         const yMax = latToY(box.south, z);
-
-        const xStart = Math.min(xMin, xMax);
-        const xEnd = Math.max(xMin, xMax);
         const yStart = Math.min(yMin, yMax);
         const yEnd = Math.max(yMin, yMax);
 
-        for (let x = xStart; x <= xEnd; x++) {
-            for (let y = yStart; y <= yEnd; y++) {
-                tiles.push({
-                    x, y, z,
-                    url: `${origin}/maps/tile/${z}/${x}/${y}.mvt`
-                });
+        const xRanges = getXRanges(box.west, box.east, z);
+        for (const [xStart, xEnd] of xRanges) {
+            for (let x = xStart; x <= xEnd; x++) {
+                for (let y = yStart; y <= yEnd; y++) {
+                    tiles[index++] = {
+                        x, y, z,
+                        url: `${origin}/maps/tile/${z}/${x}/${y}.mvt`
+                    };
+                }
             }
         }
     }
@@ -773,208 +846,38 @@ export function getPinsBoundingBox(pins: Pin[]): BoundingBox | null {
     };
 }
 
-export function countUniqueTiles(bbox: BoundingBox, surgicalBoxes: BoundingBox[] = []): number {
-    let count = 0;
 
-    // Zoom 1 to 10: Disjoint from zoom 11..15, compute strictly in O(1) arithmetic without string allocations
-    for (let z = 1; z <= 10; z++) {
-        const xMin = longToX(bbox.west, z);
-        const xMax = longToX(bbox.east, z);
-        const yMin = latToY(bbox.north, z);
-        const yMax = latToY(bbox.south, z);
-        const xStart = Math.min(xMin, xMax);
-        const xEnd = Math.max(xMin, xMax);
-        const yStart = Math.min(yMin, yMax);
-        const yEnd = Math.max(yMin, yMax);
-        count += ((xEnd - xStart + 1) * (yEnd - yStart + 1));
-    }
+export async function getPendingFromTileList(tiles: TileInfo[], mapId: string): Promise<TileInfo[]> {
+    if (!tiles || tiles.length === 0) return [];
+    if (typeof indexedDB === 'undefined') return tiles;
+    try {
+        const db = await openDB();
+        return new Promise((resolve) => {
+            const transaction = db.transaction(MANIFEST_STORE, 'readonly');
+            const store = transaction.objectStore(MANIFEST_STORE);
+            if (!store.indexNames || !store.indexNames.contains('mapId_status')) {
+                resolve(tiles);
+                return;
+            }
+            const index = store.index('mapId_status');
+            const req = typeof index.getAllKeys === 'function'
+                ? index.getAllKeys(keyRangeOnly([mapId, 'completed'] as any))
+                : index.getAll(keyRangeOnly([mapId, 'completed'] as any));
 
-    if (surgicalBoxes.length === 0) {
-        return count;
-    }
-
-    // Zoom 11 to 15: Use packed numeric keys to eliminate string allocations
-    const surgicalKeys = new Set<number>();
-
-    for (const box of surgicalBoxes) {
-        for (let z = 11; z <= 15; z++) {
-            const xMin = longToX(box.west, z);
-            const xMax = longToX(box.east, z);
-            const yMin = latToY(box.north, z);
-            const yMax = latToY(box.south, z);
-            const xStart = Math.min(xMin, xMax);
-            const xEnd = Math.max(xMin, xMax);
-            const yStart = Math.min(yMin, yMax);
-            const yEnd = Math.max(yMin, yMax);
-
-            for (let x = xStart; x <= xEnd; x++) {
-                for (let y = yStart; y <= yEnd; y++) {
-                    surgicalKeys.add((z * 1073741824) + (x * 32768) + y);
+            req.onsuccess = () => {
+                const res = (req.result as any[]) || [];
+                const completedUrls = new Set<string>(
+                    res.map(item => (typeof item === 'string' ? item : item?.url))
+                );
+                if (completedUrls.size === 0) {
+                    resolve(tiles);
+                    return;
                 }
-            }
-        }
+                resolve(tiles.filter(t => !completedUrls.has(t.url)));
+            };
+            req.onerror = () => resolve(tiles);
+        });
+    } catch {
+        return tiles;
     }
-
-    return count + surgicalKeys.size;
-}
-
-class DisjointSet {
-    parent: number[];
-    constructor(size: number) {
-        this.parent = Array.from({ length: size }, (_, i) => i);
-    }
-    find(i: number): number {
-        let root = i;
-        while (root !== this.parent[root]) {
-            root = this.parent[root];
-        }
-        let curr = i;
-        while (curr !== root) {
-            const next = this.parent[curr];
-            this.parent[curr] = root;
-            curr = next;
-        }
-        return root;
-    }
-    union(i: number, j: number): void {
-        const rootI = this.find(i);
-        const rootJ = this.find(j);
-        if (rootI !== rootJ) {
-            this.parent[rootI] = rootJ;
-        }
-    }
-}
-
-export function getSurgicalBoxes(pins: Pin[]): BoundingBox[] {
-    if (!pins || pins.length === 0) return [];
-    
-    const boxes: BoundingBox[] = pins.map(pin => ({
-        north: pin.lat + 0.01,
-        east: pin.lng + 0.01,
-        south: pin.lat - 0.01,
-        west: pin.lng - 0.01
-    }));
-
-    const n = boxes.length;
-    if (n <= 1) return boxes;
-
-    // Spatial hash grid to find candidate overlapping box pairs in O(N) time
-    const CELL_SIZE = 0.05; // > threshold(0.025) + initial box width(0.02)
-    const grid = new Map<string, number[]>();
-    const dsu = new DisjointSet(n);
-
-    for (let i = 0; i < n; i++) {
-        const box = boxes[i];
-        const minRow = Math.floor(box.south / CELL_SIZE);
-        const maxRow = Math.floor(box.north / CELL_SIZE);
-        const minCol = Math.floor(box.west / CELL_SIZE);
-        const maxCol = Math.floor(box.east / CELL_SIZE);
-
-        const checked = new Set<number>();
-
-        for (let r = minRow - 1; r <= maxRow + 1; r++) {
-            for (let c = minCol - 1; c <= maxCol + 1; c++) {
-                const cellKey = `${r},${c}`;
-                const cellMembers = grid.get(cellKey);
-                if (cellMembers) {
-                    for (const candidateIdx of cellMembers) {
-                        if (!checked.has(candidateIdx)) {
-                            checked.add(candidateIdx);
-                            if (shouldMerge(boxes[i], boxes[candidateIdx])) {
-                                dsu.union(i, candidateIdx);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Register box i in its intersected grid cells
-        for (let r = minRow; r <= maxRow; r++) {
-            for (let c = minCol; c <= maxCol; c++) {
-                const cellKey = `${r},${c}`;
-                let cellMembers = grid.get(cellKey);
-                if (!cellMembers) {
-                    cellMembers = [];
-                    grid.set(cellKey, cellMembers);
-                }
-                cellMembers.push(i);
-            }
-        }
-    }
-
-    // Merge connected components
-    const componentMap = new Map<number, BoundingBox>();
-    for (let i = 0; i < n; i++) {
-        const root = dsu.find(i);
-        const existing = componentMap.get(root);
-        if (existing) {
-            componentMap.set(root, mergeBoxes(existing, boxes[i]));
-        } else {
-            componentMap.set(root, boxes[i]);
-        }
-    }
-
-    let mergedBoxes = Array.from(componentMap.values());
-
-    // Final convergence pass for cases where merged clusters expanded into each other
-    let mergedAny = true;
-    while (mergedAny && mergedBoxes.length > 1) {
-        mergedAny = false;
-        const nextBoxes: BoundingBox[] = [];
-        for (const box of mergedBoxes) {
-            let merged = false;
-            for (let i = 0; i < nextBoxes.length; i++) {
-                if (shouldMerge(nextBoxes[i], box)) {
-                    nextBoxes[i] = mergeBoxes(nextBoxes[i], box);
-                    merged = true;
-                    mergedAny = true;
-                    break;
-                }
-            }
-            if (!merged) {
-                nextBoxes.push(box);
-            }
-        }
-        mergedBoxes = nextBoxes;
-    }
-
-    return mergedBoxes;
-}
-
-function shouldMerge(b1: BoundingBox, b2: BoundingBox, threshold = 0.025): boolean {
-    return !(
-        b1.west - threshold > b2.east ||
-        b1.east + threshold < b2.west ||
-        b1.north + threshold < b2.south ||
-        b1.south - threshold > b2.north
-    );
-}
-
-function mergeBoxes(b1: BoundingBox, b2: BoundingBox): BoundingBox {
-    return {
-        north: Math.max(b1.north, b2.north),
-        east: Math.max(b1.east, b2.east),
-        south: Math.min(b1.south, b2.south),
-        west: Math.min(b1.west, b2.west)
-    };
-}
-
-export async function updateManifestStatus(url: string, status: TileStatus): Promise<void> {
-    const db = await openDB();
-    return new Promise((resolve) => {
-        const transaction = db.transaction(MANIFEST_STORE, 'readwrite');
-        const store = transaction.objectStore(MANIFEST_STORE);
-        const getReq = store.get(url);
-        getReq.onsuccess = () => {
-            const entry = getReq.result as ManifestEntry;
-            if (entry) {
-                entry.status = status;
-                entry.updatedAt = Date.now();
-                store.put(entry);
-            }
-            resolve();
-        };
-        requestIdleCallback(() => resolve()); // Fallback
-    });
 }

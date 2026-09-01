@@ -22,6 +22,7 @@ import { getCspDirectives } from './csp';
 import { socketPayloadSchemas } from './schemas';
 import { purgeExpiredSessions } from './db';
 import * as realtime from './realtime';
+import { handleTileStream } from './tileStream';
 
 const app = express();
 const server = http.createServer(app);
@@ -230,6 +231,10 @@ try {
     console.warn(`[MAPS DIR] Could not create maps directory (${mapsDir}):`, err);
   }
 }
+
+// High-speed binary tile streaming for bulk offline downloads
+app.post('/api/maps/tiles/stream', (req, res) => handleTileStream(req, res, candidateMapsDirs));
+app.post('/maps/tiles/stream', (req, res) => handleTileStream(req, res, candidateMapsDirs));
 
 app.get('/maps/:filename(*)', async (req, res) => {
   const filename = req.params.filename || 'planet.pmtiles';

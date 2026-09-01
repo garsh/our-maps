@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { apiService } from '../services/api';
-import { Map as MapIcon, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download, Sun, Moon } from 'lucide-react';
+import { Map as MapIcon, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download, Upload, Sun, Moon } from 'lucide-react';
 import { getMapDownloadStatuses, type MapDownloadStatus } from '../utils/tileUtils';
 import { tileWorkerManager } from '../utils/tileWorkerManager';
 import { getStoredJson, setStoredJson } from '../utils/storageUtils';
@@ -20,15 +20,41 @@ export default function LandingPage() {
   const { user, logout, logoutEverywhere } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
-  const [maps, setMaps] = useState<MapSummary[]>([]);
-  const [downloadStatuses, setDownloadStatuses] = useState<Map<string, MapDownloadStatus>>(new Map());
-  const [loading, setLoading] = useState(true);
+  const [maps, setMaps] = useState<MapSummary[]>(() => getStoredJson<MapSummary[]>('cached_maps', []));
+  const [downloadStatuses, setDownloadStatuses] = useState<Map<string, MapDownloadStatus>>(() => {
+    const cachedStatuses = getStoredJson<Record<string, MapDownloadStatus> | null>('cached_download_statuses', null);
+    if (cachedStatuses) {
+      return new Map(Object.entries(cachedStatuses));
+    }
+    return new Map();
+  });
+  const [loading, setLoading] = useState(() => {
+    const cached = getStoredJson<MapSummary[] | null>('cached_maps', null);
+    return !cached || cached.length === 0;
+  });
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' ? !navigator.onLine : false);
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [showSignOutDialog, setShowSignOutDialog] = useState(false);
+  const [showRemoveAllDialog, setShowRemoveAllDialog] = useState(false);
+  const [isRemovingAll, setIsRemovingAll] = useState(false);
   const [showOfflineInterstitial, setShowOfflineInterstitial] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+
+  const handleRemoveAllDownloads = async () => {
+    setIsRemovingAll(true);
+    try {
+      await tileWorkerManager.removeAllDownloads();
+      setDownloadStatuses(new Map());
+      setStoredJson('cached_download_statuses', {});
+    } catch (err) {
+      console.error('Failed to remove all downloads:', err);
+      alert('Failed to remove all downloads: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsRemovingAll(false);
+      setShowRemoveAllDialog(false);
+    }
+  };
 
   const handleMapClick = (mapId: string) => {
     const currentlyOffline = isOffline || (typeof navigator !== 'undefined' && !navigator.onLine);
@@ -44,8 +70,8 @@ export default function LandingPage() {
 
   const fetchDownloadedMapStatuses = async (mapList?: { id: string }[]) => {
     try {
-      const mapIds = mapList ? mapList.map(m => m.id) : maps.map(m => m.id);
-      const statusMap = await getMapDownloadStatuses(mapIds.length > 0 ? mapIds : undefined);
+      const mapIds = mapList ? mapList.map(m => m.id) : (maps.length > 0 ? maps.map(m => m.id) : undefined);
+      const statusMap = await getMapDownloadStatuses(mapIds);
 
       // Immediately reflect any active or in-flight downloads from the worker manager
       const targetIds = mapList ? mapList.map(m => m.id) : maps.map(m => m.id);
@@ -61,6 +87,9 @@ export default function LandingPage() {
       });
 
       setDownloadStatuses(statusMap);
+      const obj: Record<string, MapDownloadStatus> = {};
+      statusMap.forEach((v, k) => { obj[k] = v; });
+      setStoredJson('cached_download_statuses', obj);
     } catch (err) {
       console.error('Failed to load downloaded map statuses', err);
     }
@@ -80,7 +109,6 @@ export default function LandingPage() {
       return;
     }
 
-    setLoading(true);
     try {
       const data = await apiService.getMaps();
       setMaps(data);
@@ -107,6 +135,7 @@ export default function LandingPage() {
   };
 
   useEffect(() => {
+    fetchDownloadedMapStatuses();
     fetchMaps();
     
     const handleOnline = () => {
@@ -326,6 +355,30 @@ export default function LandingPage() {
                         }}
                       />
                     </div>
+                  </div>
+
+                  {/* Remove All Downloads */}
+                  <div
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      setShowRemoveAllDialog(true);
+                    }}
+                    style={{
+                      padding: '10px 16px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '0.85rem',
+                      fontWeight: '600',
+                      color: 'var(--text-primary)',
+                      borderBottom: '1px solid var(--border-color)'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <Trash2 size={16} color="var(--text-secondary)" />
+                    <span>Remove All Downloads</span>
                   </div>
 
                   {/* Sign Out */}
@@ -597,6 +650,53 @@ export default function LandingPage() {
               </div>
               <button onClick={() => { setShowSignOutDialog(false); logoutEverywhere(); }} style={{ padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)' }}>Sign out everywhere</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showRemoveAllDialog && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000,
+            backdropFilter: 'blur(4px)'
+          }}
+          onClick={() => !isRemovingAll && setShowRemoveAllDialog(false)}
+        >
+          <div style={{ background: 'var(--surface-color)', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '420px', width: '90%', boxShadow: 'var(--shadow-lg)', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+            {isRemovingAll ? (
+              <>
+                <div style={{ background: 'rgba(239, 68, 68, 0.1)', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
+                  <Upload size={32} className="animated-download-icon" color="var(--error-color)" />
+                </div>
+                <h3 style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>Removing Downloads...</h3>
+                <p style={{ color: 'var(--text-secondary)', lineHeight: '1.5', margin: '1rem 0 0 0' }}>
+                  Removing all offline map data and map tiles from this device. Please wait...
+                </p>
+              </>
+            ) : (
+              <>
+                <div style={{ background: 'rgba(239, 68, 68, 0.1)', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
+                  <Trash2 size={32} color="var(--error-color)" />
+                </div>
+                <h3 style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>Remove All Downloads?</h3>
+                <p style={{ color: 'var(--text-secondary)', lineHeight: '1.5', margin: '1rem 0 2rem 0' }}>
+                  This will remove all offline map data and map tiles stored on this device.
+                </p>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button onClick={() => setShowRemoveAllDialog(false)} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)', cursor: 'pointer' }}>Cancel</button>
+                  <button onClick={handleRemoveAllDownloads} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--error-color)', color: 'white', fontWeight: '600', cursor: 'pointer' }}>Remove All</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

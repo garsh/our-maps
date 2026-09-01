@@ -25,6 +25,7 @@ import {
   Eye,
   EyeOff,
   Download,
+  Upload,
   Palette,
   Mountain,
   Box,
@@ -54,12 +55,10 @@ import {
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { exportMap, importMapFile } from '../utils/fileUtils';
 import { 
-  countUniqueTiles,
+  countTiles,
   estimateSizeMB, 
-  getSurgicalBoxes, 
   getPinsBoundingBox,
   getManifestStats,
-  getMapDownloadStatuses,
   getOfflineMap,
   saveMapOffline,
   type BoundingBox 
@@ -1759,6 +1758,7 @@ const Sidebar = ({
   // Offline Download State
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [hasPartialDownload, setHasPartialDownload] = useState(false);
   const [tileStats, setTileStats] = useState<{ total: number; completed: number } | null>(null);
@@ -1781,6 +1781,7 @@ const Sidebar = ({
       setIsDownloaded(false);
       setHasPartialDownload(false);
       setIsDownloading(false);
+      setIsRemoving(false);
       setDownloadProgress(null);
       setTileStats(null);
       return;
@@ -1788,6 +1789,7 @@ const Sidebar = ({
 
     const updateFromState = (state: any) => {
       setIsDownloading(state.isDownloading);
+      setIsRemoving(state.isRemoving || false);
       setIsDownloaded(state.isDownloaded);
       setHasPartialDownload(state.hasPartialDownload);
       setDownloadProgress(state.downloadProgress);
@@ -1801,32 +1803,30 @@ const Sidebar = ({
     });
 
     const activeStatus = tileWorkerManager.getStatus(mapId);
-    if (activeStatus && activeStatus.isDownloading) {
+    if (activeStatus && (activeStatus.isDownloading || activeStatus.isRemoving)) {
       updateFromState(activeStatus);
     } else {
-      tileWorkerManager.resumeIfNeeded(mapId).then(() => {
-        const status = tileWorkerManager.getStatus(mapId);
-        if (status) {
-          updateFromState(status);
+      getManifestStats(mapId).then((stats) => {
+        if (stats.total > 0 && stats.completed === stats.total) {
+          setIsDownloaded(true);
+          setHasPartialDownload(false);
+          setIsDownloading(false);
+          setDownloadProgress(null);
+          setTileStats(stats);
+        } else if (stats.total > 0 && stats.completed < stats.total) {
+          setIsDownloaded(false);
+          setHasPartialDownload(true);
+          setIsDownloading(false);
+          setDownloadProgress(stats.completed / stats.total);
+          setTileStats(stats);
         } else {
-          Promise.all([
-            getManifestStats(mapId),
-            getMapDownloadStatuses([mapId]),
-            getOfflineMap(mapId)
-          ]).then(([stats, statusMap, offlineMap]) => {
-            const mapStatus = statusMap.get(mapId);
-            if (mapStatus?.isComplete || (offlineMap && stats.total === 0)) {
+          getOfflineMap(mapId).then((offlineMap) => {
+            if (offlineMap) {
               setIsDownloaded(true);
               setHasPartialDownload(false);
               setIsDownloading(false);
               setDownloadProgress(null);
               setTileStats(stats.total > 0 ? stats : { total: stats.total, completed: stats.completed });
-            } else if (mapStatus?.isPartial || stats.completed > 0) {
-              setIsDownloaded(false);
-              setHasPartialDownload(true);
-              setIsDownloading(false);
-              setDownloadProgress(stats.total > 0 ? stats.completed / stats.total : 0.5);
-              setTileStats(stats);
             } else {
               setIsDownloaded(false);
               setHasPartialDownload(false);
@@ -1837,6 +1837,7 @@ const Sidebar = ({
           });
         }
       });
+      tileWorkerManager.resumeIfNeeded(mapId);
     }
 
     return () => {
@@ -1864,13 +1865,13 @@ const Sidebar = ({
         };
     }
 
-    const surgicalBoxes = getSurgicalBoxes(pins);
-    const totalCount = countUniqueTiles(bbox, surgicalBoxes);
+    // Full map tile downloads for zooms 1 to 15 covering the entire bounding box
+    const totalCount = countTiles(bbox, 1, 15);
     const estimatedSizeMB = estimateSizeMB(totalCount);
 
-    // Hard Safety Cap: > 50,000 tiles (~1 GB)
-    if (totalCount > 50000) {
-        alert(`Selected download area is too large for offline caching (${totalCount.toLocaleString()} tiles, approx. ${estimatedSizeMB.toFixed(0)} MB). Please zoom in or add specific pins to download this region.`);
+    // Hard Safety Cap: > 5 GB (5,000 MB)
+    if (estimatedSizeMB > 5000) {
+        alert(`Selected download area is too large for offline caching (${totalCount.toLocaleString()} tiles, approx. ${(estimatedSizeMB / 1024).toFixed(1)} GB). Please zoom in or reduce map region to under 5 GB.`);
         return;
     }
 
@@ -1880,9 +1881,9 @@ const Sidebar = ({
         return;
     }
     
-    // Soft Warning Threshold: > 10,000 tiles (~200 MB)
-    if (totalCount > 10000) {
-        const proceed = window.confirm(`This map region covers ${totalCount.toLocaleString()} tiles (approx. ${estimatedSizeMB.toFixed(0)} MB) and may take over a minute to download. Do you want to proceed?`);
+    // Soft Warning Threshold: > 1 GB (1,000 MB)
+    if (estimatedSizeMB > 1000) {
+        const proceed = window.confirm(`This map region covers ${totalCount.toLocaleString()} tiles (approx. ${(estimatedSizeMB / 1024).toFixed(1)} GB). Do you want to proceed with the offline download?`);
         if (!proceed) return;
     } else if (storageStatus.message) {
         // Show warning but allow proceeding
@@ -1896,26 +1897,22 @@ const Sidebar = ({
       layers,
       pins,
       userRole,
+      totalTiles: totalCount,
+      completedTiles: 0,
+      isDownloaded: false,
     };
     await saveMapOffline(currentMapData);
 
-    tileWorkerManager.startDownload(mapId, { bbox, pins, totalTiles: totalCount });
+    tileWorkerManager.startDownload(mapId, { bbox, totalTiles: totalCount });
   };
 
-  const handleRemoveDownload = async () => {
+  const handleRemoveDownload = () => {
     if (!mapId) return;
-    try {
-      await tileWorkerManager.cancelDownload(mapId);
-      setIsDownloading(false);
-      setIsDownloaded(false);
-      setHasPartialDownload(false);
-      setDownloadProgress(null);
-      setTileStats(null);
-      setIsMenuOpen(false);
-    } catch (error) {
+    setIsMenuOpen(false);
+    tileWorkerManager.cancelDownload(mapId).catch((error) => {
       console.error("Failed to remove download:", error);
       alert("Failed to remove download.");
-    }
+    });
   };
 
   useEffect(() => {
@@ -2181,18 +2178,18 @@ const Sidebar = ({
                   )}
 
                   {!isOffline && (
-                    isDownloaded || isDownloading || hasPartialDownload ? (
+                    isDownloaded || isDownloading || isRemoving || hasPartialDownload ? (
                       <div 
-                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                        onClick={handleRemoveDownload}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
+                        style={{ padding: '10px 16px', cursor: isRemoving ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isRemoving ? '#999' : 'inherit' }}
+                        onClick={isRemoving ? undefined : handleRemoveDownload}
+                        onMouseEnter={(e) => !isRemoving && (e.currentTarget.style.background = 'var(--bg-color)')}
                         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                       >
-                        Remove Download
+                        {isRemoving ? 'Removing Download...' : 'Remove Download'}
                       </div>
                     ) : (
                       <div 
-                        style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isDownloading ? '#999' : 'inherit' }}
+                        style={{ padding: '10px 16px', cursor: isDownloading ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isDownloading ? '#999' : 'inherit' }}
                         onClick={isDownloading ? undefined : handleDownloadClick}
                         onMouseEnter={(e) => !isDownloading && (e.currentTarget.style.background = 'var(--bg-color)')}
                         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
@@ -2901,7 +2898,7 @@ const Sidebar = ({
           : (typeof document !== 'undefined' ? document.getElementById('download-pill-container') : null);
         if (!pillContainer || !document.body.contains(pillContainer)) return null;
 
-        const showActiveProgress = isDownloading || hasPartialDownload;
+        const showActiveProgress = isDownloading || isRemoving || hasPartialDownload;
         const showCompleted = isDownloaded && !showActiveProgress;
 
         if (!showActiveProgress && !showCompleted) return null;
@@ -2909,9 +2906,14 @@ const Sidebar = ({
         const completedCount = tileStats?.completed ?? 0;
         const totalCount = tileStats?.total ?? 0;
 
-        const tooltipText = showCompleted
-          ? (completedCount > 0 ? `${completedCount.toLocaleString()} tiles downloaded` : 'Map tiles downloaded')
-          : `${completedCount.toLocaleString()} / ${totalCount.toLocaleString()} tiles downloaded`;
+        let tooltipText = 'Map tiles downloaded';
+        if (isRemoving) {
+          tooltipText = 'Removing downloaded map tiles...';
+        } else if (showCompleted) {
+          tooltipText = completedCount > 0 ? `${completedCount.toLocaleString()} tiles downloaded` : 'Map tiles downloaded';
+        } else if (showActiveProgress) {
+          tooltipText = `${completedCount.toLocaleString()} / ${totalCount.toLocaleString()} tiles downloaded`;
+        }
 
         return createPortal(
           <div 
@@ -2931,14 +2933,21 @@ const Sidebar = ({
               cursor: 'default'
             }}
           >
-            {showActiveProgress && (
-              <span>{Math.round((downloadProgress || 0) * 100)}%</span>
+            {isDownloading && downloadProgress !== null && !isRemoving && (
+              <span>{Math.round(downloadProgress * 100)}%</span>
             )}
-            <Download 
-              size={13} 
-              className={showActiveProgress ? 'animated-download-icon' : ''} 
-              style={showCompleted ? { color: '#4ade80' } : undefined} 
-            />
+            {isRemoving ? (
+              <Upload 
+                size={13} 
+                className="animated-download-icon" 
+              />
+            ) : (
+              <Download 
+                size={13} 
+                className={showActiveProgress ? 'animated-download-icon' : ''} 
+                style={showCompleted ? { color: '#4ade80' } : undefined} 
+              />
+            )}
           </div>,
           pillContainer
         );

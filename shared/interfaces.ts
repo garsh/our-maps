@@ -47,6 +47,9 @@ export interface MapData {
   permissions?: MapPermission[];
   userRole?: 'view' | 'edit' | 'owner';
   lastAccessedAt?: string;
+  totalTiles?: number;
+  completedTiles?: number;
+  isDownloaded?: boolean;
 }
 
 export * from './types/socket';
