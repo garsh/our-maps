@@ -5,6 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { apiService } from '../services/api';
 import { Map as MapIcon, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download, Sun, Moon } from 'lucide-react';
 import { getMapDownloadStatuses, type MapDownloadStatus } from '../utils/tileUtils';
+import { tileWorkerManager } from '../utils/tileWorkerManager';
 import { getStoredJson, setStoredJson } from '../utils/storageUtils';
 
 interface MapSummary {
@@ -45,6 +46,20 @@ export default function LandingPage() {
     try {
       const mapIds = mapList ? mapList.map(m => m.id) : maps.map(m => m.id);
       const statusMap = await getMapDownloadStatuses(mapIds.length > 0 ? mapIds : undefined);
+
+      // Immediately reflect any active or in-flight downloads from the worker manager
+      const targetIds = mapList ? mapList.map(m => m.id) : maps.map(m => m.id);
+      targetIds.forEach(id => {
+        const activeStatus = tileWorkerManager.getStatus(id);
+        if (activeStatus) {
+          if (activeStatus.isDownloading || activeStatus.hasPartialDownload) {
+            statusMap.set(id, { isComplete: false, isPartial: true });
+          } else if (activeStatus.isDownloaded) {
+            statusMap.set(id, { isComplete: true, isPartial: false });
+          }
+        }
+      });
+
       setDownloadStatuses(statusMap);
     } catch (err) {
       console.error('Failed to load downloaded map statuses', err);
@@ -107,9 +122,37 @@ export default function LandingPage() {
     
     if (!navigator.onLine) setIsOffline(true);
 
+    const unsubscribe = tileWorkerManager.subscribe((state) => {
+      setDownloadStatuses((prev) => {
+        const current = prev.get(state.mapId);
+        let newStatus: MapDownloadStatus | undefined;
+        if (state.isDownloading || state.hasPartialDownload) {
+          newStatus = { isComplete: false, isPartial: true };
+        } else if (state.isDownloaded) {
+          newStatus = { isComplete: true, isPartial: false };
+        }
+
+        if (!newStatus) {
+          if (!current) return prev;
+          const next = new Map(prev);
+          next.delete(state.mapId);
+          return next;
+        }
+
+        if (current && current.isComplete === newStatus.isComplete && current.isPartial === newStatus.isPartial) {
+          return prev;
+        }
+
+        const next = new Map(prev);
+        next.set(state.mapId, newStatus);
+        return next;
+      });
+    });
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      unsubscribe();
     };
   }, []);
 
@@ -154,12 +197,13 @@ export default function LandingPage() {
       map.name.toLowerCase().includes(q) ||
       (map.ownerName || '').toLowerCase().includes(q)
     ).sort((a, b) => {
+      // Unaccessed maps are placed at the top so newly shared maps are immediately visible to the user
       if (!a.lastAccessedAt && b.lastAccessedAt) return -1;
       if (a.lastAccessedAt && !b.lastAccessedAt) return 1;
       if (a.lastAccessedAt && b.lastAccessedAt) {
-        return new Date(b.lastAccessedAt).getTime() - new Date(a.lastAccessedAt).getTime();
+        return b.lastAccessedAt.localeCompare(a.lastAccessedAt);
       }
-      return 0;
+      return a.name.localeCompare(b.name);
     });
   }, [maps, searchQuery]);
 

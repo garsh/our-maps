@@ -4,9 +4,19 @@ import path from 'path';
 export const ALLOWED_MAP_EXTENSIONS = new Set(['.pmtiles', '.pbf', '.png', '.json']);
 
 const resolvedMapFilePathCache = new Map<string, string>();
+const resolvedMapFileSizeCache = new Map<string, number>();
+
+export async function getSafeMapFileSize(filePath: string): Promise<number> {
+  const cached = resolvedMapFileSizeCache.get(filePath);
+  if (cached !== undefined) return cached;
+  const stat = await fs.promises.stat(filePath);
+  resolvedMapFileSizeCache.set(filePath, stat.size);
+  return stat.size;
+}
 
 export function clearMapFilePathCache() {
   resolvedMapFilePathCache.clear();
+  resolvedMapFileSizeCache.clear();
 }
 
 export function isPathInside(parent: string, child: string): boolean {

@@ -171,19 +171,53 @@ export async function addToManifest(entries: ManifestEntry[]): Promise<void> {
 
 
 export async function getPendingFromManifest(mapId: string): Promise<ManifestEntry[]> {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction(MANIFEST_STORE, 'readonly');
-        const store = transaction.objectStore(MANIFEST_STORE);
-        const index = store.index('mapId');
-        const request = index.getAll(keyRangeOnly(mapId));
+    if (!mapId || typeof indexedDB === 'undefined') return [];
+    try {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(MANIFEST_STORE, 'readonly');
+            const store = transaction.objectStore(MANIFEST_STORE);
 
-        request.onsuccess = () => {
-            const all = request.result as ManifestEntry[];
-            resolve(all.filter(e => e.status === 'pending' || e.status === 'error'));
-        };
-        request.onerror = () => reject(request.error);
-    });
+            if (store.indexNames && store.indexNames.contains('mapId_status')) {
+                const compoundIndex = store.index('mapId_status');
+                const pendingReq = compoundIndex.getAll(keyRangeOnly([mapId, 'pending'] as any));
+                const errorReq = compoundIndex.getAll(keyRangeOnly([mapId, 'error'] as any));
+
+                let pendingList: ManifestEntry[] | null = null;
+                let errorList: ManifestEntry[] | null = null;
+
+                const checkDone = () => {
+                    if (pendingList !== null && errorList !== null) {
+                        resolve([...pendingList, ...errorList]);
+                    }
+                };
+
+                pendingReq.onsuccess = () => {
+                    pendingList = (pendingReq.result as ManifestEntry[]) || [];
+                    checkDone();
+                };
+                pendingReq.onerror = () => reject(pendingReq.error);
+
+                errorReq.onsuccess = () => {
+                    errorList = (errorReq.result as ManifestEntry[]) || [];
+                    checkDone();
+                };
+                errorReq.onerror = () => reject(errorReq.error);
+                return;
+            }
+
+            const index = store.index('mapId');
+            const request = index.getAll(keyRangeOnly(mapId));
+
+            request.onsuccess = () => {
+                const all = (request.result as ManifestEntry[]) || [];
+                resolve(all.filter(e => e.status === 'pending' || e.status === 'error'));
+            };
+            request.onerror = () => reject(request.error);
+        });
+    } catch {
+        return [];
+    }
 }
 
 export async function getManifestStats(mapId: string): Promise<{ total: number, completed: number }> {
@@ -298,7 +332,7 @@ export async function getMapDownloadStatuses(mapIds?: string[]): Promise<Map<str
                                     if (total > 0) {
                                         resultMap.set(mapId, {
                                             isComplete: completed === total,
-                                            isPartial: completed > 0 && completed < total
+                                            isPartial: completed < total
                                         });
                                     } else if (hasOfflineMapRecord) {
                                         // Map is saved offline and all shared tiles are already cached
@@ -339,7 +373,7 @@ export async function getMapDownloadStatuses(mapIds?: string[]): Promise<Map<str
                                     if (total > 0) {
                                         resultMap.set(mapId, {
                                             isComplete: completed === total,
-                                            isPartial: completed > 0 && completed < total
+                                            isPartial: completed < total
                                         });
                                     } else if (hasOfflineMapRecord) {
                                         resultMap.set(mapId, {

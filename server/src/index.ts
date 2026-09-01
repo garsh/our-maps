@@ -16,7 +16,7 @@ import type { User } from '@shared/interfaces';
 import placesRouter from './routes/places';
 import { googleLoginHandler, sharedContactsHandler, searchUsersHandler, authMiddleware, authenticateToken, getJwtSecret, meHandler, mockLoginHandler, logoutHandler, logoutEverywhereHandler, parseCookies, SESSION_COOKIE, getUserForSession } from './auth';
 import { getMapRole, canEditMap, canViewMap } from './permissions';
-import { resolveSafeMapFile, getSafeFontDownloadTarget, sanitizeMapFilename } from './mapFiles';
+import { resolveSafeMapFile, getSafeFontDownloadTarget, sanitizeMapFilename, getSafeMapFileSize } from './mapFiles';
 import { isAllowedOrigin } from './cors';
 import { getCspDirectives } from './csp';
 import { socketPayloadSchemas } from './schemas';
@@ -265,8 +265,7 @@ app.get('/maps/:filename(*)', async (req, res) => {
   }
 
   try {
-    const stat = fs.statSync(foundFilePath);
-    const total = stat.size;
+    const total = await getSafeMapFileSize(foundFilePath);
     const range = req.headers.range;
 
     // Set CORS and Expose headers explicitly for every response

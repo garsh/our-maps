@@ -30,7 +30,8 @@ router.get('/', async (req: AuthRequest, res) => {
     JOIN maps m ON am.id = m.id
     LEFT JOIN users u ON m.owner_id = u.id
     LEFT JOIN user_map_access uma ON m.id = uma.map_id AND uma.user_id = ?
-    ORDER BY uma.last_accessed_at DESC NULLS LAST, m.name ASC
+    -- Order unaccessed maps first (NULLS FIRST) so newly shared maps are immediately visible at the top
+    ORDER BY uma.last_accessed_at DESC NULLS FIRST, m.name ASC
   `, userId, userId, userId);
 
   res.json(maps.map(m => ({
@@ -231,18 +232,23 @@ export async function syncMapLayersAndPins(
       finalLayers.push({ id: layerId, name: layer.name, position: layer.position ?? 0 });
     }
 
-    const layerStmt = await db.prepare(`
-      INSERT INTO pin_layers (id, map_id, name, position) 
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET 
-        map_id = excluded.map_id,
-        name = excluded.name,
-        position = excluded.position
-    `);
-    for (const layer of finalLayers) {
-      await layerStmt.run(layer.id, mapId, layer.name, layer.position);
+    const layerChunkSize = 100;
+    for (let i = 0; i < finalLayers.length; i += layerChunkSize) {
+      const chunk = finalLayers.slice(i, i + layerChunkSize);
+      const valuePlaceholders = chunk.map(() => '(?, ?, ?, ?)').join(', ');
+      const params: any[] = [];
+      for (const layer of chunk) {
+        params.push(layer.id, mapId, layer.name, layer.position);
+      }
+      await db.run(`
+        INSERT INTO pin_layers (id, map_id, name, position) 
+        VALUES ${valuePlaceholders}
+        ON CONFLICT(id) DO UPDATE SET 
+          map_id = excluded.map_id,
+          name = excluded.name,
+          position = excluded.position
+      `, ...params);
     }
-    await layerStmt.finalize();
   }
 
   const finalPins: Pin[] = [];
@@ -275,37 +281,42 @@ export async function syncMapLayersAndPins(
       });
     }
 
-    const pinStmt = await db.prepare(`
-      INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET 
-        map_id = excluded.map_id,
-        layer_id = excluded.layer_id,
-        lat = excluded.lat,
-        lng = excluded.lng,
-        label = excluded.label,
-        description = excluded.description,
-        address = excluded.address,
-        color = excluded.color,
-        icon = excluded.icon,
-        position = excluded.position
-    `);
-    for (const pin of finalPins) {
-      await pinStmt.run(
-        pin.id,
-        mapId,
-        pin.layerId || null,
-        pin.lat,
-        pin.lng,
-        pin.label || null,
-        pin.description || null,
-        pin.address || null,
-        pin.color || 'blue',
-        pin.icon || 'default',
-        pin.position || 0
-      );
+    const pinChunkSize = 80;
+    for (let i = 0; i < finalPins.length; i += pinChunkSize) {
+      const chunk = finalPins.slice(i, i + pinChunkSize);
+      const valuePlaceholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const params: any[] = [];
+      for (const pin of chunk) {
+        params.push(
+          pin.id,
+          mapId,
+          pin.layerId || null,
+          pin.lat,
+          pin.lng,
+          pin.label || null,
+          pin.description || null,
+          pin.address || null,
+          pin.color || 'blue',
+          pin.icon || 'default',
+          pin.position || 0
+        );
+      }
+      await db.run(`
+        INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position) 
+        VALUES ${valuePlaceholders}
+        ON CONFLICT(id) DO UPDATE SET 
+          map_id = excluded.map_id,
+          layer_id = excluded.layer_id,
+          lat = excluded.lat,
+          lng = excluded.lng,
+          label = excluded.label,
+          description = excluded.description,
+          address = excluded.address,
+          color = excluded.color,
+          icon = excluded.icon,
+          position = excluded.position
+      `, ...params);
     }
-    await pinStmt.finalize();
   }
 
   return { layers: finalLayers, pins: finalPins };

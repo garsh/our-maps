@@ -7,7 +7,8 @@ import {
   resolveSafeMapFile,
   getSafeFontDownloadTarget,
   isPathInside,
-  clearMapFilePathCache
+  clearMapFilePathCache,
+  getSafeMapFileSize
 } from '../mapFiles';
 
 describe('map file path sanitization', () => {
@@ -69,5 +70,15 @@ describe('safe map file resolution', () => {
 
     expect(getSafeFontDownloadTarget('fonts/../../../tmp/evil.pbf', dataRoot)).toBeNull();
     expect(getSafeFontDownloadTarget('sprites/light.png', dataRoot)).toBeNull();
+  });
+
+  it('calculates and caches safe map file size asynchronously', async () => {
+    const filePath = path.join(spritesDir, 'light.png');
+    const size = await getSafeMapFileSize(filePath);
+    expect(size).toBe(Buffer.byteLength('sprite'));
+
+    // Returns cached size on subsequent calls
+    const cachedSize = await getSafeMapFileSize(filePath);
+    expect(cachedSize).toBe(size);
   });
 });

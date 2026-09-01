@@ -104,47 +104,49 @@ class TileWorkerManager {
     this.tileStats = { completed: initialCompleted, total: totalTiles };
     this.notifySubscribers();
 
-    const worker = new Worker(new URL('../workers/tileWorker.ts', import.meta.url), { type: 'module' });
-    this.activeWorker = worker;
+    if (typeof Worker !== 'undefined') {
+      const worker = new Worker(new URL('../workers/tileWorker.ts', import.meta.url), { type: 'module' });
+      this.activeWorker = worker;
 
-    worker.postMessage({
-      type: 'start-download',
-      mapId,
-      tiles: tilesList,
-      bbox,
-      pins,
-      totalTiles
-    });
+      worker.postMessage({
+        type: 'start-download',
+        mapId,
+        tiles: tilesList,
+        bbox,
+        pins,
+        totalTiles
+      });
 
-    worker.onmessage = (e) => {
-      const { type, progress, error, total, completed } = e.data;
-      if (type === 'progress') {
-        const actualTotal = total || totalTiles;
-        const actualCompleted = completed !== undefined ? completed : Math.round(progress * actualTotal);
-        this.downloadProgress = progress;
-        this.tileStats = { total: actualTotal, completed: actualCompleted };
-        this.notifySubscribers();
-      } else if (type === 'complete') {
-        const actualTotal = total || totalTiles;
-        this.isDownloading = false;
-        this.downloadProgress = null;
-        this.tileStats = { total: actualTotal, completed: actualTotal };
-        this.notifySubscribers();
-        worker.terminate();
-        if (this.activeWorker === worker) {
-          this.activeWorker = null;
+      worker.onmessage = (e) => {
+        const { type, progress, error, total, completed } = e.data;
+        if (type === 'progress') {
+          const actualTotal = total || totalTiles;
+          const actualCompleted = completed !== undefined ? completed : Math.round(progress * actualTotal);
+          this.downloadProgress = progress;
+          this.tileStats = { total: actualTotal, completed: actualCompleted };
+          this.notifySubscribers();
+        } else if (type === 'complete') {
+          const actualTotal = total || totalTiles;
+          this.isDownloading = false;
+          this.downloadProgress = null;
+          this.tileStats = { total: actualTotal, completed: actualTotal };
+          this.notifySubscribers();
+          worker.terminate();
+          if (this.activeWorker === worker) {
+            this.activeWorker = null;
+          }
+        } else if (type === 'error') {
+          console.error("Worker error:", error);
+          this.isDownloading = false;
+          this.downloadProgress = null;
+          this.notifySubscribers();
+          worker.terminate();
+          if (this.activeWorker === worker) {
+            this.activeWorker = null;
+          }
         }
-      } else if (type === 'error') {
-        console.error("Worker error:", error);
-        this.isDownloading = false;
-        this.downloadProgress = null;
-        this.notifySubscribers();
-        worker.terminate();
-        if (this.activeWorker === worker) {
-          this.activeWorker = null;
-        }
-      }
-    };
+      };
+    }
   }
 
   public async resumeIfNeeded(mapId: string) {

@@ -406,4 +406,41 @@ describe('API Endpoints', () => {
     const fontTraversalRes = await request(app).get('/maps/fonts/..%2F..%2Fpackage.json');
     expect(fontTraversalRes.status).toBe(404);
   });
+
+  it('POST /api/maps should efficiently batch insert 250 pins across multiple layers', async () => {
+    const mapId = 'batch-insert-map-id';
+    const layers = Array.from({ length: 5 }, (_, i) => ({
+      id: `layer-batch-${i}`,
+      name: `Layer ${i}`,
+      position: i
+    }));
+    const pins = Array.from({ length: 250 }, (_, i) => ({
+      id: `pin-batch-${i}`,
+      map_id: mapId,
+      layerId: `layer-batch-${i % 5}`,
+      lat: 40 + i * 0.001,
+      lng: -74 - i * 0.001,
+      label: `Batch Pin ${i}`,
+      description: `Description ${i}`,
+      address: `Address ${i}`,
+      color: 'blue',
+      icon: 'default',
+      position: i
+    }));
+
+    const res = await request(app)
+      .post('/api/maps')
+      .set(authHeader)
+      .send({ id: mapId, name: 'Batch Map', layers, pins });
+
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBe(mapId);
+
+    const db = await getDb();
+    const savedLayers = await db.all('SELECT * FROM pin_layers WHERE map_id = ?', mapId);
+    expect(savedLayers).toHaveLength(5);
+
+    const savedPins = await db.all('SELECT * FROM pins WHERE map_id = ?', mapId);
+    expect(savedPins).toHaveLength(250);
+  });
 });

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import LandingPage from '../LandingPage';
@@ -6,6 +6,7 @@ import { apiService } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 import * as tileUtils from '../../utils/tileUtils';
+import { tileWorkerManager } from '../../utils/tileWorkerManager';
 
 vi.mock('../../services/api');
 vi.mock('../../contexts/AuthContext');
@@ -129,5 +130,44 @@ describe('LandingPage Offline Map Access', () => {
       expect(screen.getByText('Alice Smith')).toBeInTheDocument();
       expect(screen.queryByText(/Shared by/i)).not.toBeInTheDocument();
     });
+  });
+
+  it('immediately reflects Downloading badge when tileWorkerManager notifies state change', async () => {
+    let subscriberCb: any;
+    const subscribeSpy = vi.spyOn(tileWorkerManager, 'subscribe').mockImplementation((cb: any) => {
+      subscriberCb = cb;
+      return () => {};
+    });
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Online Only Map')).toBeInTheDocument();
+    });
+
+    act(() => {
+      if (subscriberCb) {
+        subscriberCb({
+          mapId: 'map-not-downloaded',
+          isDownloading: true,
+          isDownloaded: false,
+          hasPartialDownload: false,
+          downloadProgress: 0.1,
+          tileStats: { completed: 1, total: 10 }
+        });
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Downloading')).toBeInTheDocument();
+    });
+
+    subscribeSpy.mockRestore();
   });
 });

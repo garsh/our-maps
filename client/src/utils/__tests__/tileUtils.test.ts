@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, countUniqueTiles, saveMapOffline, getOfflineMap, removeMapDownload, saveTile, saveTileBatch, getTile, addToManifest, getManifestStats, getMapDownloadStatuses, resetDBForTesting, openDB } from '../tileUtils';
+import { getTilesForArea, getPinsBoundingBox, getSurgicalBoxes, countUniqueTiles, saveMapOffline, getOfflineMap, removeMapDownload, saveTile, saveTileBatch, getTile, addToManifest, getPendingFromManifest, getManifestStats, getMapDownloadStatuses, resetDBForTesting, openDB } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('tileUtils', () => {
@@ -88,7 +88,12 @@ describe('tileUtils', () => {
                                                 let values = Array.from(txStore.values());
                                                 if (query !== undefined && query !== null) {
                                                     const target = typeof query === 'object' && query?.lower !== undefined ? query.lower : query;
-                                                    values = values.filter((v: any) => (idxName && v?.[idxName] === target) || v?.mapId === target);
+                                                    if (Array.isArray(target)) {
+                                                        const [mId, st] = target;
+                                                        values = values.filter((v: any) => v.mapId === mId && v.status === st);
+                                                    } else {
+                                                        values = values.filter((v: any) => (idxName && v?.[idxName] === target) || v?.mapId === target);
+                                                    }
                                                 }
                                                 r.result = values;
                                                 r.onsuccess && r.onsuccess();
@@ -314,7 +319,7 @@ describe('tileUtils', () => {
 
         const statusesAll = await getMapDownloadStatuses();
         expect(statusesAll.get('map-1')).toEqual({ isComplete: true, isPartial: false });
-        expect(statusesAll.get('map-2')).toEqual({ isComplete: false, isPartial: false });
+        expect(statusesAll.get('map-2')).toEqual({ isComplete: false, isPartial: true });
 
         const statusesFiltered = await getMapDownloadStatuses(['map-1']);
         expect(statusesFiltered.get('map-1')).toEqual({ isComplete: true, isPartial: false });
@@ -444,5 +449,35 @@ describe('tileUtils', () => {
         // The manifest entry should now be reassigned to map-ny-2
         const statsMap2 = await getManifestStats('map-ny-2');
         expect(statsMap2.completed).toBe(1);
+    });
+
+    it('should retrieve pending and error manifest entries without loading completed entries', async () => {
+        const completed = {
+            url: 'https://example.com/t1.mvt',
+            x: 1, y: 1, z: 1,
+            status: 'completed' as const,
+            mapId: 'resume-map',
+            updatedAt: Date.now()
+        };
+        const pending = {
+            url: 'https://example.com/t2.mvt',
+            x: 2, y: 2, z: 2,
+            status: 'pending' as const,
+            mapId: 'resume-map',
+            updatedAt: Date.now()
+        };
+        const error = {
+            url: 'https://example.com/t3.mvt',
+            x: 3, y: 3, z: 3,
+            status: 'error' as const,
+            mapId: 'resume-map',
+            updatedAt: Date.now()
+        };
+
+        await addToManifest([completed, pending, error]);
+        const pendingEntries = await getPendingFromManifest('resume-map');
+        expect(pendingEntries).toHaveLength(2);
+        expect(pendingEntries.map(e => e.url)).toContain('https://example.com/t2.mvt');
+        expect(pendingEntries.map(e => e.url)).toContain('https://example.com/t3.mvt');
     });
 });
