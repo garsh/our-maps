@@ -515,23 +515,18 @@ export default function LandingPage() {
                 className="card map-card-compact"
                 onClick={() => handleMapClick(map.id)}
               >
-                {/* Left ownership color indicator strip */}
-                <div style={{ 
-                  position: 'absolute', 
-                  top: 0, 
-                  left: 0, 
-                  width: '4px', 
-                  height: '100%', 
-                  background: map.ownerId === user?.id ? 'var(--primary-color)' : 'var(--success-color)' 
-                }} />
-                
                 {/* Map info section */}
-                <div className="map-card-info" style={{ paddingLeft: '6px' }}>
+                <div className="map-card-info">
                   <h3 className="map-card-title" title={map.name}>{map.name}</h3>
                   <div className="map-card-meta">
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
-                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: map.ownerId === user?.id ? 'var(--primary-color)' : 'var(--success-color)', display: 'inline-block' }} />
-                      <span>{map.ownerId === user?.id ? 'Owner' : (map.ownerName || 'Shared')}</span>
+                    <span 
+                      style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0, cursor: 'default' }}
+                      title="Map Owner"
+                      onTouchStart={(e) => handleTouchStart('Map Owner', e)}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchCancel={handleTouchEnd}
+                    >
+                      <span>{map.ownerId === user?.id ? (user?.name || map.ownerName || 'You') : (map.ownerName || 'Shared')}</span>
                     </span>
                     <span style={{ opacity: 0.5 }}>•</span>
                     <span 
@@ -640,7 +635,7 @@ export default function LandingPage() {
             </h3>
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '2rem' }}>
               {maps.find(m => m.id === deleteConfirm)?.ownerId === user?.id 
-                ? <>Are you sure you want to delete <strong>{maps.find(m => m.id === deleteConfirm)?.name}</strong>? This action is permanent and cannot be reversed.</>
+                ? <>Are you sure you want to delete <strong>{maps.find(m => m.id === deleteConfirm)?.name}</strong>? This action is permanent and cannot be reversed. Collaborators will lose access to the map.  Consider giving someone else Onwership instead.</>
                 : <>Are you sure you want to leave <strong>{maps.find(m => m.id === deleteConfirm)?.name}</strong>? You will be removed as a collaborator and it will no longer appear in your list of maps.</>
               }
             </p>
