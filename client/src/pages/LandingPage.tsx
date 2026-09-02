@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -14,6 +14,12 @@ interface MapSummary {
   ownerId: string;
   ownerName: string;
   lastAccessedAt?: string;
+}
+
+interface TouchTooltipState {
+  text: string;
+  x: number;
+  y: number;
 }
 
 export default function LandingPage() {
@@ -40,6 +46,39 @@ export default function LandingPage() {
   const [isRemovingAll, setIsRemovingAll] = useState(false);
   const [showOfflineInterstitial, setShowOfflineInterstitial] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [touchTooltip, setTouchTooltip] = useState<TouchTooltipState | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTriggeredRef = useRef<boolean>(false);
+
+  const clearLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleTouchStart = (text: string, e: React.TouchEvent | React.MouseEvent) => {
+    clearLongPress();
+    longPressTriggeredRef.current = false;
+    const targetElement = e.currentTarget as HTMLElement;
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      const rect = targetElement.getBoundingClientRect();
+      setTouchTooltip({
+        text,
+        x: rect.left + rect.width / 2,
+        y: rect.top - 6
+      });
+      // Auto-dismiss after 2.5s
+      setTimeout(() => {
+        setTouchTooltip(prev => (prev?.text === text ? null : prev));
+      }, 2500);
+    }, 450);
+  };
+
+  const handleTouchEnd = () => {
+    clearLongPress();
+  };
 
   const handleRemoveAllDownloads = async () => {
     setIsRemovingAll(true);
@@ -178,9 +217,17 @@ export default function LandingPage() {
       });
     });
 
+    const handleDismissTooltip = () => {
+      setTouchTooltip(null);
+      clearLongPress();
+    };
+
+    window.addEventListener('scroll', handleDismissTooltip, { passive: true });
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('scroll', handleDismissTooltip);
       unsubscribe();
     };
   }, []);
@@ -245,18 +292,9 @@ export default function LandingPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-color)', paddingBottom: '4rem' }}>
-      <header style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        padding: '1rem 2rem', 
-        background: 'var(--primary-color)', 
-        color: 'white',
-        boxShadow: 'var(--shadow-md)',
-        marginBottom: '1rem'
-      }}>
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: theme === 'dark' ? '#cbd5e1' : 'white', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}>
-          <MapIcon size={28} color={theme === 'dark' ? '#cbd5e1' : 'white'} /> OurMaps
+      <header className="landing-header">
+        <h1 className="landing-header-title" style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0, fontWeight: 'bold', color: theme === 'dark' ? '#cbd5e1' : 'white', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}>
+          <MapIcon size={24} color={theme === 'dark' ? '#cbd5e1' : 'white'} /> OurMaps
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
           <div style={{ position: 'relative' }}>
@@ -410,55 +448,53 @@ export default function LandingPage() {
         </div>
       </header>
 
-      <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 2rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
-          <div style={{ display: 'flex', gap: '1rem', flex: 1, justifyContent: 'flex-start', minWidth: '300px' }}>
-            <div style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
-              <input 
-                type="text" 
-                placeholder="Search maps..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="input-field"
-                style={{ paddingLeft: '40px' }}
-              />
-              <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#aaa' }}>
-                <MapIcon size={18} />
-              </div>
+      <main className="landing-container">
+        <div className="landing-toolbar">
+          <div className="landing-search-wrapper">
+            <input 
+              type="text" 
+              placeholder="Search maps..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input-field"
+              style={{ paddingLeft: '38px', height: '40px', paddingRight: '12px' }}
+            />
+            <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', display: 'flex', pointerEvents: 'none' }}>
+              <MapIcon size={18} />
             </div>
-            {!isOffline && (
-              <button 
-                onClick={handleCreateMap}
-                className="btn-primary"
-                style={{ display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(72, 61, 139, 0.2)' }}
-              >
-                New Map
-              </button>
-            )}
-            {isOffline && (
-              <button 
-                onClick={fetchMaps}
-                className="btn-primary"
-                style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--text-secondary)' }}
-              >
-                <CloudSync size={20} /> Retry Sync
-              </button>
-            )}
           </div>
+          {!isOffline && (
+            <button 
+              onClick={handleCreateMap}
+              className="btn-primary"
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', whiteSpace: 'nowrap', flexShrink: 0, boxShadow: '0 2px 8px rgba(72, 61, 139, 0.2)' }}
+            >
+              New Map
+            </button>
+          )}
+          {isOffline && (
+            <button 
+              onClick={fetchMaps}
+              className="btn-primary"
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', whiteSpace: 'nowrap', flexShrink: 0, background: 'var(--text-secondary)' }}
+            >
+              <CloudSync size={18} /> Retry Sync
+            </button>
+          )}
         </div>
 
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '8rem 0', color: 'var(--text-secondary)', userSelect: 'none', WebkitUserSelect: 'none' }}>
-            <Loader2 className="animate-spin" size={40} style={{ margin: '0 auto 1rem auto', color: 'var(--primary-color)' }} />
-            <p>Loading your maps...</p>
+          <div style={{ textAlign: 'center', padding: '6rem 0', color: 'var(--text-secondary)', userSelect: 'none', WebkitUserSelect: 'none' }}>
+            <Loader2 className="animate-spin" size={36} style={{ margin: '0 auto 1rem auto', color: 'var(--primary-color)' }} />
+            <p style={{ margin: 0, fontSize: '0.95rem' }}>Loading your maps...</p>
           </div>
         ) : maps.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '6rem 2rem', background: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)' }}>
-            <div style={{ background: 'var(--bg-color)', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
-              <MapIcon size={40} color="var(--primary-color)" />
+          <div style={{ textAlign: 'center', padding: '5rem 1.5rem', background: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)' }}>
+            <div style={{ background: 'var(--bg-color)', width: '70px', height: '70px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem auto' }}>
+              <MapIcon size={34} color="var(--primary-color)" />
             </div>
-            <h3 style={{ color: 'var(--text-primary)', fontSize: '1.5rem', marginBottom: '0.5rem' }}>No maps yet</h3>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '2.5rem', maxWidth: '400px', margin: '0 auto 2.5rem auto' }}>Start creating your personal map collections or import KML files to get started!</p>
+            <h3 style={{ color: 'var(--text-primary)', fontSize: '1.3rem', marginBottom: '0.5rem' }}>No maps yet</h3>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', maxWidth: '400px', margin: '0 auto 2rem auto', fontSize: '0.95rem' }}>Start creating your personal map collections or import KML files to get started!</p>
             <button 
               onClick={handleCreateMap}
               className="btn-primary"
@@ -468,38 +504,18 @@ export default function LandingPage() {
             </button>
           </div>
         ) : filteredMaps.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '4rem', background: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', color: 'var(--text-secondary)', border: '1px dashed var(--border-color)' }}>
+          <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', color: 'var(--text-secondary)', border: '1px dashed var(--border-color)', fontSize: '0.95rem' }}>
             No maps found matching "{searchQuery}"
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px' }}>
+          <div className="landing-maps-grid">
             {filteredMaps.map(map => (
               <div 
                 key={map.id}
-                className="card"
-                style={{ 
-                  padding: '1rem 1.25rem', 
-                  cursor: 'pointer', 
-                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', 
-                  position: 'relative',
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                }}
+                className="card map-card-compact"
                 onClick={() => handleMapClick(map.id)}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-4px)';
-                  e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
-                  e.currentTarget.style.borderColor = 'var(--primary-color)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
-                  e.currentTarget.style.borderColor = 'var(--border-color)';
-                }}
               >
+                {/* Left ownership color indicator strip */}
                 <div style={{ 
                   position: 'absolute', 
                   top: 0, 
@@ -509,36 +525,44 @@ export default function LandingPage() {
                   background: map.ownerId === user?.id ? 'var(--primary-color)' : 'var(--success-color)' 
                 }} />
                 
-                <div style={{ flex: 1, paddingRight: '16px' }}>
-                  <h3 style={{ margin: '0 0 0.25rem 0', color: 'var(--text-primary)', fontSize: '1.1rem', fontWeight: '700', paddingRight: '0' }}>{map.name}</h3>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.72rem', padding: '2px 0' }}>
-                      <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: map.ownerId === user?.id ? 'var(--primary-color)' : 'var(--success-color)' }}></div>
-                      {map.ownerId === user?.id ? 'Owner' : map.ownerName}
-                    </div>
+                {/* Map info section */}
+                <div className="map-card-info" style={{ paddingLeft: '6px' }}>
+                  <h3 className="map-card-title" title={map.name}>{map.name}</h3>
+                  <div className="map-card-meta">
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: map.ownerId === user?.id ? 'var(--primary-color)' : 'var(--success-color)', display: 'inline-block' }} />
+                      <span>{map.ownerId === user?.id ? 'Owner' : (map.ownerName || 'Shared')}</span>
+                    </span>
+                    <span style={{ opacity: 0.5 }}>•</span>
+                    <span 
+                      style={{ flexShrink: 0, opacity: 0.85, cursor: 'default' }}
+                      title="Last Accessed Date"
+                      onTouchStart={(e) => handleTouchStart('Last Accessed Date', e)}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchCancel={handleTouchEnd}
+                    >
+                      {formatDate(map.lastAccessedAt)}
+                    </span>
                     {(() => {
                       const status = downloadStatuses.get(map.id);
                       if (status?.isComplete) {
                         return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: '#27ae60', background: 'rgba(39, 174, 96, 0.12)', padding: '2px 8px', borderRadius: '12px', fontWeight: '700', marginLeft: 'auto' }}>
-                            <Download size={12} /> Downloaded
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.7rem', color: '#27ae60', background: 'rgba(39, 174, 96, 0.12)', padding: '1px 6px', borderRadius: '10px', fontWeight: '700', marginLeft: 'auto', flexShrink: 0 }}>
+                            <Download size={11} /> Downloaded
                           </span>
                         );
                       }
                       if (status?.isPartial) {
                         return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: '#3b82f6', background: 'rgba(59, 130, 246, 0.12)', padding: '2px 8px', borderRadius: '12px', fontWeight: '700', marginLeft: 'auto' }}>
-                            <Download size={12} className="animated-download-icon" /> Downloading
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.7rem', color: '#3b82f6', background: 'rgba(59, 130, 246, 0.12)', padding: '1px 6px', borderRadius: '10px', fontWeight: '700', marginLeft: 'auto', flexShrink: 0 }}>
+                            <Download size={11} className="animated-download-icon" /> Downloading
                           </span>
                         );
                       }
                       if (isOffline) {
                         return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: '#e74c3c', background: 'rgba(231, 76, 60, 0.12)', padding: '2px 8px', borderRadius: '12px', fontWeight: '700', marginLeft: 'auto' }}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            </svg>
-                            Offline
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.7rem', color: '#e74c3c', background: 'rgba(231, 76, 60, 0.12)', padding: '1px 6px', borderRadius: '10px', fontWeight: '700', marginLeft: 'auto', flexShrink: 0 }}>
+                            <WifiOff size={11} /> Offline
                           </span>
                         );
                       }
@@ -547,67 +571,66 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', gap: '4px', borderTop: 'none', paddingTop: '0' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleMapClick(map.id, true);
-                      }}
-                      style={{
-                        background: 'rgba(72, 61, 139, 0.1)',
-                        border: 'none',
-                        color: 'var(--primary-color)',
-                        padding: '2px',
-                        borderRadius: '12px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        height: '1.1rem',
-                        width: '2.2rem',
-                      }}
-                      title="Open in view mode"
-                      aria-label="Open in view mode"
-                    >
-                      <Eye size={12} />
-                    </button>
+                {/* Right button actions with generous touch targets */}
+                <div className="map-card-actions">
+                  <button
+                    type="button"
+                    className="map-card-action-btn view-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (longPressTriggeredRef.current) {
+                        longPressTriggeredRef.current = false;
+                        return;
+                      }
+                      handleMapClick(map.id, true);
+                    }}
+                    onTouchStart={(e) => handleTouchStart('Open in view mode', e)}
+                    onTouchEnd={handleTouchEnd}
+                    onTouchCancel={handleTouchEnd}
+                    title="Open in view mode"
+                    aria-label="Open in view mode"
+                  >
+                    <Eye size={18} />
+                  </button>
+                  {!isOffline && (
                     <button 
+                      type="button"
+                      className="map-card-action-btn delete-btn"
                       onClick={(e) => { 
-                        if (isOffline) return;
                         e.stopPropagation(); 
+                        if (longPressTriggeredRef.current) {
+                          longPressTriggeredRef.current = false;
+                          return;
+                        }
                         setDeleteConfirm(map.id); 
                       }}
-                      disabled={isOffline}
-                      style={{ 
-                        background: 'rgba(231, 76, 60, 0.1)', 
-                        border: 'none', 
-                        color: 'var(--error-color)', 
-                        padding: '2px', 
-                        borderRadius: '12px', 
-                        cursor: isOffline ? 'default' : 'pointer', 
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        height: '1.1rem',
-                        width: '2.2rem',
-                        visibility: isOffline ? 'hidden' : 'visible'
-                      }}
+                      onTouchStart={(e) => handleTouchStart(map.ownerId === user?.id ? 'Delete Map' : 'Leave Map', e)}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchCancel={handleTouchEnd}
                       title={map.ownerId === user?.id ? "Delete Map" : "Leave Map"}
+                      aria-label={map.ownerId === user?.id ? "Delete Map" : "Leave Map"}
                     >
-                      <Trash2 size={12} />
+                      <Trash2 size={18} />
                     </button>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', fontSize: '0.75rem', color: '#999' }}>
-                    <span>{formatDate(map.lastAccessedAt)}</span>
-                  </div>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
       </main>
+
+      {touchTooltip && (
+        <div 
+          className="touch-tooltip-bubble"
+          style={{
+            left: `${touchTooltip.x}px`,
+            top: `${touchTooltip.y}px`
+          }}
+        >
+          {touchTooltip.text}
+        </div>
+      )}
 
       {deleteConfirm && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, backdropFilter: 'blur(4px)' }} onClick={() => setDeleteConfirm(null)}>
