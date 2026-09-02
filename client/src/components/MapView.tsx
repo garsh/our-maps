@@ -45,6 +45,54 @@ function getFallbackMetadata(baseUrl: string) {
   };
 }
 
+// 1x1 PNG with RGBA (128, 0, 0, 255) representing 0 meters elevation in Terrarium format
+// ((128 * 256 + 0 + 0/256) - 32768 = 0m)
+const FLAT_TERRARIUM_PNG = new Uint8Array([
+  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 104, 96, 96, 248, 15, 0, 3, 4, 1, 128, 11, 131, 200, 20, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130
+]);
+
+let isDEMProtocolRegistered = false;
+function setupDEMProtocol() {
+  if (!isDEMProtocolRegistered && typeof maplibregl !== 'undefined' && typeof maplibregl.addProtocol === 'function') {
+    isDEMProtocolRegistered = true;
+    maplibregl.addProtocol('dem', async (params, abortController) => {
+      const realUrl = params.url.replace(/^dem:\/\//, '');
+
+      // 1. Try CacheStorage (Workbox elevation-tiles-cache)
+      try {
+        if (typeof caches !== 'undefined') {
+          const cache = await caches.open('elevation-tiles-cache');
+          const matched = await cache.match(realUrl);
+          if (matched && matched.ok) {
+            const buf = await matched.arrayBuffer();
+            return { data: buf };
+          }
+        }
+      } catch {}
+
+      // 2. If online, fetch from network and cache for offline 3D use
+      if (navigator.onLine) {
+        try {
+          const res = await fetch(realUrl, { signal: abortController.signal });
+          if (res.ok) {
+            const clone = res.clone();
+            const buf = await res.arrayBuffer();
+            if (typeof caches !== 'undefined') {
+              caches.open('elevation-tiles-cache').then((c) => c.put(realUrl, clone)).catch(() => {});
+            }
+            return { data: buf };
+          }
+        } catch {}
+      }
+
+      // 3. Fallback for offline mode when tile is not in cache:
+      // Return 0m flat elevation tile so MapLibre renders flat terrain without breaking the canvas
+      return { data: FLAT_TERRARIUM_PNG.buffer.slice(0) };
+    });
+  }
+}
+setupDEMProtocol();
+
 function setupPMTilesProtocol() {
   if (!globalPMTilesProtocol) {
     globalPMTilesProtocol = new Protocol();
@@ -769,6 +817,10 @@ const MapView = ({
 
       try {
         if (typeof m.setTerrain === 'function') {
+          // 3D Terrain is routed via dem:// protocol which:
+          // 1. Returns cached DEM tiles offline (full 3D terrain rendered offline when cached)
+          // 2. Returns 0m flat elevation fallback if offline and not cached (preventing blank map bugs)
+          // 3. Fetches and caches DEM tiles from AWS S3 when online
           if (show3DTerrain) {
             m.setTerrain({ source: 'terrainElevation', exaggeration: 1.0 });
           } else {
@@ -790,7 +842,7 @@ const MapView = ({
     } else {
       syncTerrain();
     }
-  }, [mapTheme, show3DTerrain]);
+  }, [mapTheme, show3DTerrain, isMapLoaded]);
 
   const appliedThemeRef = useRef(mapTheme);
   // Recolor the existing style in one frame. setStyle on theme change reloads
@@ -1135,7 +1187,7 @@ const MapView = ({
         // a single raster-dem source, causing tile decode collisions and rendering errors.
         terrainElevation: {
           type: 'raster-dem',
-          tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+          tiles: ['dem://https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
           encoding: 'terrarium',
           tileSize: 256,
           maxzoom: 15,
@@ -1143,13 +1195,20 @@ const MapView = ({
         },
         hillshadeDem: {
           type: 'raster-dem',
-          tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+          tiles: ['dem://https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
           encoding: 'terrarium',
           tileSize: 256,
           maxzoom: 15,
           attribution: '&copy; <a href="https://github.com/tilezen/joerd" target="_blank" rel="noopener">Mapzen / AWS Elevation</a>',
         },
       },
+      // CRITICAL FOR OFFLINE MODE:
+      // Do NOT add `terrain: { source: 'terrainElevation', exaggeration: 1.0 }` here in the static style!
+      // When `terrain` is declared statically in initial mapStyle, MapLibre GL JS forces 3D terrain mode
+      // during initial style initialization before any rendering occurs.
+      // Instead, 3D terrain is safely activated at runtime via `map.setTerrain(...)` in `syncTerrain`,
+      // backed by the `dem://` protocol which serves cached DEM tiles offline for full 3D rendering
+      // and returns a flat 0m fallback for uncached areas to prevent blank map canvas bugs.
       layers: customLayers,
     };
   // Theme paints/sprites are applied in place; omitting mapTheme keeps
