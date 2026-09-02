@@ -102,7 +102,11 @@ function setupPMTilesProtocol() {
         const [, z, x, y] = match;
         const tilePath = `/maps/tile/${z}/${x}/${y}.mvt`;
 
-        // 1. Always check local IndexedDB / in-memory cache first (<0.1ms)
+        // CRITICAL FOR OFFLINE MODE:
+        // 1. Always query local IndexedDB & in-memory cache first (<0.1ms).
+        // NEVER add an online "fast-path" before this cache check based on navigator.onLine!
+        // When running offline or when the server is unreachable, navigator.onLine can still report true,
+        // which would cause tile requests to bypass IndexedDB, fail on network fetch, and blank the map.
         try {
           const data = await getTile(tilePath);
           if (data && data.byteLength > 0) {
@@ -122,7 +126,10 @@ function setupPMTilesProtocol() {
           }
         }
 
-        // 3. Tile missing offline -> throw error so MapLibre overzooms parent zoom tiles
+        // CRITICAL FOR OFFLINE MODE:
+        // 3. Tile missing offline -> throw Error rather than returning a 0-byte tile!
+        // Returning a 0-byte tile causes MapLibre to treat the tile as valid-but-empty and erase the canvas.
+        // Throwing an Error causes MapLibre to automatically scale up and render the parent zoom tile (zooms 4-8).
         throw new Error(`Tile not found: ${z}/${x}/${y}`);
       }
 

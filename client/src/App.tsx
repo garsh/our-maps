@@ -857,8 +857,11 @@ export function MapEditor() {
     hasLoadedRef.current = true;
     setSelectedNavIds(new Set());
 
+    // CRITICAL FOR OFFLINE MODE:
     // 1. Instant Offline Hydration: If an offline version of this map exists in IndexedDB,
-    // immediately populate state so the map, pins, layers, and bounds render with zero delay (<10ms).
+    // immediately populate state and set isMapLoading(false) so the map, pins, layers, and bounds render instantly.
+    // NEVER delay or block this behind online network calls (apiService.getMap), as offline users must get
+    // interactive map rendering on frame 1 even if the network is disconnected or server is offline.
     let hasHydratedLocally = false;
     try {
       const cached = await getOfflineMap(mapId);
