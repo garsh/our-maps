@@ -506,5 +506,55 @@ describe('App Components Error Handling', () => {
     expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
     expect(screen.queryByText(/Synced/i)).not.toBeInTheDocument();
   });
+
+  it('greys out Edit Mode toggle and turns it off when device goes offline', async () => {
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Editable Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Editable Map')).toBeInTheDocument();
+    });
+
+    // Simulate going offline
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+    expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
+
+    const editModeItem = screen.getByText('Edit Mode');
+    const row = editModeItem.parentElement as HTMLElement;
+    expect(row.style.opacity).toBe('0.45');
+    expect(row.style.cursor).toBe('not-allowed');
+
+    // Click should be ignored when offline
+    fireEvent.click(editModeItem);
+    expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
+
+    // Simulate going back online
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+
+    expect(row.style.opacity).toBe('1');
+    expect(row.style.cursor).toBe('pointer');
+    expect(screen.getByText('Rename Map')).toBeInTheDocument();
+  });
 });
 

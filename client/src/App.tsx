@@ -1089,7 +1089,7 @@ export function MapEditor() {
   const handleOpenShare = useCallback(() => setIsSharing(true), []);
 
   const handleToggleEditMode = useCallback((enabled: boolean) => {
-    if (!canEditMap) return;
+    if (!canEditMap || isOffline) return;
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       if (enabled) {
@@ -1102,7 +1102,7 @@ export function MapEditor() {
     if (!enabled) {
       setEditingPinId(null);
     }
-  }, [canEditMap, setSearchParams]);
+  }, [canEditMap, isOffline, setSearchParams]);
 
   const getNextPinPosition = (allPins: Pin[], targetLayerId?: string): number => {
     const layerPins = allPins.filter(p => isSameLayer(p.layerId, targetLayerId));

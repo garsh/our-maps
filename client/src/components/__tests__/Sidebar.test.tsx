@@ -356,6 +356,26 @@ describe('Sidebar', () => {
     expect(onToggleEditMode).toHaveBeenCalledWith(true);
   });
 
+  it('greys out Edit Mode and turns it off when device is offline while in edit mode', () => {
+    const onToggleEditMode = vi.fn();
+    render(<TestWrapper handlers={{ userRole: 'owner', editMode: true, isOffline: true, onToggleEditMode }} />);
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+
+    expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
+    const editModeItem = screen.getByText('Edit Mode');
+    const row = editModeItem.parentElement as HTMLElement;
+    expect(row.style.opacity).toBe('0.45');
+    expect(row.style.cursor).toBe('not-allowed');
+
+    // Verify switch knob is in the OFF (left: 2px) position
+    const switchKnob = row.lastElementChild?.firstElementChild as HTMLElement;
+    expect(switchKnob.style.left).toBe('2px');
+
+    fireEvent.click(editModeItem);
+    expect(onToggleEditMode).not.toHaveBeenCalled();
+  });
+
   it('renders default layer header as a droppable element with id="default"', () => {
     const { container } = render(<TestWrapper />);
     const defaultLayerHeader = container.querySelector('#default');

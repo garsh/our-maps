@@ -1674,7 +1674,7 @@ const Sidebar = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const canEdit = userRole !== 'view';
-  const isEditMode = canEdit && (editMode ?? true);
+  const isEditMode = canEdit && !isOffline && (editMode ?? true);
   const readOnly = !isEditMode || isOffline;
   const [activePin, setActivePin] = useState<Pin | null>(null);
   const [activeLayer, setActiveLayer] = useState<PinLayer | null>(null);
@@ -2144,13 +2144,13 @@ const Sidebar = ({
                   <div
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (!canEdit) return;
+                      if (!canEdit || isOffline) return;
                       onToggleEditMode?.(!isEditMode);
                     }}
                     style={{
                       padding: '10px 16px',
-                      cursor: canEdit ? 'pointer' : 'not-allowed',
-                      opacity: canEdit ? 1 : 0.45,
+                      cursor: (canEdit && !isOffline) ? 'pointer' : 'not-allowed',
+                      opacity: (canEdit && !isOffline) ? 1 : 0.45,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
@@ -2161,7 +2161,7 @@ const Sidebar = ({
                       color: 'var(--text-primary)',
                     }}
                     onMouseEnter={(e) => {
-                      if (canEdit) e.currentTarget.style.background = 'var(--bg-color)';
+                      if (canEdit && !isOffline) e.currentTarget.style.background = 'var(--bg-color)';
                     }}
                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                   >
