@@ -31,7 +31,7 @@ import { Loader2, Map as MapIcon, RotateCw } from 'lucide-react';
 import type { SearchAreaState } from './components/SearchBar';
 import { reorderPins, reorderLayers, isSameLayer, emitPinMoveOrReorderEvents } from './utils/reorderUtils';
 import { generateId } from './utils/fileUtils';
-import { getManifestStats } from './utils/tileUtils';
+import { getManifestStats, prewarmTilesForArea, getPinsBoundingBox, getOfflineMap, type MapDownloadStatus } from './utils/tileUtils';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
 import { tileWorkerManager } from './utils/tileWorkerManager';
 import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer } from './utils/pinHover';
@@ -71,7 +71,15 @@ export function MapEditor() {
   const [targetPinId, setTargetPinId] = useState<string | null>(null);
   const [boundsToFit, setBoundsToFit] = useState<[[number, number], [number, number]] | null>(null);
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
-  const [hasOfflineTiles, setHasOfflineTiles] = useState(false);
+  const [hasOfflineTiles, setHasOfflineTiles] = useState(() => {
+    const cachedStatuses = getStoredJson<Record<string, MapDownloadStatus> | null>('cached_download_statuses', null);
+    const currentId = id || null;
+    if (currentId && cachedStatuses && cachedStatuses[currentId]) {
+      const st = cachedStatuses[currentId];
+      return st.isComplete || st.isPartial;
+    }
+    return false;
+  });
   const [previewLocation, setPreviewLocation] = useState<{lat: number, lng: number} | null>(null);
   const DEFAULT_SIDEBAR_WIDTH = 400;
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
@@ -374,6 +382,12 @@ export function MapEditor() {
     if (!mapId) {
       setHasOfflineTiles(false);
       return;
+    }
+
+    const cachedStatuses = getStoredJson<Record<string, MapDownloadStatus> | null>('cached_download_statuses', null);
+    if (cachedStatuses && cachedStatuses[mapId]) {
+      const st = cachedStatuses[mapId];
+      setHasOfflineTiles(st.isComplete || st.isPartial);
     }
 
     getManifestStats(mapId).then((stats) => {
@@ -840,11 +854,51 @@ export function MapEditor() {
   };
 
   const loadMap = async (mapId: string, silent = false) => {
-    if (!silent) {
-      setIsMapLoading(true);
-    }
     hasLoadedRef.current = true;
     setSelectedNavIds(new Set());
+
+    // 1. Instant Offline Hydration: If an offline version of this map exists in IndexedDB,
+    // immediately populate state so the map, pins, layers, and bounds render with zero delay (<10ms).
+    let hasHydratedLocally = false;
+    try {
+      const cached = await getOfflineMap(mapId);
+      if (cached) {
+        hasHydratedLocally = true;
+        isInitialLoadRef.current = true;
+        setMapId(cached.id);
+        setMapName(cached.name || 'My Map');
+        setOwner({ id: cached.ownerId, name: cached.ownerName, email: cached.ownerEmail, picture: cached.ownerPicture });
+        setLayers(cached.layers || []);
+        setPins(cached.pins || []);
+        setUserRole(cached.userRole || 'view');
+        setPermissions(cached.permissions || []);
+        if (cached.pins && cached.pins.length > 0) {
+          const bbox = getPinsBoundingBox(cached.pins);
+          if (bbox) {
+            prewarmTilesForArea(bbox, 13).catch(() => {});
+          }
+          if (!silent) {
+            const lats = cached.pins.map(p => p.lat);
+            const lngs = cached.pins.map(p => p.lng);
+            const bounds: [[number, number], [number, number]] = [
+              [Math.min(...lats), Math.min(...lngs)],
+              [Math.max(...lats), Math.max(...lngs)]
+            ];
+            setBoundsToFit(bounds);
+            setTimeout(() => setBoundsToFit(null), 3000);
+          }
+        }
+        setIsMapLoading(false);
+      }
+    } catch (cacheErr) {
+      console.warn('[APP] Instant offline cache hydration check error:', cacheErr);
+    }
+
+    if (!hasHydratedLocally && !silent) {
+      setIsMapLoading(true);
+    }
+
+    // 2. Fetch latest map from network / revalidate
     try {
       const data = await apiService.getMap(mapId);
       isInitialLoadRef.current = true;
@@ -853,27 +907,33 @@ export function MapEditor() {
       setOwner({ id: data.ownerId, name: data.ownerName, email: data.ownerEmail, picture: data.ownerPicture });
       setLayers(data.layers || []);
       setPins(data.pins);
-      if (data.pins && data.pins.length > 0 && !silent) {
-        const lats = data.pins.map(p => p.lat);
-        const lngs = data.pins.map(p => p.lng);
-        const bounds: [[number, number], [number, number]] = [
-          [Math.min(...lats), Math.min(...lngs)],
-          [Math.max(...lats), Math.max(...lngs)]
-        ];
-        setBoundsToFit(bounds);
-        setTimeout(() => setBoundsToFit(null), 3000);
+      if (data.pins && data.pins.length > 0) {
+        const bbox = getPinsBoundingBox(data.pins);
+        if (bbox) {
+          prewarmTilesForArea(bbox, 13).catch(() => {});
+        }
+        if (!hasHydratedLocally && !silent) {
+          const lats = data.pins.map(p => p.lat);
+          const lngs = data.pins.map(p => p.lng);
+          const bounds: [[number, number], [number, number]] = [
+            [Math.min(...lats), Math.min(...lngs)],
+            [Math.max(...lats), Math.max(...lngs)]
+          ];
+          setBoundsToFit(bounds);
+          setTimeout(() => setBoundsToFit(null), 3000);
+        }
       }
       setUserRole(data.userRole || 'view');
       setPermissions(data.permissions || []);
       setIsDirty(false);
     } catch (err) {
-      console.error('Failed to load map', err);
-      setError('No Data');
-      setTimeout(() => navigate('/'), 2000);
-    } finally {
-      if (!silent) {
-        setIsMapLoading(false);
+      if (!hasHydratedLocally) {
+        console.error('Failed to load map', err);
+        setError('No Data');
+        setTimeout(() => navigate('/'), 2000);
       }
+    } finally {
+      setIsMapLoading(false);
     }
   };
 

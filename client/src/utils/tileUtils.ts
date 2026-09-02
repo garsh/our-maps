@@ -43,8 +43,20 @@ let dbPromise: Promise<IDBDatabase> | null = null;
 const tileMissCache = new Set<string>();
 const MAX_MISS_CACHE_SIZE = 10000;
 
+const MAX_HIT_CACHE_SIZE = 250;
+const tileHitCache = new Map<string, Uint8Array>();
+
 export function clearTileMissCache(): void {
     tileMissCache.clear();
+}
+
+export function clearTileHitCache(): void {
+    tileHitCache.clear();
+}
+
+export function clearTileCaches(): void {
+    tileMissCache.clear();
+    tileHitCache.clear();
 }
 
 function recordTileMiss(url: string): void {
@@ -54,9 +66,30 @@ function recordTileMiss(url: string): void {
     tileMissCache.add(url);
 }
 
+function recordTileHit(key: string, data: Uint8Array): void {
+    if (tileHitCache.has(key)) {
+        tileHitCache.delete(key);
+    } else if (tileHitCache.size >= MAX_HIT_CACHE_SIZE) {
+        const oldestKey = tileHitCache.keys().next().value;
+        if (oldestKey !== undefined) tileHitCache.delete(oldestKey);
+    }
+    tileHitCache.set(key, data);
+}
+
+function getCachedTile(key: string): Uint8Array | null {
+    const data = tileHitCache.get(key);
+    if (data) {
+        tileHitCache.delete(key);
+        tileHitCache.set(key, data);
+        return data;
+    }
+    return null;
+}
+
 export function resetDBForTesting(): void {
     dbPromise = null;
     tileMissCache.clear();
+    tileHitCache.clear();
 }
 
 export async function openDB(): Promise<IDBDatabase> {
@@ -426,7 +459,7 @@ export async function isMapDownloaded(mapId: string): Promise<boolean> {
 }
 
 export async function removeAllDownloads(): Promise<void> {
-    clearTileMissCache();
+    clearTileCaches();
     if (typeof localStorage !== 'undefined') {
         localStorage.removeItem('cached_download_statuses');
     }
@@ -454,7 +487,7 @@ export async function removeAllDownloads(): Promise<void> {
 
 export async function removeMapDownload(mapId: string): Promise<void> {
     if (!mapId) return;
-    clearTileMissCache();
+    clearTileCaches();
     const db = await openDB();
 
     // 1. Get deleting map and delete map from MAP_STORE, then get other remaining maps
@@ -521,11 +554,14 @@ export async function removeMapDownload(mapId: string): Promise<void> {
                     rangesByZoom[0] = [];
                     continue;
                 }
-                const yMin = latToY(bbox.north, z);
-                const yMax = latToY(bbox.south, z);
-                const yStart = Math.min(yMin, yMax);
-                const yEnd = Math.max(yMin, yMax);
-                const xRanges = getXRanges(bbox.west, bbox.east, z);
+                if (z <= 4) {
+                    const maxTile = (1 << z) - 1;
+                    rangesByZoom[z] = [{ xStart: 0, xEnd: maxTile, yStart: 0, yEnd: maxTile }];
+                    continue;
+                }
+                const buffer = (z >= 5 && z <= 8) ? 2 : (z === 9 ? 1 : 0);
+                const [yStart, yEnd] = getYRange(bbox.north, bbox.south, z, buffer);
+                const xRanges = getXRanges(bbox.west, bbox.east, z, buffer);
                 rangesByZoom[z] = xRanges.map(([xStart, xEnd]) => ({
                     xStart, xEnd, yStart, yEnd
                 }));
@@ -615,7 +651,9 @@ export function getTileKeys(url: string): { primary: string; secondary?: string 
 
 export interface TileBatchItem {
     url: string;
-    blob?: Blob | null;
+    data?: Uint8Array | ArrayBuffer | Blob | null;
+    /** @deprecated alias for data */
+    blob?: Uint8Array | ArrayBuffer | Blob | null;
     status: TileStatus;
     entry?: ManifestEntry;
 }
@@ -637,9 +675,21 @@ export async function saveTileBatch(items: TileBatchItem[]): Promise<void> {
     const now = Date.now();
 
     for (const item of items) {
-        if (item.blob) {
+        const rawData = item.data !== undefined ? item.data : item.blob;
+        if (rawData) {
+            let uint8: Uint8Array;
+            if (rawData instanceof Uint8Array) {
+                uint8 = rawData;
+            } else if (rawData instanceof ArrayBuffer) {
+                uint8 = new Uint8Array(rawData);
+            } else if (rawData instanceof Blob) {
+                uint8 = new Uint8Array(await rawData.arrayBuffer());
+            } else {
+                uint8 = new Uint8Array(0);
+            }
             const canonicalKey = toCanonicalTileKey(item.url);
-            tileStore.put(item.blob, canonicalKey);
+            tileStore.put(uint8, canonicalKey);
+            recordTileHit(canonicalKey, uint8);
         }
 
         if (item.entry) {
@@ -666,16 +716,31 @@ export async function saveTileBatch(items: TileBatchItem[]): Promise<void> {
     });
 }
 
-export async function saveTile(url: string, blob: Blob): Promise<void> {
+export async function saveTile(url: string, data: Uint8Array | ArrayBuffer | Blob): Promise<void> {
     const { primary, secondary } = getTileKeys(url);
     tileMissCache.delete(primary);
     if (secondary) tileMissCache.delete(secondary);
+
+    const canonicalKey = toCanonicalTileKey(url);
+    let uint8: Uint8Array;
+    if (data instanceof Uint8Array) {
+        uint8 = data;
+    } else if (data instanceof ArrayBuffer) {
+        uint8 = new Uint8Array(data);
+    } else if (data instanceof Blob) {
+        uint8 = new Uint8Array(await data.arrayBuffer());
+    } else {
+        uint8 = new Uint8Array(0);
+    }
+
+    recordTileHit(canonicalKey, uint8);
+    if (secondary) recordTileHit(secondary, uint8);
 
     const db = await openDB();
     const transaction = db.transaction([TILE_STORE, MANIFEST_STORE], 'readwrite');
     
     const tileStore = transaction.objectStore(TILE_STORE);
-    tileStore.put(blob, toCanonicalTileKey(url));
+    tileStore.put(uint8, canonicalKey);
 
     const manifestStore = transaction.objectStore(MANIFEST_STORE);
     const getReq = manifestStore.get(url);
@@ -694,8 +759,12 @@ export async function saveTile(url: string, blob: Blob): Promise<void> {
     });
 }
 
-export async function getTile(url: string): Promise<Blob | null> {
+export async function getTile(url: string): Promise<Uint8Array | null> {
     const { primary, secondary } = getTileKeys(url);
+    const hit = getCachedTile(primary) || (secondary ? getCachedTile(secondary) : null);
+    if (hit) {
+        return hit;
+    }
     if (tileMissCache.has(primary) || (secondary && tileMissCache.has(secondary))) {
         return null;
     }
@@ -706,15 +775,23 @@ export async function getTile(url: string): Promise<Blob | null> {
             const store = transaction.objectStore(TILE_STORE);
             const request = store.get(primary);
             request.onsuccess = () => {
-                if (request.result) {
-                    resolve(request.result);
+                const res = request.result;
+                if (res) {
+                    const data = res instanceof Uint8Array ? res : (res instanceof ArrayBuffer ? new Uint8Array(res) : res);
+                    recordTileHit(primary, data);
+                    if (secondary) recordTileHit(secondary, data);
+                    resolve(data);
                     return;
                 }
                 if (secondary) {
                     const secReq = store.get(secondary);
                     secReq.onsuccess = () => {
-                        if (secReq.result) {
-                            resolve(secReq.result);
+                        const secRes = secReq.result;
+                        if (secRes) {
+                            const data = secRes instanceof Uint8Array ? secRes : (secRes instanceof ArrayBuffer ? new Uint8Array(secRes) : secRes);
+                            recordTileHit(primary, data);
+                            recordTileHit(secondary, data);
+                            resolve(data);
                         } else {
                             recordTileMiss(primary);
                             recordTileMiss(secondary);
@@ -738,14 +815,74 @@ export async function getTile(url: string): Promise<Blob | null> {
     }
 }
 
-export function getXRanges(west: number, east: number, zoom: number): Array<[number, number]> {
-    const xMin = longToX(west, zoom);
-    const xMax = longToX(east, zoom);
+export async function prewarmTilesForArea(box: BoundingBox, zoom: number): Promise<void> {
+    if (!box || typeof indexedDB === 'undefined') return;
+    try {
+        const z = Math.max(1, Math.min(15, Math.round(zoom)));
+        const yMin = latToY(box.north, z);
+        const yMax = latToY(box.south, z);
+        const yStart = Math.min(yMin, yMax);
+        const yEnd = Math.max(yMin, yMax);
+        const xRanges = getXRanges(box.west, box.east, z);
+
+        const keysToFetch: string[] = [];
+        for (const [xStart, xEnd] of xRanges) {
+            for (let x = xStart; x <= xEnd; x++) {
+                for (let y = yStart; y <= yEnd; y++) {
+                    const key = `/maps/tile/${z}/${x}/${y}.mvt`;
+                    if (!tileHitCache.has(key) && !tileMissCache.has(key)) {
+                        keysToFetch.push(key);
+                        if (keysToFetch.length >= 36) break;
+                    }
+                }
+                if (keysToFetch.length >= 36) break;
+            }
+            if (keysToFetch.length >= 36) break;
+        }
+
+        if (keysToFetch.length === 0) return;
+
+        const db = await openDB();
+        await new Promise<void>((resolve) => {
+            const tx = db.transaction(TILE_STORE, 'readonly');
+            const store = tx.objectStore(TILE_STORE);
+            let remaining = keysToFetch.length;
+            for (const key of keysToFetch) {
+                const req = store.get(key);
+                req.onsuccess = () => {
+                    const res = req.result;
+                    if (res) {
+                        const data = res instanceof Uint8Array ? res : (res instanceof ArrayBuffer ? new Uint8Array(res) : res);
+                        recordTileHit(key, data);
+                    }
+                    remaining--;
+                    if (remaining === 0) resolve();
+                };
+                req.onerror = () => {
+                    remaining--;
+                    if (remaining === 0) resolve();
+                };
+            }
+            tx.onabort = () => resolve();
+            tx.onerror = () => resolve();
+        });
+    } catch {
+        // ignore prewarm errors
+    }
+}
+
+export function getXRanges(west: number, east: number, zoom: number, buffer = 0): Array<[number, number]> {
     const maxTile = (1 << zoom) - 1;
+    const rawXMin = longToX(west, zoom) - buffer;
+    const rawXMax = longToX(east, zoom) + buffer;
     if (west <= east) {
-        return [[Math.min(xMin, xMax), Math.max(xMin, xMax)]];
+        const xMin = Math.max(0, Math.min(maxTile, Math.min(rawXMin, rawXMax)));
+        const xMax = Math.max(0, Math.min(maxTile, Math.max(rawXMin, rawXMax)));
+        return [[xMin, xMax]];
     } else {
         // Crossing the antimeridian (180th meridian)
+        const xMin = Math.max(0, Math.min(maxTile, rawXMin));
+        const xMax = Math.max(0, Math.min(maxTile, rawXMax));
         return [
             [xMin, maxTile],
             [0, xMax]
@@ -753,17 +890,31 @@ export function getXRanges(west: number, east: number, zoom: number): Array<[num
     }
 }
 
+export function getYRange(north: number, south: number, zoom: number, buffer = 0): [number, number] {
+    const maxTile = (1 << zoom) - 1;
+    const yMin = latToY(north, zoom);
+    const yMax = latToY(south, zoom);
+    const yStart = Math.max(0, Math.min(yMin, yMax) - buffer);
+    const yEnd = Math.min(maxTile, Math.max(yMin, yMax) + buffer);
+    return [yStart, yEnd];
+}
+
 export function countTiles(box: BoundingBox, minZoom: number, maxZoom: number): number {
     let count = 0;
     for (let z = minZoom; z <= maxZoom; z++) {
-        const yMin = latToY(box.north, z);
-        const yMax = latToY(box.south, z);
-        const height = Math.abs(yMax - yMin) + 1;
-        
-        const xRanges = getXRanges(box.west, box.east, z);
-        for (const [xStart, xEnd] of xRanges) {
-            const width = xEnd - xStart + 1;
-            count += (width * height);
+        if (z <= 4) {
+            const maxTile = (1 << z) - 1;
+            count += (maxTile + 1) * (maxTile + 1);
+        } else {
+            const buffer = (z >= 5 && z <= 8) ? 2 : (z === 9 ? 1 : 0);
+            const [yStart, yEnd] = getYRange(box.north, box.south, z, buffer);
+            const height = yEnd - yStart + 1;
+            
+            const xRanges = getXRanges(box.west, box.east, z, buffer);
+            for (const [xStart, xEnd] of xRanges) {
+                const width = xEnd - xStart + 1;
+                count += (width * height);
+            }
         }
     }
     return count;
@@ -774,13 +925,13 @@ export function estimateSizeMB(tileCount: number): number {
 }
 
 function longToX(lon: number, zoom: number): number {
-    const x = Math.floor((lon + 180.0) / 360.0 * (1 << zoom));
+    const x = Math.floor(((lon + 180.0) / 360.0) * (1 << zoom));
     return ((x % (1 << zoom)) + (1 << zoom)) % (1 << zoom);
 }
 
 function latToY(lat: number, zoom: number): number {
     const latRad = lat * Math.PI / 180.0;
-    const y = Math.floor((1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0 * (1 << zoom));
+    const y = Math.floor(((1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0) * (1 << zoom));
     return Math.max(0, Math.min((1 << zoom) - 1, y));
 }
 
@@ -793,19 +944,29 @@ export function getTilesForArea(box: BoundingBox, minZoom: number, maxZoom: numb
         : (typeof self !== 'undefined' && self.location ? self.location.origin : '');
 
     for (let z = minZoom; z <= maxZoom; z++) {
-        const yMin = latToY(box.north, z);
-        const yMax = latToY(box.south, z);
-        const yStart = Math.min(yMin, yMax);
-        const yEnd = Math.max(yMin, yMax);
-
-        const xRanges = getXRanges(box.west, box.east, z);
-        for (const [xStart, xEnd] of xRanges) {
-            for (let x = xStart; x <= xEnd; x++) {
-                for (let y = yStart; y <= yEnd; y++) {
+        if (z <= 4) {
+            const maxTile = (1 << z) - 1;
+            for (let x = 0; x <= maxTile; x++) {
+                for (let y = 0; y <= maxTile; y++) {
                     tiles[index++] = {
                         x, y, z,
                         url: `${origin}/maps/tile/${z}/${x}/${y}.mvt`
                     };
+                }
+            }
+        } else {
+            const buffer = (z >= 5 && z <= 8) ? 2 : (z === 9 ? 1 : 0);
+            const [yStart, yEnd] = getYRange(box.north, box.south, z, buffer);
+            const xRanges = getXRanges(box.west, box.east, z, buffer);
+
+            for (const [xStart, xEnd] of xRanges) {
+                for (let x = xStart; x <= xEnd; x++) {
+                    for (let y = yStart; y <= yEnd; y++) {
+                        tiles[index++] = {
+                            x, y, z,
+                            url: `${origin}/maps/tile/${z}/${x}/${y}.mvt`
+                        };
+                    }
                 }
             }
         }
@@ -824,10 +985,10 @@ export function getPinsBoundingBox(pins: Pin[]): BoundingBox | null {
     if (pins.length === 1) {
         const p = pins[0];
         return {
-            north: Math.min(85, p.lat + 0.06),
-            south: Math.max(-85, p.lat - 0.06),
-            east: Math.min(180, p.lng + 0.06),
-            west: Math.max(-180, p.lng - 0.06)
+            north: Math.min(85, p.lat + 0.15),
+            south: Math.max(-85, p.lat - 0.15),
+            east: Math.min(180, p.lng + 0.15),
+            west: Math.max(-180, p.lng - 0.15)
         };
     }
 
@@ -838,11 +999,15 @@ export function getPinsBoundingBox(pins: Pin[]): BoundingBox | null {
         if (pin.lng < west) west = pin.lng;
     });
 
+    const latSpan = north - south;
+    const lngSpan = east - west;
+    const margin = Math.max(0.15, Math.min(0.40, Math.max(latSpan, lngSpan) * 0.15));
+
     return {
-        north: Math.min(85, north + 0.05),
-        south: Math.max(-85, south - 0.05),
-        east: Math.min(180, east + 0.05),
-        west: Math.max(-180, west - 0.05)
+        north: Math.min(85, north + margin),
+        south: Math.max(-85, south - margin),
+        east: Math.min(180, east + margin),
+        west: Math.max(-180, west - margin)
     };
 }
 

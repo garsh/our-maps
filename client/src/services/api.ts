@@ -117,8 +117,15 @@ export const apiService = {
   },
 
   async getMap(id: string): Promise<MapData> {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const offlineMap = await getOfflineMap(id);
+      if (offlineMap) return offlineMap;
+    }
     try {
-      const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, { headers: getHeaders() });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, { headers: getHeaders(), signal: controller.signal }, 0);
+      clearTimeout(timeoutId);
       const data = await handleResponse<MapData>(res, this._logoutCallback, `Server error: ${res.status}`);
       isMapDownloaded(id).then(downloaded => {
         if (downloaded) saveMapOffline(data);

@@ -34,8 +34,16 @@ function attachMissingImageResolver(map: any) {
 }
 
 let globalPMTilesProtocol: Protocol | null = null;
-let currentMapHasOfflineTiles = false;
-const PMTILES_TILE_REGEX = /^pmtiles:\/\/(?:.+)\/(\d+)\/(\d+)\/(\d+)$/;
+const PMTILES_TILE_REGEX = /^pmtiles:\/\/(?:.+)\/(\d+)\/(\d+)\/(\d+)(?:\.mvt)?$/;
+
+function getFallbackMetadata(baseUrl: string) {
+  return {
+    tiles: [`${baseUrl}/{z}/{x}/{y}`],
+    minzoom: 0,
+    maxzoom: 15,
+    bounds: [-180, -85, 180, 85],
+  };
+}
 
 function setupPMTilesProtocol() {
   if (!globalPMTilesProtocol) {
@@ -43,56 +51,46 @@ function setupPMTilesProtocol() {
     const offlineTileHandler: maplibregl.AddProtocolAction = async (params, abortController) => {
       const match = params.url.match(PMTILES_TILE_REGEX);
       if (match) {
-        // Fast-path: If current open map has no offline tiles and browser is online,
-        // bypass IndexedDB transactions completely and fetch directly via PMTiles.
-        if (!currentMapHasOfflineTiles && navigator.onLine) {
-          return await globalPMTilesProtocol!.tilev4(params, abortController);
-        }
-
         const [, z, x, y] = match;
         const tilePath = `/maps/tile/${z}/${x}/${y}.mvt`;
+
+        // 1. Always check local IndexedDB / in-memory cache first (<0.1ms)
         try {
-          const blob = await getTile(tilePath);
-          if (blob) {
-            const arrayBuffer = await blob.arrayBuffer();
-            return { data: new Uint8Array(arrayBuffer) };
+          const data = await getTile(tilePath);
+          if (data && data.byteLength > 0) {
+            return { data };
           }
-        } catch {
-          // fallback to pmtiles protocol if tile lookup fails
+        } catch (dbErr) {
+          console.error(`[PMTILES PROTOCOL] IDB ERROR: ${z}/${x}/${y}`, dbErr);
         }
 
-        if (!navigator.onLine) {
-          return { data: new Uint8Array(0) };
+        // 2. If not in IndexedDB and online, attempt online fetch
+        if (navigator.onLine) {
+          try {
+            const onlineRes = await globalPMTilesProtocol!.tilev4(params, abortController);
+            return onlineRes;
+          } catch {
+            // Online fetch failed or server down
+          }
         }
+
+        // 3. Tile missing offline -> throw error so MapLibre overzooms parent zoom tiles
+        throw new Error(`Tile not found: ${z}/${x}/${y}`);
+      }
+
+      // Metadata / TileJSON schema request
+      if (!navigator.onLine) {
+        return { data: getFallbackMetadata(params.url) };
       }
 
       try {
-        return await globalPMTilesProtocol!.tilev4(params, abortController);
-      } catch (err: any) {
-        if (match) {
-          return { data: new Uint8Array(0) };
-        }
-        const fallbackMetadata = {
-          tilejson: "3.0.0",
-          scheme: "xyz",
-          tiles: [`${params.url}/{z}/{x}/{y}.mvt`],
-          minzoom: 0,
-          maxzoom: 15,
-          bounds: [-180, -85, 180, 85],
-          center: [0, 0, 0],
-          vector_layers: [
-            { id: "boundaries", fields: {} },
-            { id: "buildings", fields: {} },
-            { id: "earth", fields: {} },
-            { id: "landcover", fields: {} },
-            { id: "landuse", fields: {} },
-            { id: "places", fields: {} },
-            { id: "pois", fields: {} },
-            { id: "roads", fields: {} },
-            { id: "water", fields: {} }
-          ]
-        };
-        return { data: fallbackMetadata };
+        const timeoutController = new AbortController();
+        const timeoutId = setTimeout(() => timeoutController.abort(), 1200);
+        const res = await globalPMTilesProtocol!.tilev4(params, timeoutController);
+        clearTimeout(timeoutId);
+        return res;
+      } catch {
+        return { data: getFallbackMetadata(params.url) };
       }
     };
     maplibregl.addProtocol('pmtiles', offlineTileHandler);
@@ -545,12 +543,8 @@ const MapView = ({
   show3DTerrain = true,
   show3DBuildings = true,
   isOffline = false,
-  hasOfflineTiles = false,
+  hasOfflineTiles: _hasOfflineTiles = false,
 }: MapViewProps) => {
-  useEffect(() => {
-    currentMapHasOfflineTiles = !!hasOfflineTiles;
-  }, [hasOfflineTiles]);
-
   const mapRef = useRef<MapRef | null>(null);
   const leftPaddingRef = useRef(leftPadding);
   leftPaddingRef.current = leftPadding;
@@ -558,11 +552,62 @@ const MapView = ({
   bottomPaddingRef.current = bottomPadding;
   const readOnly = userRole === 'view' || isOffline;
 
+  const visiblePins = useMemo(
+    () => pins.filter((pin) => !hiddenLayerIds?.has(pin.layerId || null)),
+    [pins, hiddenLayerIds]
+  );
+
   const setMapRef = useCallback((instance: MapRef | null) => {
     mapRef.current = instance;
     if (!instance) return;
-    attachMissingImageResolver(instance.getMap());
-  }, []);
+    const mapInstance = instance.getMap();
+    attachMissingImageResolver(mapInstance);
+    if (mapInstance && typeof mapInstance.on === 'function') {
+      mapInstance.on('error', (e: any) => {
+        console.error('[MAPLIBRE ERROR]', e?.error?.message || e?.error || e);
+      });
+      mapInstance.on('style.load', () => {
+        setIsMapLoaded(true);
+        if (visiblePins.length > 0) {
+          ensurePinImages(mapInstance, visiblePins);
+        }
+        mapInstance.triggerRepaint();
+      });
+      mapInstance.on('sourcedata', (e: any) => {
+        if (e.sourceDataType === 'metadata' || e.sourceDataType === 'content') {
+          mapInstance.triggerRepaint();
+        }
+      });
+      mapInstance.on('data', (e: any) => {
+        if (e.dataType === 'style' || e.dataType === 'source') {
+          mapInstance.triggerRepaint();
+        }
+      });
+      mapInstance.once('load', () => {
+        setIsMapLoaded(true);
+        if (visiblePins.length > 0) {
+          ensurePinImages(mapInstance, visiblePins);
+        }
+        mapInstance.triggerRepaint();
+      });
+      mapInstance.once('idle', () => {
+        setIsMapLoaded(true);
+        if (visiblePins.length > 0) {
+          ensurePinImages(mapInstance, visiblePins);
+        }
+        mapInstance.triggerRepaint();
+      });
+    }
+
+    // Immediately enable map load and trigger initial frame render
+    setIsMapLoaded(true);
+    if (mapInstance) {
+      if (visiblePins.length > 0) {
+        ensurePinImages(mapInstance, visiblePins);
+      }
+      mapInstance.triggerRepaint();
+    }
+  }, [visiblePins]);
   const lastTargetPinId = useRef<string | null>(null);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const compassSvgRef = useRef<SVGSVGElement | null>(null);
@@ -1106,17 +1151,11 @@ const MapView = ({
         },
       },
       layers: customLayers,
-      terrain: show3DTerrain ? { source: 'terrainElevation', exaggeration: 1.0 } : undefined,
     };
   // Theme paints/sprites are applied in place; omitting mapTheme keeps
   // react-map-gl from calling setStyle (which staggers layer updates).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const visiblePins = useMemo(
-    () => pins.filter((pin) => !hiddenLayerIds?.has(pin.layerId || null)),
-    [pins, hiddenLayerIds]
-  );
 
   const pinsGeoJson = useMemo(() => {
     // If a pin is actively being drag-edited, exclude it from the GeoJSON layer to avoid duplicate ghost marker
@@ -1374,19 +1413,33 @@ const MapView = ({
 
 
 
-  // Camera movements for boundsToFit (subsequent changes only, preventing initial zoom shift)
+  // Camera movements for boundsToFit or initial pins focus
   useEffect(() => {
     if (!isMapLoaded) return;
 
+    let targetBounds = boundsToFit;
+    if ((!targetBounds || !Array.isArray(targetBounds) || targetBounds.length !== 2) && !hasFitInitialBoundsRef.current) {
+      const pinsToUse = visiblePins.length > 0 ? visiblePins : pins;
+      if (pinsToUse && pinsToUse.length > 0) {
+        const lats = pinsToUse.map((p) => p.lat);
+        const lngs = pinsToUse.map((p) => p.lng);
+        targetBounds = [
+          [Math.min(...lats), Math.min(...lngs)],
+          [Math.max(...lats), Math.max(...lngs)],
+        ];
+      }
+    }
+
+    if (!targetBounds || !Array.isArray(targetBounds) || targetBounds.length !== 2) return;
+
     if (!hasFitInitialBoundsRef.current) {
       hasFitInitialBoundsRef.current = true;
+      applyBoundsToFit(targetBounds, false);
       return;
     }
 
-    if (boundsToFit && Array.isArray(boundsToFit) && boundsToFit.length === 2) {
-      applyBoundsToFit(boundsToFit, true);
-    }
-  }, [boundsToFit, isMapLoaded, applyBoundsToFit]);
+    applyBoundsToFit(targetBounds, true);
+  }, [boundsToFit, isMapLoaded, applyBoundsToFit, pins, visiblePins]);
 
   // Update bounds when map is loaded
   useEffect(() => {

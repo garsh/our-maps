@@ -49,14 +49,18 @@ function latToY(lat: number, zoom: number): number {
   return Math.max(0, Math.min((1 << zoom) - 1, y));
 }
 
-function getXRanges(west: number, east: number, zoom: number): Array<[number, number]> {
-  const xMin = longToX(west, zoom);
-  const xMax = longToX(east, zoom);
+function getXRanges(west: number, east: number, zoom: number, buffer = 0): Array<[number, number]> {
   const maxTile = (1 << zoom) - 1;
+  const rawXMin = longToX(west, zoom) - buffer;
+  const rawXMax = longToX(east, zoom) + buffer;
   if (west <= east) {
-    return [[Math.min(xMin, xMax), Math.max(xMin, xMax)]];
+    const xMin = Math.max(0, Math.min(maxTile, Math.min(rawXMin, rawXMax)));
+    const xMax = Math.max(0, Math.min(maxTile, Math.max(rawXMin, rawXMax)));
+    return [[xMin, xMax]];
   } else {
     // Crossing the antimeridian
+    const xMin = Math.max(0, Math.min(maxTile, rawXMin));
+    const xMax = Math.max(0, Math.min(maxTile, rawXMax));
     return [
       [xMin, maxTile],
       [0, xMax]
@@ -96,16 +100,27 @@ export async function handleTileStream(req: Request, res: Response, candidateMap
   // Build tile coordinate array
   const tiles: Array<{ z: number; x: number; y: number }> = [];
   for (let z = startZoom; z <= endZoom; z++) {
-    const yMin = latToY(bbox.north, z);
-    const yMax = latToY(bbox.south, z);
-    const yStart = Math.min(yMin, yMax);
-    const yEnd = Math.max(yMin, yMax);
-
-    const xRanges = getXRanges(bbox.west, bbox.east, z);
-    for (const [xStart, xEnd] of xRanges) {
-      for (let x = xStart; x <= xEnd; x++) {
-        for (let y = yStart; y <= yEnd; y++) {
+    if (z <= 4) {
+      const maxTile = (1 << z) - 1;
+      for (let x = 0; x <= maxTile; x++) {
+        for (let y = 0; y <= maxTile; y++) {
           tiles.push({ z, x, y });
+        }
+      }
+    } else {
+      const buffer = (z >= 5 && z <= 8) ? 2 : (z === 9 ? 1 : 0);
+      const maxTile = (1 << z) - 1;
+      const yMin = latToY(bbox.north, z);
+      const yMax = latToY(bbox.south, z);
+      const yStart = Math.max(0, Math.min(yMin, yMax) - buffer);
+      const yEnd = Math.min(maxTile, Math.max(yMin, yMax) + buffer);
+
+      const xRanges = getXRanges(bbox.west, bbox.east, z, buffer);
+      for (const [xStart, xEnd] of xRanges) {
+        for (let x = xStart; x <= xEnd; x++) {
+          for (let y = yStart; y <= yEnd; y++) {
+            tiles.push({ z, x, y });
+          }
         }
       }
     }

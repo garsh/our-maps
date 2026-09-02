@@ -132,8 +132,8 @@ self.onmessage = async (e) => {
 
                                 if (dataLen > 0) {
                                     const tileData = accumulated.subarray(offset + 13, offset + 13 + dataLen);
-                                    const blob = new Blob([tileData]);
-                                    await queueTileWrite({ url, blob, status: 'completed', entry: manifestEntry });
+                                    const data = new Uint8Array(tileData);
+                                    await queueTileWrite({ url, data, status: 'completed', entry: manifestEntry });
                                 } else {
                                     await queueTileWrite({ url, status: 'completed', entry: manifestEntry });
                                 }
@@ -201,8 +201,8 @@ self.onmessage = async (e) => {
                                 const targetZoom = Math.min(entry.z, 15);
                                 const tileResult = await pmt.getZxy(targetZoom, entry.x, entry.y);
                                 if (tileResult && tileResult.data) {
-                                    const blob = new Blob([tileResult.data]);
-                                    await queueTileWrite({ url: entry.url, blob, status: 'completed', entry: manifestEntry });
+                                    const data = new Uint8Array(tileResult.data);
+                                    await queueTileWrite({ url: entry.url, data, status: 'completed', entry: manifestEntry });
                                 } else {
                                     await queueTileWrite({ url: entry.url, status: 'completed', entry: manifestEntry });
                                 }

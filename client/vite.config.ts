@@ -34,7 +34,12 @@ export default defineConfig({
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}', '**/sprites/*.json'],
+        globPatterns: [
+          '**/*.{js,css,html,ico,png,svg}',
+          '**/sprites/*.json',
+          '**/fonts/**/0-255.pbf',
+          '**/fonts/**/256-511.pbf',
+        ],
         navigateFallbackDenylist: [/^\/maps/],
         runtimeCaching: [
           {
@@ -56,6 +61,20 @@ export default defineConfig({
               cacheName: 'protomaps-assets-cache',
               expiration: {
                 maxEntries: 500,
+                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/s3\.amazonaws\.com\/elevation-tiles-prod\/terrarium\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'elevation-tiles-cache',
+              expiration: {
+                maxEntries: 1500,
                 maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
               },
               cacheableResponse: {

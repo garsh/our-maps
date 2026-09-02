@@ -202,7 +202,7 @@ test('rich pin metadata persistence and display', async ({ page }) => {
   
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByText('Loading your map...')).not.toBeVisible({ timeout: 15000 });
-  await page.waitForSelector('.maplibregl-marker', { timeout: 10000 });
+  await expect(page.locator('aside')).toContainText('Metadata City', { timeout: 10000 });
 
   // 4. Verify in sidebar
   await page.getByRole('button', { name: 'Edit' }).first().click();

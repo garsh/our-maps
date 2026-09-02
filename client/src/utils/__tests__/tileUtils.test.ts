@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getTilesForArea, getPendingFromTileList, getPinsBoundingBox, countTiles, getXRanges, toCanonicalTileKey, getTileKeys, saveMapOffline, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, saveTile, saveTileBatch, getTile, addToManifest, getPendingFromManifest, getManifestStats, getMapDownloadStatuses, resetDBForTesting, openDB } from '../tileUtils';
+import { getTilesForArea, getPendingFromTileList, getPinsBoundingBox, countTiles, getXRanges, toCanonicalTileKey, getTileKeys, saveMapOffline, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, saveTile, saveTileBatch, getTile, addToManifest, getPendingFromManifest, getManifestStats, getMapDownloadStatuses, resetDBForTesting, openDB, prewarmTilesForArea, clearTileCaches } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('tileUtils', () => {
@@ -198,10 +198,10 @@ describe('tileUtils', () => {
 
         const box = getPinsBoundingBox(pins);
         expect(box).not.toBeNull();
-        expect(box!.north).toBeCloseTo(46.05, 5);
-        expect(box!.south).toBeCloseTo(44.95, 5);
-        expect(box!.east).toBeCloseTo(-72.95, 5);
-        expect(box!.west).toBeCloseTo(-74.05, 5);
+        expect(box!.north).toBeCloseTo(46.15, 5);
+        expect(box!.south).toBeCloseTo(44.85, 5);
+        expect(box!.east).toBeCloseTo(-72.85, 5);
+        expect(box!.west).toBeCloseTo(-74.15, 5);
     });
 
     it('should calculate single pin bounding box matching Android logic', () => {
@@ -211,8 +211,8 @@ describe('tileUtils', () => {
 
         const box = getPinsBoundingBox(pins);
         expect(box).not.toBeNull();
-        expect(box!.north).toBeCloseTo(45.06, 5);
-        expect(box!.south).toBeCloseTo(44.94, 5);
+        expect(box!.north).toBeCloseTo(45.15, 5);
+        expect(box!.south).toBeCloseTo(44.85, 5);
     });
 
     it('should accurately count tiles for bounding box across zoom range', () => {
@@ -577,5 +577,52 @@ describe('tileUtils', () => {
         expect(pendingEntries).toHaveLength(2);
         expect(pendingEntries.map(e => e.url)).toContain('https://example.com/t2.mvt');
         expect(pendingEntries.map(e => e.url)).toContain('https://example.com/t3.mvt');
+    });
+
+    it('should save and retrieve tiles as Uint8Array and serve from in-memory hit cache', async () => {
+        const url = '/maps/tile/10/100/200.mvt';
+        const rawData = new Uint8Array([1, 2, 3, 4, 5]);
+
+        await saveTile(url, rawData);
+        const tile = await getTile(url);
+        expect(tile).toBeInstanceOf(Uint8Array);
+        expect(Array.from(tile || [])).toEqual([1, 2, 3, 4, 5]);
+
+        // Immediate subsequent retrieval should be served directly from in-memory hit cache
+        const cachedTile = await getTile(url);
+        expect(cachedTile).toBeInstanceOf(Uint8Array);
+        expect(Array.from(cachedTile || [])).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    it('should prewarm tiles into in-memory cache for a given bounding box', async () => {
+        const box = { north: 40.8, south: 40.7, east: -73.9, west: -74.0 };
+        const url = '/maps/tile/13/2411/3079.mvt';
+        const rawData = new Uint8Array([10, 20, 30]);
+
+        await saveTile(url, rawData);
+        clearTileCaches();
+
+        // After clearing caches, prewarming the area should load the tile into memory
+        await prewarmTilesForArea(box, 13);
+        const prewarmed = await getTile(url);
+        expect(prewarmed).not.toBeNull();
+        expect(Array.from(prewarmed || [])).toEqual([10, 20, 30]);
+    });
+
+    it('should include contextual buffer around bounding box at intermediate zoom levels 5 to 9', () => {
+        const bbox = { north: 40.75, south: 40.74, east: -73.98, west: -73.99 };
+        const tilesZ6 = getTilesForArea(bbox, 6, 6);
+        // At zoom 6, 2-tile buffer generates a 5x5 grid (25 tiles) around the center
+        expect(tilesZ6.length).toBe(25);
+
+        const tilesZ7 = getTilesForArea(bbox, 7, 7);
+        expect(tilesZ7.length).toBe(25);
+
+        const tilesZ8 = getTilesForArea(bbox, 8, 8);
+        expect(tilesZ8.length).toBe(25);
+
+        const tilesZ9 = getTilesForArea(bbox, 9, 9);
+        // At zoom 9, 1-tile buffer generates a 3x3 grid (9 tiles) around the center
+        expect(tilesZ9.length).toBe(9);
     });
 });
