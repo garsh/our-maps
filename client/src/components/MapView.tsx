@@ -714,6 +714,10 @@ const MapView = ({
   const zoomPillRef = useRef<HTMLDivElement | null>(null);
   const lastBoundsStrRef = useRef<string | null>(null);
   const hasFitInitialBoundsRef = useRef(false);
+  const compassLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const compassClickSuppressRef = useRef(false);
+  const compassClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const compassClickCountRef = useRef(0);
   const onHoverPinRef = useRef(onHoverPin);
   onHoverPinRef.current = onHoverPin;
   const onBoundsChangeRef = useRef(onBoundsChange);
@@ -1428,16 +1432,35 @@ const MapView = ({
     onPinClick?.(clickedPin);
   }, [onPinClick]);
 
-  const handleCombinedCompassTilt = useCallback(() => {
-    if (!mapRef.current) return;
-    const map = mapRef.current.getMap();
-    const currentBearing = map.getBearing();
-    const currentPitch = map.getPitch();
+  const fitAllPinsRef = useRef<(() => void) | null>(null);
 
-    if (Math.abs(currentBearing) > 0.5 || currentPitch > 5) {
-      mapRef.current.easeTo({ bearing: 0, pitch: 0, duration: 300 });
+  const handleCombinedCompassTilt = useCallback(() => {
+    // Suppress click if it was triggered by a long-press release
+    if (compassClickSuppressRef.current) {
+      compassClickSuppressRef.current = false;
+      return;
+    }
+    compassClickCountRef.current += 1;
+    if (compassClickCountRef.current === 1) {
+      // Wait briefly for a potential second click
+      compassClickTimerRef.current = setTimeout(() => {
+        compassClickCountRef.current = 0;
+        // Single click: original compass/tilt behavior
+        if (!mapRef.current) return;
+        const map = mapRef.current.getMap();
+        const currentBearing = map.getBearing();
+        const currentPitch = map.getPitch();
+        if (Math.abs(currentBearing) > 0.5 || currentPitch > 5) {
+          mapRef.current.easeTo({ bearing: 0, pitch: 0, duration: 300 });
+        } else {
+          mapRef.current.easeTo({ pitch: 60, duration: 300 });
+        }
+      }, 300);
     } else {
-      mapRef.current.easeTo({ pitch: 60, duration: 300 });
+      // Double click: reset tilt and fit all pins
+      compassClickCountRef.current = 0;
+      if (compassClickTimerRef.current) clearTimeout(compassClickTimerRef.current);
+      fitAllPinsRef.current?.();
     }
   }, []);
 
@@ -1480,6 +1503,8 @@ const MapView = ({
         mapRef.current.flyTo({
           center: [minLng, minLat],
           zoom: 13,
+          bearing: 0,
+          pitch: 0,
           duration,
           ...FLY_TO_TERRAIN,
         });
@@ -1492,6 +1517,8 @@ const MapView = ({
           {
             padding: paddedMapView(leftPadding, bottomPadding),
             maxZoom: 13,
+            bearing: 0,
+            pitch: 0,
             duration,
             ...FLY_TO_TERRAIN,
           }
@@ -1500,6 +1527,35 @@ const MapView = ({
     },
     [leftPadding, bottomPadding]
   );
+
+  const fitAllPins = useCallback(() => {
+    const pinsToUse = visiblePins.length > 0 ? visiblePins : pins;
+    if (pinsToUse && pinsToUse.length > 0) {
+      const lats = pinsToUse.map((p) => p.lat);
+      const lngs = pinsToUse.map((p) => p.lng);
+      const bounds: [[number, number], [number, number]] = [
+        [Math.min(...lats), Math.min(...lngs)],
+        [Math.max(...lats), Math.max(...lngs)],
+      ];
+      applyBoundsToFit(bounds, true);
+    }
+  }, [pins, visiblePins, applyBoundsToFit]);
+  fitAllPinsRef.current = fitAllPins;
+
+  const handleCompassPointerDown = useCallback(() => {
+    compassClickSuppressRef.current = false;
+    compassLongPressRef.current = setTimeout(() => {
+      compassClickSuppressRef.current = true;
+      fitAllPins();
+    }, 500);
+  }, [fitAllPins]);
+
+  const handleCompassPointerUp = useCallback(() => {
+    if (compassLongPressRef.current) {
+      clearTimeout(compassLongPressRef.current);
+      compassLongPressRef.current = null;
+    }
+  }, []);
 
   // Camera movements for targetPinId
   useEffect(() => {
@@ -1835,6 +1891,10 @@ const MapView = ({
       <button
         ref={compassButtonRef}
         onClick={handleCombinedCompassTilt}
+        onPointerDown={handleCompassPointerDown}
+        onPointerUp={handleCompassPointerUp}
+        onPointerCancel={handleCompassPointerUp}
+        onPointerLeave={handleCompassPointerUp}
         style={{
           position: 'absolute',
           bottom: '60px',
@@ -1852,6 +1912,7 @@ const MapView = ({
           zIndex: 1000,
           color: mapTheme === 'dark' ? '#cbd5e1' : 'var(--primary-color)',
           transition: 'all 0.2s',
+          touchAction: 'none',
         }}
         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
         onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface-color)')}

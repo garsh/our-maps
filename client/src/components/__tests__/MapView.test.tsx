@@ -142,6 +142,7 @@ describe('MapView Compass and Tilt Indicator', () => {
   });
 
   it('resets compass bearing and tilt when control button is clicked', () => {
+    vi.useFakeTimers();
     render(
       <MapView
         pins={[]}
@@ -154,7 +155,11 @@ describe('MapView Compass and Tilt Indicator', () => {
     const compassButton = screen.getByRole('button', { name: /Compass - Reset bearing to North/i });
     fireEvent.click(compassButton);
 
+    // Single-click action is deferred 300ms for double-click detection
+    vi.advanceTimersByTime(300);
+
     expect(mockEaseTo).toHaveBeenCalledWith({ pitch: 60, duration: 300 });
+    vi.useRealTimers();
   });
 
   it('triggers onHoverPin with pin.id on mouse enter and (null, pin.id) on mouse leave', () => {
