@@ -1,5 +1,5 @@
 import type { Pin, MapData } from '@shared/interfaces';
-import { extractExists, removeAllExtracts, removeExtract } from './extractStore';
+import { extractExists, getExtractResumeInfo, getPartFileSize, removeAllExtracts, removeExtract } from './extractStore';
 
 export interface BoundingBox {
     north: number;
@@ -120,6 +120,12 @@ export async function getDownloadStats(mapId: string): Promise<{ total: number, 
         const n = total > 0 ? total : 1;
         return { total: n, completed: n };
     }
+    const resume = await getExtractResumeInfo(mapId);
+    const totalBytes = resume.totalBytes || map.extractTotalBytes || 0;
+    if (resume.partBytes > 0 && totalBytes > 0) {
+        const n = total > 0 ? total : 1;
+        return { total: n, completed: Math.round(Math.min(1, resume.partBytes / totalBytes) * n) };
+    }
     return { total, completed: map.completedTiles || 0 };
 }
 
@@ -148,7 +154,8 @@ export async function getMapDownloadStatuses(mapIds?: string[]): Promise<Map<str
         const map = mapsById.get(id);
         const completed = map?.completedTiles || 0;
         const total = map?.totalTiles || 0;
-        if (completed > 0 && completed < total) {
+        const partBytes = await getPartFileSize(id);
+        if (partBytes > 0 || (total > 0 && completed < total)) {
             resultMap.set(id, { isComplete: false, isPartial: true });
         }
     }));

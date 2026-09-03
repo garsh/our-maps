@@ -2,22 +2,14 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
     extractExists,
     getExtractFile,
+    getPartFileSize,
+    getExtractResumeInfo,
+    writeExtractMeta,
     writeExtractFromStream,
     removeExtract,
     removeAllExtracts,
     invalidateExtractCache,
 } from '../extractStore';
-
-function concatChunks(chunks: Uint8Array[]): Uint8Array {
-    const total = chunks.reduce((sum, c) => sum + c.byteLength, 0);
-    const out = new Uint8Array(total);
-    let offset = 0;
-    for (const c of chunks) {
-        out.set(c, offset);
-        offset += c.byteLength;
-    }
-    return out;
-}
 
 function notFound(): DOMException {
     return new DOMException(
@@ -39,19 +31,39 @@ function installOpfsMock(options?: { extractDirExists?: boolean }) {
             }
             return {
                 getFile: async () => new File([files.get(name) || new Uint8Array()], name),
-                createWritable: async () => {
-                    const chunks: Uint8Array[] = [];
+                createWritable: async (opts?: { keepExistingData?: boolean }) => {
+                    const existing = files.get(name) || new Uint8Array();
+                    let data = opts?.keepExistingData ? Uint8Array.from(existing) : new Uint8Array();
+                    let pos = 0;
+                    let closed = false;
                     return {
-                        write: async (data: BufferSource) => {
-                            const bytes = data instanceof Uint8Array
-                                ? data
-                                : new Uint8Array(data as ArrayBuffer);
-                            chunks.push(bytes);
+                        seek: async (position: number) => { pos = position; },
+                        write: async (input: BufferSource | string | { type?: string; position?: number; data?: BufferSource }) => {
+                            if (input && typeof input === 'object' && 'type' in input && input.type === 'seek') {
+                                pos = input.position || 0;
+                                return;
+                            }
+                            const raw = input && typeof input === 'object' && 'data' in input ? input.data : input;
+                            const bytes = typeof raw === 'string'
+                                ? new TextEncoder().encode(raw)
+                                : raw instanceof Uint8Array
+                                    ? raw
+                                    : new Uint8Array(raw as ArrayBuffer);
+                            const end = pos + bytes.byteLength;
+                            if (end > data.length) {
+                                const next = new Uint8Array(end);
+                                next.set(data);
+                                data = next;
+                            }
+                            data.set(bytes, pos);
+                            pos = end;
                         },
                         close: async () => {
-                            files.set(name, concatChunks(chunks));
+                            if (closed) return;
+                            closed = true;
+                            files.set(name, data);
                         },
-                        abort: async () => {},
+                        abort: async () => { closed = true; },
                     };
                 },
                 move: async (dest: string) => {
@@ -155,6 +167,95 @@ describe('extractStore', () => {
         files.set('mapx.pmtiles.part', new Uint8Array(130));
         expect(await getExtractFile('mapx')).toBeNull();
         expect(await extractExists('mapx')).toBe(false);
+        expect(await getPartFileSize('mapx')).toBe(130);
+    });
+
+    it('stores extract total bytes in a sidecar so resume can show progress immediately', async () => {
+        files = installOpfsMock({ extractDirExists: true });
+        files.set('sized.pmtiles.part', new Uint8Array(80));
+        await writeExtractMeta('sized', { totalBytes: 200 });
+        expect(await getExtractResumeInfo('sized')).toEqual({ partBytes: 80, totalBytes: 200 });
+        await removeExtract('sized');
+        expect(await getExtractResumeInfo('sized')).toEqual({ partBytes: 0, totalBytes: 0 });
+        expect(files.has('sized.pmtiles.part.meta')).toBe(false);
+    });
+
+    it('keeps a .part file when the stream fails so a later download can resume', async () => {
+        const payload = new Uint8Array(200).map((_, i) => i);
+        const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+                controller.enqueue(payload.subarray(0, 80));
+            },
+            pull(controller) {
+                controller.error(new Error('network drop'));
+            }
+        });
+
+        await expect(writeExtractFromStream('resume-me', stream)).rejects.toThrow('network drop');
+        expect(files.has('resume-me.pmtiles.part')).toBe(true);
+        expect(files.get('resume-me.pmtiles.part')!.length).toBe(80);
+        expect(files.has('resume-me.pmtiles')).toBe(false);
+        expect(await getPartFileSize('resume-me')).toBe(80);
+        expect(await extractExists('resume-me')).toBe(false);
+    });
+
+    it('appends to an existing .part file from startOffset and finalizes', async () => {
+        files = installOpfsMock({ extractDirExists: true });
+        const payload = new Uint8Array(200).map((_, i) => i);
+        files.set('resume-me.pmtiles.part', payload.subarray(0, 80));
+
+        const progress: number[] = [];
+        const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+                controller.enqueue(payload.subarray(80));
+                controller.close();
+            }
+        });
+        const result = await writeExtractFromStream('resume-me', stream, (n) => progress.push(n), { startOffset: 80 });
+        expect(result.bytes).toBe(200);
+        expect(progress[0]).toBe(80);
+        expect(progress[progress.length - 1]).toBe(200);
+        expect(files.has('resume-me.pmtiles')).toBe(true);
+        expect(files.has('resume-me.pmtiles.part')).toBe(false);
+        expect(Array.from(files.get('resume-me.pmtiles')!)).toEqual(Array.from(payload));
+        expect(await extractExists('resume-me')).toBe(true);
+    });
+
+    it('checkpoints a long write so a later resume can append', async () => {
+        const payload = new Uint8Array(200).map((_, i) => i);
+        const failing = new ReadableStream<Uint8Array>({
+            start(controller) {
+                controller.enqueue(payload.subarray(0, 50));
+                controller.enqueue(payload.subarray(50, 90));
+            },
+            pull(controller) {
+                controller.error(new Error('dropped after checkpoint'));
+            }
+        });
+        await expect(writeExtractFromStream('chk', failing, undefined, { checkpointBytes: 40 }))
+            .rejects.toThrow('dropped after checkpoint');
+        expect(await getPartFileSize('chk')).toBe(90);
+
+        const resume = new ReadableStream<Uint8Array>({
+            start(controller) {
+                controller.enqueue(payload.subarray(90));
+                controller.close();
+            }
+        });
+        const result = await writeExtractFromStream('chk', resume, undefined, { startOffset: 90, checkpointBytes: 40 });
+        expect(result.bytes).toBe(200);
+        expect(Array.from(files.get('chk.pmtiles')!)).toEqual(Array.from(payload));
+    });
+
+    it('overwrites a stale .part file when startOffset is 0', async () => {
+        files = installOpfsMock({ extractDirExists: true });
+        files.set('fresh.pmtiles.part', new Uint8Array(80).fill(9));
+        const payload = new Uint8Array(130).map((_, i) => i);
+        const result = await writeExtractFromStream('fresh', new ReadableStream({
+            start(c) { c.enqueue(payload); c.close(); }
+        }), undefined, { startOffset: 0 });
+        expect(result.bytes).toBe(130);
+        expect(Array.from(files.get('fresh.pmtiles')!)).toEqual(Array.from(payload));
     });
 
     it('rejects a truncated extract file as missing', async () => {

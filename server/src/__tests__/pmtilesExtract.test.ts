@@ -12,6 +12,7 @@ import {
   buildExtractBuffer,
   planExtract,
   getXRanges,
+  streamPlannedExtract,
 } from '../pmtilesExtract';
 function countTilesLocal(bbox: { north: number; south: number; east: number; west: number }, minZoom: number, maxZoom: number): number {
   return collectWantedTileIds(bbox, minZoom, maxZoom).length;
@@ -177,6 +178,27 @@ describe('pmtilesExtract integration', () => {
     const plan = await planExtract(pmt, bbox, 1, 5);
     expect(plan.totalBytes).toBe(extracted.length);
     expect(plan.addressedTiles).toBe(header.numAddressedTiles);
+  });
+
+  it('streamPlannedExtract can skip a prefix of output bytes for resume', async () => {
+    const pmt = new PMTiles(new FileSource(filePath));
+    const bbox = { north: 2, south: -2, east: 2, west: -2 };
+    const plan = await planExtract(pmt, bbox, 1, 5);
+    const fullChunks: Buffer[] = [];
+    await streamPlannedExtract(filePath, plan, async (chunk) => {
+      fullChunks.push(Buffer.from(chunk));
+    }, () => false);
+    const full = Buffer.concat(fullChunks);
+    expect(full.length).toBe(plan.totalBytes);
+
+    const prefixBytes = plan.headerBytes.length + plan.rootBytes.length + plan.metadataBytes.length + plan.leavesBytes.length;
+    const offset = Math.min(full.length - 1, Math.max(prefixBytes + 10, Math.floor(full.length / 3)));
+    const restChunks: Buffer[] = [];
+    await streamPlannedExtract(filePath, plan, async (chunk) => {
+      restChunks.push(Buffer.from(chunk));
+    }, () => false, offset);
+    const rest = Buffer.concat(restChunks);
+    expect(rest.equals(full.subarray(offset))).toBe(true);
   });
 
   it('keeps full-world coverage at zooms 1-4 even for a tiny bbox', async () => {

@@ -1,5 +1,6 @@
 const EXTRACT_DIR = 'offline-extracts';
 const extractCache = new Map<string, File | null>();
+const DEFAULT_CHECKPOINT_BYTES = 4 * 1024 * 1024;
 
 function sanitizeMapId(mapId: string): string {
   return mapId.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -11,6 +12,10 @@ function extractFileName(mapId: string): string {
 
 function partFileName(mapId: string): string {
   return `${sanitizeMapId(mapId)}.pmtiles.part`;
+}
+
+function metaFileName(mapId: string): string {
+  return `${sanitizeMapId(mapId)}.pmtiles.part.meta`;
 }
 
 function isNotFoundError(err: unknown): boolean {
@@ -94,10 +99,77 @@ export async function getExtractFile(mapId: string): Promise<File | null> {
   }
 }
 
+export async function getPartFileSize(mapId: string): Promise<number> {
+  if (!mapId) return 0;
+  try {
+    const dir = await getExtractDirectory(false);
+    if (!dir) return 0;
+    const handle = await dir.getFileHandle(partFileName(mapId));
+    const file = await handle.getFile();
+    return file.size;
+  } catch {
+    return 0;
+  }
+}
+
+export async function writeExtractMeta(mapId: string, meta: { totalBytes: number }): Promise<void> {
+  const totalBytes = Math.max(0, Math.floor(Number(meta.totalBytes) || 0));
+  if (!mapId || totalBytes <= 0) return;
+  const dir = await getExtractDirectory(true);
+  if (!dir) return;
+  const handle = await dir.getFileHandle(metaFileName(mapId), { create: true });
+  const writable = await handle.createWritable();
+  await writable.write(JSON.stringify({ totalBytes }));
+  await writable.close();
+}
+
+export async function readExtractMeta(mapId: string): Promise<{ totalBytes: number } | null> {
+  if (!mapId) return null;
+  try {
+    const dir = await getExtractDirectory(false);
+    if (!dir) return null;
+    const handle = await dir.getFileHandle(metaFileName(mapId));
+    const parsed = JSON.parse(await (await handle.getFile()).text());
+    const totalBytes = Math.floor(Number(parsed?.totalBytes) || 0);
+    if (totalBytes <= 0) return null;
+    return { totalBytes };
+  } catch {
+    return null;
+  }
+}
+
+export async function getExtractResumeInfo(mapId: string): Promise<{ partBytes: number; totalBytes: number }> {
+  const [partBytes, meta] = await Promise.all([
+    getPartFileSize(mapId),
+    readExtractMeta(mapId),
+  ]);
+  return { partBytes, totalBytes: meta?.totalBytes ?? 0 };
+}
+
+async function removeExtractMeta(dir: FileSystemDirectoryHandle, mapId: string): Promise<void> {
+  try {
+    await dir.removeEntry(metaFileName(mapId));
+  } catch {
+    // ignore
+  }
+}
+
+async function openPartWritable(
+  handle: FileSystemFileHandle,
+  offset: number
+): Promise<FileSystemWritableFileStream> {
+  const writable = await handle.createWritable({ keepExistingData: offset > 0 });
+  if (offset > 0) {
+    await writable.seek(offset);
+  }
+  return writable;
+}
+
 export async function writeExtractFromStream(
   mapId: string,
   stream: ReadableStream<Uint8Array>,
-  onProgress?: (received: number) => void
+  onProgress?: (received: number) => void,
+  options?: { startOffset?: number; checkpointBytes?: number }
 ): Promise<{ bytes: number }> {
   const dir = await getExtractDirectory(true);
   if (!dir) {
@@ -106,16 +178,38 @@ export async function writeExtractFromStream(
 
   const partName = partFileName(mapId);
   const finalName = extractFileName(mapId);
-  try {
-    await dir.removeEntry(partName);
-  } catch {
-    // ignore
+  const requestedOffset = Math.max(0, Math.floor(options?.startOffset ?? 0));
+  const checkpointEvery = Math.max(0, options?.checkpointBytes ?? DEFAULT_CHECKPOINT_BYTES);
+  const existingSize = await getPartFileSize(mapId);
+  const append = requestedOffset > 0 && existingSize >= requestedOffset;
+  const startOffset = append ? requestedOffset : 0;
+
+  if (!append) {
+    try {
+      await dir.removeEntry(partName);
+    } catch {
+      // ignore
+    }
   }
 
   const partHandle = await dir.getFileHandle(partName, { create: true });
-  const writable = await partHandle.createWritable();
+  let writable = await openPartWritable(partHandle, startOffset);
+  let writableOpen = true;
   const reader = stream.getReader();
-  let received = 0;
+  let received = startOffset;
+  let sinceCheckpoint = 0;
+  if (startOffset > 0) onProgress?.(startOffset);
+
+  const persistWritable = async () => {
+    if (!writableOpen) return;
+    try {
+      await writable.close();
+    } catch {
+      try { await writable.abort(); } catch { /* ignore */ }
+    } finally {
+      writableOpen = false;
+    }
+  };
 
   try {
     for (;;) {
@@ -124,15 +218,22 @@ export async function writeExtractFromStream(
       if (!value || value.byteLength === 0) continue;
       await writable.write(value as unknown as FileSystemWriteChunkType);
       received += value.byteLength;
+      sinceCheckpoint += value.byteLength;
       onProgress?.(received);
+      if (checkpointEvery > 0 && sinceCheckpoint >= checkpointEvery) {
+        await persistWritable();
+        writable = await openPartWritable(partHandle, received);
+        writableOpen = true;
+        sinceCheckpoint = 0;
+      }
     }
-    await writable.close();
+    await persistWritable();
     if (received < 127) {
+      try { await dir.removeEntry(partName); } catch { /* ignore */ }
       throw new Error('Map extract was incomplete');
     }
   } catch (err) {
-    try { await writable.abort(); } catch { /* ignore */ }
-    try { await dir.removeEntry(partName); } catch { /* ignore */ }
+    await persistWritable();
     throw err;
   }
 
@@ -163,6 +264,7 @@ export async function writeExtractFromStream(
       // keep the part file if remove fails; getExtractFile also accepts it
     }
   }
+  await removeExtractMeta(dir, mapId);
 
   invalidateExtractCache(mapId);
   const file = await getExtractFile(mapId);
@@ -173,7 +275,7 @@ export async function removeExtract(mapId: string): Promise<void> {
   invalidateExtractCache(mapId);
   const dir = await getExtractDirectory(false);
   if (!dir) return;
-  for (const name of [extractFileName(mapId), partFileName(mapId)]) {
+  for (const name of [extractFileName(mapId), partFileName(mapId), metaFileName(mapId)]) {
     try {
       await dir.removeEntry(name);
     } catch {

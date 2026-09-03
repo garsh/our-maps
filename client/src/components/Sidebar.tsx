@@ -63,7 +63,8 @@ import {
   saveMapOffline,
   type BoundingBox 
 } from '../utils/tileUtils';
-import { canFit } from '../utils/storageUtils';
+import { getExtractFile, getExtractResumeInfo, writeExtractMeta } from '../utils/extractStore';
+import { canFit, formatDownloadBytes } from '../utils/storageUtils';
 import { apiService } from '../services/api';
 import { tileWorkerManager } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
@@ -1769,7 +1770,7 @@ const Sidebar = ({
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [hasPartialDownload, setHasPartialDownload] = useState(false);
   const [isPreparingDownload, setIsPreparingDownload] = useState(false);
-  const [tileStats, setTileStats] = useState<{ total: number; completed: number } | null>(null);
+  const [byteStats, setByteStats] = useState<{ received: number; total: number } | null>(null);
 
   // Export Modal State
   const [showExportModal, setShowExportModal] = useState(false);
@@ -1791,7 +1792,7 @@ const Sidebar = ({
       setIsDownloading(false);
       setIsRemoving(false);
       setDownloadProgress(null);
-      setTileStats(null);
+      setByteStats(null);
       return;
     }
 
@@ -1801,7 +1802,7 @@ const Sidebar = ({
       setIsDownloaded(state.isDownloaded);
       setHasPartialDownload(state.hasPartialDownload);
       setDownloadProgress(state.downloadProgress);
-      setTileStats(state.tileStats);
+      setByteStats(state.byteStats ?? null);
     };
 
     const unsubscribe = tileWorkerManager.subscribe((state) => {
@@ -1814,28 +1815,54 @@ const Sidebar = ({
     if (activeStatus && (activeStatus.isDownloading || activeStatus.isRemoving)) {
       updateFromState(activeStatus);
     } else {
-      getManifestStats(mapId).then((stats) => {
+      let cancelled = false;
+      (async () => {
+        const [stats, resume, extractFile] = await Promise.all([
+          getManifestStats(mapId),
+          getExtractResumeInfo(mapId),
+          getExtractFile(mapId),
+        ]);
+        if (cancelled) return;
+        const live = tileWorkerManager.getStatus(mapId);
+        if (live && (live.isDownloading || live.isRemoving)) {
+          updateFromState(live);
+          return;
+        }
         if (stats.total > 0 && stats.completed === stats.total) {
           setIsDownloaded(true);
           setHasPartialDownload(false);
           setIsDownloading(false);
           setDownloadProgress(null);
-          setTileStats(stats);
-        } else if (stats.total > 0 && stats.completed < stats.total) {
+          const size = extractFile?.size || 0;
+          setByteStats(size > 0 ? { received: size, total: size } : null);
+          return;
+        }
+        const byteProgress = resume.partBytes > 0 && resume.totalBytes > 0
+          ? Math.min(1, resume.partBytes / resume.totalBytes)
+          : null;
+        const tileProgress = stats.total > 0 && stats.completed > 0 && stats.completed < stats.total
+          ? stats.completed / stats.total
+          : null;
+        const isPartial = resume.partBytes > 0 || (stats.total > 0 && stats.completed < stats.total);
+        if (isPartial) {
           setIsDownloaded(false);
           setHasPartialDownload(true);
-          setIsDownloading(false);
-          setDownloadProgress(stats.completed / stats.total);
-          setTileStats(stats);
+          setIsDownloading(true);
+          setDownloadProgress(byteProgress ?? tileProgress);
+          setByteStats({ received: resume.partBytes, total: resume.totalBytes });
         } else {
           setIsDownloaded(false);
           setHasPartialDownload(false);
           setIsDownloading(false);
           setDownloadProgress(null);
-          setTileStats(stats.total > 0 ? stats : null);
+          setByteStats(null);
         }
-      });
-      tileWorkerManager.resumeIfNeeded(mapId);
+        await tileWorkerManager.resumeIfNeeded(mapId);
+      })();
+      return () => {
+        cancelled = true;
+        unsubscribe();
+      };
     }
 
     return () => {
@@ -1868,13 +1895,18 @@ const Sidebar = ({
       // Full map tile downloads for zooms 1 to 15 covering the entire bounding box
       const totalCount = countTiles(bbox, 1, 15);
       let estimatedSizeMB = estimateSizeMB(totalCount);
+      let extractBytes = 0;
       try {
         const extract = await apiService.estimateExtract(bbox, 1, 15);
         if (extract.bytes > 0) {
           estimatedSizeMB = extract.bytes / (1024 * 1024);
+          extractBytes = extract.bytes;
         }
       } catch {
         // Fall back to the per-tile heuristic if the planner is unavailable.
+      }
+      if (!extractBytes && estimatedSizeMB > 0) {
+        extractBytes = Math.round(estimatedSizeMB * 1024 * 1024);
       }
 
       const storageStatus = await canFit(estimatedSizeMB);
@@ -1897,8 +1929,12 @@ const Sidebar = ({
         userRole,
         totalTiles: totalCount,
         completedTiles: 0,
+        extractTotalBytes: extractBytes || undefined,
       };
       await saveMapOffline(currentMapData);
+      if (extractBytes > 0) {
+        await writeExtractMeta(mapId, { totalBytes: extractBytes });
+      }
 
       tileWorkerManager.startDownload(mapId, { bbox, totalTiles: totalCount });
     } catch (err) {
@@ -2957,16 +2993,22 @@ const Sidebar = ({
 
         if (!showActiveProgress && !showCompleted) return null;
 
-        const completedCount = tileStats?.completed ?? 0;
-        const totalCount = tileStats?.total ?? 0;
+        const receivedBytes = byteStats?.received ?? 0;
+        const totalBytes = byteStats?.total ?? 0;
 
-        let tooltipText = 'Map tiles downloaded';
+        let tooltipText = 'Map downloaded';
         if (isRemoving) {
-          tooltipText = 'Removing downloaded map tiles...';
+          tooltipText = 'Removing downloaded map...';
         } else if (showCompleted) {
-          tooltipText = completedCount > 0 ? `${completedCount.toLocaleString()} tiles downloaded` : 'Map tiles downloaded';
+          tooltipText = totalBytes > 0 ? `${formatDownloadBytes(totalBytes)} downloaded` : 'Map downloaded';
         } else if (showActiveProgress) {
-          tooltipText = `${completedCount.toLocaleString()} / ${totalCount.toLocaleString()} tiles downloaded`;
+          if (totalBytes > 0) {
+            tooltipText = `${formatDownloadBytes(receivedBytes)} / ${formatDownloadBytes(totalBytes)}`;
+          } else if (receivedBytes > 0) {
+            tooltipText = `${formatDownloadBytes(receivedBytes)} downloaded`;
+          } else {
+            tooltipText = 'Downloading map...';
+          }
         }
 
         return createPortal(
@@ -2987,7 +3029,7 @@ const Sidebar = ({
               cursor: 'default'
             }}
           >
-            {isDownloading && downloadProgress !== null && !isRemoving && (
+            {showActiveProgress && downloadProgress !== null && !isRemoving && (
               <span>{Math.round(downloadProgress * 100)}%</span>
             )}
             {isRemoving ? (

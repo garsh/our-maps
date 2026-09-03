@@ -55,6 +55,23 @@ export function formatStorageMB(mb: number): string {
     return `${Math.max(0.1, mb).toFixed(1)} MB`;
 }
 
+export function formatDownloadBytes(bytes: number): string {
+    const n = Math.max(0, Math.round(Number(bytes) || 0));
+    if (n >= 1024 * 1024 * 1024) {
+        const gb = n / (1024 * 1024 * 1024);
+        return `${gb.toFixed(1)} GB`;
+    }
+    if (n >= 1024 * 1024) {
+        const mb = n / (1024 * 1024);
+        return `${mb.toFixed(1)} MB`;
+    }
+    if (n >= 1024) {
+        const kb = n / 1024;
+        return `${kb >= 10 ? Math.round(kb) : kb.toFixed(1)} KB`;
+    }
+    return `${n} B`;
+}
+
 export interface DownloadFit {
     ok: boolean;
     warn: boolean;

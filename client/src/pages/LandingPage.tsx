@@ -166,6 +166,11 @@ export default function LandingPage() {
       const obj: Record<string, MapDownloadStatus> = {};
       statusMap.forEach((v, k) => { obj[k] = v; });
       setStoredJson('cached_download_statuses', obj);
+      statusMap.forEach((status, id) => {
+        if (status.isPartial) {
+          void tileWorkerManager.resumeIfNeeded(id);
+        }
+      });
     } catch (err) {
       console.error('Failed to load downloaded map statuses', err);
     }

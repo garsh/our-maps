@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean, canFit, formatStorageMB, CHROME_PRIVACY_QUOTA_HEADROOM } from '../storageUtils';
+import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean, canFit, formatStorageMB, formatDownloadBytes, CHROME_PRIVACY_QUOTA_HEADROOM } from '../storageUtils';
 
 describe('storageUtils', () => {
   beforeEach(() => {
@@ -63,6 +63,14 @@ describe('canFit', () => {
     expect(formatStorageMB(0.4)).toBe('0.4 MB');
     expect(formatStorageMB(12)).toBe('12 MB');
     expect(formatStorageMB(1536)).toBe('1.5 GB');
+  });
+
+  it('formats download byte sizes', () => {
+    expect(formatDownloadBytes(800)).toBe('800 B');
+    expect(formatDownloadBytes(512 * 1024)).toBe('512 KB');
+    expect(formatDownloadBytes(12.4 * 1024 * 1024)).toBe('12.4 MB');
+    expect(formatDownloadBytes(40.1 * 1024 * 1024)).toBe('40.1 MB');
+    expect(formatDownloadBytes(1.5 * 1024 * 1024 * 1024)).toBe('1.5 GB');
   });
 
   it('allows downloads when storage estimate is unavailable', async () => {

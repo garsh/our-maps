@@ -339,24 +339,48 @@ export async function streamPlannedExtract(
   filePath: string,
   plan: ExtractPlan,
   write: (chunk: Buffer) => Promise<void>,
-  isAborted: () => boolean
+  isAborted: () => boolean,
+  skipBytes = 0
 ): Promise<void> {
-  await write(plan.headerBytes);
+  const skip = Math.max(0, Math.floor(skipBytes));
+  let outputPos = 0;
+
+  const emit = async (buf: Buffer) => {
+    if (!buf.length) return;
+    const end = outputPos + buf.length;
+    if (end <= skip) {
+      outputPos = end;
+      return;
+    }
+    const localSkip = Math.max(0, skip - outputPos);
+    outputPos = end;
+    await write(localSkip > 0 ? buf.subarray(localSkip) : buf);
+  };
+
+  await emit(plan.headerBytes);
   if (isAborted()) return;
-  await write(plan.rootBytes);
+  await emit(plan.rootBytes);
   if (isAborted()) return;
-  await write(plan.metadataBytes);
+  await emit(plan.metadataBytes);
   if (isAborted()) return;
   if (plan.leavesBytes.length > 0) {
-    await write(plan.leavesBytes);
+    await emit(plan.leavesBytes);
     if (isAborted()) return;
   }
 
   const fd = fs.openSync(filePath, 'r');
   try {
     for (const range of plan.ranges) {
-      let remaining = range.length;
-      let srcPos = plan.sourceTileDataOffset + range.srcOffset;
+      if (isAborted()) return;
+      const rangeEnd = outputPos + range.length;
+      if (rangeEnd <= skip) {
+        outputPos = rangeEnd;
+        continue;
+      }
+      const localSkip = Math.max(0, skip - outputPos);
+      let remaining = range.length - localSkip;
+      let srcPos = plan.sourceTileDataOffset + range.srcOffset + localSkip;
+      outputPos = rangeEnd;
       while (remaining > 0) {
         if (isAborted()) return;
         const n = Math.min(COPY_CHUNK, remaining);

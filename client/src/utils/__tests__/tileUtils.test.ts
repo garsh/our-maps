@@ -2,12 +2,28 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { getTilesForArea, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
-const { mockExtracts } = vi.hoisted(() => ({ mockExtracts: new Set<string>() }));
+const { mockExtracts, mockPartSizes, mockMetaBytes } = vi.hoisted(() => ({
+    mockExtracts: new Set<string>(),
+    mockPartSizes: new Map<string, number>(),
+    mockMetaBytes: new Map<string, number>(),
+}));
 
 vi.mock('../extractStore', () => ({
     extractExists: async (id: string) => mockExtracts.has(id),
-    removeExtract: async (id: string) => { mockExtracts.delete(id); },
-    removeAllExtracts: async () => { mockExtracts.clear(); },
+    getPartFileSize: async (id: string) => mockPartSizes.get(id) || 0,
+    getExtractResumeInfo: async (id: string) => ({
+        partBytes: mockPartSizes.get(id) || 0,
+        totalBytes: mockMetaBytes.get(id) || 0,
+    }),
+    readExtractMeta: async (id: string) => {
+        const totalBytes = mockMetaBytes.get(id) || 0;
+        return totalBytes > 0 ? { totalBytes } : null;
+    },
+    writeExtractMeta: async (id: string, meta: { totalBytes: number }) => {
+        mockMetaBytes.set(id, meta.totalBytes);
+    },
+    removeExtract: async (id: string) => { mockExtracts.delete(id); mockPartSizes.delete(id); mockMetaBytes.delete(id); },
+    removeAllExtracts: async () => { mockExtracts.clear(); mockPartSizes.clear(); mockMetaBytes.clear(); },
     invalidateExtractCache: () => {},
 }));
 
@@ -18,6 +34,8 @@ describe('tileUtils', () => {
     beforeEach(() => {
         resetDBForTesting();
         mockExtracts.clear();
+        mockPartSizes.clear();
+        mockMetaBytes.clear();
         stores = new Map<string, Map<any, any>>();
         const getStore = (name: string) => {
             if (!stores.has(name)) stores.set(name, new Map());
@@ -273,6 +291,41 @@ describe('tileUtils', () => {
         const filtered = await getMapDownloadStatuses(['map-1']);
         expect(filtered.get('map-1')).toEqual({ isComplete: true, isPartial: false });
         expect(filtered.has('map-2')).toBe(false);
+    });
+
+    it('treats a started extract with no completed tiles as a partial download', async () => {
+        await saveMapOffline({
+            id: 'map-zero',
+            name: 'Zero',
+            ownerId: 'u1',
+            layers: [],
+            pins: [],
+            totalTiles: 100,
+            completedTiles: 0,
+        } as any);
+
+        const statuses = await getMapDownloadStatuses(['map-zero']);
+        expect(statuses.get('map-zero')).toEqual({ isComplete: false, isPartial: true });
+    });
+
+    it('treats a leftover .part file as a partial download even without tile counts', async () => {
+        mockPartSizes.set('map-part-only', 80);
+        mockMetaBytes.set('map-part-only', 200);
+        const statuses = await getMapDownloadStatuses(['map-part-only']);
+        expect(statuses.get('map-part-only')).toEqual({ isComplete: false, isPartial: true });
+
+        await saveMapOffline({
+            id: 'map-part-only',
+            name: 'Part',
+            ownerId: 'u1',
+            layers: [],
+            pins: [],
+            totalTiles: 100,
+            completedTiles: 0,
+            extractTotalBytes: 200,
+        } as any);
+        const stats = await getDownloadStats('map-part-only');
+        expect(stats).toEqual({ total: 100, completed: 40 });
     });
 
     it('clears leftover tile and manifest IndexedDB stores when removeAllDownloads is called', async () => {

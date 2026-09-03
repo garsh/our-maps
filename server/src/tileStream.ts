@@ -83,6 +83,23 @@ function parseExtractRequest(req: Request): { bbox: BoundingBox; startZoom: numb
   };
 }
 
+export function parseExtractResumeOffset(req: Request): number {
+  const bodyOffset = Number((req.body || {}).offset);
+  if (Number.isFinite(bodyOffset) && bodyOffset > 0) {
+    return Math.floor(bodyOffset);
+  }
+  const range = req.headers?.range;
+  const rangeHeader = Array.isArray(range) ? range[0] : range;
+  if (typeof rangeHeader === 'string') {
+    const match = /^bytes=(\d+)-$/i.exec(rangeHeader.trim());
+    if (match) {
+      const n = Number(match[1]);
+      if (Number.isFinite(n) && n > 0) return Math.floor(n);
+    }
+  }
+  return 0;
+}
+
 export async function handleExtractSize(req: Request, res: Response, candidateMapsDirs: string[]) {
   const parsed = parseExtractRequest(req);
   if ('error' in parsed) {
@@ -138,17 +155,32 @@ export async function handleTileStream(req: Request, res: Response, candidateMap
 
     if (isAborted) return;
 
+    const offset = Math.min(parseExtractResumeOffset(req), plan.totalBytes);
+    if (offset >= plan.totalBytes && plan.totalBytes > 0) {
+      res.setHeader('Content-Range', `bytes */${plan.totalBytes}`);
+      res.setHeader('X-Extract-Bytes', plan.totalBytes.toString());
+      return res.status(416).json({ error: 'Range not satisfiable', bytes: plan.totalBytes });
+    }
+
+    const remaining = plan.totalBytes - offset;
+    if (offset > 0) {
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${offset}-${plan.totalBytes - 1}/${plan.totalBytes}`);
+    }
     res.setHeader('Content-Type', 'application/vnd.pmtiles');
-    res.setHeader('Content-Length', plan.totalBytes.toString());
+    res.setHeader('Content-Length', remaining.toString());
+    res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'no-store, no-transform');
     res.setHeader('X-Total-Tiles', plan.addressedTiles.toString());
     res.setHeader('X-Extract-Bytes', plan.totalBytes.toString());
+    res.setHeader('X-Extract-Offset', offset.toString());
 
     await streamPlannedExtract(
       filePath,
       plan,
       (chunk) => writeChunk(res, chunk),
-      () => isAborted
+      () => isAborted,
+      offset
     );
 
     if (!isAborted && !res.writableEnded) {
