@@ -25,7 +25,10 @@ const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 
     if (err?.name === 'AbortError' || (typeof navigator !== 'undefined' && !navigator.onLine)) {
       throw err;
     }
-    if (retries > 0) {
+    // Chrome DevTools Offline and dead networks throw TypeError: Failed to fetch.
+    // Retrying that waits seconds before the UI can switch to offline mode.
+    const failedToFetch = err?.name === 'TypeError' || /failed to fetch|networkerror|internet/i.test(String(err?.message || ''));
+    if (retries > 0 && !failedToFetch) {
       console.warn(`Fetch network error for ${url}, retrying... (${retries} left)`, err);
       await new Promise(resolve => setTimeout(resolve, 1000));
       return fetchWithRetry(url, options, retries - 1);
@@ -112,8 +115,14 @@ export const apiService = {
   },
 
   async getMaps(): Promise<any[]> {
-    const res = await fetchWithRetry(`${API_BASE}/maps`, { headers: getHeaders() });
-    return handleResponse<any[]>(res, this._logoutCallback, `Server error: ${res.status}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    try {
+      const res = await fetchWithRetry(`${API_BASE}/maps`, { headers: getHeaders(), signal: controller.signal, cache: 'no-store' }, 0);
+      return handleResponse<any[]>(res, this._logoutCallback, `Server error: ${res.status}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
   },
 
   async getMap(id: string): Promise<MapData> {
@@ -121,22 +130,17 @@ export const apiService = {
       const offlineMap = await getOfflineMap(id);
       if (offlineMap) return offlineMap;
     }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
-      const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, { headers: getHeaders(), signal: controller.signal }, 0);
-      clearTimeout(timeoutId);
+      const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, { headers: getHeaders(), signal: controller.signal, cache: 'no-store' }, 0);
       const data = await handleResponse<MapData>(res, this._logoutCallback, `Server error: ${res.status}`);
       isMapDownloaded(id).then(downloaded => {
         if (downloaded) saveMapOffline(data);
       }).catch(() => {});
       return data;
-    } catch (err) {
-      const offlineMap = await getOfflineMap(id);
-      if (offlineMap) {
-        return offlineMap;
-      }
-      throw err;
+    } finally {
+      clearTimeout(timeoutId);
     }
   },
 

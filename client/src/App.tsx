@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import MapView from './components/MapView'
@@ -31,8 +31,10 @@ import { Loader2, Map as MapIcon, RotateCw } from 'lucide-react';
 import type { SearchAreaState } from './components/SearchBar';
 import { reorderPins, reorderLayers, isSameLayer, emitPinMoveOrReorderEvents } from './utils/reorderUtils';
 import { generateId } from './utils/fileUtils';
-import { getManifestStats, prewarmTilesForArea, getPinsBoundingBox, getOfflineMap, type MapDownloadStatus } from './utils/tileUtils';
+import { getDownloadStats, getOfflineMap, type MapDownloadStatus } from './utils/tileUtils';
+import { preloadExtract, setActiveOfflineMapId } from './utils/offlineExtract';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
+import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
 import { tileWorkerManager } from './utils/tileWorkerManager';
 import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer } from './utils/pinHover';
 import { arePinsEqual } from './utils/mapUtils';
@@ -56,12 +58,21 @@ export function MapEditor() {
   pinsRef.current = pins;
   const [layers, setLayers] = useState<PinLayer[]>([])
   const [mapId, setMapId] = useState<string | null>(id && id !== 'new' ? id : null);
+  if (id && id !== 'new') {
+    setActiveOfflineMapId(id);
+  }
+
+  useLayoutEffect(() => {
+    if (id && id !== 'new') {
+      setActiveOfflineMapId(id);
+      void preloadExtract(id);
+    }
+  }, [id]);
   const [mapName, setMapName] = useState(id === 'new' ? 'My Map' : '');
   const [owner, setOwner] = useState<{ id: string, name?: string, email?: string, picture?: string } | null>(null);
   const [isMapLoading, setIsMapLoading] = useState(!!id && id !== 'new');
   const [userRole, setUserRole] = useState<'owner' | 'edit' | 'view'>('owner');
   const canEditMap = userRole !== 'view';
-  const editMode = canEditMap && searchParams.get('mode') !== 'view';
   const [permissions, setPermissions] = useState<MapPermission[]>([]);
   const [searchAreaState, setSearchAreaState] = useState<SearchAreaState | null>(null);
   
@@ -137,7 +148,37 @@ export function MapEditor() {
   };
   const [mobileScale, setMobileScale] = useState(computeMobileScale);
 
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [isOffline, setIsOffline] = useState(
+    () => (typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY)
+  );
+  const [isSyncing, setIsSyncing] = useState(
+    () => !((typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY))
+  );
+  const editMode = canEditMap && !isOffline && searchParams.get('mode') !== 'view';
+
+  const applyOffline = useCallback((offline: boolean) => {
+    writeSessionFlag(OFFLINE_SESSION_KEY, offline);
+    setIsOffline(offline);
+    setIsSyncing(false);
+    if (offline) {
+      setSearchParams((prev) => {
+        if (prev.get('mode') === 'view') return prev;
+        writeSessionFlag(AUTO_VIEW_SESSION_KEY, true);
+        const next = new URLSearchParams(prev);
+        next.set('mode', 'view');
+        return next;
+      }, { replace: true });
+      return;
+    }
+    if (!readSessionFlag(AUTO_VIEW_SESSION_KEY)) return;
+    writeSessionFlag(AUTO_VIEW_SESSION_KEY, false);
+    setSearchParams((prev) => {
+      if (prev.get('mode') !== 'view') return prev;
+      const next = new URLSearchParams(prev);
+      next.delete('mode');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   useEffect(() => {
     let resizeRaf: number | null = null;
@@ -149,8 +190,8 @@ export function MapEditor() {
         resizeRaf = null;
       });
     };
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => applyOffline(false);
+    const handleOffline = () => applyOffline(true);
 
     window.addEventListener('resize', handleResize);
     window.addEventListener('online', handleOnline);
@@ -162,7 +203,7 @@ export function MapEditor() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, []);
+  }, [applyOffline]);
 
   const getStandardSheetHeight = () => {
     if (typeof window === 'undefined') return 300;
@@ -390,7 +431,7 @@ export function MapEditor() {
       setHasOfflineTiles(st.isComplete || st.isPartial);
     }
 
-    getManifestStats(mapId).then((stats) => {
+    getDownloadStats(mapId).then((stats) => {
       setHasOfflineTiles(stats.completed > 0);
     });
 
@@ -489,6 +530,7 @@ export function MapEditor() {
       // Reconnect re-sync handler
       socket.on('connect', () => {
         console.log('[SOCKET] Connected to server, re-syncing map data');
+        applyOffline(false);
         if (id) {
           socket.emit('join-map', id);
           if (isInitialConnect) {
@@ -497,6 +539,10 @@ export function MapEditor() {
           }
           reconcileOnReconnect(id);
         }
+      });
+
+      socket.on('connect_error', () => {
+        applyOffline(true);
       });
 
       // Granular Delta Listeners
@@ -856,6 +902,8 @@ export function MapEditor() {
   const loadMap = async (mapId: string, silent = false) => {
     hasLoadedRef.current = true;
     setSelectedNavIds(new Set());
+    setActiveOfflineMapId(mapId);
+    void preloadExtract(mapId);
 
     // CRITICAL FOR OFFLINE MODE:
     // 1. Instant Offline Hydration: If an offline version of this map exists in IndexedDB,
@@ -876,10 +924,6 @@ export function MapEditor() {
         setUserRole(cached.userRole || 'view');
         setPermissions(cached.permissions || []);
         if (cached.pins && cached.pins.length > 0) {
-          const bbox = getPinsBoundingBox(cached.pins);
-          if (bbox) {
-            prewarmTilesForArea(bbox, 13).catch(() => {});
-          }
           if (!silent) {
             const lats = cached.pins.map(p => p.lat);
             const lngs = cached.pins.map(p => p.lng);
@@ -892,6 +936,9 @@ export function MapEditor() {
           }
         }
         setIsMapLoading(false);
+        if (!isOfflineRef.current) {
+          setIsSyncing(true);
+        }
       }
     } catch (cacheErr) {
       console.warn('[APP] Instant offline cache hydration check error:', cacheErr);
@@ -911,10 +958,6 @@ export function MapEditor() {
       setLayers(data.layers || []);
       setPins(data.pins);
       if (data.pins && data.pins.length > 0) {
-        const bbox = getPinsBoundingBox(data.pins);
-        if (bbox) {
-          prewarmTilesForArea(bbox, 13).catch(() => {});
-        }
         if (!hasHydratedLocally && !silent) {
           const lats = data.pins.map(p => p.lat);
           const lngs = data.pins.map(p => p.lng);
@@ -929,8 +972,12 @@ export function MapEditor() {
       setUserRole(data.userRole || 'view');
       setPermissions(data.permissions || []);
       setIsDirty(false);
+      setIsSyncing(false);
     } catch (err) {
-      if (!hasHydratedLocally) {
+      setIsSyncing(false);
+      if (hasHydratedLocally) {
+        applyOffline(true);
+      } else {
         console.error('Failed to load map', err);
         setError('No Data');
         setTimeout(() => navigate('/'), 2000);
@@ -1506,10 +1553,9 @@ export function MapEditor() {
       
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
         <div id="download-pill-container" style={{ display: 'flex', alignItems: 'center' }}></div>
-        {editMode && (
-          <button 
+        <button 
             onClick={() => {
-              if (error) {
+              if (editMode && error && !isOffline) {
                 handleSave();
               }
             }}
@@ -1524,17 +1570,16 @@ export function MapEditor() {
             color: (isOffline || error) ? '#ffbdad' : (mapTheme === 'dark' ? '#cbd5e1' : 'white'),
             fontWeight: '600',
             whiteSpace: 'nowrap',
-            cursor: error ? 'pointer' : 'default',
+            cursor: (editMode && error && !isOffline) ? 'pointer' : 'default',
             outline: 'none',
             fontFamily: 'inherit',
             fontSize: '0.65rem'
           }}>
-            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: (isOffline || error) ? '#ff4d4f' : (isSaving || isDirty ? '#ffcc00' : '#4ade80'), flexShrink: 0 }} />
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: (isOffline || error) ? '#ff4d4f' : (isSyncing || (editMode && (isSaving || isDirty)) ? '#ffcc00' : '#4ade80'), flexShrink: 0 }} />
             <span>
-              {isOffline ? 'Offline' : (error || (isSaving ? 'Saving...' : (isDirty ? 'Pending...' : 'Synced')))}
+              {isOffline ? 'Offline' : (isSyncing ? 'Syncing' : (error || (editMode && isSaving ? 'Saving' : (editMode && isDirty ? 'Pending' : 'Synced'))))}
             </span>
           </button>
-        )}
         <div id="mobile-header-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '26px', minHeight: '26px', flexShrink: 0 }}></div>
       </div>
     </header>
@@ -1709,6 +1754,7 @@ export function MapEditor() {
           </div>
         )}
         <MapView 
+            mapId={mapId}
             pins={pins} 
             onMapClick={handleMapClick} 
             onPinClick={handlePinClick}

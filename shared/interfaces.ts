@@ -49,7 +49,6 @@ export interface MapData {
   lastAccessedAt?: string;
   totalTiles?: number;
   completedTiles?: number;
-  isDownloaded?: boolean;
 }
 
 export * from './types/socket';

@@ -1,7 +1,48 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
+import * as esbuild from 'esbuild'
+
+const INLINE_MAPLIBRE_WORKER_ID = '\0inline-maplibre-worker-url'
+
+/**
+ * Vite's `?worker&url` still serves the MapLibre worker over HTTP in dev.
+ * Chrome DevTools Offline blocks that fetch, so MapLibre never starts its
+ * worker and never requests vector tiles. Bundle the worker into a blob URL
+ * that lives in the already-loaded JS module.
+ */
+function inlineMaplibreWorker(): Plugin {
+  let moduleCode: string | null = null
+  return {
+    name: 'inline-maplibre-worker',
+    enforce: 'pre',
+    resolveId(source) {
+      if (source.includes('maplibre-gl-worker.mjs') && source.includes('?worker')) {
+        return INLINE_MAPLIBRE_WORKER_ID
+      }
+    },
+    async load(id) {
+      if (id !== INLINE_MAPLIBRE_WORKER_ID) return
+      if (!moduleCode) {
+        const entry = path.resolve(__dirname, 'node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs')
+        const result = await esbuild.build({
+          entryPoints: [entry],
+          bundle: true,
+          write: false,
+          format: 'esm',
+          platform: 'browser',
+          target: 'es2020',
+          logLevel: 'silent',
+        })
+        moduleCode = `const blob = new Blob([${JSON.stringify(result.outputFiles[0].text)}], { type: 'text/javascript;charset=utf-8' });
+const blobURL = URL.createObjectURL(blob);
+export default blobURL;`
+      }
+      return moduleCode
+    },
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -11,6 +52,7 @@ export default defineConfig({
     ),
   },
   plugins: [
+    inlineMaplibreWorker(),
     react(),
     VitePWA({
       registerType: 'autoUpdate',
@@ -42,6 +84,12 @@ export default defineConfig({
         ],
         navigateFallbackDenylist: [/^\/maps/],
         runtimeCaching: [
+          {
+            // A cached GET /api/maps/:id must not count as "online" — it
+            // previously left a refreshed offline map in edit/Synced mode.
+            urlPattern: /\/api\/maps\/[0-9a-f-]{36}(?:\?.*)?$/i,
+            handler: 'NetworkOnly',
+          },
           {
             urlPattern: /\/api\/.*/i,
             handler: 'NetworkFirst',
@@ -160,6 +208,14 @@ export default defineConfig({
       '/maps': {
         target: 'http://127.0.0.1:3002',
         changeOrigin: true,
+        // Sprites and fonts are in client/public/maps. Proxying them to the
+        // API server makes the map style hang when that server is unreachable.
+        bypass(req) {
+          const url = req.url || '';
+          if (url.startsWith('/maps/sprites/') || url.startsWith('/maps/fonts/')) {
+            return url.split('?')[0];
+          }
+        },
       },
       '/socket.io': {
         target: 'http://127.0.0.1:3002',

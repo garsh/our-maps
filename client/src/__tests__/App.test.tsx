@@ -6,11 +6,19 @@ import { PIN_HOVER_CLASS, getHoveredPinId, setLastPointerTypeForTests } from '..
 import LandingPage from '../pages/LandingPage';
 import { apiService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { getOfflineMap } from '../utils/tileUtils';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 
 // Mock the dependencies
 vi.mock('../services/api');
 vi.mock('../contexts/AuthContext');
+vi.mock('../utils/tileUtils', async () => {
+  const actual = await vi.importActual<typeof import('../utils/tileUtils')>('../utils/tileUtils');
+  return {
+    ...actual,
+    getOfflineMap: vi.fn(async () => null),
+  };
+});
 vi.mock('../components/MapView', () => ({
   default: () => <div data-testid="map-view" />
 }));
@@ -44,6 +52,8 @@ describe('App Components Error Handling', () => {
 
     // Default API Mock
     (apiService.getMaps as any).mockResolvedValue([]);
+    (getOfflineMap as any).mockResolvedValue(null);
+    sessionStorage.clear();
   });
 
   it('LandingPage shows error message when server is unreachable', async () => {
@@ -460,7 +470,7 @@ describe('App Components Error Handling', () => {
       expect(screen.getByText('Test Map')).toBeInTheDocument();
     });
 
-    expect(screen.queryByText(/Synced/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Synced/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText(/more options/i));
     expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
@@ -504,7 +514,7 @@ describe('App Components Error Handling', () => {
 
     fireEvent.click(editModeItem);
     expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Synced/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Synced/i)).toBeInTheDocument();
   });
 
   it('greys out Edit Mode toggle and turns it off when device goes offline', async () => {
@@ -535,6 +545,9 @@ describe('App Components Error Handling', () => {
       window.dispatchEvent(new Event('offline'));
     });
 
+    expect(screen.getByText('Offline')).toBeInTheDocument();
+    expect(screen.queryByText(/Synced/i)).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByLabelText(/more options/i));
     expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
 
@@ -555,6 +568,85 @@ describe('App Components Error Handling', () => {
     expect(row.style.opacity).toBe('1');
     expect(row.style.cursor).toBe('pointer');
     expect(screen.getByText('Rename Map')).toBeInTheDocument();
+  });
+
+  it('opens a cached owner map in view-only mode when the network load fails', async () => {
+    (getOfflineMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Cached Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner',
+    });
+    (apiService.getMap as any).mockRejectedValue(new Error('Failed to fetch'));
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Cached Map')).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(apiService.getMap).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+    await waitFor(() => {
+      const editModeItem = screen.getByText('Edit Mode');
+      const row = editModeItem.parentElement as HTMLElement;
+      expect(row.style.opacity).toBe('0.45');
+      expect(row.style.cursor).toBe('not-allowed');
+    });
+    expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Edit Mode'));
+    expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
+    expect(screen.getByText('Offline')).toBeInTheDocument();
+  });
+
+  it('shows Syncing then Synced on a cached map without flashing Offline while online', async () => {
+    (getOfflineMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Cached Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner',
+    });
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Cached Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner',
+    });
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Cached Map')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText('Synced')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+    expect(screen.queryByText('Syncing...')).not.toBeInTheDocument();
   });
 });
 

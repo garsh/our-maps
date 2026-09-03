@@ -7,6 +7,8 @@ import { Map as MapIcon, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download, 
 import { getMapDownloadStatuses, type MapDownloadStatus } from '../utils/tileUtils';
 import { tileWorkerManager } from '../utils/tileWorkerManager';
 import { getStoredJson, setStoredJson } from '../utils/storageUtils';
+import { isForcedOffline, setForcedOffline } from '../utils/offlineSession';
+import { deleteUnrecognizedStorage, findUnrecognizedStorage, type LeftoverStorageItem } from '../utils/legacyStorage';
 
 interface MapSummary {
   id: string;
@@ -38,12 +40,15 @@ export default function LandingPage() {
     const cached = getStoredJson<MapSummary[] | null>('cached_maps', null);
     return !cached || cached.length === 0;
   });
-  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' ? !navigator.onLine : false);
+  const [isOffline, setIsOffline] = useState(() => isForcedOffline());
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [showSignOutDialog, setShowSignOutDialog] = useState(false);
   const [showRemoveAllDialog, setShowRemoveAllDialog] = useState(false);
   const [isRemovingAll, setIsRemovingAll] = useState(false);
+  const [leftoverItems, setLeftoverItems] = useState<LeftoverStorageItem[]>([]);
+  const [showLeftoverDialog, setShowLeftoverDialog] = useState(false);
+  const [isRemovingLeftovers, setIsRemovingLeftovers] = useState(false);
   const [showOfflineInterstitial, setShowOfflineInterstitial] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [touchTooltip, setTouchTooltip] = useState<TouchTooltipState | null>(null);
@@ -86,12 +91,42 @@ export default function LandingPage() {
       await tileWorkerManager.removeAllDownloads();
       setDownloadStatuses(new Map());
       setStoredJson('cached_download_statuses', {});
+      let leftovers: LeftoverStorageItem[] = [];
+      try {
+        leftovers = await findUnrecognizedStorage();
+      } catch (scanErr) {
+        console.warn('Failed to scan for leftover storage:', scanErr);
+      }
+      setShowRemoveAllDialog(false);
+      if (leftovers.length > 0) {
+        setLeftoverItems(leftovers);
+        setShowLeftoverDialog(true);
+      }
     } catch (err) {
       console.error('Failed to remove all downloads:', err);
       alert('Failed to remove all downloads: ' + (err instanceof Error ? err.message : String(err)));
+      setShowRemoveAllDialog(false);
     } finally {
       setIsRemovingAll(false);
-      setShowRemoveAllDialog(false);
+    }
+  };
+
+  const handleKeepLeftovers = () => {
+    setShowLeftoverDialog(false);
+    setLeftoverItems([]);
+  };
+
+  const handleDeleteLeftovers = async () => {
+    setIsRemovingLeftovers(true);
+    try {
+      await deleteUnrecognizedStorage(leftoverItems);
+      setShowLeftoverDialog(false);
+      setLeftoverItems([]);
+    } catch (err) {
+      console.error('Failed to delete leftover storage:', err);
+      alert('Failed to delete leftover data: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsRemovingLeftovers(false);
     }
   };
 
@@ -104,6 +139,8 @@ export default function LandingPage() {
         return;
       }
     }
+    // Offline still opens as editor intent (no ?mode=view) so coming back
+    // online restores edit mode. The map editor forces view-only while offline.
     navigate(viewMode ? `/map/${mapId}?mode=view` : `/map/${mapId}`);
   };
 
@@ -134,22 +171,31 @@ export default function LandingPage() {
     }
   };
 
-  const fetchMaps = async () => {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+  const applyCachedMaps = () => {
+    const cachedData = getStoredJson<MapSummary[] | null>('cached_maps', null);
+    if (cachedData) {
+      setMaps(cachedData);
+      fetchDownloadedMapStatuses(cachedData);
+    } else {
+      fetchDownloadedMapStatuses();
+    }
+  };
+
+  const fetchMaps = async (opts?: { force?: boolean }) => {
+    const browserOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+    // SessionStorage can still say offline after a reconnect (it survives
+    // refresh). Only skip the network when the browser itself reports offline.
+    if (!opts?.force && browserOffline) {
+      setForcedOffline(true);
       setIsOffline(true);
-      const cachedData = getStoredJson<MapSummary[] | null>('cached_maps', null);
-      if (cachedData) {
-        setMaps(cachedData);
-        fetchDownloadedMapStatuses(cachedData);
-      } else {
-        fetchDownloadedMapStatuses();
-      }
+      applyCachedMaps();
       setLoading(false);
       return;
     }
 
     try {
       const data = await apiService.getMaps();
+      setForcedOffline(false);
       setMaps(data);
       setIsOffline(false);
       setStoredJson('cached_maps', data);
@@ -160,14 +206,9 @@ export default function LandingPage() {
         logout();
         return;
       }
+      setForcedOffline(true);
       setIsOffline(true);
-      const cachedData = getStoredJson<MapSummary[] | null>('cached_maps', null);
-      if (cachedData) {
-        setMaps(cachedData);
-        fetchDownloadedMapStatuses(cachedData);
-      } else {
-        fetchDownloadedMapStatuses();
-      }
+      applyCachedMaps();
     } finally {
       setLoading(false);
     }
@@ -178,17 +219,28 @@ export default function LandingPage() {
     fetchMaps();
     
     const handleOnline = () => {
+      setForcedOffline(false);
       setIsOffline(false);
-      fetchMaps();
+      fetchMaps({ force: true });
     };
     const handleOffline = () => {
+      setForcedOffline(true);
       setIsOffline(true);
     };
     
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible') {
+        fetchDownloadedMapStatuses();
+      }
+    };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    document.addEventListener('visibilitychange', handleVisible);
     
-    if (!navigator.onLine) setIsOffline(true);
+    if (isForcedOffline()) {
+      setForcedOffline(true);
+      setIsOffline(true);
+    }
 
     const unsubscribe = tileWorkerManager.subscribe((state) => {
       setDownloadStatuses((prev) => {
@@ -227,6 +279,7 @@ export default function LandingPage() {
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      document.removeEventListener('visibilitychange', handleVisible);
       window.removeEventListener('scroll', handleDismissTooltip);
       unsubscribe();
     };
@@ -474,7 +527,7 @@ export default function LandingPage() {
           )}
           {isOffline && (
             <button 
-              onClick={fetchMaps}
+              onClick={() => fetchMaps({ force: true })}
               className="btn-primary"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', whiteSpace: 'nowrap', flexShrink: 0, background: 'var(--text-secondary)' }}
             >
@@ -738,6 +791,58 @@ export default function LandingPage() {
                 <div style={{ display: 'flex', gap: '1rem' }}>
                   <button onClick={() => setShowRemoveAllDialog(false)} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)', cursor: 'pointer' }}>Cancel</button>
                   <button onClick={handleRemoveAllDownloads} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--error-color)', color: 'white', fontWeight: '600', cursor: 'pointer' }}>Remove All</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showLeftoverDialog && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000,
+            backdropFilter: 'blur(4px)'
+          }}
+          onClick={() => !isRemovingLeftovers && handleKeepLeftovers()}
+        >
+          <div style={{ background: 'var(--surface-color)', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '460px', width: '90%', boxShadow: 'var(--shadow-lg)', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+            {isRemovingLeftovers ? (
+              <>
+                <div style={{ background: 'rgba(239, 68, 68, 0.1)', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
+                  <Upload size={32} className="animated-download-icon" color="var(--error-color)" />
+                </div>
+                <h3 style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>Removing Leftovers...</h3>
+                <p style={{ color: 'var(--text-secondary)', lineHeight: '1.5', margin: '1rem 0 0 0' }}>
+                  Deleting leftover data from older versions of Our Maps. Please wait...
+                </p>
+              </>
+            ) : (
+              <>
+                <div style={{ background: 'rgba(239, 68, 68, 0.1)', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
+                  <Trash2 size={32} color="var(--error-color)" />
+                </div>
+                <h3 style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>Leftover data found</h3>
+                <p style={{ color: 'var(--text-secondary)', lineHeight: '1.5', margin: '1rem 0' }}>
+                  This browser still has data from an older version of Our Maps that the current app no longer uses. Delete it as well?
+                </p>
+                <ul style={{ textAlign: 'left', color: 'var(--text-primary)', lineHeight: 1.5, margin: '0 0 2rem 0', padding: '0.75rem 0.75rem 0.75rem 1.75rem', maxHeight: '180px', overflowY: 'auto', background: 'var(--bg-color)', borderRadius: 'var(--radius-sm)' }}>
+                  {leftoverItems.map((item) => (
+                    <li key={item.id} style={{ marginBottom: '0.35rem' }}>{item.detail}</li>
+                  ))}
+                </ul>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button onClick={handleKeepLeftovers} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'transparent', fontWeight: '600', color: 'var(--text-secondary)', cursor: 'pointer' }}>Keep</button>
+                  <button onClick={handleDeleteLeftovers} style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--error-color)', color: 'white', fontWeight: '600', cursor: 'pointer' }}>Delete leftovers</button>
                 </div>
               </>
             )}

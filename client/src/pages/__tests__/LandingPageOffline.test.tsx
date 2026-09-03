@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import LandingPage from '../LandingPage';
 import { apiService } from '../../services/api';
@@ -7,9 +7,14 @@ import { useAuth } from '../../contexts/AuthContext';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 import * as tileUtils from '../../utils/tileUtils';
 import { tileWorkerManager } from '../../utils/tileWorkerManager';
+import * as legacyStorage from '../../utils/legacyStorage';
 
 vi.mock('../../services/api');
 vi.mock('../../contexts/AuthContext');
+vi.mock('../../utils/legacyStorage', () => ({
+  findUnrecognizedStorage: vi.fn(async () => []),
+  deleteUnrecognizedStorage: vi.fn(async () => {}),
+}));
 vi.mock('../../utils/tileUtils', async () => {
   const actual = await vi.importActual('../../utils/tileUtils');
   return {
@@ -36,6 +41,7 @@ describe('LandingPage Offline Map Access', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
     (useAuth as any).mockReturnValue({
       user: mockUser,
       token: 'mock-token',
@@ -50,6 +56,10 @@ describe('LandingPage Offline Map Access', () => {
     const downloadStatuses = new Map();
     downloadStatuses.set('map-downloaded', { isComplete: true, isPartial: false });
     (tileUtils.getMapDownloadStatuses as any).mockResolvedValue(downloadStatuses);
+  });
+
+  afterEach(() => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
 
   it('allows opening maps with download when offline', async () => {
@@ -70,6 +80,7 @@ describe('LandingPage Offline Map Access', () => {
 
     fireEvent.click(screen.getByText('Downloaded Map'));
     expect(mockNavigate).toHaveBeenCalledWith('/map/map-downloaded');
+    expect(mockNavigate).not.toHaveBeenCalledWith('/map/map-downloaded?mode=view');
   });
 
   it('opens a map in view mode from the view button without also opening as editor', async () => {
@@ -159,6 +170,46 @@ describe('LandingPage Offline Map Access', () => {
     });
   });
 
+  it('shows stored offline UI immediately then revalidates when the browser is online', async () => {
+    sessionStorage.setItem('ourmaps_offline', '1');
+    localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('Retry Sync')).toBeInTheDocument();
+    expect(screen.queryByText('New Map')).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(apiService.getMaps).toHaveBeenCalled();
+      expect(screen.getByText('New Map')).toBeInTheDocument();
+    });
+    expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
+  });
+
+  it('skips getMaps when the browser reports offline', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    sessionStorage.setItem('ourmaps_offline', '1');
+    localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('Retry Sync')).toBeInTheDocument();
+    expect(apiService.getMaps).not.toHaveBeenCalled();
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+  });
+
   it('shows owner name without Shared by prefix for shared maps', async () => {
     const sharedMaps = [
       { id: 'map-shared', name: 'Shared Map', ownerId: 'user-other', ownerName: 'Alice Smith' },
@@ -216,5 +267,40 @@ describe('LandingPage Offline Map Access', () => {
     });
 
     subscribeSpy.mockRestore();
+  });
+
+  it('asks to delete leftover older-version storage after Remove All Downloads', async () => {
+    vi.spyOn(tileWorkerManager, 'removeAllDownloads').mockResolvedValue(undefined);
+    (legacyStorage.findUnrecognizedStorage as any).mockResolvedValue([
+      { id: 'indexeddb:MapTilesDB', kind: 'indexeddb', name: 'MapTilesDB', detail: 'Old map database (MapTilesDB)' },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Downloaded Map')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTitle('Test User'));
+    fireEvent.click(screen.getByText('Remove All Downloads'));
+    fireEvent.click(screen.getByText('Remove All'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Leftover data found')).toBeInTheDocument();
+      expect(screen.getByText('Old map database (MapTilesDB)')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Delete leftovers'));
+    await waitFor(() => {
+      expect(legacyStorage.deleteUnrecognizedStorage).toHaveBeenCalledWith([
+        { id: 'indexeddb:MapTilesDB', kind: 'indexeddb', name: 'MapTilesDB', detail: 'Old map database (MapTilesDB)' },
+      ]);
+    });
   });
 });

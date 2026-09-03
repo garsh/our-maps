@@ -59,7 +59,6 @@ import {
   estimateSizeMB, 
   getPinsBoundingBox,
   getManifestStats,
-  getOfflineMap,
   saveMapOffline,
   type BoundingBox 
 } from '../utils/tileUtils';
@@ -1826,21 +1825,11 @@ const Sidebar = ({
           setDownloadProgress(stats.completed / stats.total);
           setTileStats(stats);
         } else {
-          getOfflineMap(mapId).then((offlineMap) => {
-            if (offlineMap) {
-              setIsDownloaded(true);
-              setHasPartialDownload(false);
-              setIsDownloading(false);
-              setDownloadProgress(null);
-              setTileStats(stats.total > 0 ? stats : { total: stats.total, completed: stats.completed });
-            } else {
-              setIsDownloaded(false);
-              setHasPartialDownload(false);
-              setIsDownloading(false);
-              setDownloadProgress(null);
-              setTileStats(null);
-            }
-          });
+          setIsDownloaded(false);
+          setHasPartialDownload(false);
+          setIsDownloading(false);
+          setDownloadProgress(null);
+          setTileStats(stats.total > 0 ? stats : null);
         }
       });
       tileWorkerManager.resumeIfNeeded(mapId);
@@ -1905,7 +1894,6 @@ const Sidebar = ({
       userRole,
       totalTiles: totalCount,
       completedTiles: 0,
-      isDownloaded: false,
     };
     await saveMapOffline(currentMapData);
 

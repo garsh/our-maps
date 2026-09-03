@@ -1,4 +1,6 @@
-import { removeMapDownload, removeAllDownloads, getManifestStats, getOfflineMap, saveMapOffline, getPinsBoundingBox, type TileInfo, type BoundingBox } from './tileUtils';
+import { removeMapDownload, removeAllDownloads, getDownloadStats, getOfflineMap, saveMapOffline, getPinsBoundingBox, type BoundingBox } from './tileUtils';
+import { extractExists } from './extractStore';
+import { invalidateExtractPMTiles } from './offlineExtract';
 import type { Pin } from '@shared/interfaces';
 
 export interface DownloadProgressState {
@@ -14,7 +16,6 @@ export interface DownloadProgressState {
 export interface StartDownloadParams {
   bbox?: BoundingBox | null;
   pins?: Pin[];
-  tiles?: TileInfo[];
   totalTiles?: number;
 }
 
@@ -72,51 +73,29 @@ class TileWorkerManager {
     this.subscribers.forEach(cb => cb(state));
   }
 
-  public async startDownload(mapId: string, params: TileInfo[] | StartDownloadParams) {
+  public async startDownload(mapId: string, params: StartDownloadParams) {
     let task = this.tasks.get(mapId);
 
-    // If already downloading this map, don't restart it
     if (task && task.isDownloading && task.worker) {
       this.notifySubscribers(mapId);
       return;
     }
 
-    // If an existing worker is running for this map (e.g. removal), terminate it
     if (task && task.worker) {
       task.worker.terminate();
       task.worker = null;
     }
 
-    let tilesList: TileInfo[] | undefined;
-    let bbox: BoundingBox | null | undefined;
-    let pins: Pin[] | undefined;
-    let totalTiles = 0;
-
-    if (Array.isArray(params)) {
-      tilesList = params;
-      totalTiles = params.length;
-    } else {
-      tilesList = params.tiles;
-      bbox = params.bbox;
-      pins = params.pins;
-      totalTiles = params.totalTiles || (params.tiles ? params.tiles.length : 0);
-    }
-
-    let initialCompleted = tilesList ? tilesList.filter((t: any) => t.status === 'completed').length : 0;
-    if (initialCompleted === 0 && mapId) {
-      const stats = await getManifestStats(mapId);
-      if (stats.completed > 0 && stats.completed < stats.total) {
-        initialCompleted = stats.completed;
-      }
-    }
+    const bbox = params.bbox;
+    const totalTiles = params.totalTiles || 0;
 
     task = {
       mapId,
       worker: null,
       isDownloading: true,
       isRemoving: false,
-      downloadProgress: totalTiles > 0 ? initialCompleted / totalTiles : 0,
-      tileStats: { completed: initialCompleted, total: totalTiles }
+      downloadProgress: 0,
+      tileStats: { completed: 0, total: totalTiles }
     };
     this.tasks.set(mapId, task);
     this.notifySubscribers(mapId);
@@ -128,9 +107,7 @@ class TileWorkerManager {
       worker.postMessage({
         type: 'start-download',
         mapId,
-        tiles: tilesList,
         bbox,
-        pins,
         totalTiles
       });
 
@@ -153,11 +130,11 @@ class TileWorkerManager {
           currentTask.isDownloading = false;
           currentTask.downloadProgress = null;
           currentTask.tileStats = { total: actualTotal, completed: actualTotal };
+          invalidateExtractPMTiles(mapId);
           getOfflineMap(mapId).then((offlineMap) => {
             if (offlineMap) {
               offlineMap.totalTiles = actualTotal;
               offlineMap.completedTiles = actualTotal;
-              offlineMap.isDownloaded = true;
               saveMapOffline(offlineMap);
             }
           });
@@ -185,12 +162,12 @@ class TileWorkerManager {
       return;
     }
 
-    // Check manifest stats in DB
-    const stats = await getManifestStats(mapId);
-    if (stats.total > 0 && stats.completed < stats.total) {
-      const offlineMap = await getOfflineMap(mapId);
-      const bbox = offlineMap?.pins ? getPinsBoundingBox(offlineMap.pins) : null;
-      this.startDownload(mapId, { bbox, pins: offlineMap?.pins, totalTiles: stats.total });
+    if (await extractExists(mapId)) return;
+    const stats = await getDownloadStats(mapId);
+    const offlineMap = await getOfflineMap(mapId);
+    if (offlineMap && stats.total > 0 && stats.completed < stats.total) {
+      const bbox = offlineMap.pins ? getPinsBoundingBox(offlineMap.pins) : null;
+      this.startDownload(mapId, { bbox, pins: offlineMap.pins, totalTiles: stats.total });
     }
   }
 
@@ -223,6 +200,7 @@ class TileWorkerManager {
           const currentTask = this.tasks.get(mapId);
           const { type } = e.data;
           if (type === 'remove-complete' || type === 'error') {
+            invalidateExtractPMTiles(mapId);
             if (currentTask && currentTask.worker === worker) {
               currentTask.isDownloading = false;
               currentTask.isRemoving = false;
@@ -239,6 +217,7 @@ class TileWorkerManager {
           }
         };
       } else {
+        invalidateExtractPMTiles(mapId);
         removeMapDownload(mapId).finally(() => {
           const currentTask = this.tasks.get(mapId);
           if (currentTask) {
@@ -265,6 +244,7 @@ class TileWorkerManager {
     const mapIds = Array.from(this.tasks.keys());
     this.tasks.clear();
 
+    invalidateExtractPMTiles();
     await removeAllDownloads();
 
     for (const mapId of mapIds) {

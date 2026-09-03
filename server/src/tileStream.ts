@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import fs from 'fs';
 import { PMTiles } from 'pmtiles';
 import { resolveSafeMapFile } from './mapFiles';
+import { planExtract, streamPlannedExtract, type BoundingBox } from './pmtilesExtract';
 
 class LocalFileSource {
   private fd: number;
@@ -19,14 +20,14 @@ class LocalFileSource {
   async getBytes(offset: number, length: number): Promise<{ data: ArrayBuffer }> {
     const buffer = Buffer.allocUnsafe(length);
     fs.readSync(this.fd, buffer, 0, length, offset);
-    return { data: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) };
+    return { data: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer };
   }
 }
 
 let cachedPMTiles: PMTiles | null = null;
 let cachedPMTilesPath: string | null = null;
 
-function getPMTilesInstance(candidateDirs: string[]): PMTiles | null {
+function getPMTilesInstance(candidateDirs: string[]): { pmt: PMTiles; filePath: string } | null {
   const filePath = resolveSafeMapFile('planet.pmtiles', candidateDirs);
   if (!filePath || !fs.existsSync(filePath)) return null;
 
@@ -35,44 +36,31 @@ function getPMTilesInstance(candidateDirs: string[]): PMTiles | null {
     cachedPMTiles = new PMTiles(source);
     cachedPMTilesPath = filePath;
   }
-  return cachedPMTiles;
+  return { pmt: cachedPMTiles, filePath };
 }
 
-function longToX(lon: number, zoom: number): number {
-  const x = Math.floor(((lon + 180.0) / 360.0) * (1 << zoom));
-  return ((x % (1 << zoom)) + (1 << zoom)) % (1 << zoom);
-}
-
-function latToY(lat: number, zoom: number): number {
-  const latRad = (lat * Math.PI) / 180.0;
-  const y = Math.floor(((1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0) * (1 << zoom));
-  return Math.max(0, Math.min((1 << zoom) - 1, y));
-}
-
-function getXRanges(west: number, east: number, zoom: number, buffer = 0): Array<[number, number]> {
-  const maxTile = (1 << zoom) - 1;
-  const rawXMin = longToX(west, zoom) - buffer;
-  const rawXMax = longToX(east, zoom) + buffer;
-  if (west <= east) {
-    const xMin = Math.max(0, Math.min(maxTile, Math.min(rawXMin, rawXMax)));
-    const xMax = Math.max(0, Math.min(maxTile, Math.max(rawXMin, rawXMax)));
-    return [[xMin, xMax]];
-  } else {
-    // Crossing the antimeridian
-    const xMin = Math.max(0, Math.min(maxTile, rawXMin));
-    const xMax = Math.max(0, Math.min(maxTile, rawXMax));
-    return [
-      [xMin, maxTile],
-      [0, xMax]
-    ];
-  }
-}
-
-export interface BoundingBox {
-  north: number;
-  south: number;
-  east: number;
-  west: number;
+function writeChunk(res: Response, chunk: Buffer): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (res.writableEnded || res.destroyed) {
+      resolve();
+      return;
+    }
+    const ok = res.write(chunk);
+    if (ok) {
+      resolve();
+      return;
+    }
+    const onDrain = () => {
+      res.off('error', onError);
+      resolve();
+    };
+    const onError = (err: Error) => {
+      res.off('drain', onDrain);
+      reject(err);
+    };
+    res.once('drain', onDrain);
+    res.once('error', onError);
+  });
 }
 
 export async function handleTileStream(req: Request, res: Response, candidateMapsDirs: string[]) {
@@ -83,102 +71,58 @@ export async function handleTileStream(req: Request, res: Response, candidateMap
     return res.status(400).json({ error: 'Valid bbox { north, south, east, west } is required' });
   }
 
-  const pmt = getPMTilesInstance(candidateMapsDirs);
-  if (!pmt) {
+  const archive = getPMTilesInstance(candidateMapsDirs);
+  if (!archive) {
     return res.status(404).json({ error: 'planet.pmtiles map dataset not found' });
   }
 
+  const { pmt, filePath } = archive;
   try {
     await pmt.getHeader();
-  } catch (err) {
+  } catch {
     return res.status(500).json({ error: 'Failed to read PMTiles header' });
   }
 
   const startZoom = Math.max(1, Math.min(15, Number(minZoom) || 1));
   const endZoom = Math.max(startZoom, Math.min(15, Number(maxZoom) || 15));
-
-  // Build tile coordinate array
-  const tiles: Array<{ z: number; x: number; y: number }> = [];
-  for (let z = startZoom; z <= endZoom; z++) {
-    if (z <= 4) {
-      const maxTile = (1 << z) - 1;
-      for (let x = 0; x <= maxTile; x++) {
-        for (let y = 0; y <= maxTile; y++) {
-          tiles.push({ z, x, y });
-        }
-      }
-    } else {
-      const buffer = (z >= 5 && z <= 8) ? 2 : (z === 9 ? 1 : 0);
-      const maxTile = (1 << z) - 1;
-      const yMin = latToY(bbox.north, z);
-      const yMax = latToY(bbox.south, z);
-      const yStart = Math.max(0, Math.min(yMin, yMax) - buffer);
-      const yEnd = Math.min(maxTile, Math.max(yMin, yMax) + buffer);
-
-      const xRanges = getXRanges(bbox.west, bbox.east, z, buffer);
-      for (const [xStart, xEnd] of xRanges) {
-        for (let x = xStart; x <= xEnd; x++) {
-          for (let y = yStart; y <= yEnd; y++) {
-            tiles.push({ z, x, y });
-          }
-        }
-      }
-    }
-  }
-
-  // Set binary stream headers
-  res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Transfer-Encoding', 'chunked');
-  res.setHeader('X-Total-Tiles', tiles.length.toString());
+  const extractBbox: BoundingBox = {
+    north: bbox.north,
+    south: bbox.south,
+    east: bbox.east,
+    west: bbox.west,
+  };
 
   let isAborted = false;
   req.on('close', () => {
     isAborted = true;
   });
 
-  const CONCURRENCY = 32;
-  let queueIndex = 0;
+  try {
+    const plan = await planExtract(pmt, extractBbox, startZoom, endZoom);
 
-  const workers = Array(CONCURRENCY).fill(null).map(async () => {
-    while (queueIndex < tiles.length && !isAborted) {
-      const tile = tiles[queueIndex++];
-      if (!tile) break;
+    if (isAborted) return;
 
-      try {
-        const result = await pmt.getZxy(tile.z, tile.x, tile.y);
-        const dataLength = result && result.data ? result.data.byteLength : 0;
+    res.setHeader('Content-Type', 'application/vnd.pmtiles');
+    res.setHeader('Content-Length', plan.totalBytes.toString());
+    res.setHeader('Cache-Control', 'no-store, no-transform');
+    res.setHeader('X-Total-Tiles', plan.addressedTiles.toString());
+    res.setHeader('X-Extract-Bytes', plan.totalBytes.toString());
 
-        // 13-byte header: [z (1B), x (4B uint32 BE), y (4B uint32 BE), len (4B uint32 BE)] + tile payload
-        const frame = Buffer.allocUnsafe(13 + dataLength);
-        frame.writeUInt8(tile.z, 0);
-        frame.writeUInt32BE(tile.x, 1);
-        frame.writeUInt32BE(tile.y, 5);
-        frame.writeUInt32BE(dataLength, 9);
+    await streamPlannedExtract(
+      filePath,
+      plan,
+      (chunk) => writeChunk(res, chunk),
+      () => isAborted
+    );
 
-        if (dataLength > 0 && result && result.data) {
-          Buffer.from(result.data).copy(frame, 13);
-        }
-
-        if (!isAborted) {
-          res.write(frame);
-        }
-      } catch (err) {
-        // Write empty frame on error so stream position remains synchronized
-        const emptyFrame = Buffer.allocUnsafe(13);
-        emptyFrame.writeUInt8(tile.z, 0);
-        emptyFrame.writeUInt32BE(tile.x, 1);
-        emptyFrame.writeUInt32BE(tile.y, 5);
-        emptyFrame.writeUInt32BE(0, 9);
-        if (!isAborted) {
-          res.write(emptyFrame);
-        }
-      }
+    if (!isAborted && !res.writableEnded) {
+      res.end();
     }
-  });
-
-  await Promise.all(workers);
-  if (!isAborted) {
-    res.end();
+  } catch (err) {
+    if (isAborted) return;
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Failed to build map extract' });
+    }
+    res.destroy(err instanceof Error ? err : new Error('Failed to build map extract'));
   }
 }

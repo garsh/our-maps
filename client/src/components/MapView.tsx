@@ -1,10 +1,8 @@
-import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import Map, { Marker, AttributionControl, Source, Layer, type MapRef } from 'react-map-gl/maplibre';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-
-maplibregl.setWorkerUrl(workerUrl);
 import { Protocol } from 'pmtiles';
 import { layers as protomapsLayers, namedFlavor } from '@protomaps/basemaps';
 import type { Pin, PinIcon } from '@shared/interfaces';
@@ -13,10 +11,13 @@ import { Locate } from 'lucide-react';
 import { reverseGeocode } from '../utils/geocoding';
 import type { MapTheme } from './Sidebar';
 
-import { getTile } from '../utils/tileUtils';
+import { getActiveExtractPMTiles, getExtractTileJSON, preloadExtract, setActiveOfflineMapId } from '../utils/offlineExtract';
 import { clearHoveredPin, getHoveredPinId, useIsPinHovered, useHoveredPinId, hasFinePointer } from '../utils/pinHover';
 import { setMapViewportBounds } from '../utils/mapViewport';
 import { ensurePinImageByKey, ensurePinImages, getPinIconKey } from '../utils/pinIconSprite';
+import { applyBundledSprites } from '../utils/basemapSprites';
+
+maplibregl.setWorkerUrl(workerUrl);
 
 function attachMissingImageResolver(map: any) {
   if (!map || typeof map.setMissingStyleImageResolver !== 'function') return;
@@ -100,29 +101,38 @@ function setupPMTilesProtocol() {
       const match = params.url.match(PMTILES_TILE_REGEX);
       if (match) {
         const [, z, x, y] = match;
-        const tilePath = `/maps/tile/${z}/${x}/${y}.mvt`;
 
         // CRITICAL FOR OFFLINE MODE:
-        // 1. Always query local IndexedDB & in-memory cache first (<0.1ms).
+        // 1. Always query the local PMTiles extract first.
         // NEVER add an online "fast-path" before this cache check based on navigator.onLine!
         // When running offline or when the server is unreachable, navigator.onLine can still report true,
-        // which would cause tile requests to bypass IndexedDB, fail on network fetch, and blank the map.
+        // which would cause tile requests to bypass the extract, fail on network fetch, and blank the map.
         try {
-          const data = await getTile(tilePath);
-          if (data && data.byteLength > 0) {
-            return { data };
+          const local = await getActiveExtractPMTiles();
+          if (local) {
+            const result = await local.getZxy(Number(z), Number(x), Number(y));
+            if (result && result.data && result.data.byteLength > 0) {
+              return { data: new Uint8Array(result.data) };
+            }
+            // Extract is loaded: missing tiles must throw so MapLibre overzooms a parent tile.
+            // Do not fall through to the network — navigator.onLine can be true while the server is down.
+            throw new Error(`Tile not found: ${z}/${x}/${y}`);
           }
-        } catch (dbErr) {
-          console.error(`[PMTILES PROTOCOL] IDB ERROR: ${z}/${x}/${y}`, dbErr);
+        } catch (extractErr) {
+          if (extractErr instanceof Error && extractErr.message.startsWith('Tile not found:')) {
+            throw extractErr;
+          }
+          if (abortController.signal.aborted) throw extractErr;
+          console.error('Failed to read offline map extract', extractErr);
         }
 
-        // 2. If not in IndexedDB and online, attempt online fetch
+        // 2. No local extract. If the browser reports online, try the live planet archive.
+        // NEVER treat navigator.onLine as proof the server is reachable.
         if (navigator.onLine) {
           try {
-            const onlineRes = await globalPMTilesProtocol!.tilev4(params, abortController);
-            return onlineRes;
+            return await globalPMTilesProtocol!.tilev4(params, abortController);
           } catch {
-            // Online fetch failed or server down
+            // Fall through to the miss path below.
           }
         }
 
@@ -133,17 +143,26 @@ function setupPMTilesProtocol() {
         throw new Error(`Tile not found: ${z}/${x}/${y}`);
       }
 
-      // Metadata / TileJSON schema request
-      if (!navigator.onLine) {
-        return { data: getFallbackMetadata(params.url) };
+      // Metadata / TileJSON schema request.
+      // Prefer the local extract so MapLibre can start asking for tiles without /maps/planet.pmtiles.
+      // navigator.onLine is not proof the server is reachable.
+      try {
+        const fromExtract = await getExtractTileJSON(params.url);
+        if (fromExtract) {
+          return { data: fromExtract };
+        }
+      } catch {
+        // Fall through to the live archive, then the static fallback.
       }
 
       try {
         const timeoutController = new AbortController();
         const timeoutId = setTimeout(() => timeoutController.abort(), 1200);
-        const res = await globalPMTilesProtocol!.tilev4(params, timeoutController);
-        clearTimeout(timeoutId);
-        return res;
+        try {
+          return await globalPMTilesProtocol!.tilev4(params, timeoutController);
+        } finally {
+          clearTimeout(timeoutId);
+        }
       } catch {
         return { data: getFallbackMetadata(params.url) };
       }
@@ -154,6 +173,7 @@ function setupPMTilesProtocol() {
 setupPMTilesProtocol();
 
 interface MapViewProps {
+  mapId?: string | null;
   center?: [number, number]; // [lat, lng]
   zoom?: number;
   pins: Pin[];
@@ -575,6 +595,7 @@ export function isPinInPaddedViewport(
 }
 
 const MapView = ({
+  mapId = null,
   center = [20, 0], // default [lat, lng]
   zoom = 3,
   pins,
@@ -600,7 +621,26 @@ const MapView = ({
   isOffline = false,
   hasOfflineTiles: _hasOfflineTiles = false,
 }: MapViewProps) => {
+  if (mapId) {
+    setActiveOfflineMapId(mapId);
+  }
+
   const mapRef = useRef<MapRef | null>(null);
+
+  useLayoutEffect(() => {
+    if (!mapId) return;
+    setActiveOfflineMapId(mapId);
+    void preloadExtract(mapId).then((pmt) => {
+      if (!pmt) return;
+      const mapInstance = mapRef.current?.getMap();
+      const source = mapInstance?.getSource?.('protomaps') as { reload?: () => void } | undefined;
+      if (typeof source?.reload === 'function') {
+        source.reload();
+      } else {
+        mapInstance?.triggerRepaint?.();
+      }
+    });
+  }, [mapId]);
   const leftPaddingRef = useRef(leftPadding);
   leftPaddingRef.current = leftPadding;
   const bottomPaddingRef = useRef(bottomPadding);
@@ -623,10 +663,13 @@ const MapView = ({
       });
       mapInstance.on('style.load', () => {
         setIsMapLoaded(true);
-        if (visiblePins.length > 0) {
-          ensurePinImages(mapInstance, visiblePins);
-        }
-        mapInstance.triggerRepaint();
+        const flavor: 'light' | 'dark' = mapTheme === 'dark' ? 'dark' : 'light';
+        void applyBundledSprites(mapInstance, flavor).then(() => {
+          if (visiblePins.length > 0) {
+            ensurePinImages(mapInstance, visiblePins);
+          }
+          mapInstance.triggerRepaint();
+        });
       });
       mapInstance.on('sourcedata', (e: any) => {
         if (e.sourceDataType === 'metadata' || e.sourceDataType === 'content') {
@@ -662,7 +705,7 @@ const MapView = ({
       }
       mapInstance.triggerRepaint();
     }
-  }, [visiblePins]);
+  }, [visiblePins, mapTheme]);
   const lastTargetPinId = useRef<string | null>(null);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const compassSvgRef = useRef<SVGSVGElement | null>(null);
@@ -865,9 +908,7 @@ const MapView = ({
     const apply = () => {
       try {
         applyThemePaintsOnMap(map, flavor);
-        if (typeof map.setSprite === 'function') {
-          map.setSprite(`${window.location.origin}/maps/sprites/${flavor}`);
-        }
+        void applyBundledSprites(map, flavor);
       } catch {}
     };
 
@@ -1172,12 +1213,20 @@ const MapView = ({
     return {
       version: 8,
       transition: { duration: 0, delay: 0 },
-      glyphs: `${window.location.origin}/maps/fonts/{fontstack}/{range}.pbf`,
-      sprite: `${window.location.origin}/maps/sprites/${validFlavor}`,
+      // Glyphs are drawn locally with TinySDF. A remote glyphs URL is fetched
+      // from the MapLibre worker during tile parse; Chrome DevTools Offline
+      // fails those GETs and can drop the whole tile.
+      // Sprites are registered from the JS bundle in applyBundledSprites.
+      // A remote `sprite` URL is fetched during style load and, when Chrome
+      // DevTools is Offline, that fetch fails and MapLibre never requests tiles.
       sources: {
         protomaps: {
           type: 'vector',
-          url: `pmtiles://${pmtilesUrl}`,
+          // Explicit tile templates so MapLibre asks the worker for z/x/y
+          // immediately. `url` (TileJSON) only runs on the main thread; tiles
+          // still require the worker, which must not depend on HTTP.
+          tiles: [`pmtiles://${pmtilesUrl}/{z}/{x}/{y}`],
+          minzoom: 1,
           maxzoom: 15,
           attribution: `&copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; <a href="https://openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>`,
         },

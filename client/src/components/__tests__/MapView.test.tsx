@@ -81,6 +81,10 @@ vi.mock('react-map-gl/maplibre', () => {
   };
 });
 
+vi.mock('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url', () => ({
+  default: 'blob:http://localhost/maplibre-worker',
+}));
+
 vi.mock('maplibre-gl', () => ({
   setWorkerUrl: vi.fn(),
   addProtocol: vi.fn(),
@@ -292,6 +296,22 @@ describe('MapView Compass and Tilt Indicator', () => {
 
     expect(mockClearWatch).toHaveBeenCalledWith(12345);
     expect(screen.getByRole('button', { name: /Find my location/i })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('points the vector source at pmtiles tile templates and skips remote sprite/glyph URLs', () => {
+    render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+      />
+    );
+
+    const style = capturedMapProps.current?.mapStyle;
+    expect(style?.sprite).toBeUndefined();
+    expect(style?.glyphs).toBeUndefined();
+    expect(style?.sources?.protomaps?.url).toBeUndefined();
+    expect(style?.sources?.protomaps?.tiles?.[0]).toMatch(/^pmtiles:\/\/.+\/\{z\}\/\{x\}\/\{y\}$/);
   });
 
   it('flies to a list-selected pin that sits under the sidebar padding', () => {

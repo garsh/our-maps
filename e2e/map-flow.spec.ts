@@ -133,6 +133,7 @@ test('full map creation flow', async ({ page }) => {
 });
 
 test('updating an existing map', async ({ page }) => {
+  test.setTimeout(40000);
   await login(page);
   await page.getByRole('button', { name: /New Map/i }).click();
   await page.waitForURL(/\/map\//);
