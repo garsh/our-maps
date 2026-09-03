@@ -63,12 +63,55 @@ function writeChunk(res: Response, chunk: Buffer): Promise<void> {
   });
 }
 
-export async function handleTileStream(req: Request, res: Response, candidateMapsDirs: string[]) {
+function parseExtractRequest(req: Request): { bbox: BoundingBox; startZoom: number; endZoom: number } | { error: string } {
   const { bbox, minZoom = 1, maxZoom = 15 } = req.body || {};
-
   if (!bbox || typeof bbox.north !== 'number' || typeof bbox.south !== 'number' ||
       typeof bbox.east !== 'number' || typeof bbox.west !== 'number') {
-    return res.status(400).json({ error: 'Valid bbox { north, south, east, west } is required' });
+    return { error: 'Valid bbox { north, south, east, west } is required' };
+  }
+  const startZoom = Math.max(1, Math.min(15, Number(minZoom) || 1));
+  const endZoom = Math.max(startZoom, Math.min(15, Number(maxZoom) || 15));
+  return {
+    bbox: {
+      north: bbox.north,
+      south: bbox.south,
+      east: bbox.east,
+      west: bbox.west,
+    },
+    startZoom,
+    endZoom,
+  };
+}
+
+export async function handleExtractSize(req: Request, res: Response, candidateMapsDirs: string[]) {
+  const parsed = parseExtractRequest(req);
+  if ('error' in parsed) {
+    return res.status(400).json({ error: parsed.error });
+  }
+
+  const archive = getPMTilesInstance(candidateMapsDirs);
+  if (!archive) {
+    return res.status(404).json({ error: 'planet.pmtiles map dataset not found' });
+  }
+
+  try {
+    await archive.pmt.getHeader();
+    const plan = await planExtract(archive.pmt, parsed.bbox, parsed.startZoom, parsed.endZoom);
+    return res.json({
+      bytes: plan.totalBytes,
+      addressedTiles: plan.addressedTiles,
+      minZoom: parsed.startZoom,
+      maxZoom: parsed.endZoom,
+    });
+  } catch {
+    return res.status(500).json({ error: 'Failed to estimate map extract size' });
+  }
+}
+
+export async function handleTileStream(req: Request, res: Response, candidateMapsDirs: string[]) {
+  const parsed = parseExtractRequest(req);
+  if ('error' in parsed) {
+    return res.status(400).json({ error: parsed.error });
   }
 
   const archive = getPMTilesInstance(candidateMapsDirs);
@@ -83,14 +126,7 @@ export async function handleTileStream(req: Request, res: Response, candidateMap
     return res.status(500).json({ error: 'Failed to read PMTiles header' });
   }
 
-  const startZoom = Math.max(1, Math.min(15, Number(minZoom) || 1));
-  const endZoom = Math.max(startZoom, Math.min(15, Number(maxZoom) || 15));
-  const extractBbox: BoundingBox = {
-    north: bbox.north,
-    south: bbox.south,
-    east: bbox.east,
-    west: bbox.west,
-  };
+  const { bbox: extractBbox, startZoom, endZoom } = parsed;
 
   let isAborted = false;
   req.on('close', () => {

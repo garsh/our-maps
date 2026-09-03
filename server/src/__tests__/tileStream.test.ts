@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { describe, it, expect } from 'vitest';
 import { Compression, PMTiles } from 'pmtiles';
-import { handleTileStream } from '../tileStream';
+import { handleExtractSize, handleTileStream } from '../tileStream';
 import { buildPmtilesBuffer } from '../pmtilesArchive';
 import { clearMapFilePathCache } from '../mapFiles';
 
@@ -116,6 +116,66 @@ describe('tileStream handler', () => {
     const tile = await pmt.getZxy(1, 0, 0);
     expect(tile).toBeDefined();
     expect(Array.from(new Uint8Array(tile!.data))).toEqual([1, 0, 0, 99]);
+
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reports extract size matching the streamed archive', async () => {
+    const tiles = [];
+    for (let z = 1; z <= 2; z++) {
+      const maxTile = (1 << z) - 1;
+      for (let x = 0; x <= maxTile; x++) {
+        for (let y = 0; y <= maxTile; y++) {
+          tiles.push({ z, x, y, data: new Uint8Array([z, x, y, 99]) });
+        }
+      }
+    }
+    const archive = buildPmtilesBuffer({
+      tiles,
+      minZoom: 1,
+      maxZoom: 2,
+      minLon: -180,
+      minLat: -85,
+      maxLon: 180,
+      maxLat: 85,
+      internalCompression: Compression.None,
+      tileCompression: Compression.None,
+    });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tile-size-'));
+    fs.writeFileSync(path.join(dir, 'planet.pmtiles'), archive);
+    clearMapFilePathCache();
+
+    let jsonResult: any = null;
+    const req: any = {
+      body: { bbox: { north: 10, south: -10, east: 10, west: -10 }, minZoom: 1, maxZoom: 2 },
+    };
+    const res: any = {
+      status: (code: number) => {
+        res.statusCode = code;
+        return res;
+      },
+      json: (data: any) => { jsonResult = data; return res; },
+    };
+
+    await handleExtractSize(req, res, [dir]);
+    expect(jsonResult.bytes).toBeGreaterThan(0);
+    expect(jsonResult.addressedTiles).toBeGreaterThan(0);
+
+    const chunks: Buffer[] = [];
+    const streamReq: any = { body: req.body, on: () => {} };
+    const streamRes: any = {
+      writableEnded: false,
+      destroyed: false,
+      headersSent: false,
+      setHeader: () => {},
+      write: (chunk: Buffer) => { chunks.push(Buffer.from(chunk)); return true; },
+      end: () => { streamRes.writableEnded = true; },
+      status: () => streamRes,
+      json: () => streamRes,
+      destroy: () => { streamRes.destroyed = true; },
+    };
+    await handleTileStream(streamReq, streamRes, [dir]);
+    expect(jsonResult.bytes).toBe(Buffer.concat(chunks).length);
 
     fs.rmSync(dir, { recursive: true, force: true });
   });

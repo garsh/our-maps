@@ -31,7 +31,8 @@ import {
   Box,
   Sun,
   Moon,
-  Globe
+  Globe,
+  Loader2
 } from 'lucide-react';
 import {
   DndContext, 
@@ -63,6 +64,7 @@ import {
   type BoundingBox 
 } from '../utils/tileUtils';
 import { canFit } from '../utils/storageUtils';
+import { apiService } from '../services/api';
 import { tileWorkerManager } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
 import { comparePinPositions } from '../utils/reorderUtils';
@@ -1766,6 +1768,7 @@ const Sidebar = ({
   const [isRemoving, setIsRemoving] = useState(false);
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [hasPartialDownload, setHasPartialDownload] = useState(false);
+  const [isPreparingDownload, setIsPreparingDownload] = useState(false);
   const [tileStats, setTileStats] = useState<{ total: number; completed: number } | null>(null);
 
   // Export Modal State
@@ -1842,7 +1845,7 @@ const Sidebar = ({
 
   const handleDownloadClick = async () => {
     setIsMenuOpen(false);
-    if (!mapId) return;
+    if (!mapId || isPreparingDownload) return;
     let bbox: BoundingBox | null = getPinsBoundingBox(pins);
     
     if (!bbox) {
@@ -1860,44 +1863,50 @@ const Sidebar = ({
         };
     }
 
-    // Full map tile downloads for zooms 1 to 15 covering the entire bounding box
-    const totalCount = countTiles(bbox, 1, 15);
-    const estimatedSizeMB = estimateSizeMB(totalCount);
+    setIsPreparingDownload(true);
+    try {
+      // Full map tile downloads for zooms 1 to 15 covering the entire bounding box
+      const totalCount = countTiles(bbox, 1, 15);
+      let estimatedSizeMB = estimateSizeMB(totalCount);
+      try {
+        const extract = await apiService.estimateExtract(bbox, 1, 15);
+        if (extract.bytes > 0) {
+          estimatedSizeMB = extract.bytes / (1024 * 1024);
+        }
+      } catch {
+        // Fall back to the per-tile heuristic if the planner is unavailable.
+      }
 
-    // Hard Safety Cap: > 5 GB (5,000 MB)
-    if (estimatedSizeMB > 5000) {
-        alert(`Selected download area is too large for offline caching (${totalCount.toLocaleString()} tiles, approx. ${(estimatedSizeMB / 1024).toFixed(1)} GB). Please zoom in or reduce map region to under 5 GB.`);
-        return;
+      const storageStatus = await canFit(estimatedSizeMB);
+      setIsPreparingDownload(false);
+      if (!storageStatus.ok) {
+          alert(storageStatus.message);
+          return;
+      }
+      if (storageStatus.warn && storageStatus.message) {
+          const proceed = window.confirm(storageStatus.message);
+          if (!proceed) return;
+      }
+
+      const currentMapData: MapData = {
+        id: mapId,
+        name: mapName,
+        ownerId: '',
+        layers,
+        pins,
+        userRole,
+        totalTiles: totalCount,
+        completedTiles: 0,
+      };
+      await saveMapOffline(currentMapData);
+
+      tileWorkerManager.startDownload(mapId, { bbox, totalTiles: totalCount });
+    } catch (err) {
+      console.error('Failed to prepare download:', err);
+      alert('Failed to prepare download.');
+    } finally {
+      setIsPreparingDownload(false);
     }
-
-    const storageStatus = await canFit(estimatedSizeMB);
-    if (!storageStatus.ok) {
-        alert(storageStatus.message);
-        return;
-    }
-    
-    // Soft Warning Threshold: > 1 GB (1,000 MB)
-    if (estimatedSizeMB > 1000) {
-        const proceed = window.confirm(`This map region covers ${totalCount.toLocaleString()} tiles (approx. ${(estimatedSizeMB / 1024).toFixed(1)} GB). Do you want to proceed with the offline download?`);
-        if (!proceed) return;
-    } else if (storageStatus.message) {
-        // Show warning but allow proceeding
-        console.warn(storageStatus.message);
-    }
-
-    const currentMapData: MapData = {
-      id: mapId,
-      name: mapName,
-      ownerId: '',
-      layers,
-      pins,
-      userRole,
-      totalTiles: totalCount,
-      completedTiles: 0,
-    };
-    await saveMapOffline(currentMapData);
-
-    tileWorkerManager.startDownload(mapId, { bbox, totalTiles: totalCount });
   };
 
   const handleRemoveDownload = () => {
@@ -2234,12 +2243,12 @@ const Sidebar = ({
                       </div>
                     ) : (
                       <div 
-                        style={{ padding: '10px 16px', cursor: isDownloading ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isDownloading ? '#999' : 'inherit' }}
-                        onClick={isDownloading ? undefined : handleDownloadClick}
-                        onMouseEnter={(e) => !isDownloading && (e.currentTarget.style.background = 'var(--bg-color)')}
+                        style={{ padding: '10px 16px', cursor: (isDownloading || isPreparingDownload) ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: (isDownloading || isPreparingDownload) ? '#999' : 'inherit' }}
+                        onClick={(isDownloading || isPreparingDownload) ? undefined : handleDownloadClick}
+                        onMouseEnter={(e) => !(isDownloading || isPreparingDownload) && (e.currentTarget.style.background = 'var(--bg-color)')}
                         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                       >
-                        Download for Offline
+                        {isPreparingDownload ? 'Preparing Download...' : 'Download for Offline'}
                       </div>
                     )
                   )}
@@ -2997,6 +3006,53 @@ const Sidebar = ({
           pillContainer
         );
       })()}
+
+      {isPreparingDownload && createPortal(
+        <div
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.6)',
+            backdropFilter: 'blur(2px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            padding: '20px',
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--surface-color)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '32px',
+              maxWidth: '400px',
+              width: '100%',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.3)',
+              textAlign: 'center',
+            }}
+          >
+            <Loader2
+              size={36}
+              className="animate-spin"
+              style={{ color: 'var(--primary-color)', margin: '0 auto 16px auto' }}
+            />
+            <h3 style={{ margin: '0 0 8px 0', fontSize: '1.2rem', fontWeight: '800', color: 'var(--text-primary)' }}>
+              Preparing download
+            </h3>
+            <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.5, fontSize: '0.95rem' }}>
+              Calculating the offline map size. This can take a few seconds for a large region.
+            </p>
+          </div>
+        </div>,
+        document.body
+      )}
     </aside>
   );
 };

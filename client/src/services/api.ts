@@ -1,5 +1,5 @@
 import type { Pin, MapData, MapPermission } from '@shared/interfaces';
-import { getOfflineMap, saveMapOffline, isMapDownloaded } from '../utils/tileUtils';
+import { getOfflineMap, saveMapOffline, isMapDownloaded, type BoundingBox } from '../utils/tileUtils';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -142,6 +142,15 @@ export const apiService = {
     } finally {
       clearTimeout(timeoutId);
     }
+  },
+
+  async estimateExtract(bbox: BoundingBox, minZoom = 1, maxZoom = 15): Promise<{ bytes: number; addressedTiles: number }> {
+    const res = await fetchWithRetry(`${API_BASE}/maps/tiles/extract-size`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ bbox, minZoom, maxZoom }),
+    }, 0);
+    return handleResponse(res, this._logoutCallback, 'Failed to estimate map extract size');
   },
 
   async getMapPermissions(id: string): Promise<{
