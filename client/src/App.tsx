@@ -152,7 +152,7 @@ export function MapEditor() {
     () => (typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY)
   );
   const [isSyncing, setIsSyncing] = useState(
-    () => !((typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY))
+    () => id !== 'new' && !((typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY))
   );
   const editMode = canEditMap && !isOffline && searchParams.get('mode') !== 'view';
 
