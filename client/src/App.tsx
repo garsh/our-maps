@@ -592,6 +592,13 @@ export function MapEditor() {
         applyOffline(true, true);
       });
 
+      socket.on('disconnect', (reason: string) => {
+        // 'io client disconnect' is intentional (unmount/logout); ignore to avoid spurious offline flicker
+        if (reason !== 'io client disconnect') {
+          applyOffline(true, true);
+        }
+      });
+
       // Granular Delta Listeners
       socket.on('pin-create', (data: PinCreatePayload) => {
         if (data.mapId !== id) return;
