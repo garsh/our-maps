@@ -58,9 +58,7 @@ export function MapEditor() {
   pinsRef.current = pins;
   const [layers, setLayers] = useState<PinLayer[]>([])
   const [mapId, setMapId] = useState<string | null>(id && id !== 'new' ? id : null);
-  if (id && id !== 'new') {
-    setActiveOfflineMapId(id);
-  }
+
 
   useLayoutEffect(() => {
     if (id && id !== 'new') {
@@ -164,6 +162,11 @@ export function MapEditor() {
 
     const performTransition = () => {
       pendingTransitionTimerRef.current = null;
+      // Skip if the transition direction hasn't changed since the last commit.
+      // Prevents double state updates when socket connect + window online both
+      // fire applyOffline(false, true) in the same tick.
+      if (lastAppliedOfflineRef.current === offline) return;
+      lastAppliedOfflineRef.current = offline;
       writeSessionFlag(OFFLINE_SESSION_KEY, offline);
       setIsOffline(offline);
       setIsSyncing(false);
@@ -413,6 +416,8 @@ export function MapEditor() {
 
   // Debounce transition between offline and online to prevent rapid flip-flopping
   const pendingTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track last applied value so duplicate applyOffline(same) calls skip re-rendering.
+  const lastAppliedOfflineRef = useRef<boolean | null>(null);
 
   // Load persistent UI state when mapId changes
   useEffect(() => {

@@ -131,7 +131,10 @@ export const apiService = {
       if (offlineMap) return offlineMap;
     }
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    // 1500ms matches the SW NetworkFirst strategy timeout, cutting the
+    // "Syncing..." false-positive window when the server is down but
+    // navigator.onLine is true.
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
     try {
       const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, { headers: getHeaders(), signal: controller.signal, cache: 'no-store' }, 0);
       const data = await handleResponse<MapData>(res, this._logoutCallback, `Server error: ${res.status}`);

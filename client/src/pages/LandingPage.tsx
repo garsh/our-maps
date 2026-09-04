@@ -219,6 +219,11 @@ export default function LandingPage() {
     }
   };
 
+  const fetchMapsRef = useRef(fetchMaps);
+  useEffect(() => {
+    fetchMapsRef.current = fetchMaps;
+  });
+
   useEffect(() => {
     fetchDownloadedMapStatuses();
     fetchMaps();
@@ -226,7 +231,7 @@ export default function LandingPage() {
     const handleOnline = () => {
       setForcedOffline(false);
       setIsOffline(false);
-      fetchMaps({ force: true });
+      fetchMapsRef.current({ force: true });
     };
     const handleOffline = () => {
       setForcedOffline(true);
