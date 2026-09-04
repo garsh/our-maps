@@ -313,7 +313,7 @@ describe('Sidebar', () => {
     expect(screen.queryByText(/Rename Map/i)).not.toBeInTheDocument();
   });
 
-  it('shows Edit Mode below Rename Map and toggles it without closing the menu', () => {
+  it('shows Edit Mode above Rename Map and toggles it without closing the menu', () => {
     const onToggleEditMode = vi.fn();
     render(<TestWrapper handlers={{ onToggleEditMode, editMode: true }} />);
 
@@ -321,7 +321,7 @@ describe('Sidebar', () => {
 
     const rename = screen.getByText('Rename Map');
     const editModeItem = screen.getByText('Edit Mode');
-    expect(rename.compareDocumentPosition(editModeItem) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(editModeItem.compareDocumentPosition(rename) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     fireEvent.click(editModeItem);
     expect(onToggleEditMode).toHaveBeenCalledWith(false);
