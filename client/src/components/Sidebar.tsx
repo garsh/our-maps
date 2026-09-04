@@ -1850,6 +1850,7 @@ const Sidebar = ({
           setIsDownloading(true);
           setDownloadProgress(byteProgress ?? tileProgress);
           setByteStats({ received: resume.partBytes, total: resume.totalBytes });
+          await tileWorkerManager.resumeIfNeeded(mapId);
         } else {
           setIsDownloaded(false);
           setHasPartialDownload(false);
@@ -1857,7 +1858,6 @@ const Sidebar = ({
           setDownloadProgress(null);
           setByteStats(null);
         }
-        await tileWorkerManager.resumeIfNeeded(mapId);
       })();
       return () => {
         cancelled = true;

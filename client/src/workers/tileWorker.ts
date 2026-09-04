@@ -54,18 +54,28 @@ self.onmessage = async (e) => {
 
             let offset = await getPartFileSize(mapId);
             let knownTotal = Number(knownTotalBytes) || 0;
+            console.log(`[TILE_STREAM_CLIENT][worker] Starting download for map ${mapId}: initial partFileSize=${offset}, knownTotalBytes=${knownTotal}`);
+
             if (offset > 0 && knownTotal > 0) {
+                console.log(`[TILE_STREAM_CLIENT][worker] Emitting initial resumed progress: ${offset}/${knownTotal} (${Math.round((offset / knownTotal) * 100)}%)`);
                 postProgress(offset / knownTotal, requestedTotal || 0, offset, knownTotal);
             }
 
+            console.log(`[TILE_STREAM_CLIENT][worker] Sending fetch request to /api/maps/tiles/stream with resumeOffset=${offset}`);
+            const fetchStart = Date.now();
             let streamRes = await requestExtract(offset);
+            console.log(`[TILE_STREAM_CLIENT][worker] Received response in ${Date.now() - fetchStart}ms: status=${streamRes.status} (${streamRes.statusText})`);
+
             if (streamRes.status === 416 && offset > 0) {
+                console.warn(`[TILE_STREAM_CLIENT][worker] Got 416 Range Not Satisfiable for offset ${offset}. Resetting offset to 0 and restarting.`);
                 offset = 0;
                 streamRes = await requestExtract(0);
+                console.log(`[TILE_STREAM_CLIENT][worker] Retried fresh stream: status=${streamRes.status}`);
             }
 
             if ((!streamRes.ok && streamRes.status !== 206) || !streamRes.body) {
                 const message = streamRes.statusText || `HTTP ${streamRes.status}`;
+                console.error(`[TILE_STREAM_CLIENT][worker] Stream request failed: status=${streamRes.status}, message=${message}`);
                 throw new Error(`Map extract failed: ${message}`);
             }
 
@@ -74,6 +84,9 @@ self.onmessage = async (e) => {
                 || (headerNumber(streamRes.headers, 'Content-Length') + startOffset)
                 || knownTotal;
             const totalTiles = headerNumber(streamRes.headers, 'X-Total-Tiles') || requestedTotal || 0;
+
+            console.log(`[TILE_STREAM_CLIENT][worker] Stream established: startOffset=${startOffset}, totalBytes=${totalBytes}, totalTiles=${totalTiles}`);
+
             if (totalBytes > 0) {
                 await writeExtractMeta(mapId, { totalBytes });
             }
@@ -81,14 +94,23 @@ self.onmessage = async (e) => {
                 postProgress(startOffset / totalBytes, totalTiles, startOffset, totalBytes);
             }
             let lastPosted = startOffset;
+            let lastProgressPostTime = Date.now();
 
             const { bytes } = await writeExtractFromStream(mapId, streamRes.body, (received) => {
                 if (!totalBytes) return;
-                if (received - lastPosted < totalBytes / 100 && received < totalBytes) return;
+                const now = Date.now();
+                // Post progress if 1% delta or at least 1 second has elapsed since last post
+                const deltaBytes = received - lastPosted;
+                const timeSinceLastPost = now - lastProgressPostTime;
+                if (deltaBytes < totalBytes / 100 && received < totalBytes && timeSinceLastPost < 1000) {
+                    return;
+                }
                 lastPosted = received;
+                lastProgressPostTime = now;
                 postProgress(received / totalBytes, totalTiles, received, totalBytes);
             }, { startOffset });
 
+            console.log(`[TILE_STREAM_CLIENT][worker] Download stream completed: total bytes written = ${bytes}`);
             self.postMessage({
                 type: 'progress',
                 progress: 1,
@@ -99,6 +121,7 @@ self.onmessage = async (e) => {
             });
             self.postMessage({ type: 'complete', total: totalTiles, bytes });
         } catch (error: any) {
+            console.error(`[TILE_STREAM_CLIENT][worker] Error during download:`, error);
             self.postMessage({ type: 'error', error: error.message });
         }
     }

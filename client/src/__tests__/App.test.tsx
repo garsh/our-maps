@@ -17,6 +17,7 @@ vi.mock('../utils/tileUtils', async () => {
   return {
     ...actual,
     getOfflineMap: vi.fn(async () => null),
+    isMapDownloaded: vi.fn(async () => true),
   };
 });
 vi.mock('../components/MapView', () => ({
@@ -638,15 +639,76 @@ describe('App Components Error Handling', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Cached Map')).toBeInTheDocument();
-    });
-    expect(screen.queryByText('Offline')).not.toBeInTheDocument();
-
-    await waitFor(() => {
       expect(screen.getByText('Synced')).toBeInTheDocument();
     });
     expect(screen.queryByText('Offline')).not.toBeInTheDocument();
     expect(screen.queryByText('Syncing...')).not.toBeInTheDocument();
+  });
+
+  it('clears trapped offline session flag when getMap network fetch succeeds', async () => {
+    sessionStorage.setItem('ourmaps_offline', '1');
+    (getOfflineMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Trapped Offline Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner',
+    });
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Trapped Offline Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner',
+    });
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Trapped Offline Map')).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
+    });
+  });
+
+  it('redirects with No Data when attempting to open an incompletely downloaded map while offline', async () => {
+    sessionStorage.setItem('ourmaps_offline', '1');
+    const { isMapDownloaded } = await vi.importActual<typeof import('../utils/tileUtils')>('../utils/tileUtils');
+    (getOfflineMap as any).mockResolvedValue({
+      id: 'map-partial',
+      name: 'Partial Download Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner',
+    });
+    // Incomplete download in progress
+    const tileUtilsMock = await import('../utils/tileUtils');
+    (tileUtilsMock.isMapDownloaded as any).mockResolvedValue(false);
+    (apiService.getMap as any).mockRejectedValue(new Error('Offline: No network connection'));
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-partial']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/No Data/i)).toBeInTheDocument();
+    });
   });
 });
 

@@ -40,6 +40,7 @@ interface MapTask {
 class TileWorkerManager {
   private tasks = new Map<string, MapTask>();
   private subscribers = new Set<ProgressCallback>();
+  private pendingResume = new Set<string>();
 
   public getStatus(mapId: string | null): DownloadProgressState | null {
     if (!mapId) return null;
@@ -110,6 +111,8 @@ class TileWorkerManager {
       ? Math.round(initialProgress * totalTiles)
       : 0;
 
+    console.log(`[TILE_STREAM_CLIENT][manager] startDownload invoked for map ${mapId}: resume.partBytes=${resume.partBytes}, resume.totalBytes=${resume.totalBytes}, resolved totalBytes=${totalBytes}, initialProgress=${initialProgress}`);
+
     task = {
       mapId,
       worker: null,
@@ -156,6 +159,7 @@ class TileWorkerManager {
           this.notifySubscribers(mapId);
         } else if (type === 'complete') {
           const actualTotal = total || totalTiles;
+          console.log(`[TILE_STREAM_CLIENT][manager] Download complete event for map ${mapId}: bytes=${bytes}, totalTiles=${actualTotal}`);
           currentTask.isDownloading = false;
           currentTask.downloadProgress = null;
           currentTask.tileStats = { total: actualTotal, completed: actualTotal };
@@ -175,7 +179,7 @@ class TileWorkerManager {
           currentTask.worker = null;
           this.tasks.delete(mapId);
         } else if (type === 'error') {
-          console.error(`Worker error for map ${mapId}:`, error);
+          console.error(`[TILE_STREAM_CLIENT][manager] Worker error for map ${mapId}:`, error);
           currentTask.isDownloading = false;
           currentTask.downloadProgress = null;
           this.notifySubscribers(mapId);
@@ -188,21 +192,41 @@ class TileWorkerManager {
   }
 
   public async resumeIfNeeded(mapId: string) {
-    const task = this.tasks.get(mapId);
-    if (task && task.isDownloading && task.worker) {
-      this.notifySubscribers(mapId);
+    // Deduplicate: if a resumeIfNeeded call for this mapId is already in-flight
+    // (awaiting OPFS/IndexedDB reads), drop this one to prevent race conditions
+    // that would spawn multiple workers for the same map.
+    if (this.pendingResume.has(mapId)) {
+      console.log(`[TILE_STREAM_CLIENT][manager] resumeIfNeeded(${mapId}): already in-flight, skipping duplicate`);
       return;
     }
+    this.pendingResume.add(mapId);
+    try {
+      const task = this.tasks.get(mapId);
+      if (task && task.isDownloading && task.worker) {
+        this.notifySubscribers(mapId);
+        return;
+      }
 
-    if (await extractExists(mapId)) return;
-    const partSize = await getPartFileSize(mapId);
-    const stats = await getDownloadStats(mapId);
-    const offlineMap = await getOfflineMap(mapId);
-    if (!offlineMap) return;
-    const incomplete = stats.total > 0 && stats.completed < stats.total;
-    if (partSize > 0 || incomplete) {
+      if (await extractExists(mapId)) {
+        console.log(`[TILE_STREAM_CLIENT][manager] resumeIfNeeded(${mapId}): extract already exists, skipping`);
+        return;
+      }
+      const partSize = await getPartFileSize(mapId);
+      const stats = await getDownloadStats(mapId);
+      const incomplete = stats.total > 0 && stats.completed < stats.total;
+      if (partSize <= 0 && !incomplete) {
+        return;
+      }
+      const offlineMap = await getOfflineMap(mapId);
+      if (!offlineMap) {
+        console.log(`[TILE_STREAM_CLIENT][manager] resumeIfNeeded(${mapId}): no offlineMap metadata found`);
+        return;
+      }
+      console.log(`[TILE_STREAM_CLIENT][manager] resumeIfNeeded(${mapId}): partSize=${partSize}, stats=${JSON.stringify(stats)}, incomplete=${incomplete}`);
       const bbox = offlineMap.pins ? getPinsBoundingBox(offlineMap.pins) : null;
       this.startDownload(mapId, { bbox, pins: offlineMap.pins, totalTiles: stats.total || offlineMap.totalTiles });
+    } finally {
+      this.pendingResume.delete(mapId);
     }
   }
 

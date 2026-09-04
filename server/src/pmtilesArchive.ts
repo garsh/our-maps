@@ -31,6 +31,41 @@ export interface ArchiveHeader {
   centerLat: number;
 }
 
+class BufferWriter {
+  public buffer: Buffer;
+  public offset: number;
+
+  constructor(initialCapacity = 65536) {
+    this.buffer = Buffer.allocUnsafe(initialCapacity);
+    this.offset = 0;
+  }
+
+  ensureCapacity(extra: number) {
+    const required = this.offset + extra;
+    if (required > this.buffer.length) {
+      let newCapacity = Math.max(required, this.buffer.length * 2);
+      const next = Buffer.allocUnsafe(newCapacity);
+      this.buffer.copy(next, 0, 0, this.offset);
+      this.buffer = next;
+    }
+  }
+
+  writeVarint(value: number) {
+    let v = value;
+    if (!Number.isFinite(v) || v < 0) v = 0;
+    this.ensureCapacity(10);
+    while (v >= 0x80) {
+      this.buffer[this.offset++] = (v & 0x7f) | 0x80;
+      v = Math.floor(v / 128);
+    }
+    this.buffer[this.offset++] = v;
+  }
+
+  toBuffer(): Buffer {
+    return this.buffer.subarray(0, this.offset);
+  }
+}
+
 export function writeVarint(value: number, out: number[]): void {
   let v = value;
   if (!Number.isFinite(v) || v < 0) v = 0;
@@ -81,30 +116,31 @@ export function serializeHeader(header: ArchiveHeader): Buffer {
 }
 
 export function serializeEntries(entries: Entry[], compression: number): Buffer {
-  const raw: number[] = [];
-  writeVarint(entries.length, raw);
+  const estimatedSize = Math.max(64, entries.length * 6);
+  const writer = new BufferWriter(estimatedSize);
+  writer.writeVarint(entries.length);
 
   let lastId = 0;
   for (const entry of entries) {
-    writeVarint(entry.tileId - lastId, raw);
+    writer.writeVarint(entry.tileId - lastId);
     lastId = entry.tileId;
   }
   for (const entry of entries) {
-    writeVarint(entry.runLength, raw);
+    writer.writeVarint(entry.runLength);
   }
   for (const entry of entries) {
-    writeVarint(entry.length, raw);
+    writer.writeVarint(entry.length);
   }
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     if (i > 0 && entry.offset === entries[i - 1].offset + entries[i - 1].length) {
-      writeVarint(0, raw);
+      writer.writeVarint(0);
     } else {
-      writeVarint(entry.offset + 1, raw);
+      writer.writeVarint(entry.offset + 1);
     }
   }
 
-  const uncompressed = Buffer.from(raw);
+  const uncompressed = writer.toBuffer();
   if (compression === Compression.None || compression === Compression.Unknown) {
     return uncompressed;
   }

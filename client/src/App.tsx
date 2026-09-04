@@ -31,7 +31,7 @@ import { Loader2, Map as MapIcon, RotateCw } from 'lucide-react';
 import type { SearchAreaState } from './components/SearchBar';
 import { reorderPins, reorderLayers, isSameLayer, emitPinMoveOrReorderEvents } from './utils/reorderUtils';
 import { generateId } from './utils/fileUtils';
-import { getDownloadStats, getOfflineMap, type MapDownloadStatus } from './utils/tileUtils';
+import { getDownloadStats, getOfflineMap, isMapDownloaded, type MapDownloadStatus } from './utils/tileUtils';
 import { preloadExtract, setActiveOfflineMapId } from './utils/offlineExtract';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
 import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
@@ -156,28 +156,43 @@ export function MapEditor() {
   );
   const editMode = canEditMap && !isOffline && searchParams.get('mode') !== 'view';
 
-  const applyOffline = useCallback((offline: boolean) => {
-    writeSessionFlag(OFFLINE_SESSION_KEY, offline);
-    setIsOffline(offline);
-    setIsSyncing(false);
-    if (offline) {
+  const applyOffline = useCallback((offline: boolean, immediate = false) => {
+    if (pendingTransitionTimerRef.current) {
+      clearTimeout(pendingTransitionTimerRef.current);
+      pendingTransitionTimerRef.current = null;
+    }
+
+    const performTransition = () => {
+      pendingTransitionTimerRef.current = null;
+      writeSessionFlag(OFFLINE_SESSION_KEY, offline);
+      setIsOffline(offline);
+      setIsSyncing(false);
+      if (offline) {
+        setSearchParams((prev) => {
+          if (prev.get('mode') === 'view') return prev;
+          writeSessionFlag(AUTO_VIEW_SESSION_KEY, true);
+          const next = new URLSearchParams(prev);
+          next.set('mode', 'view');
+          return next;
+        }, { replace: true });
+        return;
+      }
+      if (!readSessionFlag(AUTO_VIEW_SESSION_KEY)) return;
+      writeSessionFlag(AUTO_VIEW_SESSION_KEY, false);
       setSearchParams((prev) => {
-        if (prev.get('mode') === 'view') return prev;
-        writeSessionFlag(AUTO_VIEW_SESSION_KEY, true);
+        if (prev.get('mode') !== 'view') return prev;
         const next = new URLSearchParams(prev);
-        next.set('mode', 'view');
+        next.delete('mode');
         return next;
       }, { replace: true });
-      return;
+    };
+
+    if (immediate) {
+      performTransition();
+    } else {
+      // 300ms stability debounce to avoid rapid ping-ponging between states
+      pendingTransitionTimerRef.current = setTimeout(performTransition, 300);
     }
-    if (!readSessionFlag(AUTO_VIEW_SESSION_KEY)) return;
-    writeSessionFlag(AUTO_VIEW_SESSION_KEY, false);
-    setSearchParams((prev) => {
-      if (prev.get('mode') !== 'view') return prev;
-      const next = new URLSearchParams(prev);
-      next.delete('mode');
-      return next;
-    }, { replace: true });
   }, [setSearchParams]);
 
   useEffect(() => {
@@ -190,8 +205,8 @@ export function MapEditor() {
         resizeRaf = null;
       });
     };
-    const handleOnline = () => applyOffline(false);
-    const handleOffline = () => applyOffline(true);
+    const handleOnline = () => applyOffline(false, true);
+    const handleOffline = () => applyOffline(true, true);
 
     window.addEventListener('resize', handleResize);
     window.addEventListener('online', handleOnline);
@@ -199,6 +214,10 @@ export function MapEditor() {
 
     return () => {
       if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
+      if (pendingTransitionTimerRef.current) {
+        clearTimeout(pendingTransitionTimerRef.current);
+        pendingTransitionTimerRef.current = null;
+      }
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
@@ -381,6 +400,20 @@ export function MapEditor() {
   const editingPinIdRef = useRef(editingPinId);
   editingPinIdRef.current = editingPinId;
 
+  // Track offline-deleted entity IDs to prevent resurrection on reconnect
+  const pendingDeletedPinIdsRef = useRef<Set<string>>(new Set());
+  const pendingDeletedLayerIdsRef = useRef<Set<string>>(new Set());
+
+  // Prevent auto-save HTTP PUT from racing against socket reconnection
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveAbortRef = useRef<AbortController | null>(null);
+
+  // Request epoch to prevent stale loadMap or reconcileOnReconnect responses from overwriting fresh state
+  const loadEpochRef = useRef(0);
+
+  // Debounce transition between offline and online to prevent rapid flip-flopping
+  const pendingTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Load persistent UI state when mapId changes
   useEffect(() => {
     if (mapId) {
@@ -530,7 +563,16 @@ export function MapEditor() {
       // Reconnect re-sync handler
       socket.on('connect', () => {
         console.log('[SOCKET] Connected to server, re-syncing map data');
-        applyOffline(false);
+        // Cancel any pending HTTP PUT auto-save and abort in-flight saves to avoid collision with delta sync
+        if (autoSaveTimerRef.current) {
+          clearTimeout(autoSaveTimerRef.current);
+          autoSaveTimerRef.current = null;
+        }
+        if (autoSaveAbortRef.current) {
+          autoSaveAbortRef.current.abort();
+          autoSaveAbortRef.current = null;
+        }
+        applyOffline(false, true);
         if (id) {
           socket.emit('join-map', id);
           if (isInitialConnect) {
@@ -542,7 +584,7 @@ export function MapEditor() {
       });
 
       socket.on('connect_error', () => {
-        applyOffline(true);
+        applyOffline(true, true);
       });
 
       // Granular Delta Listeners
@@ -730,6 +772,18 @@ export function MapEditor() {
       });
 
       return () => {
+        if (autoSaveTimerRef.current) {
+          clearTimeout(autoSaveTimerRef.current);
+          autoSaveTimerRef.current = null;
+        }
+        if (autoSaveAbortRef.current) {
+          autoSaveAbortRef.current.abort();
+          autoSaveAbortRef.current = null;
+        }
+        if (pendingTransitionTimerRef.current) {
+          clearTimeout(pendingTransitionTimerRef.current);
+          pendingTransitionTimerRef.current = null;
+        }
         socket.disconnect();
         socketRef.current = null;
       };
@@ -776,17 +830,28 @@ export function MapEditor() {
     // We avoid triggering full-array HTTP PUT requests to prevent collaborative overwrites.
     const isSocketConnected = socketRef.current?.connected;
     if (isSocketConnected) {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
       setIsDirty(false);
       return;
     }
 
     // If socket is disconnected/offline, mark as dirty and debounce HTTP save fallback
     setIsDirty(true);
-    const timer = setTimeout(() => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      autoSaveTimerRef.current = null;
       handleSave();
     }, 2000);
 
-    return () => clearTimeout(timer);
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
   }, [mapName, pins, layers]);
 
   // Warn on browser-level navigation (tab close, refresh, address bar) when dirty
@@ -815,8 +880,11 @@ export function MapEditor() {
   }, []); // empty deps — cleanup only runs on unmount
 
   const reconcileOnReconnect = async (currentMapId: string) => {
+    const epoch = ++loadEpochRef.current;
     try {
       const serverData = await apiService.getMap(currentMapId);
+      if (epoch !== loadEpochRef.current) return;
+
       if (!isDirtyRef.current) {
         setOwner({ id: serverData.ownerId, name: serverData.ownerName, email: serverData.ownerEmail, picture: serverData.ownerPicture });
         setLayers(serverData.layers || []);
@@ -824,6 +892,8 @@ export function MapEditor() {
         setUserRole(serverData.userRole || 'view');
         setPermissions(serverData.permissions || []);
         setIsDirty(false);
+        pendingDeletedPinIdsRef.current.clear();
+        pendingDeletedLayerIdsRef.current.clear();
         return;
       }
 
@@ -832,9 +902,16 @@ export function MapEditor() {
         const serverPinMap = new Map((serverData.pins || []).map(p => [p.id, p]));
         const localPinMap = new Map(currentLocalPins.map(p => [p.id, p]));
         const mergedPins: Pin[] = [];
+        const deletedPinIds = pendingDeletedPinIdsRef.current;
 
-        // 1. Keep server pins, applying local updates if modified while offline
+        // 1. Keep server pins, applying local updates if modified while offline, unless locally deleted
         serverPinMap.forEach((serverPin, pinId) => {
+          if (deletedPinIds.has(pinId)) {
+            // Deleted locally while disconnected; inform server and do not resurrect
+            socketRef.current?.emit('pin-delete', { mapId: currentMapId, pinId });
+            return;
+          }
+
           const localPin = localPinMap.get(pinId);
           if (localPin) {
             const isModified = !arePinsEqual(localPin, serverPin);
@@ -853,6 +930,7 @@ export function MapEditor() {
 
         // 2. Any remaining pins in localPinMap were created locally while offline
         localPinMap.forEach((newLocalPin) => {
+          if (deletedPinIds.has(newLocalPin.id)) return;
           mergedPins.push(newLocalPin);
           socketRef.current?.emit('pin-create', { 
             mapId: currentMapId, 
@@ -861,6 +939,7 @@ export function MapEditor() {
           });
         });
 
+        deletedPinIds.clear();
         return mergedPins;
       });
 
@@ -869,8 +948,14 @@ export function MapEditor() {
         const serverLayerMap = new Map((serverData.layers || []).map(l => [l.id, l]));
         const localLayerMap = new Map(currentLocalLayers.map(l => [l.id, l]));
         const mergedLayers: PinLayer[] = [];
+        const deletedLayerIds = pendingDeletedLayerIdsRef.current;
 
         serverLayerMap.forEach((serverLayer, layerId) => {
+          if (deletedLayerIds.has(layerId)) {
+            socketRef.current?.emit('layer-delete', { mapId: currentMapId, layerId });
+            return;
+          }
+
           const localLayer = localLayerMap.get(layerId);
           if (localLayer) {
             if (localLayer.name !== serverLayer.name || localLayer.position !== serverLayer.position) {
@@ -886,10 +971,12 @@ export function MapEditor() {
         });
 
         localLayerMap.forEach((newLocalLayer) => {
+          if (deletedLayerIds.has(newLocalLayer.id)) return;
           mergedLayers.push(newLocalLayer);
           socketRef.current?.emit('layer-create', { mapId: currentMapId, layer: newLocalLayer });
         });
 
+        deletedLayerIds.clear();
         return mergedLayers;
       });
 
@@ -900,6 +987,7 @@ export function MapEditor() {
   };
 
   const loadMap = async (mapId: string, silent = false) => {
+    const epoch = ++loadEpochRef.current;
     hasLoadedRef.current = true;
     setSelectedNavIds(new Set());
     setActiveOfflineMapId(mapId);
@@ -913,31 +1001,39 @@ export function MapEditor() {
     let hasHydratedLocally = false;
     try {
       const cached = await getOfflineMap(mapId);
+      if (epoch !== loadEpochRef.current) return;
       if (cached) {
-        hasHydratedLocally = true;
-        isInitialLoadRef.current = true;
-        setMapId(cached.id);
-        setMapName(cached.name || 'My Map');
-        setOwner({ id: cached.ownerId, name: cached.ownerName, email: cached.ownerEmail, picture: cached.ownerPicture });
-        setLayers(cached.layers || []);
-        setPins(cached.pins || []);
-        setUserRole(cached.userRole || 'view');
-        setPermissions(cached.permissions || []);
-        if (cached.pins && cached.pins.length > 0) {
-          if (!silent) {
-            const lats = cached.pins.map(p => p.lat);
-            const lngs = cached.pins.map(p => p.lng);
-            const bounds: [[number, number], [number, number]] = [
-              [Math.min(...lats), Math.min(...lngs)],
-              [Math.max(...lats), Math.max(...lngs)]
-            ];
-            setBoundsToFit(bounds);
-            setTimeout(() => setBoundsToFit(null), 3000);
+        // If offline, only allow opening if the map is completely downloaded
+        const currentlyOffline = isOfflineRef.current || (typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY);
+        const downloaded = await isMapDownloaded(mapId);
+        if (epoch !== loadEpochRef.current) return;
+
+        if (!currentlyOffline || downloaded) {
+          hasHydratedLocally = true;
+          isInitialLoadRef.current = true;
+          setMapId(cached.id);
+          setMapName(cached.name || 'My Map');
+          setOwner({ id: cached.ownerId, name: cached.ownerName, email: cached.ownerEmail, picture: cached.ownerPicture });
+          setLayers(cached.layers || []);
+          setPins(cached.pins || []);
+          setUserRole(cached.userRole || 'view');
+          setPermissions(cached.permissions || []);
+          if (cached.pins && cached.pins.length > 0) {
+            if (!silent) {
+              const lats = cached.pins.map(p => p.lat);
+              const lngs = cached.pins.map(p => p.lng);
+              const bounds: [[number, number], [number, number]] = [
+                [Math.min(...lats), Math.min(...lngs)],
+                [Math.max(...lats), Math.max(...lngs)]
+              ];
+              setBoundsToFit(bounds);
+              setTimeout(() => setBoundsToFit(null), 3000);
+            }
           }
-        }
-        setIsMapLoading(false);
-        if (!isOfflineRef.current) {
-          setIsSyncing(true);
+          setIsMapLoading(false);
+          if (!isOfflineRef.current) {
+            setIsSyncing(true);
+          }
         }
       }
     } catch (cacheErr) {
@@ -951,6 +1047,8 @@ export function MapEditor() {
     // 2. Fetch latest map from network / revalidate
     try {
       const data = await apiService.getMap(mapId);
+      if (epoch !== loadEpochRef.current) return;
+
       isInitialLoadRef.current = true;
       setMapId(data.id);
       setMapName(data.name || 'My Map');
@@ -973,17 +1071,24 @@ export function MapEditor() {
       setPermissions(data.permissions || []);
       setIsDirty(false);
       setIsSyncing(false);
+      // Item D: Successful network response exits offline mode if trapped by sessionStorage
+      if (isOfflineRef.current) {
+        applyOffline(false);
+      }
     } catch (err) {
+      if (epoch !== loadEpochRef.current) return;
       setIsSyncing(false);
       if (hasHydratedLocally) {
-        applyOffline(true);
+        applyOffline(true, true);
       } else {
         console.error('Failed to load map', err);
         setError('No Data');
         setTimeout(() => navigate('/'), 2000);
       }
     } finally {
-      setIsMapLoading(false);
+      if (epoch === loadEpochRef.current) {
+        setIsMapLoading(false);
+      }
     }
   };
 
@@ -991,9 +1096,17 @@ export function MapEditor() {
     if (userRole === 'view') return;
     setIsSaving(true);
     setError(null);
+
+    // Cancel any previous in-flight save
+    if (autoSaveAbortRef.current) {
+      autoSaveAbortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    autoSaveAbortRef.current = abortController;
+
     try {
       if (mapId) {
-        await apiService.updateMap(mapId, mapName, layers, pins);
+        await apiService.updateMap(mapId, mapName, layers, pins, abortController.signal);
         setIsDirty(false);
       } else {
         const newId = generateId();
@@ -1009,10 +1122,17 @@ export function MapEditor() {
         setMapId(newId);
         navigate(`/map/${newId}`, { replace: true });
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        // Aborted because socket reconnected or newer save started; ignore
+        return;
+      }
       console.error('Failed to save map', err);
       setError('NOT Synced');
     } finally {
+      if (autoSaveAbortRef.current === abortController) {
+        autoSaveAbortRef.current = null;
+      }
       setIsSaving(false);
     }
   };
@@ -1209,8 +1329,11 @@ export function MapEditor() {
       return prev;
     });
 
-    if (mapId) {
+    const isSocketConnected = socketRef.current?.connected;
+    if (mapId && isSocketConnected) {
       socketRef.current?.emit('pin-delete', { mapId, pinId: targetId });
+    } else {
+      pendingDeletedPinIdsRef.current.add(targetId);
     }
   }, [editMode, isOffline, mapId]);
 
@@ -1350,8 +1473,11 @@ export function MapEditor() {
     });
 
     const currentMapId = mapIdRef.current;
-    if (currentMapId) {
+    const isSocketConnected = socketRef.current?.connected;
+    if (currentMapId && isSocketConnected) {
       socketRef.current?.emit('layer-delete', { mapId: currentMapId, layerId: targetId });
+    } else {
+      pendingDeletedLayerIdsRef.current.add(targetId);
     }
   }, []);
 
@@ -1530,6 +1656,15 @@ export function MapEditor() {
     );
   }
 
+  if (error === 'No Data') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-color)', color: 'var(--text-primary)' }}>
+        <h2 style={{ color: 'var(--primary-color)', fontWeight: '700', marginBottom: '0.5rem' }}>No Data</h2>
+        <p style={{ color: 'var(--text-secondary)' }}>Unable to load map offline. Redirecting...</p>
+      </div>
+    );
+  }
+
   const appHeader = (
     <header 
       ref={headerRef}
@@ -1577,7 +1712,7 @@ export function MapEditor() {
           }}>
             <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: (isOffline || error) ? '#ff4d4f' : (isSyncing || (editMode && (isSaving || isDirty)) ? '#ffcc00' : '#4ade80'), flexShrink: 0 }} />
             <span>
-              {isOffline ? 'Offline' : (isSyncing ? 'Syncing' : (error || (editMode && isSaving ? 'Saving' : (editMode && isDirty ? 'Pending' : 'Synced'))))}
+              {error ? error : (isOffline ? 'Offline' : (isSyncing ? 'Syncing' : (editMode && isSaving ? 'Saving' : (editMode && isDirty ? 'Pending' : 'Synced'))))}
             </span>
           </button>
         <div id="mobile-header-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '26px', minHeight: '26px', flexShrink: 0 }}></div>

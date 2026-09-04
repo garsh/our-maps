@@ -1,6 +1,8 @@
 const EXTRACT_DIR = 'offline-extracts';
 const extractCache = new Map<string, File | null>();
-const DEFAULT_CHECKPOINT_BYTES = 4 * 1024 * 1024;
+// Use a 128MB checkpoint interval (and minimum 60s time interval) to prevent OPFS createWritable/close commit thrashing on large gigabyte-sized files.
+const DEFAULT_CHECKPOINT_BYTES = 128 * 1024 * 1024;
+const MIN_CHECKPOINT_INTERVAL_MS = 60 * 1000;
 
 function sanitizeMapId(mapId: string): string {
   return mapId.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -193,48 +195,135 @@ export async function writeExtractFromStream(
   }
 
   const partHandle = await dir.getFileHandle(partName, { create: true });
-  let writable = await openPartWritable(partHandle, startOffset);
-  let writableOpen = true;
+  console.log(`[TILE_STREAM_CLIENT][store] Opening OPFS file '${partName}': startOffset=${startOffset}, append=${append}, existingSize=${existingSize}`);
   const reader = stream.getReader();
   let received = startOffset;
   let sinceCheckpoint = 0;
+  let chunkCount = 0;
+  let lastLogTime = Date.now();
+  let lastCheckpointTime = Date.now();
+  let lastLogBytes = received;
+
   if (startOffset > 0) onProgress?.(startOffset);
 
-  const persistWritable = async () => {
-    if (!writableOpen) return;
+  // In Web Workers, use FileSystemSyncAccessHandle for direct in-place writes.
+  // Unlike createWritable (which buffers to a temporary swap file that gets discarded if the tab closes),
+  // FileSystemSyncAccessHandle writes directly into the file on disk and flushing commits in <1ms without thrashing.
+  if (typeof (partHandle as any).createSyncAccessHandle === 'function') {
+    const syncHandle = await (partHandle as any).createSyncAccessHandle();
+    console.log(`[TILE_STREAM_CLIENT][store] Using FileSystemSyncAccessHandle for direct in-place writes: startOffset=${startOffset}`);
     try {
-      await writable.close();
-    } catch {
-      try { await writable.abort(); } catch { /* ignore */ }
-    } finally {
-      writableOpen = false;
-    }
-  };
-
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value || value.byteLength === 0) continue;
-      await writable.write(value as unknown as FileSystemWriteChunkType);
-      received += value.byteLength;
-      sinceCheckpoint += value.byteLength;
-      onProgress?.(received);
-      if (checkpointEvery > 0 && sinceCheckpoint >= checkpointEvery) {
-        await persistWritable();
-        writable = await openPartWritable(partHandle, received);
-        writableOpen = true;
-        sinceCheckpoint = 0;
+      if (startOffset > 0) {
+        syncHandle.truncate(startOffset);
+      } else {
+        syncHandle.truncate(0);
       }
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          console.log(`[TILE_STREAM_CLIENT][store] Stream reader finished (done=true). Total bytes received: ${received}`);
+          break;
+        }
+        if (!value || value.byteLength === 0) continue;
+        syncHandle.write(value, { at: received });
+        received += value.byteLength;
+        sinceCheckpoint += value.byteLength;
+        chunkCount++;
+        onProgress?.(received);
+
+        const now = Date.now();
+        // Flush directly to disk every 4MB or 2 seconds.
+        // syncHandle.flush() is an in-place fsync taking <1ms, ensuring that if the user
+        // leaves the site, closes the tab, or navigates away, virtually all data is persisted.
+        if (sinceCheckpoint >= 4 * 1024 * 1024 || (now - lastCheckpointTime) >= 2000) {
+          syncHandle.flush();
+          sinceCheckpoint = 0;
+          lastCheckpointTime = now;
+        }
+
+        if (now - lastLogTime >= 3000) {
+          const intervalSec = (now - lastLogTime) / 1000;
+          const speedKBps = Math.round(((received - lastLogBytes) / 1024) / intervalSec);
+          console.log(`[TILE_STREAM_CLIENT][store] Written ${received} bytes (${chunkCount} chunks, ~${speedKBps} KB/s)`);
+          lastLogTime = now;
+          lastLogBytes = received;
+        }
+      }
+
+      syncHandle.flush();
+      if (received < 127) {
+        try { await dir.removeEntry(partName); } catch { /* ignore */ }
+        throw new Error('Map extract was incomplete');
+      }
+    } catch (err) {
+      console.error(`[TILE_STREAM_CLIENT][store] Stream read/write failed after ${received} bytes:`, err);
+      try { syncHandle.flush(); } catch { /* ignore */ }
+      throw err;
+    } finally {
+      syncHandle.close();
     }
-    await persistWritable();
-    if (received < 127) {
-      try { await dir.removeEntry(partName); } catch { /* ignore */ }
-      throw new Error('Map extract was incomplete');
+  } else {
+    // Fallback: createWritable for contexts where createSyncAccessHandle is unavailable
+    let writable = await openPartWritable(partHandle, startOffset);
+    let writableOpen = true;
+
+    const persistWritable = async () => {
+      if (!writableOpen) return;
+      try {
+        await writable.close();
+      } catch (closeErr) {
+        console.warn(`[TILE_STREAM_CLIENT][store] Error closing writable stream, attempting abort:`, closeErr);
+        try { await writable.abort(); } catch { /* ignore */ }
+      } finally {
+        writableOpen = false;
+      }
+    };
+
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          console.log(`[TILE_STREAM_CLIENT][store] Stream reader finished (done=true). Total bytes received: ${received}`);
+          break;
+        }
+        if (!value || value.byteLength === 0) continue;
+        await writable.write(value as unknown as FileSystemWriteChunkType);
+        received += value.byteLength;
+        sinceCheckpoint += value.byteLength;
+        chunkCount++;
+        onProgress?.(received);
+
+        const now = Date.now();
+        if (now - lastLogTime >= 3000) {
+          const intervalSec = (now - lastLogTime) / 1000;
+          const speedKBps = Math.round(((received - lastLogBytes) / 1024) / intervalSec);
+          console.log(`[TILE_STREAM_CLIENT][store] Written ${received} bytes (${chunkCount} chunks, ~${speedKBps} KB/s)`);
+          lastLogTime = now;
+          lastLogBytes = received;
+        }
+
+        if (checkpointEvery > 0 && sinceCheckpoint >= checkpointEvery && (now - lastCheckpointTime) >= MIN_CHECKPOINT_INTERVAL_MS) {
+          console.log(`[TILE_STREAM_CLIENT][store] Checkpointing at ${received} bytes (flushing to disk, ${Math.round(sinceCheckpoint / (1024 * 1024))}MB since last checkpoint)...`);
+          const cpStart = Date.now();
+          await persistWritable();
+          writable = await openPartWritable(partHandle, received);
+          writableOpen = true;
+          sinceCheckpoint = 0;
+          lastCheckpointTime = Date.now();
+          console.log(`[TILE_STREAM_CLIENT][store] Checkpoint completed in ${Date.now() - cpStart}ms`);
+        }
+      }
+      await persistWritable();
+      if (received < 127) {
+        try { await dir.removeEntry(partName); } catch { /* ignore */ }
+        throw new Error('Map extract was incomplete');
+      }
+    } catch (err) {
+      console.error(`[TILE_STREAM_CLIENT][store] Stream read/write failed after ${received} bytes:`, err);
+      await persistWritable();
+      throw err;
     }
-  } catch (err) {
-    await persistWritable();
-    throw err;
   }
 
   try {
@@ -256,8 +345,13 @@ export async function writeExtractFromStream(
     const partFile = await partHandle.getFile();
     const dest = await dir.getFileHandle(finalName, { create: true });
     const destWritable = await dest.createWritable();
-    await destWritable.write(await partFile.arrayBuffer());
-    await destWritable.close();
+    if (typeof (partFile as any).stream === 'function') {
+      const partStream = (partFile as any).stream() as ReadableStream<Uint8Array>;
+      await partStream.pipeTo(destWritable);
+    } else {
+      await destWritable.write(await partFile.arrayBuffer());
+      await destWritable.close();
+    }
     try {
       await dir.removeEntry(partName);
     } catch {

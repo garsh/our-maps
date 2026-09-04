@@ -269,6 +269,34 @@ describe('LandingPage Offline Map Access', () => {
     subscribeSpy.mockRestore();
   });
 
+  it('prevents opening maps in the middle of downloading while offline', async () => {
+    (apiService.getMaps as any).mockRejectedValue(new Error('Network Error'));
+    localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
+
+    const downloadStatuses = new Map();
+    downloadStatuses.set('map-downloaded', { isComplete: true, isPartial: false });
+    // map-not-downloaded is in the middle of downloading
+    downloadStatuses.set('map-not-downloaded', { isComplete: false, isPartial: true });
+    (tileUtils.getMapDownloadStatuses as any).mockResolvedValue(downloadStatuses);
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Online Only Map')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Online Only Map'));
+
+    expect(mockNavigate).not.toHaveBeenCalledWith('/map/map-not-downloaded');
+    expect(screen.getByText('This map is not available in offline mode')).toBeInTheDocument();
+  });
+
   it('asks to delete leftover older-version storage after Remove All Downloads', async () => {
     vi.spyOn(tileWorkerManager, 'removeAllDownloads').mockResolvedValue(undefined);
     (legacyStorage.findUnrecognizedStorage as any).mockResolvedValue([

@@ -134,7 +134,7 @@ export default function LandingPage() {
     const currentlyOffline = isOffline || (typeof navigator !== 'undefined' && !navigator.onLine);
     if (currentlyOffline) {
       const status = downloadStatuses.get(mapId);
-      if (!status || (!status.isComplete && !status.isPartial)) {
+      if (!status || !status.isComplete) {
         setShowOfflineInterstitial(true);
         return;
       }
@@ -249,7 +249,6 @@ export default function LandingPage() {
 
     const unsubscribe = tileWorkerManager.subscribe((state) => {
       setDownloadStatuses((prev) => {
-        const current = prev.get(state.mapId);
         let newStatus: MapDownloadStatus | undefined;
         if (state.isDownloading || state.hasPartialDownload) {
           newStatus = { isComplete: false, isPartial: true };
@@ -257,19 +256,21 @@ export default function LandingPage() {
           newStatus = { isComplete: true, isPartial: false };
         }
 
-        if (!newStatus) {
-          if (!current) return prev;
-          const next = new Map(prev);
-          next.delete(state.mapId);
-          return next;
-        }
-
-        if (current && current.isComplete === newStatus.isComplete && current.isPartial === newStatus.isPartial) {
+        const current = prev.get(state.mapId);
+        if (!newStatus && !current) return prev;
+        if (current && newStatus && current.isComplete === newStatus.isComplete && current.isPartial === newStatus.isPartial) {
           return prev;
         }
 
         const next = new Map(prev);
-        next.set(state.mapId, newStatus);
+        if (newStatus) {
+          next.set(state.mapId, newStatus);
+        } else {
+          next.delete(state.mapId);
+        }
+        const obj: Record<string, MapDownloadStatus> = {};
+        next.forEach((v, k) => { obj[k] = v; });
+        setStoredJson('cached_download_statuses', obj);
         return next;
       });
     });

@@ -1,8 +1,21 @@
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, createLogger, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 import * as esbuild from 'esbuild'
+
+const logger = createLogger();
+const originalError = logger.error.bind(logger);
+logger.error = (msg, options) => {
+  if (
+    typeof msg === 'string' &&
+    (msg.includes('ws proxy error:') || msg.includes('ws proxy socket error:')) &&
+    (msg.includes('EPIPE') || msg.includes('ECONNRESET'))
+  ) {
+    return;
+  }
+  originalError(msg, options);
+};
 
 const INLINE_MAPLIBRE_WORKER_ID = '\0inline-maplibre-worker-url'
 
@@ -46,6 +59,7 @@ export default blobURL;`
 
 // https://vite.dev/config/
 export default defineConfig({
+  customLogger: logger,
   define: {
     'import.meta.env.VITE_APP_BUILD_TIME': JSON.stringify(
       process.env.VITE_APP_BUILD_TIME || new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
@@ -221,6 +235,12 @@ export default defineConfig({
         target: 'http://127.0.0.1:3002',
         ws: true,
         changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('error', (err: any) => {
+            if (err?.code === 'EPIPE' || err?.code === 'ECONNRESET') return;
+            console.warn('[socket.io proxy error]', err);
+          });
+        },
       },
     },
     watch: {

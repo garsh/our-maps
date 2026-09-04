@@ -22,7 +22,7 @@ import { getCspDirectives } from './csp';
 import { socketPayloadSchemas } from './schemas';
 import { purgeExpiredSessions } from './db';
 import * as realtime from './realtime';
-import { handleExtractSize, handleTileStream } from './tileStream';
+import { handleExtractSize, handleTileStream, cleanupPlanDiskCache } from './tileStream';
 
 const app = express();
 const server = http.createServer(app);
@@ -375,10 +375,12 @@ if (process.env.NODE_ENV !== 'test') {
   purgeExpiredSessions().catch((err) => {
     console.error('[AUTH] Failed to purge expired sessions:', err);
   });
+  cleanupPlanDiskCache(mapsDir);
   setInterval(() => {
     purgeExpiredSessions().catch((err) => {
       console.error('[AUTH] Failed to purge expired sessions:', err);
     });
+    cleanupPlanDiskCache(mapsDir);
   }, 60 * 60 * 1000);
   server.listen(port as number, '0.0.0.0', () => {
     console.log(`Server is running on http://0.0.0.0:${port}`);
