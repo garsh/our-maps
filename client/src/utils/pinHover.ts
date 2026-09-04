@@ -25,14 +25,24 @@ if (typeof window !== 'undefined') {
   );
 }
 
+let finePointerMedia: MediaQueryList | null = null;
+
+function getFinePointerMediaQuery(): MediaQueryList | null {
+  if (finePointerMedia) return finePointerMedia;
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    try {
+      finePointerMedia = window.matchMedia('(hover: hover) and (pointer: fine)');
+    } catch {}
+  }
+  return finePointerMedia;
+}
+
 export function hasFinePointer(): boolean {
   if (typeof window === 'undefined') return false;
   if (lastPointerType === 'touch') return false;
-  if (typeof window.matchMedia === 'function') {
-    const mq = window.matchMedia('(hover: hover) and (pointer: fine)');
-    if (mq && typeof mq.matches === 'boolean') {
-      return mq.matches;
-    }
+  const mq = getFinePointerMediaQuery();
+  if (mq && typeof mq.matches === 'boolean') {
+    return mq.matches;
   }
   return true;
 }
@@ -118,6 +128,7 @@ export function resetPinHoverForTests() {
   hoveredId = null;
   lastHoveredEl = null;
   lastPointerType = 'mouse';
+  finePointerMedia = null;
   listeners.clear();
   if (typeof document !== 'undefined') {
     document.querySelectorAll(`.${PIN_HOVER_CLASS}`).forEach((el) => {

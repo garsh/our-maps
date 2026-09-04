@@ -421,6 +421,21 @@ export function MapEditor() {
   // Track last applied value so duplicate applyOffline(same) calls skip re-rendering.
   const lastAppliedOfflineRef = useRef<boolean | null>(null);
 
+  // Timer to clear boundsToFit after animation, cancellable on map change / unmount
+  const boundsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerBoundsToFit = useCallback((bounds: [[number, number], [number, number]], delay = 3000) => {
+    if (boundsTimerRef.current) {
+      clearTimeout(boundsTimerRef.current);
+      boundsTimerRef.current = null;
+    }
+    setBoundsToFit(bounds);
+    boundsTimerRef.current = setTimeout(() => {
+      setBoundsToFit(null);
+      boundsTimerRef.current = null;
+    }, delay);
+  }, []);
+
   // Load persistent UI state when mapId changes
   useEffect(() => {
     if (mapId) {
@@ -562,8 +577,6 @@ export function MapEditor() {
         withCredentials: true
       });
       socketRef.current = socket;
-
-      socket.emit('join-map', id);
 
       let isInitialConnect = true;
 
@@ -802,6 +815,11 @@ export function MapEditor() {
         socketRef.current = null;
       };
     } else {
+      if (boundsTimerRef.current) {
+        clearTimeout(boundsTimerRef.current);
+        boundsTimerRef.current = null;
+      }
+      setBoundsToFit(null);
       hasLoadedRef.current = false;
       isInitialLoadRef.current = false;
       // New map defaults
@@ -887,6 +905,10 @@ export function MapEditor() {
   // Flush pending save when the component unmounts (e.g. user hits the back button)
   useEffect(() => {
     return () => {
+      if (boundsTimerRef.current) {
+        clearTimeout(boundsTimerRef.current);
+        boundsTimerRef.current = null;
+      }
       if (isDirtyRef.current) {
         handleSaveRef.current();
       }
@@ -1028,6 +1050,11 @@ export function MapEditor() {
 
   const loadMap = async (mapId: string, silent = false) => {
     const epoch = ++loadEpochRef.current;
+    if (boundsTimerRef.current) {
+      clearTimeout(boundsTimerRef.current);
+      boundsTimerRef.current = null;
+    }
+    setBoundsToFit(null);
     hasLoadedRef.current = true;
     setSelectedNavIds(new Set());
     setActiveOfflineMapId(mapId);
@@ -1066,8 +1093,7 @@ export function MapEditor() {
                 [Math.min(...lats), Math.min(...lngs)],
                 [Math.max(...lats), Math.max(...lngs)]
               ];
-              setBoundsToFit(bounds);
-              setTimeout(() => setBoundsToFit(null), 3000);
+              triggerBoundsToFit(bounds, 3000);
             }
           }
           setIsMapLoading(false);
@@ -1103,8 +1129,7 @@ export function MapEditor() {
             [Math.min(...lats), Math.min(...lngs)],
             [Math.max(...lats), Math.max(...lngs)]
           ];
-          setBoundsToFit(bounds);
-          setTimeout(() => setBoundsToFit(null), 3000);
+          triggerBoundsToFit(bounds, 3000);
         }
       }
       setUserRole(data.userRole || 'view');
@@ -1642,8 +1667,7 @@ export function MapEditor() {
           [Math.min(...lats), Math.min(...lngs)],
           [Math.max(...lats), Math.max(...lngs)]
         ];
-        setBoundsToFit(bounds);
-        setTimeout(() => setBoundsToFit(null), 1000);
+        triggerBoundsToFit(bounds, 1000);
       }
     }
     if (data.layers) setLayers(data.layers);

@@ -12,7 +12,7 @@ import { reverseGeocode } from '../utils/geocoding';
 import type { MapTheme } from './Sidebar';
 
 import { getActiveExtractPMTiles, getExtractTileJSON, preloadExtract, setActiveOfflineMapId } from '../utils/offlineExtract';
-import { clearHoveredPin, getHoveredPinId, useIsPinHovered, useHoveredPinId, hasFinePointer } from '../utils/pinHover';
+import { clearHoveredPin, getHoveredPinId, useHoveredPinId, hasFinePointer } from '../utils/pinHover';
 import { setMapViewportBounds } from '../utils/mapViewport';
 import { ensurePinImageByKey, ensurePinImages, getPinIconKey } from '../utils/pinIconSprite';
 import { applyBundledSprites } from '../utils/basemapSprites';
@@ -224,6 +224,7 @@ interface PinMarkerProps {
   onHoverPin?: (id: string | null, leavingPinId?: string) => void;
   onPinClick?: (pin: Pin) => void;
   isSelected: boolean;
+  isHovered: boolean;
   isEditing: boolean;
   readOnly: boolean;
 }
@@ -234,10 +235,10 @@ const PinMarker = memo(({
   onHoverPin,
   onPinClick,
   isSelected,
+  isHovered,
   isEditing,
   readOnly,
 }: PinMarkerProps) => {
-  const isHovered = useIsPinHovered(pin.id);
   const showHighlight = isSelected || isHovered;
   const colorCode = resolvePinColorCode(pin.color);
   const iconPath = pin.icon && pin.icon !== 'default' ? ICON_SVG_PATHS[pin.icon as Exclude<PinIcon, 'default'>] : null;
@@ -386,6 +387,7 @@ const PinOverlays = memo(({
       {overlayPins.map((pin) => {
         const isSelected = targetPinId === pin.id || editingPinId === pin.id;
         const isEditing = !readOnly && editingPinId === pin.id;
+        const isHovered = hoveredPinId === pin.id;
         return (
           <PinMarker
             key={pin.id}
@@ -394,6 +396,7 @@ const PinOverlays = memo(({
             onHoverPin={onHoverPin}
             onPinClick={onPinClick}
             isSelected={isSelected}
+            isHovered={isHovered}
             isEditing={isEditing}
             readOnly={readOnly}
           />
@@ -683,16 +686,10 @@ const MapView = ({
       });
       mapInstance.once('load', () => {
         setIsMapLoaded(true);
-        if (visiblePins.length > 0) {
-          ensurePinImages(mapInstance, visiblePins);
-        }
         mapInstance.triggerRepaint();
       });
       mapInstance.once('idle', () => {
         setIsMapLoaded(true);
-        if (visiblePins.length > 0) {
-          ensurePinImages(mapInstance, visiblePins);
-        }
         mapInstance.triggerRepaint();
       });
     }
@@ -700,9 +697,6 @@ const MapView = ({
     // Immediately enable map load and trigger initial frame render
     setIsMapLoaded(true);
     if (mapInstance) {
-      if (visiblePins.length > 0) {
-        ensurePinImages(mapInstance, visiblePins);
-      }
       mapInstance.triggerRepaint();
     }
   }, [visiblePins, mapTheme]);
@@ -1481,11 +1475,8 @@ const MapView = ({
     setIsMapLoaded(true);
     const map = e.target || mapRef.current?.getMap();
     attachMissingImageResolver(map);
-    if (map) {
-      ensurePinImages(map, visiblePins);
-    }
     updateBounds();
-  }, [updateBounds, visiblePins]);
+  }, [updateBounds]);
 
   const applyBoundsToFit = useCallback(
     (bounds: [[number, number], [number, number]] | null, animate = true) => {
@@ -1712,7 +1703,9 @@ const MapView = ({
                   if (mapRef.current) {
                     mapRef.current.getMap().getCanvas().style.cursor = 'pointer';
                   }
-                  onHoverPinRef.current?.(pinId);
+                  if (getHoveredPinId() !== pinId) {
+                    onHoverPinRef.current?.(pinId);
+                  }
                 }
               }
             }
@@ -1726,11 +1719,16 @@ const MapView = ({
                   if (mapRef.current) {
                     mapRef.current.getMap().getCanvas().style.cursor = 'pointer';
                   }
-                  onHoverPinRef.current?.(pinId);
+                  if (getHoveredPinId() !== pinId) {
+                    onHoverPinRef.current?.(pinId);
+                  }
                 }
               } else {
                 if (mapRef.current) {
                   mapRef.current.getMap().getCanvas().style.cursor = '';
+                }
+                if (getHoveredPinId() !== null) {
+                  onHoverPinRef.current?.(null);
                 }
               }
             }
