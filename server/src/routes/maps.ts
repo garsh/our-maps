@@ -82,6 +82,15 @@ router.get('/:id', async (req: AuthRequest, res) => {
     return res.status(403).json({ error: 'Access denied' });
   }
 
+  // ETag based on updated_at (falls back to map id if column not yet migrated)
+  const etag = `"${mapId}-${map.updated_at || map.id}"`;
+  const ifNoneMatch = req.headers['if-none-match'];
+  if (ifNoneMatch && ifNoneMatch === etag) {
+    // Map unchanged — skip DB reads and payload serialisation
+    res.setHeader('ETag', etag);
+    return res.status(304).end();
+  }
+
   // Update Last Accessed
   await db.run(`
     INSERT INTO user_map_access (user_id, map_id, last_accessed_at) 
@@ -117,6 +126,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
     permissions
   };
 
+  res.setHeader('ETag', etag);
   res.json(response);
 });
 

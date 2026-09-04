@@ -1,4 +1,4 @@
-import { getDb } from './db';
+import { getDb, touchMapUpdatedAt } from './db';
 import { MAX_LAYERS_PER_MAP, MAX_PINS_PER_MAP } from './schemas';
 import type {
   PinCreatePayload,
@@ -53,6 +53,7 @@ export async function handlePinCreate(data: PinCreatePayload): Promise<boolean |
     pin.icon || 'default',
     pin.position || 0
   );
+  await touchMapUpdatedAt(mapId);
 }
 
 export async function handlePinUpdate(data: PinUpdatePayload) {
@@ -103,6 +104,7 @@ export async function handlePinUpdate(data: PinUpdatePayload) {
   if (setClauses.length > 0) {
     params.push(pinId, mapId);
     await db.run(`UPDATE pins SET ${setClauses.join(', ')} WHERE id = ? AND map_id = ?`, ...params);
+    await touchMapUpdatedAt(mapId);
   }
 }
 
@@ -112,6 +114,7 @@ export async function handlePinDelete(data: PinDeletePayload) {
   if (!mapId || !pinId) return;
 
   await db.run('DELETE FROM pins WHERE id = ? AND map_id = ?', pinId, mapId);
+  await touchMapUpdatedAt(mapId);
 }
 
 async function updateEntityPositions(
@@ -152,6 +155,7 @@ export async function handlePinsReorder(data: PinsReorderPayload) {
   try {
     await updateEntityPositions(db, 'pins', pinOrder, mapId);
     await db.run('COMMIT');
+    await touchMapUpdatedAt(mapId);
   } catch (error) {
     await db.run('ROLLBACK');
     throw error;
@@ -187,6 +191,7 @@ export async function handlePinMoveLayer(data: PinMoveLayerPayload) {
     }
 
     await db.run('COMMIT');
+    await touchMapUpdatedAt(mapId);
   } catch (error) {
     await db.run('ROLLBACK');
     throw error;
@@ -219,6 +224,7 @@ export async function handleLayerCreate(data: LayerCreatePayload): Promise<boole
     layer.name,
     layer.position || 0
   );
+  await touchMapUpdatedAt(mapId);
 }
 
 export async function handleLayerUpdate(data: LayerUpdatePayload) {
@@ -241,6 +247,7 @@ export async function handleLayerUpdate(data: LayerUpdatePayload) {
   if (setClauses.length > 0) {
     params.push(layerId, mapId);
     await db.run(`UPDATE pin_layers SET ${setClauses.join(', ')} WHERE id = ? AND map_id = ?`, ...params);
+    await touchMapUpdatedAt(mapId);
   }
 }
 
@@ -278,6 +285,7 @@ export async function handleLayerDelete(data: LayerDeletePayload) {
 
     await db.run('DELETE FROM pin_layers WHERE id = ? AND map_id = ?', layerId, mapId);
     await db.run('COMMIT');
+    await touchMapUpdatedAt(mapId);
   } catch (error) {
     await db.run('ROLLBACK');
     throw error;
@@ -293,6 +301,7 @@ export async function handleLayersReorder(data: LayersReorderPayload) {
   try {
     await updateEntityPositions(db, 'pin_layers', layerOrder, mapId);
     await db.run('COMMIT');
+    await touchMapUpdatedAt(mapId);
   } catch (error) {
     await db.run('ROLLBACK');
     throw error;
@@ -304,5 +313,5 @@ export async function handleMapNameUpdate(data: MapNameUpdatePayload) {
   const { mapId, name } = data;
   if (!mapId || !name) return;
 
-  await db.run('UPDATE maps SET name = ? WHERE id = ?', name, mapId);
+  await db.run('UPDATE maps SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', name, mapId);
 }

@@ -19,7 +19,7 @@ const DB_NAME = 'MapTilesDB_v2';
 const MANIFEST_STORE = 'manifest';
 const TILE_STORE = 'tiles';
 const MAP_STORE = 'maps';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -34,10 +34,23 @@ export async function openDB(): Promise<IDBDatabase> {
     if (!dbPromise) {
         dbPromise = new Promise((resolve, reject) => {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
-            request.onupgradeneeded = () => {
+            request.onupgradeneeded = (event) => {
                 const db = request.result;
+                const oldVersion = event?.oldVersion ?? 0;
                 if (!db.objectStoreNames.contains(MAP_STORE)) {
-                    db.createObjectStore(MAP_STORE, { keyPath: 'id' });
+                    const store = db.createObjectStore(MAP_STORE, { keyPath: 'id' });
+                    if (store?.createIndex) {
+                        store.createIndex('lastAccessedAt', 'lastAccessedAt', { unique: false });
+                    }
+                } else if (oldVersion < 6) {
+                    // Upgrade: add lastAccessedAt index to existing store
+                    const tx = (event?.target as IDBOpenDBRequest)?.transaction || request.transaction;
+                    if (tx) {
+                        const store = tx.objectStore(MAP_STORE);
+                        if (store?.indexNames && !store.indexNames.contains('lastAccessedAt') && store.createIndex) {
+                            store.createIndex('lastAccessedAt', 'lastAccessedAt', { unique: false });
+                        }
+                    }
                 }
             };
             request.onsuccess = () => {
@@ -66,7 +79,7 @@ export async function saveMapOffline(mapData: MapData): Promise<void> {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(MAP_STORE, 'readwrite');
         const store = transaction.objectStore(MAP_STORE);
-        const req = store.put(mapData);
+        const req = store.put({ ...mapData, isExplicitDownload: true, lastAccessedAt: Date.now() });
         req.onsuccess = () => resolve();
         req.onerror = () => reject(req.error);
         transaction.onerror = () => reject(transaction.error);
@@ -86,6 +99,144 @@ export async function getOfflineMap(mapId: string): Promise<MapData | null> {
         });
     } catch {
         return null;
+    }
+}
+
+const VIEW_CACHE_MAX = 20;
+const VIEW_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+/**
+ * Save a map fetched from the network into the view cache.
+ * Sets lastAccessedAt and etag; marks isExplicitDownload = false so
+ * LRU eviction may remove it when the cache exceeds VIEW_CACHE_MAX.
+ * Explicit offline downloads (isExplicitDownload = true) are never touched.
+ */
+export async function saveMapToViewCache(mapData: MapData, etag?: string): Promise<void> {
+    if (typeof indexedDB === 'undefined') return;
+    try {
+        const db = await openDB();
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(MAP_STORE, 'readwrite');
+            const store = tx.objectStore(MAP_STORE);
+            // Preserve isExplicitDownload if the record already exists
+            const getReq = store.get(mapData.id);
+            getReq.onsuccess = () => {
+                const existing = getReq.result as (MapData & { isExplicitDownload?: boolean; etag?: string }) | undefined;
+                if (existing?.isExplicitDownload) {
+                    // Already a pinned offline download — only update data, keep flag
+                    const putReq = store.put({
+                        ...mapData,
+                        isExplicitDownload: true,
+                        etag: etag ?? existing.etag,
+                        lastAccessedAt: Date.now(),
+                    });
+                    putReq.onsuccess = () => resolve();
+                    putReq.onerror = () => reject(putReq.error);
+                } else {
+                    const putReq = store.put({
+                        ...mapData,
+                        isExplicitDownload: false,
+                        etag: etag ?? null,
+                        lastAccessedAt: Date.now(),
+                    });
+                    putReq.onsuccess = () => resolve();
+                    putReq.onerror = () => reject(putReq.error);
+                }
+            };
+            getReq.onerror = () => reject(getReq.error);
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch {
+        // Non-critical: ignore cache write failures
+    }
+}
+
+/** Return the stored ETag for a cached map, or null if not cached / no etag. */
+export async function getMapETag(mapId: string): Promise<string | null> {
+    if (!mapId || typeof indexedDB === 'undefined') return null;
+    try {
+        const db = await openDB();
+        return new Promise((resolve) => {
+            const tx = db.transaction(MAP_STORE, 'readonly');
+            const req = tx.objectStore(MAP_STORE).get(mapId);
+            req.onsuccess = () => resolve((req.result as any)?.etag ?? null);
+            req.onerror = () => resolve(null);
+        });
+    } catch {
+        return null;
+    }
+}
+
+/** Touch lastAccessedAt on a cache hit so the LRU order stays accurate. */
+export async function touchMapCacheAccess(mapId: string): Promise<void> {
+    if (!mapId || typeof indexedDB === 'undefined') return;
+    try {
+        const db = await openDB();
+        await new Promise<void>((resolve) => {
+            const tx = db.transaction(MAP_STORE, 'readwrite');
+            const store = tx.objectStore(MAP_STORE);
+            const getReq = store.get(mapId);
+            getReq.onsuccess = () => {
+                if (!getReq.result) { resolve(); return; }
+                const putReq = store.put({ ...getReq.result, lastAccessedAt: Date.now() });
+                putReq.onsuccess = () => resolve();
+                putReq.onerror = () => resolve();
+            };
+            getReq.onerror = () => resolve();
+            tx.onerror = () => resolve();
+        });
+    } catch {
+        // Non-critical
+    }
+}
+
+/**
+ * Prune view-only cached maps (isExplicitDownload = false) using LRU.
+ * Evicts entries older than VIEW_CACHE_TTL_MS, then caps at VIEW_CACHE_MAX.
+ * Explicit offline downloads are never touched.
+ * Safe to call speculatively; all errors are swallowed.
+ */
+export async function pruneViewCache(): Promise<void> {
+    if (typeof indexedDB === 'undefined') return;
+    try {
+        const db = await openDB();
+        const all: (MapData & { isExplicitDownload?: boolean; lastAccessedAt?: number })[] = await new Promise((resolve, reject) => {
+            const tx = db.transaction(MAP_STORE, 'readonly');
+            const req = tx.objectStore(MAP_STORE).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+        });
+
+        const now = Date.now();
+        const viewOnly = all.filter(m => !m.isExplicitDownload);
+        const toDelete: string[] = [];
+
+        // Evict stale entries
+        for (const m of viewOnly) {
+            const age = now - (m.lastAccessedAt ?? 0);
+            if (age > VIEW_CACHE_TTL_MS) toDelete.push(m.id);
+        }
+
+        // Evict oldest beyond cap
+        const remaining = viewOnly
+            .filter(m => !toDelete.includes(m.id))
+            .sort((a, b) => (a.lastAccessedAt ?? 0) - (b.lastAccessedAt ?? 0));
+        if (remaining.length > VIEW_CACHE_MAX) {
+            const overflow = remaining.slice(0, remaining.length - VIEW_CACHE_MAX);
+            for (const m of overflow) toDelete.push(m.id);
+        }
+
+        if (toDelete.length === 0) return;
+
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(MAP_STORE, 'readwrite');
+            const store = tx.objectStore(MAP_STORE);
+            for (const id of toDelete) store.delete(id);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch {
+        // Non-critical
     }
 }
 

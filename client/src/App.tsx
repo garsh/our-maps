@@ -31,7 +31,7 @@ import { Loader2, Map as MapIcon, RotateCw } from 'lucide-react';
 import type { SearchAreaState } from './components/SearchBar';
 import { reorderPins, reorderLayers, isSameLayer, emitPinMoveOrReorderEvents } from './utils/reorderUtils';
 import { generateId } from './utils/fileUtils';
-import { getDownloadStats, getOfflineMap, isMapDownloaded, type MapDownloadStatus } from './utils/tileUtils';
+import { getDownloadStats, getOfflineMap, isMapDownloaded, touchMapCacheAccess, type MapDownloadStatus } from './utils/tileUtils';
 import { preloadExtract, setActiveOfflineMapId } from './utils/offlineExtract';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
 import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
@@ -834,7 +834,7 @@ export function MapEditor() {
 
   // Auto-save logic
   useEffect(() => {
-    if (userRole === 'view' || isMapLoading) return;
+    if (!editMode || isMapLoading) return;
     
     if (isRemoteUpdateRef.current) {
       isRemoteUpdateRef.current = false;
@@ -884,7 +884,7 @@ export function MapEditor() {
         autoSaveTimerRef.current = null;
       }
     };
-  }, [mapName, pins, layers]);
+  }, [editMode, mapName, pins, layers]);
 
   // Warn on browser-level navigation (tab close, refresh, address bar) when dirty
   useEffect(() => {
@@ -1100,6 +1100,8 @@ export function MapEditor() {
           if (!isOfflineRef.current) {
             setIsSyncing(true);
           }
+          // Update LRU timestamp so this map isn't evicted from view cache prematurely
+          touchMapCacheAccess(mapId).catch(() => {});
         }
       }
     } catch (cacheErr) {

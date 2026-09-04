@@ -45,6 +45,12 @@ async function migrate(db: Database) {
     await db.exec("ALTER TABLE maps ADD COLUMN owner_id TEXT");
   }
 
+  if (!mapColumnNames.includes('updated_at')) {
+    await db.exec("ALTER TABLE maps ADD COLUMN updated_at DATETIME");
+    // Backfill existing rows
+    await db.exec("UPDATE maps SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL");
+  }
+
   // Prune redundant single-column indexes covered by existing composite indexes (idx_pins_map_pos, idx_pin_layers_map_pos)
   // and redundant index on user_map_access covered by its PRIMARY KEY (user_id, map_id)
   await db.exec(`
@@ -100,6 +106,7 @@ export async function getDb() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       owner_id TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (owner_id) REFERENCES users(id)
     );
 
@@ -180,4 +187,16 @@ export async function closeDb() {
     await db.close();
     db = null;
   }
+}
+
+/**
+ * Bump maps.updated_at to the current timestamp.
+ * Called after every realtime write so the ETag reflects the latest change.
+ */
+export async function touchMapUpdatedAt(mapId: string): Promise<void> {
+  const database = await getDb();
+  await database.run(
+    `UPDATE maps SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    mapId
+  );
 }

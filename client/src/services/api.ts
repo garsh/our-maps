@@ -1,5 +1,5 @@
 import type { Pin, MapData, MapPermission } from '@shared/interfaces';
-import { getOfflineMap, saveMapOffline, isMapDownloaded, type BoundingBox } from '../utils/tileUtils';
+import { getOfflineMap, saveMapOffline, saveMapToViewCache, getMapETag, touchMapCacheAccess, pruneViewCache, isMapDownloaded, type BoundingBox } from '../utils/tileUtils';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -130,17 +130,53 @@ export const apiService = {
       const offlineMap = await getOfflineMap(id);
       if (offlineMap) return offlineMap;
     }
+
+    // Send stored ETag so the server can reply 304 if nothing changed
+    const storedETag = await getMapETag(id);
+    const extraHeaders: Record<string, string> = {};
+    if (storedETag) extraHeaders['If-None-Match'] = storedETag;
+
     const controller = new AbortController();
     // 1500ms matches the SW NetworkFirst strategy timeout, cutting the
     // "Syncing..." false-positive window when the server is down but
     // navigator.onLine is true.
     const timeoutId = setTimeout(() => controller.abort(), 1500);
     try {
-      const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, { headers: getHeaders(), signal: controller.signal, cache: 'no-store' }, 0);
+      const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, {
+        headers: { ...getHeaders(), ...extraHeaders },
+        signal: controller.signal,
+        cache: 'no-store',
+      }, 0);
+
+      // 304: map unchanged — return cached version
+      if (res.status === 304) {
+        const cached = await getOfflineMap(id);
+        if (cached) {
+          touchMapCacheAccess(id).catch(() => {});
+          return cached;
+        }
+        // No local copy despite 304 (should not happen) — fall through to error
+        throw new Error('304 received but no cached map available');
+      }
+
       const data = await handleResponse<MapData>(res, this._logoutCallback, `Server error: ${res.status}`);
+      const etag = res.headers.get('etag') ?? undefined;
+
+      // Always save to view cache for instant future loads (LRU-managed)
+      saveMapToViewCache(data, etag).catch(() => {});
+
+      // Also refresh explicit offline downloads when already downloaded
       isMapDownloaded(id).then(downloaded => {
         if (downloaded) saveMapOffline(data);
       }).catch(() => {});
+
+      // Prune stale view-cache entries during idle time
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(() => pruneViewCache().catch(() => {}));
+      } else {
+        setTimeout(() => pruneViewCache().catch(() => {}), 5000);
+      }
+
       return data;
     } finally {
       clearTimeout(timeoutId);

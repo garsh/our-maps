@@ -2010,11 +2010,10 @@ const Sidebar = ({
     input.click();
   };
 
-  const sensors = useSensors(
-    useSensor(MouseSensor, MOUSE_SENSOR_OPTIONS),
-    useSensor(TouchSensor, TOUCH_SENSOR_OPTIONS),
-    useSensor(KeyboardSensor, KEYBOARD_SENSOR_OPTIONS)
-  );
+  const mouseSensor = useSensor(MouseSensor, MOUSE_SENSOR_OPTIONS);
+  const touchSensor = useSensor(TouchSensor, TOUCH_SENSOR_OPTIONS);
+  const keyboardSensor = useSensor(KeyboardSensor, KEYBOARD_SENSOR_OPTIONS);
+  const sensors = useSensors(...(readOnly ? [] : [mouseSensor, touchSensor, keyboardSensor]));
 
   const layerIndexMap = useMemo(() => {
     const map = new Map<string, number>();
