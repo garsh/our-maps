@@ -57,6 +57,8 @@ export function MapEditor() {
   const pinsRef = useRef(pins);
   pinsRef.current = pins;
   const [layers, setLayers] = useState<PinLayer[]>([])
+  const layersRef = useRef(layers);
+  layersRef.current = layers;
   const [mapId, setMapId] = useState<string | null>(id && id !== 'new' ? id : null);
 
 
@@ -910,86 +912,112 @@ export function MapEditor() {
       }
 
       // Merge offline local edits with server state without resurrecting deleted pins
-      setPins(currentLocalPins => {
-        const serverPinMap = new Map((serverData.pins || []).map(p => [p.id, p]));
-        const localPinMap = new Map(currentLocalPins.map(p => [p.id, p]));
-        const mergedPins: Pin[] = [];
-        const deletedPinIds = pendingDeletedPinIdsRef.current;
+      const serverPinMap = new Map((serverData.pins || []).map(p => [p.id, p]));
+      const localPinMap = new Map(pinsRef.current.map(p => [p.id, p]));
+      const mergedPins: Pin[] = [];
+      const deletedPinIds = new Set(pendingDeletedPinIdsRef.current);
+      pendingDeletedPinIdsRef.current.clear();
 
-        // 1. Keep server pins, applying local updates if modified while offline, unless locally deleted
-        serverPinMap.forEach((serverPin, pinId) => {
-          if (deletedPinIds.has(pinId)) {
-            // Deleted locally while disconnected; inform server and do not resurrect
-            socketRef.current?.emit('pin-delete', { mapId: currentMapId, pinId });
-            return;
-          }
+      const pinsToDelete: string[] = [];
+      const pinsToUpdate: { pinId: string; updates: Pin }[] = [];
+      const pinsToCreate: Pin[] = [];
 
-          const localPin = localPinMap.get(pinId);
-          if (localPin) {
-            const isModified = !arePinsEqual(localPin, serverPin);
-            if (isModified) {
-              mergedPins.push(localPin);
-              socketRef.current?.emit('pin-update', { mapId: currentMapId, pinId, updates: localPin });
-            } else {
-              mergedPins.push(serverPin);
-            }
-            localPinMap.delete(pinId);
+      // 1. Keep server pins, applying local updates if modified while offline, unless locally deleted
+      serverPinMap.forEach((serverPin, pinId) => {
+        if (deletedPinIds.has(pinId)) {
+          // Deleted locally while disconnected; inform server and do not resurrect
+          pinsToDelete.push(pinId);
+          return;
+        }
+
+        const localPin = localPinMap.get(pinId);
+        if (localPin) {
+          const isModified = !arePinsEqual(localPin, serverPin);
+          if (isModified) {
+            mergedPins.push(localPin);
+            pinsToUpdate.push({ pinId, updates: localPin });
           } else {
-            // Pin added by collaborator while offline
             mergedPins.push(serverPin);
           }
-        });
+          localPinMap.delete(pinId);
+        } else {
+          // Pin added by collaborator while offline
+          mergedPins.push(serverPin);
+        }
+      });
 
-        // 2. Any remaining pins in localPinMap were created locally while offline
-        localPinMap.forEach((newLocalPin) => {
-          if (deletedPinIds.has(newLocalPin.id)) return;
-          mergedPins.push(newLocalPin);
-          socketRef.current?.emit('pin-create', { 
-            mapId: currentMapId, 
-            layerId: newLocalPin.layerId === undefined ? null : newLocalPin.layerId, 
-            pin: newLocalPin 
-          });
-        });
+      // 2. Any remaining pins in localPinMap were created locally while offline
+      localPinMap.forEach((newLocalPin) => {
+        if (deletedPinIds.has(newLocalPin.id)) return;
+        mergedPins.push(newLocalPin);
+        pinsToCreate.push(newLocalPin);
+      });
 
-        deletedPinIds.clear();
-        return mergedPins;
+      setPins(mergedPins);
+
+      // Emit socket events outside of React state updater
+      pinsToDelete.forEach(pinId => {
+        socketRef.current?.emit('pin-delete', { mapId: currentMapId, pinId });
+      });
+      pinsToUpdate.forEach(({ pinId, updates }) => {
+        socketRef.current?.emit('pin-update', { mapId: currentMapId, pinId, updates });
+      });
+      pinsToCreate.forEach(newLocalPin => {
+        socketRef.current?.emit('pin-create', {
+          mapId: currentMapId,
+          layerId: newLocalPin.layerId === undefined ? null : newLocalPin.layerId,
+          pin: newLocalPin
+        });
       });
 
       // Merge layers
-      setLayers(currentLocalLayers => {
-        const serverLayerMap = new Map((serverData.layers || []).map(l => [l.id, l]));
-        const localLayerMap = new Map(currentLocalLayers.map(l => [l.id, l]));
-        const mergedLayers: PinLayer[] = [];
-        const deletedLayerIds = pendingDeletedLayerIdsRef.current;
+      const serverLayerMap = new Map((serverData.layers || []).map(l => [l.id, l]));
+      const localLayerMap = new Map(layersRef.current.map(l => [l.id, l]));
+      const mergedLayers: PinLayer[] = [];
+      const deletedLayerIds = new Set(pendingDeletedLayerIdsRef.current);
+      pendingDeletedLayerIdsRef.current.clear();
 
-        serverLayerMap.forEach((serverLayer, layerId) => {
-          if (deletedLayerIds.has(layerId)) {
-            socketRef.current?.emit('layer-delete', { mapId: currentMapId, layerId });
-            return;
-          }
+      const layersToDelete: string[] = [];
+      const layersToUpdate: { layerId: string; updates: PinLayer }[] = [];
+      const layersToCreate: PinLayer[] = [];
 
-          const localLayer = localLayerMap.get(layerId);
-          if (localLayer) {
-            if (localLayer.name !== serverLayer.name || localLayer.position !== serverLayer.position) {
-              mergedLayers.push(localLayer);
-              socketRef.current?.emit('layer-update', { mapId: currentMapId, layerId, updates: localLayer });
-            } else {
-              mergedLayers.push(serverLayer);
-            }
-            localLayerMap.delete(layerId);
+      serverLayerMap.forEach((serverLayer, layerId) => {
+        if (deletedLayerIds.has(layerId)) {
+          layersToDelete.push(layerId);
+          return;
+        }
+
+        const localLayer = localLayerMap.get(layerId);
+        if (localLayer) {
+          if (localLayer.name !== serverLayer.name || localLayer.position !== serverLayer.position) {
+            mergedLayers.push(localLayer);
+            layersToUpdate.push({ layerId, updates: localLayer });
           } else {
             mergedLayers.push(serverLayer);
           }
-        });
+          localLayerMap.delete(layerId);
+        } else {
+          mergedLayers.push(serverLayer);
+        }
+      });
 
-        localLayerMap.forEach((newLocalLayer) => {
-          if (deletedLayerIds.has(newLocalLayer.id)) return;
-          mergedLayers.push(newLocalLayer);
-          socketRef.current?.emit('layer-create', { mapId: currentMapId, layer: newLocalLayer });
-        });
+      localLayerMap.forEach((newLocalLayer) => {
+        if (deletedLayerIds.has(newLocalLayer.id)) return;
+        mergedLayers.push(newLocalLayer);
+        layersToCreate.push(newLocalLayer);
+      });
 
-        deletedLayerIds.clear();
-        return mergedLayers;
+      setLayers(mergedLayers);
+
+      // Emit layer events outside of React state updater
+      layersToDelete.forEach(layerId => {
+        socketRef.current?.emit('layer-delete', { mapId: currentMapId, layerId });
+      });
+      layersToUpdate.forEach(({ layerId, updates }) => {
+        socketRef.current?.emit('layer-update', { mapId: currentMapId, layerId, updates });
+      });
+      layersToCreate.forEach(newLocalLayer => {
+        socketRef.current?.emit('layer-create', { mapId: currentMapId, layer: newLocalLayer });
       });
 
       setIsDirty(false);
