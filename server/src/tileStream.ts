@@ -1,10 +1,13 @@
 import { Request, Response } from 'express';
 import fs from 'fs';
+import { promisify } from 'util';
 import path from 'path';
 import crypto from 'crypto';
 import { PMTiles } from 'pmtiles';
 import { resolveSafeMapFile } from './mapFiles';
 import { planExtract, streamPlannedExtract, type BoundingBox, type ExtractPlan } from './pmtilesExtract';
+
+const readAsync = promisify(fs.read);
 
 class LocalFileSource {
   private fd: number;
@@ -21,7 +24,7 @@ class LocalFileSource {
 
   async getBytes(offset: number, length: number): Promise<{ data: ArrayBuffer }> {
     const buffer = Buffer.allocUnsafe(length);
-    fs.readSync(this.fd, buffer, 0, length, offset);
+    await readAsync(this.fd, buffer, 0, length, offset);
     return { data: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer };
   }
 }

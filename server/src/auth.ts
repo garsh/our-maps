@@ -98,7 +98,24 @@ export async function createSession(userId: string): Promise<string> {
   return id;
 }
 
+interface CachedSession {
+  user: User;
+  expiresAtMs: number;
+}
+
+const sessionCache = new Map<string, CachedSession>();
+const SESSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 export async function getUserForSession(sessionId: string): Promise<User> {
+  const cached = sessionCache.get(sessionId);
+  const now = Date.now();
+  if (cached) {
+    if (cached.expiresAtMs > now) {
+      return cached.user;
+    }
+    sessionCache.delete(sessionId);
+  }
+
   const db = await getDb();
   const row = await db.get(
     `SELECT s.expires_at, u.id as user_id, u.email, u.name, u.picture
@@ -109,24 +126,37 @@ export async function getUserForSession(sessionId: string): Promise<User> {
   if (!row) {
     throw new AuthError('No token provided');
   }
-  if (new Date(row.expires_at).getTime() <= Date.now()) {
+  const dbExpiresAtMs = new Date(row.expires_at).getTime();
+  if (dbExpiresAtMs <= now) {
     await db.run('DELETE FROM sessions WHERE id = ?', sessionId);
+    sessionCache.delete(sessionId);
     throw new AuthError('Session expired');
   }
-  return {
+  const user: User = {
     id: row.user_id,
     email: row.email,
     name: row.name,
     picture: row.picture
   };
+  sessionCache.set(sessionId, {
+    user,
+    expiresAtMs: Math.min(now + SESSION_CACHE_TTL_MS, dbExpiresAtMs)
+  });
+  return user;
 }
 
 export async function deleteSession(sessionId: string) {
+  sessionCache.delete(sessionId);
   const db = await getDb();
   await db.run('DELETE FROM sessions WHERE id = ?', sessionId);
 }
 
 export async function deleteAllSessionsForUser(userId: string) {
+  for (const [sId, entry] of sessionCache.entries()) {
+    if (entry.user.id === userId) {
+      sessionCache.delete(sId);
+    }
+  }
   const db = await getDb();
   await db.run('DELETE FROM sessions WHERE user_id = ?', userId);
 }

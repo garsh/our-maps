@@ -60,7 +60,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
     return res.status(404).json({ error: 'Map not found' });
   }
 
-  const role = await getMapRole(userId, mapId);
+  const role = map.owner_id === userId ? 'owner' : await getMapRole(userId, mapId);
   if (!role) {
     return res.status(403).json({ error: 'Access denied' });
   }

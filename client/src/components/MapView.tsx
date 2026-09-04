@@ -654,6 +654,8 @@ const MapView = ({
     () => pins.filter((pin) => !hiddenLayerIds?.has(pin.layerId || null)),
     [pins, hiddenLayerIds]
   );
+  const visiblePinsRef = useRef(visiblePins);
+  visiblePinsRef.current = visiblePins;
 
   const setMapRef = useCallback((instance: MapRef | null) => {
     mapRef.current = instance;
@@ -668,8 +670,8 @@ const MapView = ({
         setIsMapLoaded(true);
         const flavor: 'light' | 'dark' = mapTheme === 'dark' ? 'dark' : 'light';
         void applyBundledSprites(mapInstance, flavor).then(() => {
-          if (visiblePins.length > 0) {
-            ensurePinImages(mapInstance, visiblePins);
+          if (visiblePinsRef.current.length > 0) {
+            ensurePinImages(mapInstance, visiblePinsRef.current);
           }
           mapInstance.triggerRepaint();
         });
@@ -699,7 +701,7 @@ const MapView = ({
     if (mapInstance) {
       mapInstance.triggerRepaint();
     }
-  }, [visiblePins, mapTheme]);
+  }, [mapTheme]);
   const lastTargetPinId = useRef<string | null>(null);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   const compassSvgRef = useRef<SVGSVGElement | null>(null);

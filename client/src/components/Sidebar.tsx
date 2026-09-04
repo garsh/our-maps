@@ -1147,8 +1147,14 @@ const SortableLayer = memo(({
   });
 
   const pinIds = useMemo(() => layerPins.map(p => p.id), [layerPins]);
-  const isAllSelected = layerPins.length > 0 && layerPins.every(p => selectedNavIds?.has(p.id));
-  const isSomeSelected = layerPins.some(p => selectedNavIds?.has(p.id));
+  const isAllSelected = useMemo(
+    () => layerPins.length > 0 && layerPins.every(p => selectedNavIds?.has(p.id)),
+    [layerPins, selectedNavIds]
+  );
+  const isSomeSelected = useMemo(
+    () => layerPins.some(p => selectedNavIds?.has(p.id)),
+    [layerPins, selectedNavIds]
+  );
   const isHighlighted = isOver && !isExpanded && !isDragging && !isLayerDragging;
   const isPinDropTarget = isOver && !!isAnyPinDragging && !isDragging && !isLayerDragging;
   const isLayerDropTarget = isOver && !!isLayerDragging && !isDragging;
@@ -2076,8 +2082,14 @@ const Sidebar = ({
     window.open(url, '_blank');
   };
 
-  const isDefaultAllSelected = defaultPins.length > 0 && defaultPins.every(p => selectedNavIds?.has(p.id));
-  const isDefaultSomeSelected = defaultPins.some(p => selectedNavIds?.has(p.id));
+  const isDefaultAllSelected = useMemo(
+    () => defaultPins.length > 0 && defaultPins.every(p => selectedNavIds?.has(p.id)),
+    [defaultPins, selectedNavIds]
+  );
+  const isDefaultSomeSelected = useMemo(
+    () => defaultPins.some(p => selectedNavIds?.has(p.id)),
+    [defaultPins, selectedNavIds]
+  );
 
   const collisionCacheRef = useRef<CollisionCache | null>(null);
 

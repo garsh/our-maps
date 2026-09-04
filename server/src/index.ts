@@ -143,10 +143,17 @@ io.on('connection', (socket: Socket) => {
 
   socket.on('join-map', async (mapId: string) => {
     if (typeof mapId !== 'string' || !mapId) return;
-    const role = await getMapRole(getAuthedUser(socket).id, mapId);
+    const user = getAuthedUser(socket);
+    const role = await getMapRole(user.id, mapId);
     if (!canViewMap(role)) {
       socket.emit('join-map-error', { mapId, error: 'Access denied' });
       return;
+    }
+    if (!socket.data.mapRoles) {
+      socket.data.mapRoles = new Map<string, string>();
+    }
+    if (role) {
+      socket.data.mapRoles.set(mapId, role);
     }
     socket.join(`map:${mapId}`);
     console.log(`[SOCKET] User ${socket.id} joined map:${mapId}`);
@@ -177,8 +184,15 @@ io.on('connection', (socket: Socket) => {
         const payload = parsed.data;
         const mapId = payload.mapId;
 
-        const role = await getMapRole(getAuthedUser(socket).id, mapId);
-        if (!canEditMap(role)) {
+        let role = socket.data.mapRoles?.get(mapId);
+        if (!role) {
+          role = (await getMapRole(getAuthedUser(socket).id, mapId)) || undefined;
+          if (role) {
+            if (!socket.data.mapRoles) socket.data.mapRoles = new Map<string, string>();
+            socket.data.mapRoles.set(mapId, role);
+          }
+        }
+        if (!canEditMap(role as any)) {
           socket.emit('write-error', { mapId, error: 'Write access denied' });
           return;
         }
