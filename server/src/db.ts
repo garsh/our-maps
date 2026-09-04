@@ -44,6 +44,12 @@ async function migrate(db: Database) {
   if (!mapColumnNames.includes('owner_id')) {
     await db.exec("ALTER TABLE maps ADD COLUMN owner_id TEXT");
   }
+
+  // Prune redundant single-column indexes covered by existing composite indexes (idx_pins_map_pos, idx_pin_layers_map_pos)
+  await db.exec(`
+    DROP INDEX IF EXISTS idx_pins_map_id;
+    DROP INDEX IF EXISTS idx_pin_layers_map_id;
+  `);
 }
 
 export async function getDb() {
@@ -137,14 +143,12 @@ export async function getDb() {
       FOREIGN KEY (layer_id) REFERENCES pin_layers(id) ON DELETE SET NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_pins_map_id ON pins(map_id);
     CREATE INDEX IF NOT EXISTS idx_pins_layer_id ON pins(layer_id);
     CREATE INDEX IF NOT EXISTS idx_pins_map_pos ON pins(map_id, position, id);
-    CREATE INDEX IF NOT EXISTS idx_pin_layers_map_id ON pin_layers(map_id);
     CREATE INDEX IF NOT EXISTS idx_pin_layers_map_pos ON pin_layers(map_id, position, id);
     CREATE INDEX IF NOT EXISTS idx_maps_owner_id ON maps(owner_id);
     CREATE INDEX IF NOT EXISTS idx_map_permissions_user_id ON map_permissions(user_id);
-    CREATE INDEX IF NOT EXISTS idx_user_map_access_map_id ON user_map_access(map_id);
+    CREATE INDEX IF NOT EXISTS idx_user_map_access_map_user ON user_map_access(map_id, user_id);
 
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,

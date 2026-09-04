@@ -60,7 +60,24 @@ router.get('/:id', async (req: AuthRequest, res) => {
     return res.status(404).json({ error: 'Map not found' });
   }
 
-  const role = map.owner_id === userId ? 'owner' : await getMapRole(userId, mapId);
+  // Get permissions for all users who have access
+  const perms = await db.all(`
+    SELECT mp.user_id, mp.role, u.email, u.name, u.picture
+    FROM map_permissions mp
+    JOIN users u ON mp.user_id = u.id 
+    WHERE mp.map_id = ?
+  `, mapId);
+
+  const permissions: MapPermission[] = perms.map(p => ({
+    userId: p.user_id,
+    userEmail: p.email,
+    userName: p.name,
+    userPicture: p.picture,
+    role: p.role
+  }));
+
+  const userPerm = permissions.find(p => p.userId === userId);
+  const role = map.owner_id === userId ? 'owner' : (userPerm ? userPerm.role : null);
   if (!role) {
     return res.status(403).json({ error: 'Access denied' });
   }
@@ -74,16 +91,6 @@ router.get('/:id', async (req: AuthRequest, res) => {
 
   const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ? ORDER BY position ASC, id ASC', mapId);
   const pins = await db.all('SELECT * FROM pins WHERE map_id = ? ORDER BY position ASC, id ASC', mapId);
-  
-  // Get permissions for all users who have access
-  let permissions: MapPermission[] = [];
-  const perms = await db.all(`
-    SELECT mp.user_id, mp.role, u.email, u.name, u.picture
-    FROM map_permissions mp
-    JOIN users u ON mp.user_id = u.id 
-    WHERE mp.map_id = ?
-  `, mapId);
-  permissions = perms.map(p => ({ userId: p.user_id, userEmail: p.email, userName: p.name, userPicture: p.picture, role: p.role }));
 
   // Map fields for frontend consistency
   const formattedPins = pins.map(p => {
@@ -130,11 +137,6 @@ router.get('/:id/permissions', async (req: AuthRequest, res) => {
     return res.status(404).json({ error: 'Map not found' });
   }
 
-  const role = await getMapRole(userId, mapId);
-  if (!role) {
-    return res.status(403).json({ error: 'Access denied' });
-  }
-
   const perms = await db.all(`
     SELECT mp.user_id, mp.role, u.email, u.name, u.picture
     FROM map_permissions mp
@@ -149,6 +151,12 @@ router.get('/:id/permissions', async (req: AuthRequest, res) => {
     userPicture: p.picture,
     role: p.role
   }));
+
+  const userPerm = permissions.find(p => p.userId === userId);
+  const role = map.owner_id === userId ? 'owner' : (userPerm ? userPerm.role : null);
+  if (!role) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
 
   res.json({
     owner: {

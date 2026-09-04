@@ -221,18 +221,25 @@ async function collectSourceEntries(
   );
   const { tiles, leaves } = relevantEntries(wanted, maxZoom, root);
 
-  for (const leaf of leaves) {
-    const leafDir = await pmt.cache.getDirectory(
-      pmt.source,
-      header.leafDirectoryOffset + leaf.offset,
-      leaf.length,
-      header
+  if (leaves.length > 0) {
+    const leafDirs = await Promise.all(
+      leaves.map((leaf) =>
+        pmt.cache.getDirectory(
+          pmt.source,
+          header.leafDirectoryOffset + leaf.offset,
+          leaf.length,
+          header
+        )
+      )
     );
-    const nested = relevantEntries(wanted, maxZoom, leafDir);
-    if (nested.leaves.length > 0) {
-      throw new Error('PMTiles extract does not support leaf directories deeper than 1');
+
+    for (const leafDir of leafDirs) {
+      const nested = relevantEntries(wanted, maxZoom, leafDir);
+      if (nested.leaves.length > 0) {
+        throw new Error('PMTiles extract does not support leaf directories deeper than 1');
+      }
+      tiles.push(...nested.tiles);
     }
-    tiles.push(...nested.tiles);
   }
 
   tiles.sort((a, b) => a.tileId - b.tileId);
