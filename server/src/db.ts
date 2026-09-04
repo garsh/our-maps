@@ -46,9 +46,11 @@ async function migrate(db: Database) {
   }
 
   // Prune redundant single-column indexes covered by existing composite indexes (idx_pins_map_pos, idx_pin_layers_map_pos)
+  // and redundant index on user_map_access covered by its PRIMARY KEY (user_id, map_id)
   await db.exec(`
     DROP INDEX IF EXISTS idx_pins_map_id;
     DROP INDEX IF EXISTS idx_pin_layers_map_id;
+    DROP INDEX IF EXISTS idx_user_map_access_map_user;
   `);
 }
 
@@ -148,7 +150,6 @@ export async function getDb() {
     CREATE INDEX IF NOT EXISTS idx_pin_layers_map_pos ON pin_layers(map_id, position, id);
     CREATE INDEX IF NOT EXISTS idx_maps_owner_id ON maps(owner_id);
     CREATE INDEX IF NOT EXISTS idx_map_permissions_user_id ON map_permissions(user_id);
-    CREATE INDEX IF NOT EXISTS idx_user_map_access_map_user ON user_map_access(map_id, user_id);
 
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,

@@ -46,25 +46,14 @@ class SimpleLRUCache<T> {
     return entry.value;
   }
 
-  private pruneExpired(): void {
-    const now = Date.now();
-    for (const [k, entry] of this.cache) {
-      if (now > entry.expiresAt) {
-        this.cache.delete(k);
-      }
-    }
-  }
-
   set(key: string, value: T, ttlMs?: number): void {
     if (this.cache.has(key)) {
       this.cache.delete(key);
     } else if (this.cache.size >= this.maxEntries) {
-      this.pruneExpired();
-      if (this.cache.size >= this.maxEntries) {
-        const oldestKey = this.cache.keys().next().value;
-        if (oldestKey !== undefined) {
-          this.cache.delete(oldestKey);
-        }
+      // Evict oldest entry directly in O(1)
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.cache.delete(oldestKey);
       }
     }
     this.cache.set(key, {

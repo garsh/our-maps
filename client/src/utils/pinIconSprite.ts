@@ -44,6 +44,20 @@ export function buildPinSvg(colorCode: string, iconKey: string): string {
   </svg>`;
 }
 
+let sharedCanvas: HTMLCanvasElement | null = null;
+let sharedCtx: CanvasRenderingContext2D | null = null;
+
+function getSharedCanvasContext(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
+  if (typeof document === 'undefined') return null;
+  if (!sharedCanvas) {
+    sharedCanvas = document.createElement('canvas');
+    sharedCanvas.width = 60;
+    sharedCanvas.height = 84;
+    sharedCtx = sharedCanvas.getContext('2d');
+  }
+  return sharedCtx ? { canvas: sharedCanvas, ctx: sharedCtx } : null;
+}
+
 async function loadSvgImage(svgString: string): Promise<any> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -51,17 +65,13 @@ async function loadSvgImage(svgString: string): Promise<any> {
 
     img.onload = () => {
       try {
-        if (typeof document !== 'undefined') {
-          const canvas = document.createElement('canvas');
-          canvas.width = 60;
-          canvas.height = 84;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, 60, 84);
-            const imageData = ctx.getImageData(0, 0, 60, 84);
-            resolve({ width: 60, height: 84, data: imageData.data });
-            return;
-          }
+        const shared = getSharedCanvasContext();
+        if (shared) {
+          shared.ctx.clearRect(0, 0, 60, 84);
+          shared.ctx.drawImage(img, 0, 0, 60, 84);
+          const imageData = shared.ctx.getImageData(0, 0, 60, 84);
+          resolve({ width: 60, height: 84, data: imageData.data });
+          return;
         }
       } catch {}
       resolve(img);
