@@ -61,10 +61,11 @@ import {
   getPinsBoundingBox,
   getManifestStats,
   saveMapOffline,
-  type BoundingBox 
+  type BoundingBox,
+  type MapDownloadStatus
 } from '../utils/tileUtils';
 import { getExtractFile, getExtractResumeInfo, writeExtractMeta } from '../utils/extractStore';
-import { canFit, formatDownloadBytes } from '../utils/storageUtils';
+import { canFit, formatDownloadBytes, getStoredJson } from '../utils/storageUtils';
 import { apiService } from '../services/api';
 import { tileWorkerManager } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
@@ -696,7 +697,7 @@ const SortablePin = memo(({
   const fetchingCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
-    if (isTarget && !pin.address && !isFetchingAddress) {
+    if (isTarget && !pin.address && !isFetchingAddress && !readOnly) {
       setIsFetchingAddress(true);
       const reqLat = pin.lat;
       const reqLng = pin.lng;
@@ -709,7 +710,7 @@ const SortablePin = memo(({
         setIsFetchingAddress(false);
       });
     }
-  }, [isTarget, pin.id, pin.address, pin.lat, pin.lng, isFetchingAddress, onUpdatePin]);
+  }, [isTarget, pin.id, pin.address, pin.lat, pin.lng, isFetchingAddress, onUpdatePin, readOnly]);
 
   const isItemInDraggingBundle = isAnySelectedDragging && isSelected;
   const isDropTarget = isOver && !!isAnyPinDragging && !isDragging && !isItemInDraggingBundle;
@@ -1823,6 +1824,20 @@ const Sidebar = ({
     } else {
       let cancelled = false;
       (async () => {
+        // Short-circuit: skip OPFS/IDB reads entirely when localStorage confirms no offline data.
+        const cachedStatuses = getStoredJson<Record<string, MapDownloadStatus> | null>('cached_download_statuses', null);
+        const cachedEntry = cachedStatuses?.[mapId];
+        const mightHaveOfflineData = !cachedStatuses || (cachedEntry && (cachedEntry.isComplete || cachedEntry.isPartial));
+        if (!mightHaveOfflineData) {
+          // No download recorded — skip the OPFS/IDB reads entirely.
+          setIsDownloaded(false);
+          setHasPartialDownload(false);
+          setIsDownloading(false);
+          setDownloadProgress(null);
+          setByteStats(null);
+          return;
+        }
+
         const [stats, resume, extractFile] = await Promise.all([
           getManifestStats(mapId),
           getExtractResumeInfo(mapId),

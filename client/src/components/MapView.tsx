@@ -624,9 +624,6 @@ const MapView = ({
   isOffline = false,
   hasOfflineTiles: _hasOfflineTiles = false,
 }: MapViewProps) => {
-  if (mapId) {
-    setActiveOfflineMapId(mapId);
-  }
 
   const mapRef = useRef<MapRef | null>(null);
 

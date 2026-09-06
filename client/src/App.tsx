@@ -486,9 +486,15 @@ export function MapEditor() {
       setHasOfflineTiles(st.isComplete || st.isPartial);
     }
 
-    getDownloadStats(mapId).then((stats) => {
-      setHasOfflineTiles(stats.completed > 0);
-    });
+    // Skip IDB read if the localStorage cache already confirms nothing is downloaded for this map.
+    const cachedEntry = cachedStatuses?.[mapId];
+    const hasLocalHint = cachedEntry && (cachedEntry.isComplete || cachedEntry.isPartial);
+    if (!hasLocalHint) {
+      // No cached hint — still check IDB to catch data written before the cache was populated.
+      getDownloadStats(mapId).then((stats) => {
+        setHasOfflineTiles(stats.completed > 0);
+      });
+    }
 
     const unsubscribe = tileWorkerManager.subscribe((state) => {
       if (state.mapId === mapId) {
@@ -832,7 +838,8 @@ export function MapEditor() {
     }
   }, [id, user]);
 
-  // Auto-save logic
+  // Auto-save logic — only depends on pins/layers/mapName when editMode is true,
+  // so remote delta updates don't wastefully schedule this effect for view-only sessions.
   useEffect(() => {
     if (!editMode || isMapLoading) return;
     
@@ -884,7 +891,8 @@ export function MapEditor() {
         autoSaveTimerRef.current = null;
       }
     };
-  }, [editMode, mapName, pins, layers]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode, ...(editMode ? [mapName, pins, layers] : [])]);
 
   // Warn on browser-level navigation (tab close, refresh, address bar) when dirty
   useEffect(() => {

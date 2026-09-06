@@ -91,12 +91,20 @@ router.get('/:id', async (req: AuthRequest, res) => {
     return res.status(304).end();
   }
 
-  // Update Last Accessed
-  await db.run(`
-    INSERT INTO user_map_access (user_id, map_id, last_accessed_at) 
-    VALUES (?, ?, CURRENT_TIMESTAMP) 
-    ON CONFLICT(user_id, map_id) DO UPDATE SET last_accessed_at = CURRENT_TIMESTAMP
-  `, userId, mapId);
+  // Update Last Accessed — throttled to at most once per 30 minutes to reduce SQLite write pressure
+  const existingAccess = await db.get<{ last_accessed_at: string | null }>(
+    'SELECT last_accessed_at FROM user_map_access WHERE user_id = ? AND map_id = ?',
+    userId, mapId
+  );
+  const lastAccessed = existingAccess?.last_accessed_at ? new Date(existingAccess.last_accessed_at).getTime() : 0;
+  const thirtyMinutes = 30 * 60 * 1000;
+  if (Date.now() - lastAccessed > thirtyMinutes) {
+    await db.run(`
+      INSERT INTO user_map_access (user_id, map_id, last_accessed_at) 
+      VALUES (?, ?, CURRENT_TIMESTAMP) 
+      ON CONFLICT(user_id, map_id) DO UPDATE SET last_accessed_at = CURRENT_TIMESTAMP
+    `, userId, mapId);
+  }
 
   const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ? ORDER BY position ASC, id ASC', mapId);
   const pins = await db.all('SELECT * FROM pins WHERE map_id = ? ORDER BY position ASC, id ASC', mapId);

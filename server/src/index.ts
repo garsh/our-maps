@@ -139,7 +139,7 @@ io.use(async (socket, next) => {
 
 // Socket.io for real-time collaboration
 io.on('connection', (socket: Socket) => {
-  console.log('[SOCKET] User connected:', socket.id);
+  if (process.env.NODE_ENV !== 'production') console.log('[SOCKET] User connected:', socket.id);
 
   socket.on('join-map', async (mapId: string) => {
     if (typeof mapId !== 'string' || !mapId) return;
@@ -156,7 +156,7 @@ io.on('connection', (socket: Socket) => {
       socket.data.mapRoles.set(mapId, role);
     }
     socket.join(`map:${mapId}`);
-    console.log(`[SOCKET] User ${socket.id} joined map:${mapId}`);
+    if (process.env.NODE_ENV !== 'production') console.log(`[SOCKET] User ${socket.id} joined map:${mapId}`);
   });
 
   // Granular Delta Events
@@ -201,7 +201,7 @@ io.on('connection', (socket: Socket) => {
         if (applied === false) return;
 
         socket.to(`map:${mapId}`).emit(eventName, payload);
-        console.log(`[SOCKET] ${eventName} on map:${mapId} by ${socket.id}`);
+        if (process.env.NODE_ENV !== 'production') console.log(`[SOCKET] ${eventName} on map:${mapId} by ${socket.id}`);
       } catch (err) {
         console.error(`[SOCKET] ERROR ${eventName}:`, err);
       }
@@ -209,7 +209,7 @@ io.on('connection', (socket: Socket) => {
   }
 
   socket.on('disconnect', () => {
-    console.log('[SOCKET] User disconnected:', socket.id);
+    if (process.env.NODE_ENV !== 'production') console.log('[SOCKET] User disconnected:', socket.id);
   });
 });
 
