@@ -340,6 +340,7 @@ export async function removeAllDownloads(): Promise<void> {
     await removeAllExtracts();
     if (typeof localStorage !== 'undefined') {
         localStorage.removeItem('cached_download_statuses');
+        localStorage.removeItem('customColors');
     }
     if (typeof indexedDB === 'undefined') return;
 

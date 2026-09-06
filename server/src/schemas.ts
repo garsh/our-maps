@@ -24,6 +24,7 @@ export const LayerSchema = z.object({
 
 export const MapUpdateSchema = z.object({
   name: z.string().min(1).max(1000).optional(),
+  customColors: z.array(z.string().regex(/^#[0-9a-fA-F]{3,8}$/)).max(50).optional(),
   layers: z.array(LayerSchema).max(MAX_LAYERS_PER_MAP).optional(),
   pins: z.array(PinSchema).max(MAX_PINS_PER_MAP).optional(),
 });
@@ -31,6 +32,7 @@ export const MapUpdateSchema = z.object({
 export const MapCreateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(1000),
+  customColors: z.array(z.string().regex(/^#[0-9a-fA-F]{3,8}$/)).max(50).optional(),
   layers: z.array(LayerSchema).max(MAX_LAYERS_PER_MAP).optional(),
   pins: z.array(PinSchema).max(MAX_PINS_PER_MAP).optional(),
 });
@@ -106,6 +108,11 @@ export const MapNameUpdatePayloadSchema = z.object({
   name: z.string().min(1).max(1000),
 });
 
+export const CustomColorsUpdatePayloadSchema = z.object({
+  mapId: z.string().min(1),
+  customColors: z.array(z.string().regex(/^#[0-9a-fA-F]{3,8}$/)).max(50),
+});
+
 export const socketPayloadSchemas = {
   'pin-create': PinCreatePayloadSchema,
   'pin-update': PinUpdatePayloadSchema,
@@ -117,6 +124,7 @@ export const socketPayloadSchemas = {
   'layer-delete': LayerDeletePayloadSchema,
   'layers-reorder': LayersReorderPayloadSchema,
   'map-name-update': MapNameUpdatePayloadSchema,
+  'custom-colors-update': CustomColorsUpdatePayloadSchema,
 } as const;
 
 export const ShareSchema = z.object({

@@ -167,6 +167,48 @@ describe('API Endpoints', () => {
     expect(pins[0].layer_id).toBe('g1');
   });
 
+  it('POST, GET, and PUT /api/maps should handle customColors per map', async () => {
+    const mapId = 'custom-colors-map-id';
+    const postData = {
+      id: mapId,
+      name: 'Custom Colors Map',
+      customColors: ['#ffc800', '#c8ff00'],
+      layers: [],
+      pins: []
+    };
+
+    const createRes = await request(app)
+      .post('/api/maps')
+      .set(authHeader)
+      .send(postData);
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.customColors).toEqual(['#ffc800', '#c8ff00']);
+
+    const getRes = await request(app)
+      .get(`/api/maps/${mapId}`)
+      .set(authHeader);
+
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.customColors).toEqual(['#ffc800', '#c8ff00']);
+
+    const updateRes = await request(app)
+      .put(`/api/maps/${mapId}`)
+      .set(authHeader)
+      .send({
+        customColors: ['#ffc800', '#c8ff00', '#00ffc8']
+      });
+
+    expect(updateRes.status).toBe(200);
+
+    const getRes2 = await request(app)
+      .get(`/api/maps/${mapId}`)
+      .set(authHeader);
+
+    expect(getRes2.status).toBe(200);
+    expect(getRes2.body.customColors).toEqual(['#ffc800', '#c8ff00', '#00ffc8']);
+  });
+
   it('POST /api/auth/google-login should return 400 if credential is missing', async () => {
     const res = await request(app).post('/api/auth/google-login').send({});
     expect(res.status).toBe(400);

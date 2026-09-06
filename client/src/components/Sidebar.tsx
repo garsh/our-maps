@@ -71,7 +71,7 @@ import { tileWorkerManager } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
 import { comparePinPositions } from '../utils/reorderUtils';
 import { getMapViewportBounds } from '../utils/mapViewport';
-import { PIN_COLORS, resolvePinColorCode } from '../utils/mapUtils';
+import { PIN_COLORS, resolvePinColorCode, formatColorName } from '../utils/mapUtils';
 
 class MouseSensor extends PointerSensor {
   static activators = [
@@ -229,17 +229,20 @@ const ColorSwatch = ({
   color,
   isSelected,
   onClick,
-  ariaLabel
+  ariaLabel,
+  title
 }: {
   color: string;
   isSelected: boolean;
   onClick: () => void;
   ariaLabel?: string;
+  title?: string;
 }) => {
   const checkColors = isSelected ? getCheckColors(color) : null;
   return (
     <button
       aria-label={ariaLabel}
+      title={title}
       onClick={onClick}
       style={{
         flex: 1,
@@ -581,7 +584,13 @@ const PinEditForm = memo(({
               key={color.name}
               color={color.value}
               ariaLabel={`color-${color.name}`}
-              isSelected={pin.color === color.name || (!pin.color && color.name === 'blue')}
+              title={formatColorName(color.name)}
+              isSelected={
+                pin.color === color.name ||
+                (!pin.color && color.name === 'blue') ||
+                pin.color?.toLowerCase() === color.value.toLowerCase() ||
+                pin.color?.toLowerCase() === color.name.toLowerCase()
+              }
               onClick={() => onUpdatePin(pin.id, { color: color.name })}
             />
           ))}
@@ -589,13 +598,18 @@ const PinEditForm = memo(({
             <ColorSwatch
               key={color}
               color={color}
-              isSelected={pin.color === color}
+              title={formatColorName(color)}
+              isSelected={
+                pin.color?.toLowerCase() === color.toLowerCase() &&
+                !PIN_COLORS.some(c => c.value.toLowerCase() === color.toLowerCase() || c.name.toLowerCase() === color.toLowerCase())
+              }
               onClick={() => onUpdatePin(pin.id, { color })}
             />
           ))}
-          <div style={{ position: 'relative', flex: 1, minWidth: 0, height: '16px' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: 0, height: '16px' }} title="Add custom color">
             <input 
               type="color"
+              aria-label="Custom color picker"
               value={(!pin.color || PIN_COLORS.some(c => c.name === pin.color)) ? '#9C2BCB' : pin.color}
               onChange={(e) => {
                 onUpdatePin(pin.id, { color: e.target.value });
@@ -1947,6 +1961,7 @@ const Sidebar = ({
         ownerId: '',
         layers,
         pins,
+        customColors: customColors || [],
         userRole,
         totalTiles: totalCount,
         completedTiles: 0,

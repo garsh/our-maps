@@ -122,6 +122,16 @@ router.get('/:id', async (req: AuthRequest, res) => {
     };
   });
 
+  let customColors: string[] = [];
+  try {
+    if (map.custom_colors) {
+      const parsed = JSON.parse(map.custom_colors);
+      if (Array.isArray(parsed)) customColors = parsed;
+    }
+  } catch {
+    customColors = [];
+  }
+
   const response: MapData = {
     ...map,
     ownerId: map.owner_id,
@@ -130,6 +140,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
     ownerPicture: map.owner_picture,
     layers: layers || [],
     pins: formattedPins,
+    customColors,
     userRole: role,
     permissions
   };
@@ -352,14 +363,20 @@ export async function syncMapLayersAndPins(
 router.post('/', async (req: AuthRequest, res) => {
   try {
     const validatedData = MapCreateSchema.parse(req.body);
-    const { id, name, layers, pins } = validatedData;
+    const { id, name, layers, pins, customColors } = validatedData;
     const userId = req.user!.id;
     const db = await getDb();
 
     await db.run('BEGIN TRANSACTION');
 
     try {
-      await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', id, name, userId);
+      await db.run(
+        'INSERT INTO maps (id, name, owner_id, custom_colors) VALUES (?, ?, ?, ?)',
+        id,
+        name,
+        userId,
+        JSON.stringify(customColors || [])
+      );
       
       const { layers: finalGroups, pins: finalPins } = await syncMapLayersAndPins(
         db,
@@ -382,6 +399,7 @@ router.post('/', async (req: AuthRequest, res) => {
         name, 
         layers: finalGroups, 
         pins: finalPins,
+        customColors: customColors || [],
         ownerId: userId,
         userRole: 'owner'
       });
@@ -402,7 +420,7 @@ router.post('/', async (req: AuthRequest, res) => {
 router.put('/:id', async (req: AuthRequest, res) => {
   try {
     const validatedData = MapUpdateSchema.parse(req.body);
-    const { name, layers, pins } = validatedData;
+    const { name, layers, pins, customColors } = validatedData;
     const mapId = req.params.id;
     const userId = req.user!.id;
     const db = await getDb();
@@ -420,6 +438,9 @@ router.put('/:id', async (req: AuthRequest, res) => {
     try {
       if (name) {
         await db.run('UPDATE maps SET name = ? WHERE id = ?', name, mapId);
+      }
+      if (customColors !== undefined) {
+        await db.run('UPDATE maps SET custom_colors = ? WHERE id = ?', JSON.stringify(customColors), mapId);
       }
 
       await syncMapLayersAndPins(db, mapId, layers, pins, { isNewMap: false });

@@ -29,11 +29,21 @@ export const COLOR_CODES: Record<string, string> = {
   gold: '#FFD700',
   pink: '#FF69B4',
   teal: '#008080',
+  electric_blue: '#0028FF',
   brown: '#8B4513',
   black: '#000000',
 };
 
 export const PIN_COLORS = Object.entries(COLOR_CODES).map(([name, value]) => ({ name, value }));
+
+export function formatColorName(colorNameOrHex: string): string {
+  if (colorNameOrHex.startsWith('#')) {
+    return `Custom color: ${colorNameOrHex}`;
+  }
+  return colorNameOrHex
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
 
 export const VALID_PIN_ICONS: readonly PinIcon[] = [
   'default',

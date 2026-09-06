@@ -44,6 +44,7 @@ export interface MapData {
   ownerPicture?: string;
   layers: PinLayer[];
   pins: Pin[];
+  customColors?: string[];
   permissions?: MapPermission[];
   userRole?: 'view' | 'edit' | 'owner';
   lastAccessedAt?: string;

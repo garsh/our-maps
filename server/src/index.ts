@@ -171,6 +171,7 @@ io.on('connection', (socket: Socket) => {
     'layer-delete': realtime.handleLayerDelete,
     'layers-reorder': realtime.handleLayersReorder,
     'map-name-update': realtime.handleMapNameUpdate,
+    'custom-colors-update': realtime.handleCustomColorsUpdate,
   };
 
   for (const [eventName, handler] of Object.entries(deltaHandlers)) {

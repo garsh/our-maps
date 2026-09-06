@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { arePinsEqual, isValidPinColor, isValidPinIcon, resolvePinColorCode, getPreviewMarkerHTML } from '../mapUtils';
+import { arePinsEqual, isValidPinColor, isValidPinIcon, resolvePinColorCode, getPreviewMarkerHTML, formatColorName } from '../mapUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('mapUtils', () => {
@@ -84,6 +84,7 @@ describe('mapUtils', () => {
   describe('color and icon validation', () => {
     it('validates known colors and hex values', () => {
       expect(isValidPinColor('red')).toBe(true);
+      expect(isValidPinColor('electric_blue')).toBe(true);
       expect(isValidPinColor('#123456')).toBe(true);
       expect(isValidPinColor('invalid_color')).toBe(false);
       expect(isValidPinColor(null)).toBe(false);
@@ -91,8 +92,15 @@ describe('mapUtils', () => {
 
     it('resolves color codes with fallbacks', () => {
       expect(resolvePinColorCode('red')).toBe('#CB2B3E');
+      expect(resolvePinColorCode('electric_blue')).toBe('#0028FF');
       expect(resolvePinColorCode('#abcdef')).toBe('#abcdef');
       expect(resolvePinColorCode(null)).toBe('#2A81CB'); // default blue
+    });
+
+    it('formats color names for swatches and tooltips', () => {
+      expect(formatColorName('blue')).toBe('Blue');
+      expect(formatColorName('electric_blue')).toBe('Electric Blue');
+      expect(formatColorName('#0028ff')).toBe('Custom color: #0028ff');
     });
 
     it('validates pin icons', () => {

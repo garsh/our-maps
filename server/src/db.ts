@@ -106,6 +106,7 @@ export async function getDb() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       owner_id TEXT,
+      custom_colors TEXT DEFAULT '[]',
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (owner_id) REFERENCES users(id)
     );

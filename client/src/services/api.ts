@@ -215,11 +215,11 @@ export const apiService = {
     }
   },
 
-  async updateMap(id: string, name: string, layers: any[], pins: Pin[], signal?: AbortSignal): Promise<{ message: string }> {
+  async updateMap(id: string, name: string, layers: any[], pins: Pin[], signal?: AbortSignal, customColors?: string[]): Promise<{ message: string }> {
     const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, {
       method: 'PUT',
       headers: getHeaders(),
-      body: JSON.stringify({ name, layers, pins }),
+      body: JSON.stringify({ name, layers, pins, customColors }),
       signal,
     });
     return handleResponse<{ message: string }>(res, this._logoutCallback, 'Failed to update map');

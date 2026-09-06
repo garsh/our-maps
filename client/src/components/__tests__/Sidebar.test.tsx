@@ -147,16 +147,19 @@ describe('Sidebar', () => {
     expect(onUpdatePin).toHaveBeenCalledWith('1', { label: 'Unsaved Name' });
   });
 
-  it('calls onUpdatePin when a color is selected', () => {
+  it('calls onUpdatePin when a color is selected and displays color name tooltips', () => {
     const onUpdatePin = vi.fn();
     render(<TestWrapper handlers={{ onUpdatePin }} />);
     
     fireEvent.click(screen.getByLabelText('Edit'));
     const greenButton = screen.getByLabelText('color-green');
+    expect(greenButton).toHaveAttribute('title', 'Green');
+
+    const electricBlueButton = screen.getByLabelText('color-electric_blue');
+    expect(electricBlueButton).toHaveAttribute('title', 'Electric Blue');
     
-    fireEvent.click(greenButton);
-    
-    expect(onUpdatePin).toHaveBeenCalledWith('1', { color: 'green' });
+    fireEvent.click(electricBlueButton);
+    expect(onUpdatePin).toHaveBeenCalledWith('1', { color: 'electric_blue' });
   });
 
   it('calls onUpdatePin when an icon is selected', () => {

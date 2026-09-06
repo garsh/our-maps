@@ -23,7 +23,8 @@ import type {
   LayerUpdatePayload,
   LayerDeletePayload,
   LayersReorderPayload,
-  MapNameUpdatePayload
+  MapNameUpdatePayload,
+  CustomColorsUpdatePayload
 } from '@shared/interfaces'
 
 import type { DragEndEvent } from '@dnd-kit/core'
@@ -31,13 +32,13 @@ import { Loader2, Map as MapIcon, RotateCw } from 'lucide-react';
 import type { SearchAreaState } from './components/SearchBar';
 import { reorderPins, reorderLayers, isSameLayer, emitPinMoveOrReorderEvents } from './utils/reorderUtils';
 import { generateId } from './utils/fileUtils';
-import { getOfflineMap, isMapDownloaded, touchMapCacheAccess } from './utils/tileUtils';
+import { getOfflineMap, isMapDownloaded, touchMapCacheAccess, saveMapToViewCache } from './utils/tileUtils';
 import { preloadExtract, setActiveOfflineMapId } from './utils/offlineExtract';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
 import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
 
 import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer } from './utils/pinHover';
-import { arePinsEqual } from './utils/mapUtils';
+import { arePinsEqual, PIN_COLORS } from './utils/mapUtils';
 import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
@@ -376,9 +377,9 @@ export function MapEditor() {
     return new Set();
   });
   
-  const [customColors, setCustomColors] = useState<string[]>(() => {
-    return getStoredJson<string[]>('customColors', []);
-  });
+  const [customColors, setCustomColors] = useState<string[]>([]);
+  const customColorsRef = useRef(customColors);
+  customColorsRef.current = customColors;
 
   const selectedNavIdsRef = useRef(selectedNavIds);
   selectedNavIdsRef.current = selectedNavIds;
@@ -461,16 +462,26 @@ export function MapEditor() {
     }
   }, [collapsedLayerIds, mapId]);
 
-  useEffect(() => {
-    setStoredJson('customColors', customColors);
-  }, [customColors]);
-
-
-
   const addCustomColor = useCallback((color: string) => {
+    const normalized = color.toLowerCase().trim();
+    if (!normalized.startsWith('#')) return;
+    if (PIN_COLORS.some(c => c.value.toLowerCase() === normalized)) return;
+
     setCustomColors(prev => {
-      if (prev.includes(color)) return prev;
-      return [color, ...prev].slice(0, 10);
+      if (prev.some(c => c.toLowerCase() === normalized)) return prev;
+      const next = [normalized, ...prev].slice(0, 10);
+      const currentMapId = mapIdRef.current;
+      if (currentMapId && socketRef.current?.connected && userRoleRef.current !== 'view') {
+        socketRef.current.emit('custom-colors-update', { mapId: currentMapId, customColors: next });
+      }
+      if (currentMapId) {
+        getOfflineMap(currentMapId).then(cached => {
+          if (cached) {
+            saveMapToViewCache({ ...cached, customColors: next }).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+      return next;
     });
   }, []);
 
@@ -754,6 +765,13 @@ export function MapEditor() {
         setIsDirty(false);
       });
 
+      socket.on('custom-colors-update', (data: CustomColorsUpdatePayload) => {
+        if (data.mapId !== id) return;
+        isRemoteUpdateRef.current = true;
+        setCustomColors(data.customColors || []);
+        setIsDirty(false);
+      });
+
       socket.on('map-reloaded', (data: { mapId: string }) => {
         if (data.mapId !== id) return;
         loadMap(id, true);
@@ -793,6 +811,7 @@ export function MapEditor() {
       setMapName('My Map');
       setPins([]);
       setLayers([]);
+      setCustomColors([]);
       setUserRole('owner');
       setIsMapLoading(false);
     }
@@ -852,7 +871,7 @@ export function MapEditor() {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editMode, ...(editMode ? [mapName, pins, layers] : [])]);
+  }, [editMode, ...(editMode ? [mapName, pins, layers, customColors] : [])]);
 
   // Warn on browser-level navigation (tab close, refresh, address bar) when dirty
   useEffect(() => {
@@ -893,6 +912,7 @@ export function MapEditor() {
         setOwner({ id: serverData.ownerId, name: serverData.ownerName, email: serverData.ownerEmail, picture: serverData.ownerPicture });
         setLayers(serverData.layers || []);
         setPins(serverData.pins || []);
+        setCustomColors(serverData.customColors || []);
         setUserRole(serverData.userRole || 'view');
         setPermissions(serverData.permissions || []);
         setIsDirty(false);
@@ -1051,6 +1071,7 @@ export function MapEditor() {
           setOwner({ id: cached.ownerId, name: cached.ownerName, email: cached.ownerEmail, picture: cached.ownerPicture });
           setLayers(cached.layers || []);
           setPins(cached.pins || []);
+          setCustomColors(cached.customColors || []);
           setUserRole(cached.userRole || 'view');
           setPermissions(cached.permissions || []);
           if (cached.pins && cached.pins.length > 0) {
@@ -1091,6 +1112,7 @@ export function MapEditor() {
       setOwner({ id: data.ownerId, name: data.ownerName, email: data.ownerEmail, picture: data.ownerPicture });
       setLayers(data.layers || []);
       setPins(data.pins);
+      setCustomColors(data.customColors || []);
       if (data.pins && data.pins.length > 0) {
         if (!hasHydratedLocally && !silent) {
           const lats = data.pins.map(p => p.lat);
@@ -1141,7 +1163,7 @@ export function MapEditor() {
 
     try {
       if (mapId) {
-        await apiService.updateMap(mapId, mapName, layers, pins, abortController.signal);
+        await apiService.updateMap(mapId, mapName, layers, pins, abortController.signal, customColorsRef.current);
         setIsDirty(false);
       } else {
         const newId = generateId();
@@ -1151,6 +1173,7 @@ export function MapEditor() {
           name: mapName, 
           layers, 
           pins,
+          customColors: customColorsRef.current,
           ownerId: user?.id || '',
         });
         setIsDirty(false);

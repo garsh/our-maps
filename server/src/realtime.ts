@@ -10,7 +10,8 @@ import type {
   LayerUpdatePayload,
   LayerDeletePayload,
   LayersReorderPayload,
-  MapNameUpdatePayload
+  MapNameUpdatePayload,
+  CustomColorsUpdatePayload
 } from '@shared/interfaces';
 
 export async function handlePinCreate(data: PinCreatePayload): Promise<boolean | void> {
@@ -314,4 +315,16 @@ export async function handleMapNameUpdate(data: MapNameUpdatePayload) {
   if (!mapId || !name) return;
 
   await db.run('UPDATE maps SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', name, mapId);
+}
+
+export async function handleCustomColorsUpdate(data: CustomColorsUpdatePayload) {
+  const db = await getDb();
+  const { mapId, customColors } = data;
+  if (!mapId || !Array.isArray(customColors)) return;
+
+  await db.run(
+    'UPDATE maps SET custom_colors = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    JSON.stringify(customColors),
+    mapId
+  );
 }

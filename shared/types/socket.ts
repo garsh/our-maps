@@ -57,3 +57,8 @@ export interface MapNameUpdatePayload {
   mapId: string;
   name: string;
 }
+
+export interface CustomColorsUpdatePayload {
+  mapId: string;
+  customColors: string[];
+}
