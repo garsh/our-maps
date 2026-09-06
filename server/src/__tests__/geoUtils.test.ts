@@ -46,5 +46,12 @@ describe('geoUtils', () => {
       expect(isWithinBounds(0, 15, bounds)).toBe(false);
       expect(isWithinBounds(-15, 0, bounds)).toBe(false);
     });
+
+    it('returns true for any point when bounds cover whole world', () => {
+      const worldBounds = parseAndClampBounds('-180,85,180,-85');
+      expect(isWithinBounds(0, 0, worldBounds)).toBe(true);
+      expect(isWithinBounds(75, 175, worldBounds)).toBe(true);
+      expect(isWithinBounds(-80, -170, worldBounds)).toBe(true);
+    });
   });
 });

@@ -598,8 +598,8 @@ export function isPinInPaddedViewport(
 
 const MapView = ({
   mapId = null,
-  center = [20, 0], // default [lat, lng]
-  zoom = 3,
+  center = [0, 0], // default [lat, lng]
+  zoom = 1,
   pins,
   onMapClick,
   onPinClick,

@@ -32,12 +32,22 @@ export function parseAndClampBounds(bounds?: string | null): ClampedBounds | nul
   };
 }
 
+export function isWorldBounds(bounds: ClampedBounds | null | undefined): boolean {
+  if (!bounds) return true;
+  const lngSpan = bounds.maxLng - bounds.minLng;
+  const latSpan = bounds.maxLat - bounds.minLat;
+  // If bounds span almost entire longitude (>= 340) and broad latitude (>= 120), or world clamping reached
+  if (lngSpan >= 340 && latSpan >= 120) return true;
+  if (bounds.boundEast - bounds.boundWest >= 350 && bounds.boundNorth - bounds.boundSouth >= 140) return true;
+  return false;
+}
+
 export function isWithinBounds(
   latVal: number | string | undefined | null,
   lngVal: number | string | undefined | null,
   bounds: ClampedBounds | null
 ): boolean {
-  if (!bounds) return true;
+  if (!bounds || isWorldBounds(bounds)) return true;
   if (latVal === undefined || latVal === null || lngVal === undefined || lngVal === null) return true;
   const lat = typeof latVal === 'number' ? latVal : parseFloat(latVal);
   const lng = typeof lngVal === 'number' ? lngVal : parseFloat(lngVal);

@@ -168,6 +168,50 @@ describe('Places API Proxy Endpoints', () => {
     delete process.env.GOOGLE_MAPS_API_KEY;
   });
 
+  it('should not restrict search when bounds cover the whole world', async () => {
+    process.env.GOOGLE_MAPS_API_KEY = 'mock-google-key-value';
+
+    const mockGoogleResults = {
+      places: [
+        {
+          id: 'tokyo-id',
+          displayName: { text: 'Tokyo Tower', languageCode: 'en' },
+          formattedAddress: 'Tokyo, Japan',
+          location: { latitude: 35.6586, longitude: 139.7454 }
+        },
+        {
+          id: 'paris-id',
+          displayName: { text: 'Eiffel Tower', languageCode: 'en' },
+          formattedAddress: 'Paris, France',
+          location: { latitude: 48.8584, longitude: 2.2945 }
+        }
+      ]
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options) => {
+      const body = JSON.parse(options?.body as string);
+      expect(body.textQuery).toBe('tower');
+      // Must not restrict or bias to tiny box
+      expect(body.locationRestriction).toBeUndefined();
+      expect(body.locationBias).toBeUndefined();
+      return {
+        json: async () => mockGoogleResults
+      } as Response;
+    });
+
+    const res = await request(app)
+      .get('/api/places/search?q=tower&bounds=-180,85,180,-85')
+      .set(authHeader);
+
+    expect(res.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(res.body.length).toBe(2);
+    expect(res.body[0].title).toBe('Tokyo Tower');
+    expect(res.body[1].title).toBe('Eiffel Tower');
+
+    delete process.env.GOOGLE_MAPS_API_KEY;
+  });
+
   it('should reverse geocode via Nominatim when API key is missing', async () => {
     const originalKey = process.env.GOOGLE_MAPS_API_KEY;
     delete process.env.GOOGLE_MAPS_API_KEY;

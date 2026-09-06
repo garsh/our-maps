@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authMiddleware, type AuthRequest } from '../auth';
-import { parseAndClampBounds, isWithinBounds } from '../../../shared/geoUtils';
+import { parseAndClampBounds, isWithinBounds, isWorldBounds } from '../../../shared/geoUtils';
 
 const STATE_ABBREVIATIONS: Record<string, string> = {
   'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR', 'California': 'CA',
@@ -150,6 +150,7 @@ router.get('/search', async (req: AuthRequest, res) => {
 
   const apiKey = process.env.GOOGLE_MAPS_API_KEY?.trim();
   const clamped = parseAndClampBounds(boundsParam);
+  const isGlobal = isWorldBounds(clamped);
 
   if (!apiKey) {
     if (process.env.NODE_ENV !== 'test') {
@@ -159,10 +160,10 @@ router.get('/search', async (req: AuthRequest, res) => {
       await throttleNominatim();
       let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=30&addressdetails=1`;
       
-      if (clamped) {
+      if (clamped && !isGlobal) {
         const boundedViewbox = `${clamped.boundWest},${clamped.boundNorth},${clamped.boundEast},${clamped.boundSouth}`;
         url += `&viewbox=${encodeURIComponent(boundedViewbox)}&bounded=1`;
-      } else if (boundsParam) {
+      } else if (boundsParam && !isGlobal) {
         url += `&viewbox=${encodeURIComponent(boundsParam)}&bounded=1`;
       }
       
@@ -182,7 +183,7 @@ router.get('/search', async (req: AuthRequest, res) => {
         };
       });
 
-      if (clamped) {
+      if (clamped && !isGlobal) {
         formatted = formatted.filter((item: any) => isWithinBounds(item.lat, item.lon, clamped));
       }
 
@@ -202,7 +203,7 @@ router.get('/search', async (req: AuthRequest, res) => {
       maxResultCount: 10
     };
 
-    if (clamped) {
+    if (clamped && !isGlobal) {
       const height = Math.abs(clamped.maxLat - clamped.minLat);
       if (clamped.boundEast - clamped.boundWest <= 180 && clamped.boundSouth <= clamped.boundNorth) {
         body.locationRestriction = {
@@ -250,7 +251,7 @@ router.get('/search', async (req: AuthRequest, res) => {
       type: 'global'
     }));
 
-    if (clamped) {
+    if (clamped && !isGlobal) {
       formatted = formatted.filter((item: any) => isWithinBounds(item.lat, item.lon, clamped));
     }
 
