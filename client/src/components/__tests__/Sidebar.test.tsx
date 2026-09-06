@@ -162,7 +162,7 @@ describe('Sidebar', () => {
     expect(onUpdatePin).toHaveBeenCalledWith('1', { color: 'electric_blue' });
   });
 
-  it('calls onUpdatePin when an icon is selected', () => {
+  it('calls onUpdatePin with icon and its default color when an icon is selected', () => {
     const onUpdatePin = vi.fn();
     render(<TestWrapper handlers={{ onUpdatePin }} />);
     
@@ -171,7 +171,27 @@ describe('Sidebar', () => {
     
     fireEvent.click(hotelIcon);
     
-    expect(onUpdatePin).toHaveBeenCalledWith('1', { icon: 'hotel' });
+    expect(onUpdatePin).toHaveBeenCalledWith('1', { icon: 'hotel', color: 'violet' });
+
+    const restaurantIcon = screen.getByLabelText('icon-restaurant');
+    fireEvent.click(restaurantIcon);
+    expect(onUpdatePin).toHaveBeenCalledWith('1', { icon: 'restaurant', color: 'green' });
+
+    const airportIcon = screen.getByLabelText('icon-airport');
+    fireEvent.click(airportIcon);
+    expect(onUpdatePin).toHaveBeenCalledWith('1', { icon: 'airport', color: 'black' });
+
+    const gasIcon = screen.getByLabelText('icon-gas');
+    fireEvent.click(gasIcon);
+    expect(onUpdatePin).toHaveBeenCalledWith('1', { icon: 'gas', color: 'brown' });
+
+    const shoppingIcon = screen.getByLabelText('icon-shopping');
+    fireEvent.click(shoppingIcon);
+    expect(onUpdatePin).toHaveBeenCalledWith('1', { icon: 'shopping', color: 'pink' });
+
+    const defaultIcon = screen.getByLabelText('icon-default');
+    fireEvent.click(defaultIcon);
+    expect(onUpdatePin).toHaveBeenCalledWith('1', { icon: 'default', color: 'blue' });
   });
 
   it('calls onPinClick when a pin is clicked', () => {

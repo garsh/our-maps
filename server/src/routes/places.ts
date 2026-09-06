@@ -73,6 +73,8 @@ export const reverseGeocodeCache = new SimpleLRUCache<{ address: string | null }
 export function clearPlacesCacheForTests(): void {
   searchCache.clear();
   reverseGeocodeCache.clear();
+  nominatimQueue = Promise.resolve();
+  lastNominatimRequestTime = 0;
 }
 
 // Rate pacing queue for upstream OSM Nominatim fallback (max 1 req/sec)
@@ -81,16 +83,21 @@ let lastNominatimRequestTime = 0;
 const NOMINATIM_MIN_INTERVAL = 1000;
 
 async function throttleNominatim(): Promise<void> {
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
   return new Promise((resolve) => {
-    nominatimQueue = nominatimQueue.then(async () => {
-      const now = Date.now();
-      const timeSince = now - lastNominatimRequestTime;
-      if (timeSince < NOMINATIM_MIN_INTERVAL && process.env.NODE_ENV !== 'test') {
-        await new Promise((r) => setTimeout(r, NOMINATIM_MIN_INTERVAL - timeSince));
-      }
-      lastNominatimRequestTime = Date.now();
-      resolve();
-    });
+    nominatimQueue = nominatimQueue
+      .catch(() => {})
+      .then(async () => {
+        const now = Date.now();
+        const timeSince = now - lastNominatimRequestTime;
+        if (timeSince < NOMINATIM_MIN_INTERVAL) {
+          await new Promise((r) => setTimeout(r, NOMINATIM_MIN_INTERVAL - timeSince));
+        }
+        lastNominatimRequestTime = Date.now();
+        resolve();
+      });
   });
 }
 

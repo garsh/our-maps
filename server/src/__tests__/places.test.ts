@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { app } from '../index';
-import { setDbName, closeDb } from '../db';
+import { setDbName, closeDb, getDb } from '../db';
 import { clearPlacesCacheForTests } from '../routes/places';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -12,13 +12,17 @@ describe('Places API Proxy Endpoints', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     setDbName(testDbName);
+    await getDb();
   });
 
   afterAll(async () => {
     await closeDb();
     const dbPath = path.join(__dirname, '..', testDbName);
-    if (fs.existsSync(dbPath)) {
-      fs.unlinkSync(dbPath);
+    for (const ext of ['', '-wal', '-shm']) {
+      const p = `${dbPath}${ext}`;
+      if (fs.existsSync(p)) {
+        fs.unlinkSync(p);
+      }
     }
   });
 
@@ -45,46 +49,48 @@ describe('Places API Proxy Endpoints', () => {
     const originalKey = process.env.GOOGLE_MAPS_API_KEY;
     delete process.env.GOOGLE_MAPS_API_KEY;
 
-    const mockNominatimResults = [
-      {
-        place_id: 12345,
-        display_name: 'Mock In-Bounds Place, Country',
-        lat: '5.5',
-        lon: '0.0'
-      },
-      {
-        place_id: 99999,
-        display_name: 'Mock Out-Of-Bounds Place, Country',
-        lat: '50.0',
-        lon: '50.0'
-      }
-    ];
+    try {
+      const mockNominatimResults = [
+        {
+          place_id: 12345,
+          display_name: 'Mock In-Bounds Place, Country',
+          lat: '5.5',
+          lon: '0.0'
+        },
+        {
+          place_id: 99999,
+          display_name: 'Mock Out-Of-Bounds Place, Country',
+          lat: '50.0',
+          lon: '50.0'
+        }
+      ];
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
-      expect(url.toString()).toContain('nominatim.openstreetmap.org');
-      return {
-        json: async () => mockNominatimResults
-      } as Response;
-    });
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        expect(url.toString()).toContain('nominatim.openstreetmap.org');
+        return {
+          json: async () => mockNominatimResults
+        } as Response;
+      });
 
-    const res = await request(app)
-      .get('/api/places/search?q=coffee&bounds=-1,5,1,6')
-      .set(authHeader);
+      const res = await request(app)
+        .get('/api/places/search?q=coffee&bounds=-1,5,1,6')
+        .set(authHeader);
 
-    expect(res.status).toBe(200);
-    expect(fetchSpy).toHaveBeenCalled();
-    expect(res.body).toEqual([
-      {
-        place_id: 12345,
-        title: '',
-        address: 'Mock In-Bounds Place, Country',
-        lat: '5.5',
-        lon: '0.0',
-        type: 'global'
-      }
-    ]);
-
-    process.env.GOOGLE_MAPS_API_KEY = originalKey;
+      expect(res.status).toBe(200);
+      expect(fetchSpy).toHaveBeenCalled();
+      expect(res.body).toEqual([
+        {
+          place_id: 12345,
+          title: '',
+          address: 'Mock In-Bounds Place, Country',
+          lat: '5.5',
+          lon: '0.0',
+          type: 'global'
+        }
+      ]);
+    } finally {
+      process.env.GOOGLE_MAPS_API_KEY = originalKey;
+    }
   });
 
   it('should use Google Places API (New) when API key is present and preserve best match order', async () => {
@@ -216,25 +222,27 @@ describe('Places API Proxy Endpoints', () => {
     const originalKey = process.env.GOOGLE_MAPS_API_KEY;
     delete process.env.GOOGLE_MAPS_API_KEY;
 
-    const mockNominatimReverse = {
-      display_name: 'Reverse Nominatim Address'
-    };
+    try {
+      const mockNominatimReverse = {
+        display_name: 'Reverse Nominatim Address'
+      };
 
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
-      expect(url.toString()).toContain('nominatim.openstreetmap.org/reverse');
-      return {
-        json: async () => mockNominatimReverse
-      } as Response;
-    });
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+        expect(url.toString()).toContain('nominatim.openstreetmap.org/reverse');
+        return {
+          json: async () => mockNominatimReverse
+        } as Response;
+      });
 
-    const res = await request(app)
-      .get('/api/places/reverse-geocode?lat=12.34&lng=56.78')
-      .set(authHeader);
+      const res = await request(app)
+        .get('/api/places/reverse-geocode?lat=12.34&lng=56.78')
+        .set(authHeader);
 
-    expect(res.status).toBe(200);
-    expect(res.body.address).toBe('Reverse Nominatim Address');
-
-    process.env.GOOGLE_MAPS_API_KEY = originalKey;
+      expect(res.status).toBe(200);
+      expect(res.body.address).toBe('Reverse Nominatim Address');
+    } finally {
+      process.env.GOOGLE_MAPS_API_KEY = originalKey;
+    }
   });
 
   it('should reverse geocode via Google Geocoding API when API key is present', async () => {

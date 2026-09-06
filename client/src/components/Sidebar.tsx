@@ -71,7 +71,7 @@ import { tileWorkerManager } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
 import { comparePinPositions } from '../utils/reorderUtils';
 import { getMapViewportBounds } from '../utils/mapViewport';
-import { PIN_COLORS, resolvePinColorCode, formatColorName } from '../utils/mapUtils';
+import { PIN_COLORS, resolvePinColorCode, formatColorName, DEFAULT_ICON_COLORS } from '../utils/mapUtils';
 
 class MouseSensor extends PointerSensor {
   static activators = [
@@ -633,7 +633,7 @@ const PinEditForm = memo(({
               type={type}
               Icon={Icon}
               isSelected={pin.icon === type || (!pin.icon && type === 'default')}
-              onClick={() => onUpdatePin(pin.id, { icon: type })}
+              onClick={() => onUpdatePin(pin.id, { icon: type, color: DEFAULT_ICON_COLORS[type] })}
             />
           ))}
         </div>

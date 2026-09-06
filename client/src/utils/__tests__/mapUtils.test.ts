@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { arePinsEqual, isValidPinColor, isValidPinIcon, resolvePinColorCode, getPreviewMarkerHTML, formatColorName } from '../mapUtils';
+import { arePinsEqual, isValidPinColor, isValidPinIcon, resolvePinColorCode, getPreviewMarkerHTML, formatColorName, DEFAULT_ICON_COLORS, getDefaultColorForIcon } from '../mapUtils';
 import type { Pin } from '@shared/interfaces';
 
 describe('mapUtils', () => {
@@ -107,6 +107,28 @@ describe('mapUtils', () => {
       expect(isValidPinIcon('hotel')).toBe(true);
       expect(isValidPinIcon('restaurant')).toBe(true);
       expect(isValidPinIcon('nonexistent')).toBe(false);
+    });
+
+    it('maps pin icons to their correct default colors', () => {
+      expect(DEFAULT_ICON_COLORS.default).toBe('blue');
+      expect(DEFAULT_ICON_COLORS.hotel).toBe('violet');
+      expect(DEFAULT_ICON_COLORS.restaurant).toBe('green');
+      expect(DEFAULT_ICON_COLORS.airport).toBe('black');
+      expect(DEFAULT_ICON_COLORS.car).toBe('black');
+      expect(DEFAULT_ICON_COLORS.bus).toBe('black');
+      expect(DEFAULT_ICON_COLORS.boat).toBe('black');
+      expect(DEFAULT_ICON_COLORS.train).toBe('black');
+      expect(DEFAULT_ICON_COLORS.gas).toBe('brown');
+      expect(DEFAULT_ICON_COLORS.charging).toBe('brown');
+      expect(DEFAULT_ICON_COLORS.shopping).toBe('pink');
+
+      expect(getDefaultColorForIcon('hotel')).toBe('violet');
+      expect(getDefaultColorForIcon('restaurant')).toBe('green');
+      expect(getDefaultColorForIcon('airport')).toBe('black');
+      expect(getDefaultColorForIcon('gas')).toBe('brown');
+      expect(getDefaultColorForIcon('shopping')).toBe('pink');
+      expect(getDefaultColorForIcon('default')).toBe('blue');
+      expect(getDefaultColorForIcon(undefined)).toBe('blue');
     });
   });
 });

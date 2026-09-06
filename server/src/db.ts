@@ -10,54 +10,8 @@ export function setDbName(name: string) {
   db = null; // Reset current connection
 }
 
-async function migrate(db: Database) {
-  const tableInfo = await db.all("PRAGMA table_info(pins)");
-  const columnNames = tableInfo.map((col: any) => col.name);
-
-  if (!columnNames.includes('description')) {
-    await db.exec("ALTER TABLE pins ADD COLUMN description TEXT");
-  }
-  if (!columnNames.includes('address')) {
-    await db.exec("ALTER TABLE pins ADD COLUMN address TEXT");
-  }
-  if (columnNames.includes('image_url')) {
-    await db.exec("ALTER TABLE pins DROP COLUMN image_url");
-  }
-  if (!columnNames.includes('color')) {
-    await db.exec("ALTER TABLE pins ADD COLUMN color TEXT DEFAULT 'blue'");
-  }
-  if (!columnNames.includes('icon')) {
-    await db.exec("ALTER TABLE pins ADD COLUMN icon TEXT DEFAULT 'default'");
-  }
-  if (columnNames.includes('group_id')) {
-    await db.exec("ALTER TABLE pins RENAME COLUMN group_id TO layer_id");
-  } else if (!columnNames.includes('layer_id')) {
-    await db.exec("ALTER TABLE pins ADD COLUMN layer_id TEXT");
-  }
-
-  if (!columnNames.includes('position')) {
-    await db.exec("ALTER TABLE pins ADD COLUMN position INTEGER DEFAULT 0");
-  }
-
-  const mapTableInfo = await db.all("PRAGMA table_info(maps)");
-  const mapColumnNames = mapTableInfo.map((col: any) => col.name);
-  if (!mapColumnNames.includes('owner_id')) {
-    await db.exec("ALTER TABLE maps ADD COLUMN owner_id TEXT");
-  }
-
-  if (!mapColumnNames.includes('updated_at')) {
-    await db.exec("ALTER TABLE maps ADD COLUMN updated_at DATETIME");
-    // Backfill existing rows
-    await db.exec("UPDATE maps SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL");
-  }
-
-  // Prune redundant single-column indexes covered by existing composite indexes (idx_pins_map_pos, idx_pin_layers_map_pos)
-  // and redundant index on user_map_access covered by its PRIMARY KEY (user_id, map_id)
-  await db.exec(`
-    DROP INDEX IF EXISTS idx_pins_map_id;
-    DROP INDEX IF EXISTS idx_pin_layers_map_id;
-    DROP INDEX IF EXISTS idx_user_map_access_map_user;
-  `);
+async function migrate(_db: Database) {
+  // Hook for future schema migrations
 }
 
 export async function getDb() {
@@ -74,25 +28,6 @@ export async function getDb() {
   await db.run('PRAGMA foreign_keys = ON;');
   await db.run('PRAGMA journal_mode = WAL;');
   await db.run('PRAGMA busy_timeout = 5000;');
-
-  const tables = await db.all("SELECT name FROM sqlite_master WHERE type='table'");
-  const tableNames = tables.map((t: any) => t.name);
-  
-  if (tableNames.includes('pin_groups')) {
-    if (tableNames.includes('pin_layers')) {
-      // Split-brain recovery: If both tables exist due to a previous crash, merge them
-      await db.run('PRAGMA foreign_keys = OFF;');
-      await db.exec("ALTER TABLE pin_layers RENAME TO pin_layers_temp");
-      await db.run('PRAGMA foreign_keys = ON;');
-      
-      await db.exec("ALTER TABLE pin_groups RENAME TO pin_layers");
-      await db.exec("INSERT OR IGNORE INTO pin_layers SELECT * FROM pin_layers_temp");
-      await db.exec("DROP TABLE pin_layers_temp");
-    } else {
-      // Normal migration: rename legacy table to new name
-      await db.exec("ALTER TABLE pin_groups RENAME TO pin_layers");
-    }
-  }
 
   await db.exec(`
     CREATE TABLE IF NOT EXISTS users (

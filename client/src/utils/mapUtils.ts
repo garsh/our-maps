@@ -59,6 +59,27 @@ export const VALID_PIN_ICONS: readonly PinIcon[] = [
   'shopping',
 ] as const;
 
+export const DEFAULT_ICON_COLORS: Record<PinIcon, PinColor> = {
+  default: 'blue',
+  hotel: 'violet',
+  restaurant: 'green',
+  airport: 'black',
+  car: 'black',
+  bus: 'black',
+  boat: 'black',
+  train: 'black',
+  gas: 'brown',
+  charging: 'brown',
+  shopping: 'pink',
+};
+
+export function getDefaultColorForIcon(icon?: PinIcon): PinColor {
+  if (!icon || !(icon in DEFAULT_ICON_COLORS)) {
+    return DEFAULT_PIN_COLOR;
+  }
+  return DEFAULT_ICON_COLORS[icon];
+}
+
 export function isValidPinIcon(icon?: string | null): icon is PinIcon {
   return typeof icon === 'string' && (VALID_PIN_ICONS as readonly string[]).includes(icon);
 }
