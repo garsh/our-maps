@@ -21,15 +21,15 @@ export function arePinsEqual(a?: Pin | null, b?: Pin | null): boolean {
 }
 
 export const COLOR_CODES: Record<string, string> = {
-  blue: '#2A81CB',
   red: '#CB2B3E',
-  green: '#2AAD27',
   orange: '#CB8427',
-  violet: '#9C2BCB',
   gold: '#FFD700',
-  pink: '#FF69B4',
+  green: '#2AAD27',
   teal: '#008080',
+  blue: '#2A81CB',
   electric_blue: '#0028FF',
+  violet: '#9C2BCB',
+  pink: '#FF69B4',
   brown: '#8B4513',
   black: '#000000',
 };
