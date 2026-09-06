@@ -31,11 +31,11 @@ import { Loader2, Map as MapIcon, RotateCw } from 'lucide-react';
 import type { SearchAreaState } from './components/SearchBar';
 import { reorderPins, reorderLayers, isSameLayer, emitPinMoveOrReorderEvents } from './utils/reorderUtils';
 import { generateId } from './utils/fileUtils';
-import { getDownloadStats, getOfflineMap, isMapDownloaded, touchMapCacheAccess, type MapDownloadStatus } from './utils/tileUtils';
+import { getOfflineMap, isMapDownloaded, touchMapCacheAccess } from './utils/tileUtils';
 import { preloadExtract, setActiveOfflineMapId } from './utils/offlineExtract';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
 import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
-import { tileWorkerManager } from './utils/tileWorkerManager';
+
 import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer } from './utils/pinHover';
 import { arePinsEqual } from './utils/mapUtils';
 import { io, Socket } from 'socket.io-client';
@@ -82,15 +82,7 @@ export function MapEditor() {
   const [targetPinId, setTargetPinId] = useState<string | null>(null);
   const [boundsToFit, setBoundsToFit] = useState<[[number, number], [number, number]] | null>(null);
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
-  const [hasOfflineTiles, setHasOfflineTiles] = useState(() => {
-    const cachedStatuses = getStoredJson<Record<string, MapDownloadStatus> | null>('cached_download_statuses', null);
-    const currentId = id || null;
-    if (currentId && cachedStatuses && cachedStatuses[currentId]) {
-      const st = cachedStatuses[currentId];
-      return st.isComplete || st.isPartial;
-    }
-    return false;
-  });
+
   const [previewLocation, setPreviewLocation] = useState<{lat: number, lng: number} | null>(null);
   const DEFAULT_SIDEBAR_WIDTH = 400;
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
@@ -473,39 +465,7 @@ export function MapEditor() {
     setStoredJson('customColors', customColors);
   }, [customColors]);
 
-  // Track offline tile status for the currently open map
-  useEffect(() => {
-    if (!mapId) {
-      setHasOfflineTiles(false);
-      return;
-    }
 
-    const cachedStatuses = getStoredJson<Record<string, MapDownloadStatus> | null>('cached_download_statuses', null);
-    if (cachedStatuses && cachedStatuses[mapId]) {
-      const st = cachedStatuses[mapId];
-      setHasOfflineTiles(st.isComplete || st.isPartial);
-    }
-
-    // Skip IDB read if the localStorage cache already confirms nothing is downloaded for this map.
-    const cachedEntry = cachedStatuses?.[mapId];
-    const hasLocalHint = cachedEntry && (cachedEntry.isComplete || cachedEntry.isPartial);
-    if (!hasLocalHint) {
-      // No cached hint — still check IDB to catch data written before the cache was populated.
-      getDownloadStats(mapId).then((stats) => {
-        setHasOfflineTiles(stats.completed > 0);
-      });
-    }
-
-    const unsubscribe = tileWorkerManager.subscribe((state) => {
-      if (state.mapId === mapId) {
-        setHasOfflineTiles(state.isDownloaded || state.hasPartialDownload || (state.tileStats?.completed || 0) > 0);
-      }
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [mapId]);
 
   const addCustomColor = useCallback((color: string) => {
     setCustomColors(prev => {
@@ -1984,7 +1944,6 @@ export function MapEditor() {
             showHillshade={showHillshade}
             show3DTerrain={show3DTerrain}
             show3DBuildings={show3DBuildings}
-            hasOfflineTiles={hasOfflineTiles}
           />
         </div>
       </main>

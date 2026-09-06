@@ -197,7 +197,6 @@ interface MapViewProps {
   show3DTerrain?: boolean;
   show3DBuildings?: boolean;
   isOffline?: boolean;
-  hasOfflineTiles?: boolean;
 }
 
 const UserLocationMarker = ({ position }: { position: { lat: number; lng: number } }) => {
@@ -622,7 +621,6 @@ const MapView = ({
   show3DTerrain = true,
   show3DBuildings = true,
   isOffline = false,
-  hasOfflineTiles: _hasOfflineTiles = false,
 }: MapViewProps) => {
 
   const mapRef = useRef<MapRef | null>(null);
