@@ -162,6 +162,28 @@ describe('Sidebar', () => {
     expect(onUpdatePin).toHaveBeenCalledWith('1', { color: 'electric_blue' });
   });
 
+  it('opens CustomColorPicker when custom color button is clicked and sets custom color', () => {
+    const onUpdatePin = vi.fn();
+    const onAddCustomColor = vi.fn();
+    render(<TestWrapper handlers={{ onUpdatePin, onAddCustomColor }} />);
+
+    fireEvent.click(screen.getByLabelText('Edit'));
+    const customColorBtn = screen.getByLabelText('Custom color picker');
+    fireEvent.click(customColorBtn);
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('Custom Color')).toBeInTheDocument();
+
+    const hexInput = screen.getByLabelText('Hex Code');
+    fireEvent.change(hexInput, { target: { value: '123456' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set' }));
+
+    expect(onUpdatePin).toHaveBeenCalledWith('1', { color: '#123456' });
+    expect(onAddCustomColor).toHaveBeenCalledWith('#123456');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('calls onUpdatePin with icon and its default color when an icon is selected', () => {
     const onUpdatePin = vi.fn();
     render(<TestWrapper handlers={{ onUpdatePin }} />);

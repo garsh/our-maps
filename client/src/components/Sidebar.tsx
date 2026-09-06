@@ -72,6 +72,7 @@ import type { MapData } from '@shared/interfaces';
 import { comparePinPositions } from '../utils/reorderUtils';
 import { getMapViewportBounds } from '../utils/mapViewport';
 import { PIN_COLORS, resolvePinColorCode, formatColorName, DEFAULT_ICON_COLORS } from '../utils/mapUtils';
+import { CustomColorPicker } from './CustomColorPicker';
 
 class MouseSensor extends PointerSensor {
   static activators = [
@@ -241,11 +242,13 @@ const ColorSwatch = ({
   const checkColors = isSelected ? getCheckColors(color) : null;
   return (
     <button
+      type="button"
       aria-label={ariaLabel}
       title={title}
       onClick={onClick}
       style={{
-        flex: 1,
+        flex: '1 0 16px',
+        maxWidth: '24px',
         minWidth: 0,
         height: '16px',
         borderRadius: '4px',
@@ -429,6 +432,7 @@ const PinEditForm = memo(({
   const [localLabel, setLocalLabel] = useState(pin.label || '');
   const [localAddress, setLocalAddress] = useState(pin.address || '');
   const [localDescription, setLocalDescription] = useState(pin.description || '');
+  const [isCustomColorPickerOpen, setIsCustomColorPickerOpen] = useState(false);
   const localLabelRef = useRef(pin.label || '');
   const localAddressRef = useRef(pin.address || '');
   const localDescriptionRef = useRef(pin.description || '');
@@ -578,7 +582,7 @@ const PinEditForm = memo(({
 
       <div style={{ marginBottom: '5px' }}>
         <label style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Color</label>
-        <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '1px', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', alignItems: 'center' }}>
           {PIN_COLORS.map(color => (
             <ColorSwatch
               key={color.name}
@@ -606,23 +610,43 @@ const PinEditForm = memo(({
               onClick={() => onUpdatePin(pin.id, { color })}
             />
           ))}
-          <div style={{ position: 'relative', flex: 1, minWidth: 0, height: '16px' }} title="Add custom color">
-            <input 
-              type="color"
-              aria-label="Custom color picker"
-              value={(!pin.color || PIN_COLORS.some(c => c.name === pin.color)) ? '#9C2BCB' : pin.color}
-              onChange={(e) => {
-                onUpdatePin(pin.id, { color: e.target.value });
-              }}
-              onBlur={(e) => onAddCustomColor?.(e.target.value)}
-              style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 2 }}
-            />
-            <div style={{ width: '100%', height: '100%', borderRadius: '4px', background: 'var(--bg-color)', border: '1px dashed var(--border-color)', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: 'var(--text-secondary)' }}>
-              +
-            </div>
-          </div>
+          <button
+            type="button"
+            aria-label="Custom color picker"
+            title="Add custom color"
+            onClick={() => setIsCustomColorPickerOpen(true)}
+            style={{
+              flex: '1 0 16px',
+              maxWidth: '24px',
+              minWidth: 0,
+              height: '16px',
+              borderRadius: '4px',
+              background: 'var(--bg-color)',
+              border: '1px dashed var(--border-color)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '11px',
+              fontWeight: 700,
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              padding: 0
+            }}
+          >
+            +
+          </button>
         </div>
       </div>
+
+      <CustomColorPicker
+        isOpen={isCustomColorPickerOpen}
+        initialColor={pin.color ? resolvePinColorCode(pin.color) : '#9C2BCB'}
+        onClose={() => setIsCustomColorPickerOpen(false)}
+        onSetColor={(hex) => {
+          onUpdatePin(pin.id, { color: hex });
+          onAddCustomColor?.(hex);
+        }}
+      />
 
       <div style={{ marginBottom: '5px' }}>
         <label style={{ display: 'block', fontWeight: '700', marginBottom: '3px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Icon</label>

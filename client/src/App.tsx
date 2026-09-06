@@ -1727,7 +1727,7 @@ export function MapEditor() {
       ref={headerRef}
       style={{ 
         padding: '0.4rem 1rem', 
-        background: 'var(--primary-color)', 
+        background: 'var(--primary-color, #483D8B)', 
         color: 'white', 
         display: 'flex', 
         alignItems: 'center', 
