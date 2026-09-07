@@ -271,22 +271,26 @@ describe('MapView Compass and Tilt Indicator', () => {
       configurable: true,
     });
 
+    const onLocationTrackingChange = vi.fn();
     render(
       <MapView
         pins={[]}
         onMapClick={vi.fn()}
         onUpdatePin={vi.fn()}
         onBoundsChange={vi.fn()}
+        onLocationTrackingChange={onLocationTrackingChange}
       />
     );
 
     const locatorButton = screen.getByRole('button', { name: /Find my location/i });
     expect(locatorButton).toHaveAttribute('aria-pressed', 'false');
+    expect(onLocationTrackingChange).toHaveBeenCalledWith(false);
 
     fireEvent.click(locatorButton);
 
     expect(mockWatchPosition).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: /Locating\.\.\./i })).toHaveAttribute('aria-pressed', 'true');
+    expect(onLocationTrackingChange).toHaveBeenCalledWith(true);
 
     // Simulate geolocation lock
     act(() => {
@@ -301,6 +305,7 @@ describe('MapView Compass and Tilt Indicator', () => {
 
     expect(mockClearWatch).toHaveBeenCalledWith(12345);
     expect(screen.getByRole('button', { name: /Find my location/i })).toHaveAttribute('aria-pressed', 'false');
+    expect(onLocationTrackingChange).toHaveBeenLastCalledWith(false);
   });
 
   it('points the vector source at pmtiles tile templates and skips remote sprite/glyph URLs', () => {

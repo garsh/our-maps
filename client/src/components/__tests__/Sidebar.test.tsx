@@ -19,7 +19,7 @@ describe('Sidebar', () => {
     { id: '1', lat: 10, lng: 20, label: 'Test Pin', description: '', position: 0 }
   ];
   
-  const TestWrapper = ({ pins = mockPins, handlers = {}, selectedNavIds = new Set<string>() }: { pins?: any[], handlers?: any, selectedNavIds?: Set<string> }) => {
+  const TestWrapper = ({ pins = mockPins, handlers = {}, selectedNavIds = new Set<string>(), isTrackingLocation = false }: { pins?: any[], handlers?: any, selectedNavIds?: Set<string>, isTrackingLocation?: boolean }) => {
     const [editingPinId, setEditingPinId] = useState<string | null>(null);
     const mockHandlers = {
       onMapNameChange: vi.fn(),
@@ -47,6 +47,7 @@ describe('Sidebar', () => {
         editingPinId={editingPinId} 
         onSetEditingPinId={setEditingPinId} 
         selectedNavIds={selectedNavIds}
+        isTrackingLocation={isTrackingLocation}
       />
     );
   };
@@ -285,7 +286,7 @@ describe('Sidebar', () => {
     vi.restoreAllMocks();
   });
 
-  it('generates correct navigation URL with first pin as origin', () => {
+  it('generates correct navigation URL with first pin as origin when location tracking is off', () => {
     const mockPins = [
         { id: '1', lat: 35.0, lng: -97.0, label: 'Oklahoma', position: 0 },
         { id: '2', lat: 39.0, lng: -98.0, label: 'Kansas', position: 1 }
@@ -294,7 +295,7 @@ describe('Sidebar', () => {
     const openMock = vi.fn();
     vi.stubGlobal('open', openMock);
     
-    render(<TestWrapper pins={mockPins} selectedNavIds={new Set(['1', '2'])} />);
+    render(<TestWrapper pins={mockPins} selectedNavIds={new Set(['1', '2'])} isTrackingLocation={false} />);
     
     const goBtn = screen.getByText(/Go \(2\)/i);
     fireEvent.click(goBtn);
@@ -307,6 +308,57 @@ describe('Sidebar', () => {
         expect.stringContaining('destination=39,-98'),
         '_blank'
     );
+    expect(openMock.mock.calls[0][0]).not.toContain('dir_action=navigate');
+    
+    vi.unstubAllGlobals();
+  });
+
+  it('omits origin and includes intermediate pins as waypoints when location tracking is on', () => {
+    const mockPins = [
+        { id: '1', lat: 35.0, lng: -97.0, label: 'Oklahoma', position: 0 },
+        { id: '2', lat: 37.0, lng: -97.5, label: 'Wichita', position: 1 },
+        { id: '3', lat: 39.0, lng: -98.0, label: 'Kansas', position: 2 }
+    ] as any;
+    
+    const openMock = vi.fn();
+    vi.stubGlobal('open', openMock);
+    
+    render(<TestWrapper pins={mockPins} selectedNavIds={new Set(['1', '2', '3'])} isTrackingLocation={true} />);
+    
+    const goBtn = screen.getByText(/Go \(3\)/i);
+    fireEvent.click(goBtn);
+    
+    expect(openMock).toHaveBeenCalledTimes(1);
+    const url = openMock.mock.calls[0][0];
+    // Should NOT contain an origin parameter or dir_action=navigate
+    expect(url).not.toContain('origin=');
+    expect(url).not.toContain('dir_action=navigate');
+    // Destination is the last pin
+    expect(url).toContain('destination=39,-98');
+    // Waypoints include all previous pins (pin 1 and pin 2)
+    expect(url).toContain('waypoints=35,-97|37,-97.5');
+    
+    vi.unstubAllGlobals();
+  });
+
+  it('generates correct navigation URL without origin for a single selected pin and omits dir_action=navigate', () => {
+    const mockPins = [
+        { id: '1', lat: 35.0, lng: -97.0, label: 'Oklahoma', position: 0 }
+    ] as any;
+    
+    const openMock = vi.fn();
+    vi.stubGlobal('open', openMock);
+    
+    render(<TestWrapper pins={mockPins} selectedNavIds={new Set(['1'])} isTrackingLocation={true} />);
+    
+    const goBtn = screen.getByText(/Go \(1\)/i);
+    fireEvent.click(goBtn);
+    
+    expect(openMock).toHaveBeenCalledTimes(1);
+    const url = openMock.mock.calls[0][0];
+    expect(url).not.toContain('origin=');
+    expect(url).not.toContain('dir_action=navigate');
+    expect(url).toContain('destination=35,-97');
     
     vi.unstubAllGlobals();
   });

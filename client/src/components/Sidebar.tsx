@@ -120,6 +120,7 @@ interface SidebarProps {
   customColors?: string[];
   onAddCustomColor?: (color: string) => void;
   selectedNavIds?: Set<string>;
+  isTrackingLocation?: boolean;
   onToggleNavId?: (id: string) => void;
   onToggleNavIds?: (ids: string[], force?: boolean) => void;
   hiddenLayerIds?: Set<string | null>;
@@ -1693,6 +1694,7 @@ const Sidebar = ({
   customColors,
   onAddCustomColor,
   selectedNavIds,
+  isTrackingLocation,
   onToggleNavId,
   onToggleNavIds,
   hiddenLayerIds,
@@ -2122,14 +2124,20 @@ const Sidebar = ({
     if (selectedPins.length === 1) {
         // Single pin: just navigate to it
         const p = selectedPins[0];
-        url = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving&dir_action=navigate`;
+        url = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving`;
+    } else if (isTrackingLocation) {
+        // Multiple pins with location tracking ON: omit origin so Google Maps starts from user's current location.
+        // Destination is the last pin; all previous pins are waypoints.
+        const destination = selectedPins[selectedPins.length - 1];
+        const waypoints = selectedPins.slice(0, -1).map(p => `${p.lat},${p.lng}`).join('|');
+        url = `https://www.google.com/maps/dir/?api=1&destination=${destination.lat},${destination.lng}&waypoints=${waypoints}&travelmode=driving`;
     } else {
-        // Multiple pins: first is origin, last is destination, others are waypoints
+        // Multiple pins with location tracking OFF: first is origin, last is destination, others are waypoints
         const origin = selectedPins[0];
         const destination = selectedPins[selectedPins.length - 1];
         const waypoints = selectedPins.slice(1, -1).map(p => `${p.lat},${p.lng}`).join('|');
         
-        url = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=${waypoints}&travelmode=driving&dir_action=navigate`;
+        url = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=${waypoints}&travelmode=driving`;
     }
     
     window.open(url, '_blank');

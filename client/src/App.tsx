@@ -356,6 +356,7 @@ export function MapEditor() {
 
 
   const [selectedNavIds, setSelectedNavIds] = useState<Set<string>>(new Set());
+  const [isTrackingLocation, setIsTrackingLocation] = useState(false);
   const [hiddenLayerIds, setHiddenLayerIds] = useState<Set<string | null>>(() => {
     const mapIdVal = id || null;
     if (mapIdVal) {
@@ -1879,6 +1880,7 @@ export function MapEditor() {
             customColors={customColors}
             onAddCustomColor={addCustomColor}
             selectedNavIds={selectedNavIds}
+            isTrackingLocation={isTrackingLocation}
             onToggleNavId={handleToggleNavId}
             onToggleNavIds={handleToggleNavIds}
             hiddenLayerIds={hiddenLayerIds}
@@ -1967,6 +1969,7 @@ export function MapEditor() {
             showHillshade={showHillshade}
             show3DTerrain={show3DTerrain}
             show3DBuildings={show3DBuildings}
+            onLocationTrackingChange={setIsTrackingLocation}
           />
         </div>
       </main>

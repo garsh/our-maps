@@ -197,6 +197,7 @@ interface MapViewProps {
   show3DTerrain?: boolean;
   show3DBuildings?: boolean;
   isOffline?: boolean;
+  onLocationTrackingChange?: (isTracking: boolean) => void;
 }
 
 const UserLocationMarker = ({ position }: { position: { lat: number; lng: number } }) => {
@@ -621,6 +622,7 @@ const MapView = ({
   show3DTerrain = true,
   show3DBuildings = true,
   isOffline = false,
+  onLocationTrackingChange,
 }: MapViewProps) => {
 
   const mapRef = useRef<MapRef | null>(null);
@@ -1610,6 +1612,10 @@ const MapView = ({
   const [isTrackingLocation, setIsTrackingLocation] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const watchIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    onLocationTrackingChange?.(isTrackingLocation);
+  }, [isTrackingLocation, onLocationTrackingChange]);
 
   useEffect(() => {
     if (!isTrackingLocation) {
