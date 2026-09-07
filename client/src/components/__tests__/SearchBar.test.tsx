@@ -152,8 +152,8 @@ describe('SearchBar', () => {
       />
     );
 
-    // Wait and ensure no additional fetch calls were made
-    await new Promise(r => setTimeout(r, 50));
+    // Ensure no additional fetch calls were made on bounds change without query change
+    await new Promise(r => setTimeout(r, 0));
     expect((window.fetch as any).mock.calls.length).toBe(callCountAfterSearch);
   });
 

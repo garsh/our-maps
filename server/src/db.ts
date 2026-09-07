@@ -17,7 +17,7 @@ async function migrate(_db: Database) {
 export async function getDb() {
   if (db) return db;
 
-  const dbPath = process.env.DB_PATH || path.join(__dirname, currentDbName);
+  const dbPath = process.env.DB_PATH || (currentDbName === ':memory:' ? ':memory:' : path.join(__dirname, currentDbName));
   
   db = await open({
     filename: dbPath,

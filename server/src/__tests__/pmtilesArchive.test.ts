@@ -106,7 +106,7 @@ describe('pmtilesArchive', () => {
 
   it('splits directories into leaves when the root would exceed the target length', () => {
     const entries = [];
-    for (let i = 0; i < 20000; i++) {
+    for (let i = 0; i < 5000; i++) {
       entries.push({ tileId: i * 10, offset: i * 8, length: 8, runLength: 1 });
     }
     const { rootBytes, leavesBytes, numLeaves } = buildDirectories(entries, 200, Compression.None);

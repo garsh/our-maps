@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -36,21 +36,30 @@ describe('map file path sanitization', () => {
 });
 
 describe('safe map file resolution', () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ourmaps-mapfiles-'));
-  const mapsDir = path.join(tempRoot, 'maps');
-  const spritesDir = path.join(tempRoot, 'sprites');
-  const secretFile = path.join(tempRoot, 'secret.json');
+  let tempRoot: string;
+  let mapsDir: string;
+  let spritesDir: string;
+  let secretFile: string;
 
-  beforeEach(() => {
-    clearMapFilePathCache();
+  beforeAll(() => {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ourmaps-mapfiles-'));
+    mapsDir = path.join(tempRoot, 'maps');
+    spritesDir = path.join(tempRoot, 'sprites');
+    secretFile = path.join(tempRoot, 'secret.json');
     fs.mkdirSync(mapsDir, { recursive: true });
     fs.mkdirSync(spritesDir, { recursive: true });
     fs.writeFileSync(path.join(spritesDir, 'light.png'), 'sprite');
     fs.writeFileSync(secretFile, '{"secret":true}');
   });
 
+  beforeEach(() => {
+    clearMapFilePathCache();
+  });
+
   afterAll(() => {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
+    if (tempRoot && fs.existsSync(tempRoot)) {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it('resolves files inside allowlisted directories', () => {

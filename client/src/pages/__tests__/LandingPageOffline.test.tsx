@@ -105,7 +105,7 @@ describe('LandingPage Offline Map Access', () => {
     expect(mockNavigate).not.toHaveBeenCalledWith('/map/map-downloaded');
   });
 
-  it('shows interstitial when opening an undownloaded map in view mode while offline', async () => {
+  it('displays interstitial pop up and prevents opening undownloaded maps when offline (card click and view button)', async () => {
     (apiService.getMaps as any).mockRejectedValue(new Error('Network Error'));
     localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
 
@@ -121,34 +121,22 @@ describe('LandingPage Offline Map Access', () => {
       expect(screen.getByText('Online Only Map')).toBeInTheDocument();
     });
 
+    // 1. Click card directly
+    fireEvent.click(screen.getByText('Online Only Map'));
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(screen.getByText('This map is not available in offline mode')).toBeInTheDocument();
+
+    // Dismiss dialog
+    fireEvent.click(screen.getByText('OK'));
+    expect(screen.queryByText('This map is not available in offline mode')).not.toBeInTheDocument();
+
+    // 2. Click view button
     const onlineOnlyCard = screen.getByText('Online Only Map').closest('.card');
     const viewButton = onlineOnlyCard?.querySelector('[aria-label="Open in view mode"]') as HTMLElement;
     expect(viewButton).toBeTruthy();
     fireEvent.click(viewButton);
 
     expect(mockNavigate).not.toHaveBeenCalled();
-    expect(screen.getByText('This map is not available in offline mode')).toBeInTheDocument();
-  });
-
-  it('displays interstitial pop up and prevents opening undownloaded maps when offline', async () => {
-    (apiService.getMaps as any).mockRejectedValue(new Error('Network Error'));
-    localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
-
-    render(
-      <MemoryRouter>
-        <ThemeProvider>
-          <LandingPage />
-        </ThemeProvider>
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('Online Only Map')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByText('Online Only Map'));
-
-    expect(mockNavigate).not.toHaveBeenCalledWith('/map/map-not-downloaded');
     expect(screen.getByText('This map is not available in offline mode')).toBeInTheDocument();
   });
 
