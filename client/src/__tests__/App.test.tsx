@@ -57,16 +57,6 @@ describe('App Components Error Handling', () => {
     sessionStorage.clear();
   });
 
-  it('LandingPage shows error message when server is unreachable', async () => {
-    (apiService.getMaps as any).mockRejectedValue(new Error('Network Error'));
-
-    render(
-      <MemoryRouter>
-        <LandingPage />
-      </MemoryRouter>
-    );
-  });
-
   it('MapEditor shows error message when map fails to load', async () => {
     (apiService.getMap as any).mockRejectedValue(new Error('Not Found'));
 
@@ -110,7 +100,6 @@ describe('App Components Error Handling', () => {
       expect(screen.getByText(/Synced/i)).toBeInTheDocument();
     });
 
-
     // Trigger auto-save by changing map name
     const moreBtn = screen.getByLabelText(/more options/i);
     fireEvent.click(moreBtn);
@@ -120,18 +109,27 @@ describe('App Components Error Handling', () => {
 
     const nameInput = screen.getByLabelText(/New Map Name/i);
 
-    await act(async () => {
-      fireEvent.change(nameInput, { target: { value: 'Trigger Error' } });
-      const saveBtn = screen.getByText('Save');
-      fireEvent.click(saveBtn);
-    });
+    vi.useFakeTimers();
+    try {
+      act(() => {
+        fireEvent.change(nameInput, { target: { value: 'Trigger Error' } });
+        const saveBtn = screen.getByText('Save');
+        fireEvent.click(saveBtn);
+      });
 
-    // Wait for the debounced save to fail
+      // Fast-forward past the 2000ms auto-save debounce
+      await act(async () => {
+        vi.advanceTimersByTime(2500);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // Wait for the save rejection to display
     await waitFor(() => {
       expect(screen.getByText(/NOT Synced/i)).toBeInTheDocument();
-    }, { timeout: 4000 });
-
-  }, 10000);
+    });
+  });
 
   it('allows hovering over remaining pins immediately after deleting a pin', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -332,7 +330,7 @@ describe('App Components Error Handling', () => {
     expect(pinList?.classList.contains('pin-hover-blocked')).toBe(true);
   });
 
-  it('restores hover state on desktop when deselecting a pin by clicking it', async () => {
+  it('restores hover state when deselecting a pin by clicking it with fine pointer', async () => {
     (apiService.getMap as any).mockResolvedValue({
       id: 'map-1',
       name: 'Test Map',
@@ -342,9 +340,6 @@ describe('App Components Error Handling', () => {
       layers: [],
       userRole: 'owner'
     });
-
-    window.innerWidth = 1200;
-    window.innerHeight = 800;
 
     const { container } = render(
       <GoogleOAuthProvider clientId="test-client-id">
@@ -369,45 +364,7 @@ describe('App Components Error Handling', () => {
     // 2. Click pin label again to close info card (deselect)
     fireEvent.click(screen.getByText('My Pin'));
 
-    // On desktop, the pin should now be hovered
-    expect(getHoveredPinId()).toBe('pin-1');
-  });
-
-  it('restores hover state when deselecting a pin by clicking it even at mobile window dimensions', async () => {
-    (apiService.getMap as any).mockResolvedValue({
-      id: 'map-1',
-      name: 'Test Map',
-      pins: [
-        { id: 'pin-1', lat: 10, lng: 20, label: 'My Pin', position: 0 }
-      ],
-      layers: [],
-      userRole: 'owner'
-    });
-
-    window.innerWidth = 400;
-    window.innerHeight = 800;
-
-    const { container } = render(
-      <GoogleOAuthProvider clientId="test-client-id">
-        <MemoryRouter initialEntries={['/map/map-1']}>
-          <Routes>
-            <Route path="/map/:id" element={<MapEditor />} />
-          </Routes>
-        </MemoryRouter>
-      </GoogleOAuthProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('My Pin')).toBeInTheDocument();
-    });
-
-    // 1. Click pin to open info card (select)
-    fireEvent.click(screen.getByText('My Pin'));
-
-    // 2. Click pin label again to close info card (deselect)
-    fireEvent.click(screen.getByText('My Pin'));
-
-    // Pin should be hovered regardless of window width
+    // Pin should now be hovered for fine pointer
     expect(getHoveredPinId()).toBe('pin-1');
   });
 
@@ -612,7 +569,8 @@ describe('App Components Error Handling', () => {
     expect(screen.getByText('Offline')).toBeInTheDocument();
   });
 
-  it('shows Syncing then Synced on a cached map without flashing Offline while online', async () => {
+  it('shows Syncing then Synced on a cached map without flashing Offline while online, and clears trapped offline session flag', async () => {
+    sessionStorage.setItem('ourmaps_offline', '1');
     (getOfflineMap as any).mockResolvedValue({
       id: 'map-1',
       name: 'Cached Map',
@@ -643,42 +601,7 @@ describe('App Components Error Handling', () => {
     });
     expect(screen.queryByText('Offline')).not.toBeInTheDocument();
     expect(screen.queryByText('Syncing...')).not.toBeInTheDocument();
-  });
-
-  it('clears trapped offline session flag when getMap network fetch succeeds', async () => {
-    sessionStorage.setItem('ourmaps_offline', '1');
-    (getOfflineMap as any).mockResolvedValue({
-      id: 'map-1',
-      name: 'Trapped Offline Map',
-      pins: [],
-      layers: [],
-      userRole: 'owner',
-    });
-    (apiService.getMap as any).mockResolvedValue({
-      id: 'map-1',
-      name: 'Trapped Offline Map',
-      pins: [],
-      layers: [],
-      userRole: 'owner',
-    });
-
-    render(
-      <GoogleOAuthProvider clientId="test-client-id">
-        <MemoryRouter initialEntries={['/map/map-1']}>
-          <Routes>
-            <Route path="/map/:id" element={<MapEditor />} />
-          </Routes>
-        </MemoryRouter>
-      </GoogleOAuthProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('Trapped Offline Map')).toBeInTheDocument();
-    });
-
-    await waitFor(() => {
-      expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
-    });
+    expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
   });
 
   it('redirects with No Data when attempting to open an incompletely downloaded map while offline', async () => {

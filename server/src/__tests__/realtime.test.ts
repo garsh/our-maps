@@ -1,23 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { getDb, setDbName, closeDb } from '../db';
 import * as realtime from '../realtime';
-import * as fs from 'fs';
-import * as path from 'path';
-
-const testDbName = '../test-realtime-db.sqlite';
 
 describe('Realtime Delta Handlers', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
-    setDbName(testDbName);
+    setDbName(':memory:');
   });
 
   afterAll(async () => {
     await closeDb();
-    const dbPath = path.join(__dirname, '..', testDbName);
-    if (fs.existsSync(dbPath)) {
-      fs.unlinkSync(dbPath);
-    }
   });
 
   const mapId = 'realtime-map-1';

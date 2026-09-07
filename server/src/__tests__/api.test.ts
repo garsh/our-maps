@@ -6,20 +6,14 @@ import { getDb, setDbName, closeDb, purgeExpiredSessions } from '../db';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const testDbName = '../test-database.sqlite';
-
 describe('API Endpoints', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
-    setDbName(testDbName);
+    setDbName(':memory:');
   });
 
   afterAll(async () => {
     await closeDb();
-    const dbPath = path.join(__dirname, '..', testDbName);
-    if (fs.existsSync(dbPath)) {
-      fs.unlinkSync(dbPath);
-    }
   });
 
   const mockUser = {

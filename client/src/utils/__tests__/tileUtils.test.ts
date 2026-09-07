@@ -89,7 +89,7 @@ describe('tileUtils', () => {
                             oncomplete: null,
                             onerror: null
                         };
-                        setTimeout(() => tx.oncomplete && tx.oncomplete(), 20);
+                        setTimeout(() => tx.oncomplete && tx.oncomplete());
                         return tx;
                     },
                     close: () => {}

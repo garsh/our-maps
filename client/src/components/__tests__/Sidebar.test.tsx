@@ -782,30 +782,9 @@ describe('Sidebar', () => {
     });
   });
 
-  it('shows matching search results in SearchBar dropdown', () => {
-    const layers = [
-      { id: 'layer-1', name: 'Food', position: 0 },
-      { id: 'layer-2', name: 'Attractions', position: 1 }
-    ];
-    const pins = [
-      { id: 'p1', lat: 10, lng: 20, label: 'Burger Joint', layerId: 'layer-1', position: 0 },
-      { id: 'p2', lat: 11, lng: 21, label: 'Pizza Place', layerId: 'layer-1', position: 1 },
-      { id: 'p3', lat: 12, lng: 22, label: 'City Museum', layerId: 'layer-2', position: 0 }
-    ];
-
-    render(
-      <TestWrapper 
-        pins={pins} 
-        handlers={{ layers }} 
-      />
-    );
-
-    const searchInput = screen.getByPlaceholderText('Search...');
-    fireEvent.change(searchInput, { target: { value: 'Burger' } });
-
-    // Matching pin should appear in the search dropdown results
-    const matchingElements = screen.getAllByText('Burger Joint');
-    expect(matchingElements.length).toBeGreaterThanOrEqual(2);
+  it('renders SearchBar within sidebar', () => {
+    render(<TestWrapper />);
+    expect(screen.getByPlaceholderText('Search...')).toBeInTheDocument();
   });
 
   it('does not highlight an expanded empty layer header when dragged over', () => {

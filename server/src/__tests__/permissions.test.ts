@@ -1,23 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import * as fs from 'fs';
-import * as path from 'path';
 import { getDb, setDbName, closeDb } from '../db';
 import { getMapRole, canEditMap, canViewMap } from '../permissions';
-
-const testDbName = '../test-permissions-db.sqlite';
 
 describe('map role checks', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
-    setDbName(testDbName);
+    setDbName(':memory:');
   });
 
   afterAll(async () => {
     await closeDb();
-    const dbPath = path.join(__dirname, '..', testDbName);
-    if (fs.existsSync(dbPath)) {
-      fs.unlinkSync(dbPath);
-    }
   });
 
   const ownerId = 'owner-user';
@@ -44,26 +36,23 @@ describe('map role checks', () => {
     await db.run('INSERT INTO map_permissions (map_id, user_id, role) VALUES (?, ?, ?)', mapId, editorId, 'edit');
   });
 
-  it('returns owner, edit, view, or null based on membership', async () => {
-    expect(await getMapRole(ownerId, mapId)).toBe('owner');
-    expect(await getMapRole(editorId, mapId)).toBe('edit');
-    expect(await getMapRole(viewerId, mapId)).toBe('view');
-    expect(await getMapRole(strangerId, mapId)).toBeNull();
-    expect(await getMapRole(ownerId, 'missing-map')).toBeNull();
+  it.each([
+    { userId: ownerId, targetMapId: mapId, expected: 'owner' },
+    { userId: editorId, targetMapId: mapId, expected: 'edit' },
+    { userId: viewerId, targetMapId: mapId, expected: 'view' },
+    { userId: strangerId, targetMapId: mapId, expected: null },
+    { userId: ownerId, targetMapId: 'missing-map', expected: null },
+  ])('resolves role $expected for user $userId on map $targetMapId', async ({ userId, targetMapId, expected }) => {
+    expect(await getMapRole(userId, targetMapId)).toBe(expected);
   });
 
-  it('allows view-only users to join but not write', async () => {
-    const viewRole = await getMapRole(viewerId, mapId);
-    expect(canViewMap(viewRole)).toBe(true);
-    expect(canEditMap(viewRole)).toBe(false);
-
-    const editRole = await getMapRole(editorId, mapId);
-    expect(canEditMap(editRole)).toBe(true);
-
-    const ownerRole = await getMapRole(ownerId, mapId);
-    expect(canEditMap(ownerRole)).toBe(true);
-
-    expect(canViewMap(null)).toBe(false);
-    expect(canEditMap(null)).toBe(false);
+  it.each([
+    { role: 'owner', canView: true, canEdit: true },
+    { role: 'edit', canView: true, canEdit: true },
+    { role: 'view', canView: true, canEdit: false },
+    { role: null, canView: false, canEdit: false },
+  ])('evaluates capability matrix for role $role: view=$canView, edit=$canEdit', ({ role, canView, canEdit }) => {
+    expect(canViewMap(role as any)).toBe(canView);
+    expect(canEditMap(role as any)).toBe(canEdit);
   });
 });

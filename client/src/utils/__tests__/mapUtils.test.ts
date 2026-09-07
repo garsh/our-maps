@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { arePinsEqual, isValidPinColor, isValidPinIcon, resolvePinColorCode, getPreviewMarkerHTML, formatColorName, DEFAULT_ICON_COLORS, getDefaultColorForIcon } from '../mapUtils';
+import { bundledSpriteIconCount } from '../basemapSprites';
+import {
+  getMapViewportBounds,
+  setMapViewportBounds,
+  subscribeMapViewportBounds,
+  resetMapViewportBoundsForTests,
+} from '../mapViewport';
+import { reverseGeocode } from '../geocoding';
 import type { Pin } from '@shared/interfaces';
 
 describe('mapUtils', () => {
@@ -129,6 +137,81 @@ describe('mapUtils', () => {
       expect(getDefaultColorForIcon('shopping')).toBe('pink');
       expect(getDefaultColorForIcon('default')).toBe('blue');
       expect(getDefaultColorForIcon(undefined)).toBe('blue');
+    });
+  });
+
+  describe('basemapSprites', () => {
+    it('bundles light and dark @2x sprite atlases', () => {
+      expect(bundledSpriteIconCount('light')).toBeGreaterThan(20);
+      expect(bundledSpriteIconCount('dark')).toBeGreaterThan(20);
+    });
+  });
+
+  describe('mapViewport', () => {
+    beforeEach(() => {
+      resetMapViewportBoundsForTests();
+    });
+
+    afterEach(() => {
+      resetMapViewportBoundsForTests();
+    });
+
+    it('does not notify subscribers when the bounds string is unchanged', () => {
+      const listener = vi.fn();
+      subscribeMapViewportBounds(listener);
+
+      setMapViewportBounds('1,2,3,4');
+      expect(getMapViewportBounds()).toBe('1,2,3,4');
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      setMapViewportBounds('1,2,3,4');
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      setMapViewportBounds('5,6,7,8');
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(getMapViewportBounds()).toBe('5,6,7,8');
+    });
+  });
+
+  describe('reverseGeocode', () => {
+    beforeEach(() => {
+      global.fetch = vi.fn();
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('calls reverse-geocode API directly', async () => {
+      const fetchMock = global.fetch as any;
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({ address: 'Direct Address' })
+      });
+
+      const result = await reverseGeocode(1, 1);
+      
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/api/places/reverse-geocode'),
+        expect.any(Object)
+      );
+      expect(result).toBe('Direct Address');
+    });
+
+    it('executes concurrent requests immediately without artificial serialization delay', async () => {
+      const fetchMock = global.fetch as any;
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({ address: 'Test' })
+      });
+
+      const p1 = reverseGeocode(1, 1);
+      const p2 = reverseGeocode(2, 2);
+
+      const [r1, r2] = await Promise.all([p1, p2]);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(r1).toBe('Test');
+      expect(r2).toBe('Test');
     });
   });
 });

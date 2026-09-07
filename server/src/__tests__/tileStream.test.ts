@@ -1,13 +1,46 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Compression, PMTiles } from 'pmtiles';
 import { handleExtractSize, handleTileStream, parseExtractResumeOffset } from '../tileStream';
 import { buildPmtilesBuffer } from '../pmtilesArchive';
 import { clearMapFilePathCache } from '../mapFiles';
 
 describe('tileStream handler', () => {
+  let sharedDir: string;
+
+  beforeAll(() => {
+    const tiles = [];
+    for (let z = 1; z <= 2; z++) {
+      const maxTile = (1 << z) - 1;
+      for (let x = 0; x <= maxTile; x++) {
+        for (let y = 0; y <= maxTile; y++) {
+          tiles.push({ z, x, y, data: new Uint8Array([z, x, y, 99]) });
+        }
+      }
+    }
+    const archive = buildPmtilesBuffer({
+      tiles,
+      minZoom: 1,
+      maxZoom: 2,
+      minLon: -180,
+      minLat: -85,
+      maxLon: 180,
+      maxLat: 85,
+      internalCompression: Compression.None,
+      tileCompression: Compression.None,
+    });
+    sharedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tile-stream-shared-'));
+    fs.writeFileSync(path.join(sharedDir, 'planet.pmtiles'), archive);
+    clearMapFilePathCache();
+  });
+
+  afterAll(() => {
+    if (sharedDir && fs.existsSync(sharedDir)) {
+      fs.rmSync(sharedDir, { recursive: true, force: true });
+    }
+  });
   it('returns 400 if bbox is missing or invalid', async () => {
     let statusCode = 200;
     let jsonResult: any = null;
@@ -50,30 +83,6 @@ describe('tileStream handler', () => {
   });
 
   it('streams a PMTiles extract with Content-Length and readable tiles', async () => {
-    const tiles = [];
-    for (let z = 1; z <= 2; z++) {
-      const maxTile = (1 << z) - 1;
-      for (let x = 0; x <= maxTile; x++) {
-        for (let y = 0; y <= maxTile; y++) {
-          tiles.push({ z, x, y, data: new Uint8Array([z, x, y, 99]) });
-        }
-      }
-    }
-    const archive = buildPmtilesBuffer({
-      tiles,
-      minZoom: 1,
-      maxZoom: 2,
-      minLon: -180,
-      minLat: -85,
-      maxLon: 180,
-      maxLat: 85,
-      internalCompression: Compression.None,
-      tileCompression: Compression.None,
-    });
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tile-stream-'));
-    fs.writeFileSync(path.join(dir, 'planet.pmtiles'), archive);
-    clearMapFilePathCache();
-
     const chunks: Buffer[] = [];
     const headers: Record<string, string> = {};
     let ended = false;
@@ -96,7 +105,7 @@ describe('tileStream handler', () => {
       destroy: () => { res.destroyed = true; },
     };
 
-    await handleTileStream(req, res, [dir]);
+    await handleTileStream(req, res, [sharedDir]);
     const body = Buffer.concat(chunks);
     expect(ended).toBe(true);
     expect(headers['Content-Type']).toBe('application/vnd.pmtiles');
@@ -116,35 +125,9 @@ describe('tileStream handler', () => {
     const tile = await pmt.getZxy(1, 0, 0);
     expect(tile).toBeDefined();
     expect(Array.from(new Uint8Array(tile!.data))).toEqual([1, 0, 0, 99]);
-
-    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   it('reports extract size matching the streamed archive', async () => {
-    const tiles = [];
-    for (let z = 1; z <= 2; z++) {
-      const maxTile = (1 << z) - 1;
-      for (let x = 0; x <= maxTile; x++) {
-        for (let y = 0; y <= maxTile; y++) {
-          tiles.push({ z, x, y, data: new Uint8Array([z, x, y, 99]) });
-        }
-      }
-    }
-    const archive = buildPmtilesBuffer({
-      tiles,
-      minZoom: 1,
-      maxZoom: 2,
-      minLon: -180,
-      minLat: -85,
-      maxLon: 180,
-      maxLat: 85,
-      internalCompression: Compression.None,
-      tileCompression: Compression.None,
-    });
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tile-size-'));
-    fs.writeFileSync(path.join(dir, 'planet.pmtiles'), archive);
-    clearMapFilePathCache();
-
     let jsonResult: any = null;
     const req: any = {
       body: { bbox: { north: 10, south: -10, east: 10, west: -10 }, minZoom: 1, maxZoom: 2 },
@@ -157,7 +140,7 @@ describe('tileStream handler', () => {
       json: (data: any) => { jsonResult = data; return res; },
     };
 
-    await handleExtractSize(req, res, [dir]);
+    await handleExtractSize(req, res, [sharedDir]);
     expect(jsonResult.bytes).toBeGreaterThan(0);
     expect(jsonResult.addressedTiles).toBeGreaterThan(0);
 
@@ -174,10 +157,8 @@ describe('tileStream handler', () => {
       json: () => streamRes,
       destroy: () => { streamRes.destroyed = true; },
     };
-    await handleTileStream(streamReq, streamRes, [dir]);
+    await handleTileStream(streamReq, streamRes, [sharedDir]);
     expect(jsonResult.bytes).toBe(Buffer.concat(chunks).length);
-
-    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   it('parses resume offsets from JSON body or Range header', () => {
@@ -189,30 +170,6 @@ describe('tileStream handler', () => {
   });
 
   it('returns 206 and remaining bytes when resuming from an offset', async () => {
-    const tiles = [];
-    for (let z = 1; z <= 2; z++) {
-      const maxTile = (1 << z) - 1;
-      for (let x = 0; x <= maxTile; x++) {
-        for (let y = 0; y <= maxTile; y++) {
-          tiles.push({ z, x, y, data: new Uint8Array([z, x, y, 99]) });
-        }
-      }
-    }
-    const archive = buildPmtilesBuffer({
-      tiles,
-      minZoom: 1,
-      maxZoom: 2,
-      minLon: -180,
-      minLat: -85,
-      maxLon: 180,
-      maxLat: 85,
-      internalCompression: Compression.None,
-      tileCompression: Compression.None,
-    });
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tile-resume-'));
-    fs.writeFileSync(path.join(dir, 'planet.pmtiles'), archive);
-    clearMapFilePathCache();
-
     const fullChunks: Buffer[] = [];
     const fullHeaders: Record<string, string> = {};
     const fullReq: any = {
@@ -230,7 +187,7 @@ describe('tileStream handler', () => {
       json: () => fullRes,
       destroy: () => { fullRes.destroyed = true; },
     };
-    await handleTileStream(fullReq, fullRes, [dir]);
+    await handleTileStream(fullReq, fullRes, [sharedDir]);
     const full = Buffer.concat(fullChunks);
     const offset = Math.floor(full.length / 2);
 
@@ -258,7 +215,7 @@ describe('tileStream handler', () => {
       json: () => resumeRes,
       destroy: () => { resumeRes.destroyed = true; },
     };
-    await handleTileStream(resumeReq, resumeRes, [dir]);
+    await handleTileStream(resumeReq, resumeRes, [sharedDir]);
     const rest = Buffer.concat(resumeChunks);
     expect(statusCode).toBe(206);
     expect(Number(resumeHeaders['X-Extract-Offset'])).toBe(offset);
@@ -285,10 +242,8 @@ describe('tileStream handler', () => {
       json: (data: any) => { goneJson = data; return tooFarRes; },
       destroy: () => { tooFarRes.destroyed = true; },
     };
-    await handleTileStream(tooFarReq, tooFarRes, [dir]);
+    await handleTileStream(tooFarReq, tooFarRes, [sharedDir]);
     expect(goneStatus).toBe(416);
     expect(goneJson.bytes).toBe(full.length);
-
-    fs.rmSync(dir, { recursive: true, force: true });
   });
 });

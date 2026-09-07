@@ -3,27 +3,16 @@ import request from 'supertest';
 import { app } from '../index';
 import { setDbName, closeDb, getDb } from '../db';
 import { clearPlacesCacheForTests } from '../routes/places';
-import * as fs from 'fs';
-import * as path from 'path';
-
-const testDbName = '../test-database-places.sqlite';
 
 describe('Places API Proxy Endpoints', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
-    setDbName(testDbName);
+    setDbName(':memory:');
     await getDb();
   });
 
   afterAll(async () => {
     await closeDb();
-    const dbPath = path.join(__dirname, '..', testDbName);
-    for (const ext of ['', '-wal', '-shm']) {
-      const p = `${dbPath}${ext}`;
-      if (fs.existsSync(p)) {
-        fs.unlinkSync(p);
-      }
-    }
   });
 
   const mockUser = {
