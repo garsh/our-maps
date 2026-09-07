@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "cd server && npm run dev",
-    "dev:client": "cd client && npm run dev",
+    "dev:client": "wait-on tcp:127.0.0.1:3002 && cd client && npm run dev",
     "install:all": "npm install && cd client && npm install && cd ../server && npm install",
     "setup:fonts": "node scripts/download-fonts.mjs",
     "setup:sprites": "node scripts/download-sprites.mjs",
