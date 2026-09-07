@@ -2276,6 +2276,35 @@ const Sidebar = ({
                       />
                     </div>
                   </div>
+                  {!isOffline && (
+                    isDownloaded || isDownloading || isRemoving || hasPartialDownload ? (
+                      <div 
+                        style={{ padding: '10px 16px', cursor: isRemoving ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isRemoving ? '#999' : 'inherit' }}
+                        onClick={isRemoving ? undefined : handleRemoveDownload}
+                        onMouseEnter={(e) => !isRemoving && (e.currentTarget.style.background = 'var(--bg-color)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        {isRemoving ? 'Removing Download...' : 'Remove Download'}
+                      </div>
+                    ) : (
+                      <div 
+                        style={{ padding: '10px 16px', cursor: (isDownloading || isPreparingDownload) ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: (isDownloading || isPreparingDownload) ? '#999' : 'inherit' }}
+                        onClick={(isDownloading || isPreparingDownload) ? undefined : handleDownloadClick}
+                        onMouseEnter={(e) => !(isDownloading || isPreparingDownload) && (e.currentTarget.style.background = 'var(--bg-color)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        {isPreparingDownload ? 'Preparing Download...' : 'Download for Offline'}
+                      </div>
+                    )
+                  )}
+                  <div 
+                    style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                    onClick={handleExportClick}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    Export
+                  </div>
                   {!readOnly && (
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
@@ -2310,14 +2339,6 @@ const Sidebar = ({
                       Import
                     </div>
                   )}
-                  <div 
-                    style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                    onClick={handleExportClick}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    Export
-                  </div>
                   {deferredPrompt && (
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
@@ -2330,28 +2351,6 @@ const Sidebar = ({
                     >
                       Install App
                     </div>
-                  )}
-
-                  {!isOffline && (
-                    isDownloaded || isDownloading || isRemoving || hasPartialDownload ? (
-                      <div 
-                        style={{ padding: '10px 16px', cursor: isRemoving ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isRemoving ? '#999' : 'inherit' }}
-                        onClick={isRemoving ? undefined : handleRemoveDownload}
-                        onMouseEnter={(e) => !isRemoving && (e.currentTarget.style.background = 'var(--bg-color)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        {isRemoving ? 'Removing Download...' : 'Remove Download'}
-                      </div>
-                    ) : (
-                      <div 
-                        style={{ padding: '10px 16px', cursor: (isDownloading || isPreparingDownload) ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: (isDownloading || isPreparingDownload) ? '#999' : 'inherit' }}
-                        onClick={(isDownloading || isPreparingDownload) ? undefined : handleDownloadClick}
-                        onMouseEnter={(e) => !(isDownloading || isPreparingDownload) && (e.currentTarget.style.background = 'var(--bg-color)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        {isPreparingDownload ? 'Preparing Download...' : 'Download for Offline'}
-                      </div>
-                    )
                   )}
                   {!readOnly && (
                     <div 
