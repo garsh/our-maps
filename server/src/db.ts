@@ -11,7 +11,10 @@ export function setDbName(name: string) {
 }
 
 async function migrate(_db: Database) {
-  // Hook for future schema migrations
+  const mapCols = await _db.all("PRAGMA table_info(maps)");
+  if (!mapCols.some((col: any) => col.name === 'custom_colors')) {
+    await _db.run("ALTER TABLE maps ADD COLUMN custom_colors TEXT DEFAULT '[]'");
+  }
 }
 
 export async function getDb() {
