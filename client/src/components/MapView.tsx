@@ -1326,7 +1326,7 @@ const MapView = ({
         const maxLng = Math.max(first[1], second[1]);
 
         if (Math.abs(maxLat - minLat) < 0.0001 && Math.abs(maxLng - minLng) < 0.0001) {
-          return { longitude: minLng, latitude: minLat, zoom: 13 };
+          return { longitude: minLng, latitude: minLat, zoom: 6 };
         }
 
         return {
@@ -1492,7 +1492,7 @@ const MapView = ({
       if (Math.abs(maxLat - minLat) < 0.0001 && Math.abs(maxLng - minLng) < 0.0001) {
         mapRef.current.flyTo({
           center: [minLng, minLat],
-          zoom: 13,
+          zoom: 6,
           bearing: 0,
           pitch: 0,
           duration,
