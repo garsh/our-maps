@@ -284,4 +284,37 @@ describe('SearchBar', () => {
       expect(screen.queryByText('Coffee Spot')).not.toBeInTheDocument();
     });
   });
+
+  it('clears query and maintains focus on search input when clear button is clicked', () => {
+    render(<SearchBar onAddPin={mockOnAddPin} pins={[]} />);
+
+    const input = screen.getByPlaceholderText(/Search.../i);
+    fireEvent.change(input, { target: { value: 'Coffee' } });
+    input.focus();
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue('Coffee');
+
+    const clearButton = screen.getByRole('button', { name: /clear search/i });
+    fireEvent.mouseDown(clearButton);
+    fireEvent.click(clearButton);
+
+    expect(input).toHaveValue('');
+    expect(input).toHaveFocus();
+  });
+
+  it('focuses search input when clear button is clicked even if input was not focused', () => {
+    render(<SearchBar onAddPin={mockOnAddPin} pins={[]} />);
+
+    const input = screen.getByPlaceholderText(/Search.../i);
+    fireEvent.change(input, { target: { value: 'Coffee' } });
+    input.blur();
+    expect(input).not.toHaveFocus();
+
+    const clearButton = screen.getByRole('button', { name: /clear search/i });
+    fireEvent.click(clearButton);
+
+    expect(input).toHaveValue('');
+    expect(input).toHaveFocus();
+  });
 });
+

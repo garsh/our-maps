@@ -71,6 +71,18 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
   const mapBoundsRef = useRef(effectiveBounds);
   mapBoundsRef.current = effectiveBounds;
   const abortControllerRef = useRef<AbortController | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleClear = () => {
+    setQuery('');
+    setLocalResults([]);
+    setResults([]);
+    setLastSearchedBounds(null);
+    setIsSearching(false);
+    abortControllerRef.current?.abort();
+    prevQueryRef.current = '';
+    inputRef.current?.focus();
+  };
 
   useEffect(() => {
     return () => {
@@ -262,6 +274,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
           {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
         </div>
         <input
+          ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => handleQueryChange(e.target.value)}
@@ -283,18 +296,18 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
           }}
         />
         {query && (
-           <button 
-             onClick={() => {
-               setQuery('');
-               setLocalResults([]);
-               setResults([]);
-               setLastSearchedBounds(null);
-               prevQueryRef.current = '';
-             }}
-             style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', display: 'flex', padding: 0 }}
-           >
-             <X size={14} />
-           </button>
+          <button 
+            type="button"
+            aria-label="Clear search"
+            onMouseDown={(e) => {
+              // Prevent input from losing focus when clicking the clear button
+              e.preventDefault();
+            }}
+            onClick={handleClear}
+            style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', display: 'flex', padding: 0 }}
+          >
+            <X size={14} />
+          </button>
         )}
       </div>
 
