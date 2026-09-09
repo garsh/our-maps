@@ -401,6 +401,18 @@ describe('Sidebar', () => {
     expect(input).toHaveValue('');
   });
 
+  it('clears rename input box when map name is Unnamed Map', () => {
+    render(<TestWrapper handlers={{ mapName: 'Unnamed Map' }} />);
+    
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+    
+    fireEvent.click(screen.getByText(/Rename Map/i));
+    
+    const input = screen.getByLabelText(/New Map Name/i);
+    expect(input).toHaveValue('');
+  });
+
   it('hides Rename Map option when readOnly is true', () => {
     render(<TestWrapper handlers={{ userRole: 'view' }} />);
     

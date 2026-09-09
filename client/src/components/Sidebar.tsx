@@ -1826,10 +1826,10 @@ const Sidebar = ({
 
   // Rename Modal State
   const [showRenameModal, setShowRenameModal] = useState(false);
-  const [renameInput, setRenameInput] = useState(mapName);
+  const [renameInput, setRenameInput] = useState(mapName === 'Unnamed Map' ? '' : mapName);
 
   useEffect(() => {
-    setRenameInput(mapName);
+    setRenameInput(mapName === 'Unnamed Map' ? '' : mapName);
   }, [mapName]);
 
   useEffect(() => {
@@ -2317,7 +2317,7 @@ const Sidebar = ({
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
                       onClick={() => {
-                        setRenameInput(mapName);
+                        setRenameInput(mapName === 'Unnamed Map' ? '' : mapName);
                         setShowRenameModal(true);
                         setIsMenuOpen(false);
                       }}

@@ -168,7 +168,7 @@ test('export and import UI', async ({ page }) => {
   await page.getByRole('button', { name: /New Map/i }).click();
   await page.waitForURL(/\/map\//);
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
-  await expect(page.locator('h1')).toContainText('My Map', { timeout: 10000 });
+  await expect(page.locator('h1')).toContainText('Unnamed Map', { timeout: 10000 });
 
   // Open options menu
   const moreOptionsBtn = page.getByRole('button', { name: 'More options' });

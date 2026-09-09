@@ -69,7 +69,7 @@ export function MapEditor() {
       void preloadExtract(id);
     }
   }, [id]);
-  const [mapName, setMapName] = useState(id === 'new' ? 'My Map' : '');
+  const [mapName, setMapName] = useState(id === 'new' ? 'Unnamed Map' : '');
   const [owner, setOwner] = useState<{ id: string, name?: string, email?: string, picture?: string } | null>(null);
   const [isMapLoading, setIsMapLoading] = useState(!!id && id !== 'new');
   const [userRole, setUserRole] = useState<'owner' | 'edit' | 'view'>('owner');
@@ -809,7 +809,7 @@ export function MapEditor() {
       isInitialLoadRef.current = false;
       // New map defaults
       setMapId(null);
-      setMapName('My Map');
+      setMapName('Unnamed Map');
       setPins([]);
       setLayers([]);
       setCustomColors([]);
@@ -834,7 +834,7 @@ export function MapEditor() {
     }
 
     // Don't auto-save empty new maps
-    if (!mapId && pins.length === 0 && mapName === 'My Map') return;
+    if (!mapId && pins.length === 0 && mapName === 'Unnamed Map') return;
 
     // For brand new maps without an ID, create the initial map via POST /api/maps
     if (!mapId) {
@@ -1068,7 +1068,7 @@ export function MapEditor() {
           hasHydratedLocally = true;
           isInitialLoadRef.current = true;
           setMapId(cached.id);
-          setMapName(cached.name || 'My Map');
+          setMapName(cached.name || 'Unnamed Map');
           setOwner({ id: cached.ownerId, name: cached.ownerName, email: cached.ownerEmail, picture: cached.ownerPicture });
           setLayers(cached.layers || []);
           setPins(cached.pins || []);
@@ -1109,7 +1109,7 @@ export function MapEditor() {
 
       isInitialLoadRef.current = true;
       setMapId(data.id);
-      setMapName(data.name || 'My Map');
+      setMapName(data.name || 'Unnamed Map');
       setOwner({ id: data.ownerId, name: data.ownerName, email: data.ownerEmail, picture: data.ownerPicture });
       setLayers(data.layers || []);
       setPins(data.pins);
