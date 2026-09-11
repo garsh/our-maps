@@ -234,6 +234,15 @@ export const apiService = {
     return handleResponse<any>(res, this._logoutCallback, 'Failed to share map');
   },
 
+  async updateMapPublic(id: string, isPublic: boolean): Promise<{ message: string; isPublic: boolean }> {
+    const res = await fetchWithRetry(`${API_BASE}/maps/${id}/public`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify({ isPublic }),
+    }, 0);
+    return handleResponse<{ message: string; isPublic: boolean }>(res, this._logoutCallback, 'Failed to update link sharing settings');
+  },
+
   async sharedContacts(): Promise<{ emails: string[] }> {
     const res = await fetchWithRetry(`${API_BASE}/auth/shared-contacts`, {
       headers: getHeaders(),

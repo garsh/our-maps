@@ -32,8 +32,10 @@ describe('map role checks', () => {
     await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', editorId, 'editor@example.com', 'Editor');
     await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', strangerId, 'stranger@example.com', 'Stranger');
     await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', mapId, 'Role Map', ownerId);
+    await db.run('INSERT INTO maps (id, name, owner_id, is_public) VALUES (?, ?, ?, 1)', 'public-map', 'Public Map', ownerId);
     await db.run('INSERT INTO map_permissions (map_id, user_id, role) VALUES (?, ?, ?)', mapId, viewerId, 'view');
     await db.run('INSERT INTO map_permissions (map_id, user_id, role) VALUES (?, ?, ?)', mapId, editorId, 'edit');
+    await db.run('INSERT INTO map_permissions (map_id, user_id, role) VALUES (?, ?, ?)', 'public-map', editorId, 'edit');
   });
 
   it.each([
@@ -42,6 +44,13 @@ describe('map role checks', () => {
     { userId: viewerId, targetMapId: mapId, expected: 'view' },
     { userId: strangerId, targetMapId: mapId, expected: null },
     { userId: ownerId, targetMapId: 'missing-map', expected: null },
+    { userId: undefined, targetMapId: mapId, expected: null },
+    { userId: null, targetMapId: mapId, expected: null },
+    { userId: strangerId, targetMapId: 'public-map', expected: 'view' },
+    { userId: undefined, targetMapId: 'public-map', expected: 'view' },
+    { userId: null, targetMapId: 'public-map', expected: 'view' },
+    { userId: editorId, targetMapId: 'public-map', expected: 'edit' },
+    { userId: ownerId, targetMapId: 'public-map', expected: 'owner' },
   ])('resolves role $expected for user $userId on map $targetMapId', async ({ userId, targetMapId, expected }) => {
     expect(await getMapRole(userId, targetMapId)).toBe(expected);
   });

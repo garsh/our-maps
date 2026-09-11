@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Share2, Trash2, X, User as UserIcon, ShieldCheck, Users, Loader2 } from 'lucide-react';
+import { Share2, Trash2, X, User as UserIcon, ShieldCheck, Users, Loader2, Link2, Check } from 'lucide-react';
 import type { MapPermission } from '@shared/interfaces';
 import { useGoogleLogin } from '@react-oauth/google';
 import { apiService } from '../services/api';
@@ -105,14 +105,30 @@ interface ShareDialogProps {
   permissions: MapPermission[];
   owner?: { id: string, name?: string, email?: string, picture?: string } | null;
   currentUserId: string;
+  isPublic?: boolean;
+  onTogglePublic?: (isPublic: boolean) => Promise<void>;
+  mapId?: string | null;
 }
 
-export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, permissions, owner, currentUserId }: ShareDialogProps) {
+export default function ShareDialog({ 
+  isOpen, 
+  onClose, 
+  onShare, 
+  onRemoveShare, 
+  permissions, 
+  owner, 
+  currentUserId,
+  isPublic = false,
+  onTogglePublic,
+  mapId
+}: ShareDialogProps) {
   const isOwner = owner?.id === currentUserId;
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'view' | 'edit' | 'owner' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isUpdatingPublic, setIsUpdatingPublic] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [confirmTransferEmail, setConfirmTransferEmail] = useState<string | null>(null);
   const [userToRemove, setUserToRemove] = useState<string | null>(null);
   
@@ -250,6 +266,30 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
       setError(err.message || 'Failed to share');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCopyLink = async () => {
+    const url = mapId ? `${window.location.origin}/map/${mapId}` : window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy URL', err);
+    }
+  };
+
+  const handleRadioToggle = async () => {
+    if (!isOwner || !onTogglePublic || isUpdatingPublic) return;
+    setIsUpdatingPublic(true);
+    setError(null);
+    try {
+      await onTogglePublic(!isPublic);
+    } catch (err: any) {
+      setError(err.message || 'Failed to update link sharing settings');
+    } finally {
+      setIsUpdatingPublic(false);
     }
   };
 
@@ -541,7 +581,68 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
           ))}
         </div>
 
-        <div style={{ marginTop: '2rem', textAlign: 'right' }}>
+        <div style={{ marginTop: '1.25rem', padding: '12px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', background: 'var(--bg-color)' }}>
+          <label 
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '10px', 
+              cursor: isOwner && !isUpdatingPublic ? 'pointer' : 'default',
+              userSelect: 'none',
+              fontWeight: '600',
+              fontSize: '0.9rem',
+              color: 'var(--text-primary)',
+              margin: 0
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              handleRadioToggle();
+            }}
+          >
+            <input 
+              type="radio" 
+              checked={isPublic} 
+              onChange={() => {}}
+              disabled={!isOwner || isUpdatingPublic}
+              aria-label="Allow anybody with the link to view"
+              style={{ cursor: isOwner && !isUpdatingPublic ? 'pointer' : 'default', width: '16px', height: '16px', accentColor: 'var(--primary-accent, var(--primary-color))' }}
+            />
+            <span>Allow anybody with the link to view</span>
+            {isUpdatingPublic && <Loader2 size={14} className="animate-spin" />}
+          </label>
+        </div>
+
+        <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px' }}>
+          {isPublic && (
+            <button 
+              type="button"
+              onClick={handleCopyLink}
+              style={{ 
+                background: 'var(--surface-color)', 
+                border: '1px solid var(--border-color)', 
+                padding: '10px 18px', 
+                borderRadius: 'var(--radius-sm)', 
+                cursor: 'pointer', 
+                fontWeight: '600', 
+                color: copied ? 'var(--success-color, #10b981)' : 'var(--text-primary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '0.85rem',
+                transition: 'background-color 0.15s ease, color 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--bg-color)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'var(--surface-color)';
+              }}
+            >
+              {copied ? <Check size={16} /> : <Link2 size={16} />}
+              {copied ? 'Link Copied!' : 'Copy Link'}
+            </button>
+          )}
+
           <button 
             onClick={onClose} 
             style={{ 

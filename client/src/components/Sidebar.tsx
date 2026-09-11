@@ -32,7 +32,8 @@ import {
   Sun,
   Moon,
   Globe,
-  Loader2
+  Loader2,
+  LogIn
 } from 'lucide-react';
 import {
   DndContext, 
@@ -109,6 +110,8 @@ interface SidebarProps {
   onDragCancel?: () => void;
   onDragStart?: (event: DragStartEvent) => void;
   userRole?: 'owner' | 'edit' | 'view';
+  isAuthenticated?: boolean;
+  onSignIn?: () => void;
   editMode?: boolean;
   onToggleEditMode?: (enabled: boolean) => void;
   onShare?: () => void;
@@ -1683,6 +1686,8 @@ const Sidebar = ({
   onDragCancel,
   onDragStart,
   userRole = 'owner',
+  isAuthenticated = true,
+  onSignIn,
   editMode,
   onToggleEditMode,
   onShare,
@@ -2233,6 +2238,34 @@ const Sidebar = ({
               
               {isMenuOpen && (
                 <div style={{ position: 'absolute', top: '100%', right: 0, width: '220px', background: 'var(--surface-color)', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3000, maxHeight: 'min(80vh, 640px)', overflowY: 'auto' }}>
+                  {!isAuthenticated && (
+                    <div 
+                      style={{ 
+                        padding: '10px 16px', 
+                        cursor: 'pointer', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '10px', 
+                        borderBottom: '1px solid var(--border-color)', 
+                        fontSize: '0.85rem', 
+                        fontWeight: '700', 
+                        color: 'var(--primary-accent, var(--primary-color))' 
+                      }}
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        if (onSignIn) {
+                          onSignIn();
+                        } else {
+                          window.location.href = '/login';
+                        }
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <LogIn size={16} />
+                      <span>Sign In</span>
+                    </div>
+                  )}
                   <div
                     onClick={(e) => {
                       e.stopPropagation();

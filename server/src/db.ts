@@ -15,6 +15,9 @@ async function migrate(_db: Database) {
   if (!mapCols.some((col: any) => col.name === 'custom_colors')) {
     await _db.run("ALTER TABLE maps ADD COLUMN custom_colors TEXT DEFAULT '[]'");
   }
+  if (!mapCols.some((col: any) => col.name === 'is_public')) {
+    await _db.run("ALTER TABLE maps ADD COLUMN is_public INTEGER DEFAULT 0");
+  }
 }
 
 export async function getDb() {
@@ -45,6 +48,7 @@ export async function getDb() {
       name TEXT NOT NULL,
       owner_id TEXT,
       custom_colors TEXT DEFAULT '[]',
+      is_public INTEGER DEFAULT 0,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (owner_id) REFERENCES users(id)
     );

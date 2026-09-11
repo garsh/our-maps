@@ -1060,4 +1060,36 @@ describe('Sidebar', () => {
     // At scrollTop = 0 and pointer at y=35 -> matches p1 (viewport top: 0, bottom: 50)!
     expect(topCollision[0].id).toBe('p1');
   });
+
+  it('shows Sign In option at top of menu when user is not authenticated', () => {
+    const onSignIn = vi.fn();
+    render(
+      <Sidebar
+        mapName="Guest Map"
+        pins={[]}
+        layers={[]}
+        onMapNameChange={vi.fn()}
+        onAddLayer={vi.fn()}
+        onUpdateLayer={vi.fn()}
+        onRemoveLayer={vi.fn()}
+        onAddPin={vi.fn()}
+        onRemovePin={vi.fn()}
+        onPinClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        onDragEnd={vi.fn()}
+        editingPinId={null}
+        onSetEditingPinId={vi.fn()}
+        isAuthenticated={false}
+        onSignIn={onSignIn}
+      />
+    );
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+
+    const signInBtn = screen.getByText('Sign In');
+    expect(signInBtn).toBeInTheDocument();
+
+    fireEvent.click(signInBtn);
+    expect(onSignIn).toHaveBeenCalled();
+  });
 });

@@ -319,6 +319,15 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
   }
 }
 
+export async function optionalAuthMiddleware(req: AuthRequest, _res: Response, next: NextFunction) {
+  try {
+    req.user = await authenticateRequest(req);
+  } catch {
+    req.user = undefined;
+  }
+  return next();
+}
+
 export async function meHandler(req: Request, res: Response) {
   try {
     const user = await authenticateRequest(req);

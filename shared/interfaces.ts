@@ -47,6 +47,7 @@ export interface MapData {
   customColors?: string[];
   permissions?: MapPermission[];
   userRole?: 'view' | 'edit' | 'owner';
+  isPublic?: boolean;
   lastAccessedAt?: string;
   totalTiles?: number;
   completedTiles?: number;

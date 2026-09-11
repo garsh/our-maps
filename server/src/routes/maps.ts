@@ -2,18 +2,15 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { getDb } from '../db';
 import type { Pin, MapData, MapPermission, PinLayer, PinIcon } from '@shared/interfaces';
-import { authMiddleware, type AuthRequest } from '../auth';
+import { authMiddleware, optionalAuthMiddleware, type AuthRequest } from '../auth';
 import { getMapRole, canEditMap } from '../permissions';
 import { MapCreateSchema, MapUpdateSchema, ShareSchema, PinSchema, LayerSchema } from '../schemas';
 import { z } from 'zod';
 
 const router = Router();
 
-// Apply auth middleware to all routes
-router.use(authMiddleware);
-
 // GET all accessible maps for the landing page
-router.get('/', async (req: AuthRequest, res) => {
+router.get('/', authMiddleware, async (req: AuthRequest, res) => {
   const userId = req.user!.id;
   const db = await getDb();
 
@@ -44,8 +41,8 @@ router.get('/', async (req: AuthRequest, res) => {
 });
 
 // GET map and its pins
-router.get('/:id', async (req: AuthRequest, res) => {
-  const userId = req.user!.id;
+router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
   const mapId = req.params.id;
   const db = await getDb();
 
@@ -60,26 +57,9 @@ router.get('/:id', async (req: AuthRequest, res) => {
     return res.status(404).json({ error: 'Map not found' });
   }
 
-  // Get permissions for all users who have access
-  const perms = await db.all(`
-    SELECT mp.user_id, mp.role, u.email, u.name, u.picture
-    FROM map_permissions mp
-    JOIN users u ON mp.user_id = u.id 
-    WHERE mp.map_id = ?
-  `, mapId);
-
-  const permissions: MapPermission[] = perms.map(p => ({
-    userId: p.user_id,
-    userEmail: p.email,
-    userName: p.name,
-    userPicture: p.picture,
-    role: p.role
-  }));
-
-  const userPerm = permissions.find(p => p.userId === userId);
-  const role = map.owner_id === userId ? 'owner' : (userPerm ? userPerm.role : null);
+  const role = await getMapRole(userId, mapId);
   if (!role) {
-    return res.status(403).json({ error: 'Access denied' });
+    return res.status(userId ? 403 : 401).json({ error: userId ? 'Access denied' : 'Authentication required' });
   }
 
   // ETag based on updated_at (falls back to map id if column not yet migrated)
@@ -91,19 +71,21 @@ router.get('/:id', async (req: AuthRequest, res) => {
     return res.status(304).end();
   }
 
-  // Update Last Accessed — throttled to at most once per 30 minutes to reduce SQLite write pressure
-  const existingAccess = await db.get<{ last_accessed_at: string | null }>(
-    'SELECT last_accessed_at FROM user_map_access WHERE user_id = ? AND map_id = ?',
-    userId, mapId
-  );
-  const lastAccessed = existingAccess?.last_accessed_at ? new Date(existingAccess.last_accessed_at).getTime() : 0;
-  const thirtyMinutes = 30 * 60 * 1000;
-  if (Date.now() - lastAccessed > thirtyMinutes) {
-    await db.run(`
-      INSERT INTO user_map_access (user_id, map_id, last_accessed_at) 
-      VALUES (?, ?, CURRENT_TIMESTAMP) 
-      ON CONFLICT(user_id, map_id) DO UPDATE SET last_accessed_at = CURRENT_TIMESTAMP
-    `, userId, mapId);
+  // Update Last Accessed — only for logged-in users, throttled to at most once per 30 minutes
+  if (userId) {
+    const existingAccess = await db.get<{ last_accessed_at: string | null }>(
+      'SELECT last_accessed_at FROM user_map_access WHERE user_id = ? AND map_id = ?',
+      userId, mapId
+    );
+    const lastAccessed = existingAccess?.last_accessed_at ? new Date(existingAccess.last_accessed_at).getTime() : 0;
+    const thirtyMinutes = 30 * 60 * 1000;
+    if (Date.now() - lastAccessed > thirtyMinutes) {
+      await db.run(`
+        INSERT INTO user_map_access (user_id, map_id, last_accessed_at) 
+        VALUES (?, ?, CURRENT_TIMESTAMP) 
+        ON CONFLICT(user_id, map_id) DO UPDATE SET last_accessed_at = CURRENT_TIMESTAMP
+      `, userId, mapId);
+    }
   }
 
   const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ? ORDER BY position ASC, id ASC', mapId);
@@ -132,16 +114,36 @@ router.get('/:id', async (req: AuthRequest, res) => {
     customColors = [];
   }
 
+  // Do not expose owner info or collaborator lists to non-logged-in visitors
+  let permissions: MapPermission[] = [];
+  if (userId) {
+    const perms = await db.all(`
+      SELECT mp.user_id, mp.role, u.email, u.name, u.picture
+      FROM map_permissions mp
+      JOIN users u ON mp.user_id = u.id 
+      WHERE mp.map_id = ?
+    `, mapId);
+
+    permissions = perms.map(p => ({
+      userId: p.user_id,
+      userEmail: p.email,
+      userName: p.name,
+      userPicture: p.picture,
+      role: p.role
+    }));
+  }
+
   const response: MapData = {
     ...map,
-    ownerId: map.owner_id,
-    ownerName: map.owner_name,
-    ownerEmail: map.owner_email,
-    ownerPicture: map.owner_picture,
+    ownerId: userId ? map.owner_id : '',
+    ownerName: userId ? map.owner_name : undefined,
+    ownerEmail: userId ? map.owner_email : undefined,
+    ownerPicture: userId ? map.owner_picture : undefined,
     layers: layers || [],
     pins: formattedPins,
     customColors,
     userRole: role,
+    isPublic: Boolean(map.is_public),
     permissions
   };
 
@@ -150,13 +152,13 @@ router.get('/:id', async (req: AuthRequest, res) => {
 });
 
 // GET map permissions and owner info without transferring pins or layers
-router.get('/:id/permissions', async (req: AuthRequest, res) => {
-  const userId = req.user!.id;
+router.get('/:id/permissions', optionalAuthMiddleware, async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
   const mapId = req.params.id;
   const db = await getDb();
 
   const map = await db.get(`
-    SELECT m.id, m.owner_id, u.name as owner_name, u.email as owner_email, u.picture as owner_picture 
+    SELECT m.id, m.owner_id, m.is_public, u.name as owner_name, u.email as owner_email, u.picture as owner_picture 
     FROM maps m 
     LEFT JOIN users u ON m.owner_id = u.id 
     WHERE m.id = ?
@@ -166,36 +168,39 @@ router.get('/:id/permissions', async (req: AuthRequest, res) => {
     return res.status(404).json({ error: 'Map not found' });
   }
 
-  const perms = await db.all(`
-    SELECT mp.user_id, mp.role, u.email, u.name, u.picture
-    FROM map_permissions mp
-    JOIN users u ON mp.user_id = u.id 
-    WHERE mp.map_id = ?
-  `, mapId);
-
-  const permissions: MapPermission[] = perms.map(p => ({
-    userId: p.user_id,
-    userEmail: p.email,
-    userName: p.name,
-    userPicture: p.picture,
-    role: p.role
-  }));
-
-  const userPerm = permissions.find(p => p.userId === userId);
-  const role = map.owner_id === userId ? 'owner' : (userPerm ? userPerm.role : null);
+  const role = await getMapRole(userId, mapId);
   if (!role) {
-    return res.status(403).json({ error: 'Access denied' });
+    return res.status(userId ? 403 : 401).json({ error: 'Access denied' });
+  }
+
+  let permissions: MapPermission[] = [];
+  if (userId) {
+    const perms = await db.all(`
+      SELECT mp.user_id, mp.role, u.email, u.name, u.picture
+      FROM map_permissions mp
+      JOIN users u ON mp.user_id = u.id 
+      WHERE mp.map_id = ?
+    `, mapId);
+
+    permissions = perms.map(p => ({
+      userId: p.user_id,
+      userEmail: p.email,
+      userName: p.name,
+      userPicture: p.picture,
+      role: p.role
+    }));
   }
 
   res.json({
-    owner: {
+    owner: userId ? {
       id: map.owner_id,
       name: map.owner_name,
       email: map.owner_email,
       picture: map.owner_picture
-    },
+    } : null,
     permissions,
-    userRole: role
+    userRole: role,
+    isPublic: Boolean(map.is_public)
   });
 });
 
@@ -360,7 +365,7 @@ export async function syncMapLayersAndPins(
 }
 
 // POST new map
-router.post('/', async (req: AuthRequest, res) => {
+router.post('/', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const validatedData = MapCreateSchema.parse(req.body);
     const { id, name, layers, pins, customColors } = validatedData;
@@ -389,7 +394,7 @@ router.post('/', async (req: AuthRequest, res) => {
       // Update access time for creator
       await db.run(`
         INSERT INTO user_map_access (user_id, map_id, last_accessed_at) 
-        VALUES (?, ?, CURRENT_TIMESTAMP)
+        VALUES (?, ?, CURRENT_TIMESTAMP) 
       `, userId, id);
 
       await db.run('COMMIT');
@@ -417,7 +422,7 @@ router.post('/', async (req: AuthRequest, res) => {
 });
 
 // PUT update map (Atomic Sync / Upsert Strategy)
-router.put('/:id', async (req: AuthRequest, res) => {
+router.put('/:id', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const validatedData = MapUpdateSchema.parse(req.body);
     const { name, layers, pins, customColors } = validatedData;
@@ -466,8 +471,38 @@ router.put('/:id', async (req: AuthRequest, res) => {
   }
 });
 
+// PUT toggle public link sharing (owner only)
+router.put('/:id/public', authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const mapId = req.params.id;
+    const userId = req.user!.id;
+    const { isPublic } = req.body;
+
+    if (typeof isPublic !== 'boolean') {
+      return res.status(400).json({ error: 'isPublic must be a boolean' });
+    }
+
+    const db = await getDb();
+    const map = await db.get('SELECT owner_id FROM maps WHERE id = ?', mapId);
+    if (!map) return res.status(404).json({ error: 'Map not found' });
+    if (map.owner_id !== userId) return res.status(403).json({ error: 'Only owner can change link sharing settings' });
+
+    await db.run('UPDATE maps SET is_public = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', isPublic ? 1 : 0, mapId);
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`map:${mapId}`).emit('map-public-updated', { mapId, isPublic });
+    }
+
+    res.json({ message: 'Map link sharing updated', isPublic });
+  } catch (error: any) {
+    console.error('[SERVER] PUT /api/maps/:id/public ERROR:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST share map
-router.post('/:id/share', async (req: AuthRequest, res) => {
+router.post('/:id/share', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const validatedData = ShareSchema.parse(req.body);
     const { email, role } = validatedData;
@@ -537,7 +572,7 @@ router.post('/:id/share', async (req: AuthRequest, res) => {
 });
 
 // DELETE remove share
-router.delete('/:id/share/:userId', async (req: AuthRequest, res) => {
+router.delete('/:id/share/:userId', authMiddleware, async (req: AuthRequest, res) => {
   const mapId = req.params.id;
   const ownerId = req.user!.id;
   const targetUserId = req.params.userId;
@@ -559,7 +594,7 @@ router.delete('/:id/share/:userId', async (req: AuthRequest, res) => {
 });
 
 // DELETE delete map
-router.delete('/:id', async (req: AuthRequest, res) => {
+router.delete('/:id', authMiddleware, async (req: AuthRequest, res) => {
   const mapId = req.params.id;
   const userId = req.user!.id;
   const db = await getDb();

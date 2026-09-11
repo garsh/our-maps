@@ -98,4 +98,40 @@ describe('ShareDialog Dark Mode & Styling', () => {
     expect(transferModal.style.background).toBe('var(--surface-color)');
     expect(transferModal.style.border).toBe('1px solid var(--border-color)');
   });
+
+  it('renders radio button "Allow anybody with the link to view" and toggles when clicked', () => {
+    const onTogglePublic = vi.fn();
+    render(<ShareDialog {...defaultProps} isPublic={false} onTogglePublic={onTogglePublic} mapId="map-123" />);
+
+    const radio = screen.getByLabelText('Allow anybody with the link to view') as HTMLInputElement;
+    expect(radio).toBeInTheDocument();
+    expect(radio.checked).toBe(false);
+
+    // Copy Link button should not appear when radio button is not set
+    expect(screen.queryByRole('button', { name: /copy link/i })).not.toBeInTheDocument();
+
+    fireEvent.click(radio);
+    expect(onTogglePublic).toHaveBeenCalledWith(true);
+  });
+
+  it('renders Copy Link button only when radio button is set and copies link to clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    render(<ShareDialog {...defaultProps} isPublic={true} mapId="map-abc" />);
+
+    const radio = screen.getByLabelText('Allow anybody with the link to view') as HTMLInputElement;
+    expect(radio.checked).toBe(true);
+
+    const copyBtn = screen.getByRole('button', { name: /copy link/i });
+    expect(copyBtn).toBeInTheDocument();
+
+    const doneBtn = screen.getByRole('button', { name: 'Done' });
+    expect(doneBtn).toBeInTheDocument();
+    // Copy Link should be next to Done button in the same container
+    expect(copyBtn.parentElement).toBe(doneBtn.parentElement);
+
+    fireEvent.click(copyBtn);
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/map/map-abc'));
+  });
 });

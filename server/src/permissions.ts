@@ -10,22 +10,23 @@ export function canEditMap(role: MapRole | null | undefined): boolean {
   return role === 'owner' || role === 'edit';
 }
 
-export async function getMapRole(userId: string, mapId: string): Promise<MapRole | null> {
-  if (!userId || !mapId) return null;
+export async function getMapRole(userId: string | undefined | null, mapId: string): Promise<MapRole | null> {
+  if (!mapId) return null;
 
   const db = await getDb();
   const row = await db.get(
-    `SELECT m.owner_id, mp.role
+    `SELECT m.owner_id, m.is_public, mp.role
      FROM maps m
      LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
      WHERE m.id = ?`,
-    userId,
+    userId || null,
     mapId
   );
   if (!row) return null;
 
-  if (row.owner_id === userId) return 'owner';
+  if (userId && row.owner_id === userId) return 'owner';
   if (row.role === 'edit' || row.role === 'view') return row.role;
+  if (Boolean(row.is_public)) return 'view';
 
   return null;
 }

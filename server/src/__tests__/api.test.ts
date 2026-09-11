@@ -497,4 +497,56 @@ describe('API Endpoints', () => {
     const savedPins = await db.all('SELECT * FROM pins WHERE map_id = ?', mapId);
     expect(savedPins).toHaveLength(250);
   });
+
+  it('handles public link sharing and anonymous access correctly', async () => {
+    const mapId = 'public-sharing-test-map';
+    const db = await getDb();
+    await db.run('INSERT INTO maps (id, name, owner_id, is_public) VALUES (?, ?, ?, 0)', mapId, 'Secret Map', mockUser.id);
+    await db.run('INSERT INTO pins (id, map_id, lat, lng, label) VALUES (?, ?, 10, 20, ?)', 'pin-p1', mapId, 'Public Pin');
+
+    // 1. Unauthenticated request to private map -> 401
+    const privateRes = await request(app).get(`/api/maps/${mapId}`);
+    expect(privateRes.status).toBe(401);
+
+    // 2. Owner enables public link sharing via PUT /api/maps/:id/public
+    const toggleRes = await request(app)
+      .put(`/api/maps/${mapId}/public`)
+      .set(authHeader)
+      .send({ isPublic: true });
+    expect(toggleRes.status).toBe(200);
+    expect(toggleRes.body.isPublic).toBe(true);
+
+    // 3. Unauthenticated request to public map -> 200, role 'view', isPublic true, owner info redacted
+    const publicRes = await request(app).get(`/api/maps/${mapId}`);
+    expect(publicRes.status).toBe(200);
+    expect(publicRes.body.userRole).toBe('view');
+    expect(publicRes.body.isPublic).toBe(true);
+    expect(publicRes.body.pins).toHaveLength(1);
+    expect(publicRes.body.ownerName).toBeUndefined();
+    expect(publicRes.body.ownerEmail).toBeUndefined();
+    expect(publicRes.body.ownerPicture).toBeUndefined();
+    expect(publicRes.body.ownerId).toBe('');
+    expect(publicRes.body.permissions).toEqual([]);
+
+    // 4. Non-owner cannot toggle public sharing
+    const strangerUser = { id: 'stranger-id', email: 'stranger@example.com', name: 'Stranger' };
+    await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', strangerUser.id, strangerUser.email, strangerUser.name);
+    const forbiddenRes = await request(app)
+      .put(`/api/maps/${mapId}/public`)
+      .set({ 'x-mock-user': JSON.stringify(strangerUser) })
+      .send({ isPublic: false });
+    expect(forbiddenRes.status).toBe(403);
+
+    // 5. Owner toggles back to private
+    const privateToggleRes = await request(app)
+      .put(`/api/maps/${mapId}/public`)
+      .set(authHeader)
+      .send({ isPublic: false });
+    expect(privateToggleRes.status).toBe(200);
+    expect(privateToggleRes.body.isPublic).toBe(false);
+
+    // 6. Anonymous request is now blocked again
+    const reblockedRes = await request(app).get(`/api/maps/${mapId}`);
+    expect(reblockedRes.status).toBe(401);
+  });
 });

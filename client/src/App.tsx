@@ -51,7 +51,7 @@ export function MapEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const socketRef = useRef<Socket | null>(null);
   
   const [pins, setPins] = useState<Pin[]>([])
@@ -62,6 +62,11 @@ export function MapEditor() {
   layersRef.current = layers;
   const [mapId, setMapId] = useState<string | null>(id && id !== 'new' ? id : null);
 
+  useEffect(() => {
+    if (id === 'new' && !isAuthLoading && !user) {
+      navigate('/login');
+    }
+  }, [id, isAuthLoading, user, navigate]);
 
   useLayoutEffect(() => {
     if (id && id !== 'new') {
@@ -74,6 +79,7 @@ export function MapEditor() {
   const [isMapLoading, setIsMapLoading] = useState(!!id && id !== 'new');
   const [userRole, setUserRole] = useState<'owner' | 'edit' | 'view'>('owner');
   const canEditMap = userRole !== 'view';
+  const [isPublic, setIsPublic] = useState(false);
   const [permissions, setPermissions] = useState<MapPermission[]>([]);
   const [searchAreaState, setSearchAreaState] = useState<SearchAreaState | null>(null);
   
@@ -1074,6 +1080,7 @@ export function MapEditor() {
           setPins(cached.pins || []);
           setCustomColors(cached.customColors || []);
           setUserRole(cached.userRole || 'view');
+          setIsPublic(Boolean(cached.isPublic));
           setPermissions(cached.permissions || []);
           if (cached.pins && cached.pins.length > 0) {
             if (!silent) {
@@ -1126,6 +1133,7 @@ export function MapEditor() {
         }
       }
       setUserRole(data.userRole || 'view');
+      setIsPublic(Boolean(data.isPublic));
       setPermissions(data.permissions || []);
       setIsDirty(false);
       setIsSyncing(false);
@@ -1141,7 +1149,7 @@ export function MapEditor() {
       } else {
         console.error('Failed to load map', err);
         setError('No Data');
-        setTimeout(() => navigate('/'), 2000);
+        setTimeout(() => navigate(user ? '/' : '/login'), 2000);
       }
     } finally {
       if (epoch === loadEpochRef.current) {
@@ -1238,6 +1246,12 @@ export function MapEditor() {
     if (!mapId) return;
     await apiService.removeShare(mapId, userId);
     setPermissions(prev => prev.filter(p => p.userId !== userId));
+  };
+
+  const handleTogglePublic = async (newPublic: boolean) => {
+    if (!mapId) return;
+    const res = await apiService.updateMapPublic(mapId, newPublic);
+    setIsPublic(Boolean(res.isPublic));
   };
 
   const handlePinSelect = useCallback((pinId: string) => {
@@ -1869,6 +1883,8 @@ export function MapEditor() {
             onDragCancel={handleDragCancel}
             onDragStart={handleDragStart}
             userRole={userRole}
+            isAuthenticated={Boolean(user)}
+            onSignIn={() => navigate('/login')}
             editMode={editMode}
             onToggleEditMode={handleToggleEditMode}
             onShare={handleOpenShare}
@@ -1983,6 +1999,9 @@ export function MapEditor() {
           permissions={permissions}
           owner={owner}
           currentUserId={user?.id || ''}
+          isPublic={isPublic}
+          onTogglePublic={handleTogglePublic}
+          mapId={mapId}
         />
       )}
 
@@ -2011,7 +2030,7 @@ function App() {
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<PrivateRoute><LandingPage /></PrivateRoute>} />
-              <Route path="/map/:id" element={<PrivateRoute><MapEditor /></PrivateRoute>} />
+              <Route path="/map/:id" element={<MapEditor />} />
             </Routes>
           </BrowserRouter>
         </ThemeProvider>

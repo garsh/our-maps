@@ -633,5 +633,46 @@ describe('App Components Error Handling', () => {
       expect(screen.getByText(/No Data/i)).toBeInTheDocument();
     });
   });
+
+  it('allows unauthenticated users to view a public map in view-only mode', async () => {
+    (useAuth as any).mockReturnValue({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isLoading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      logoutEverywhere: vi.fn(),
+      handleCredentialResponse: vi.fn()
+    });
+
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'public-map-1',
+      name: 'Public Community Map',
+      pins: [],
+      layers: [],
+      userRole: 'view',
+      isPublic: true,
+      ownerId: ''
+    });
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/public-map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Public Community Map')).toBeInTheDocument();
+    });
+
+    // Verify view-only mode (Sign In available in menu)
+    fireEvent.click(screen.getByLabelText(/more options/i));
+    expect(screen.getByText('Sign In')).toBeInTheDocument();
+  });
 });
 
