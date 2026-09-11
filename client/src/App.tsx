@@ -1045,6 +1045,7 @@ export function MapEditor() {
 
   const loadMap = async (mapId: string, silent = false) => {
     const epoch = ++loadEpochRef.current;
+    let redirectedToLogin = false;
     if (boundsTimerRef.current) {
       clearTimeout(boundsTimerRef.current);
       boundsTimerRef.current = null;
@@ -1141,18 +1142,24 @@ export function MapEditor() {
       if (isOfflineRef.current) {
         applyOffline(false);
       }
-    } catch (err) {
+    } catch (err: any) {
       if (epoch !== loadEpochRef.current) return;
       setIsSyncing(false);
+      const isAuthError = err?.message?.includes('Authentication required') || err?.message?.includes('Unauthorized');
+      if (isAuthError || (!hasHydratedLocally && !user)) {
+        redirectedToLogin = true;
+        navigate('/login', { replace: true });
+        return;
+      }
       if (hasHydratedLocally) {
         applyOffline(true, true);
       } else {
         console.error('Failed to load map', err);
         setError('No Data');
-        setTimeout(() => navigate(user ? '/' : '/login'), 2000);
+        setTimeout(() => navigate('/'), 2000);
       }
     } finally {
-      if (epoch === loadEpochRef.current) {
+      if (epoch === loadEpochRef.current && !redirectedToLogin) {
         setIsMapLoading(false);
       }
     }
@@ -1760,33 +1767,35 @@ export function MapEditor() {
       
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
         <div id="download-pill-container" style={{ display: 'flex', alignItems: 'center' }}></div>
-        <button 
+        {Boolean(user) && (
+          <button 
             onClick={() => {
               if (editMode && error && !isOffline) {
                 handleSave();
               }
             }}
             style={{ 
-            background: 'rgba(255,255,255,0.1)', 
-            padding: '3px 8px', 
-            borderRadius: '50px',
-            border: '1px solid rgba(255,255,255,0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            color: (isOffline || error) ? '#ffbdad' : (mapTheme === 'dark' ? '#cbd5e1' : 'white'),
-            fontWeight: '600',
-            whiteSpace: 'nowrap',
-            cursor: (editMode && error && !isOffline) ? 'pointer' : 'default',
-            outline: 'none',
-            fontFamily: 'inherit',
-            fontSize: '0.65rem'
-          }}>
+              background: 'rgba(255,255,255,0.1)', 
+              padding: '3px 8px', 
+              borderRadius: '50px',
+              border: '1px solid rgba(255,255,255,0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: (isOffline || error) ? '#ffbdad' : (mapTheme === 'dark' ? '#cbd5e1' : 'white'),
+              fontWeight: '600',
+              whiteSpace: 'nowrap',
+              cursor: (editMode && error && !isOffline) ? 'pointer' : 'default',
+              outline: 'none',
+              fontFamily: 'inherit',
+              fontSize: '0.65rem'
+            }}>
             <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: (isOffline || error) ? '#ff4d4f' : (isSyncing || (editMode && (isSaving || isDirty)) ? '#ffcc00' : '#4ade80'), flexShrink: 0 }} />
             <span>
               {error ? error : (isOffline ? 'Offline' : (isSyncing ? 'Syncing' : (editMode && isSaving ? 'Saving' : (editMode && isDirty ? 'Pending' : 'Synced'))))}
             </span>
           </button>
+        )}
         <div id="mobile-header-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '26px', minHeight: '26px', flexShrink: 0 }}></div>
       </div>
     </header>

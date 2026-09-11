@@ -1089,6 +1089,11 @@ describe('Sidebar', () => {
     const signInBtn = screen.getByText('Sign In');
     expect(signInBtn).toBeInTheDocument();
 
+    // Verify Edit Mode, Download for Offline, and Export are hidden
+    expect(screen.queryByText('Edit Mode')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Download for Offline/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Export')).not.toBeInTheDocument();
+
     fireEvent.click(signInBtn);
     expect(onSignIn).toHaveBeenCalled();
   });

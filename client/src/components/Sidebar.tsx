@@ -2266,58 +2266,60 @@ const Sidebar = ({
                       <span>Sign In</span>
                     </div>
                   )}
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!canEdit || isOffline) return;
-                      onToggleEditMode?.(!isEditMode);
-                    }}
-                    style={{
-                      padding: '10px 16px',
-                      cursor: (canEdit && !isOffline) ? 'pointer' : 'not-allowed',
-                      opacity: (canEdit && !isOffline) ? 1 : 0.45,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '10px',
-                      borderBottom: '1px solid var(--border-color)',
-                      fontSize: '0.85rem',
-                      fontWeight: isEditMode ? '600' : '500',
-                      color: 'var(--text-primary)',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (canEdit && !isOffline) e.currentTarget.style.background = 'var(--bg-color)';
-                    }}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <span>Edit Mode</span>
+                  {isAuthenticated && (
                     <div
-                      style={{
-                        width: '34px',
-                        height: '18px',
-                        borderRadius: '10px',
-                        background: isEditMode ? (canEdit ? '#3b82f6' : '#94a3b8') : '#e2e8f0',
-                        position: 'relative',
-                        transition: 'background 0.2s ease',
-                        flexShrink: 0,
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!canEdit || isOffline) return;
+                        onToggleEditMode?.(!isEditMode);
                       }}
+                      style={{
+                        padding: '10px 16px',
+                        cursor: (canEdit && !isOffline) ? 'pointer' : 'not-allowed',
+                        opacity: (canEdit && !isOffline) ? 1 : 0.45,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '10px',
+                        borderBottom: '1px solid var(--border-color)',
+                        fontSize: '0.85rem',
+                        fontWeight: isEditMode ? '600' : '500',
+                        color: 'var(--text-primary)',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (canEdit && !isOffline) e.currentTarget.style.background = 'var(--bg-color)';
+                      }}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
+                      <span>Edit Mode</span>
                       <div
                         style={{
-                          width: '14px',
-                          height: '14px',
-                          borderRadius: '50%',
-                          background: 'white',
-                          position: 'absolute',
-                          top: '2px',
-                          left: isEditMode ? '18px' : '2px',
-                          transition: 'left 0.2s ease',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                          width: '34px',
+                          height: '18px',
+                          borderRadius: '10px',
+                          background: isEditMode ? (canEdit ? '#3b82f6' : '#94a3b8') : '#e2e8f0',
+                          position: 'relative',
+                          transition: 'background 0.2s ease',
+                          flexShrink: 0,
                         }}
-                      />
+                      >
+                        <div
+                          style={{
+                            width: '14px',
+                            height: '14px',
+                            borderRadius: '50%',
+                            background: 'white',
+                            position: 'absolute',
+                            top: '2px',
+                            left: isEditMode ? '18px' : '2px',
+                            transition: 'left 0.2s ease',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                          }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                  {!isOffline && (
+                  )}
+                  {isAuthenticated && !isOffline && (
                     isDownloaded || isDownloading || isRemoving || hasPartialDownload ? (
                       <div 
                         style={{ padding: '10px 16px', cursor: isRemoving ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isRemoving ? '#999' : 'inherit' }}
@@ -2338,14 +2340,16 @@ const Sidebar = ({
                       </div>
                     )
                   )}
-                  <div 
-                    style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                    onClick={handleExportClick}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    Export
-                  </div>
+                  {isAuthenticated && (
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={handleExportClick}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      Export
+                    </div>
+                  )}
                   {!readOnly && (
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
@@ -3091,7 +3095,7 @@ const Sidebar = ({
         const pillContainer = (downloadPillEl && document.body.contains(downloadPillEl))
           ? downloadPillEl
           : (typeof document !== 'undefined' ? document.getElementById('download-pill-container') : null);
-        if (!pillContainer || !document.body.contains(pillContainer)) return null;
+        if (!isAuthenticated || !pillContainer || !document.body.contains(pillContainer)) return null;
 
         const showActiveProgress = isDownloading || isRemoving || hasPartialDownload;
         const showCompleted = isDownloaded && !showActiveProgress;

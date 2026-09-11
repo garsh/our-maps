@@ -670,9 +670,51 @@ describe('App Components Error Handling', () => {
       expect(screen.getByText('Public Community Map')).toBeInTheDocument();
     });
 
-    // Verify view-only mode (Sign In available in menu)
+    // Verify status pill is NOT shown for non-logged-in users
+    expect(screen.queryByText(/Synced/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Syncing/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Offline/i)).not.toBeInTheDocument();
+
+    // Verify view-only mode menu (Sign In available, Edit Mode / Download / Export absent)
     fireEvent.click(screen.getByLabelText(/more options/i));
     expect(screen.getByText('Sign In')).toBeInTheDocument();
+    expect(screen.queryByText('Edit Mode')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Download for Offline/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Export')).not.toBeInTheDocument();
+  });
+
+  it('silently redirects unauthenticated users to /login when map is not shared publicly without No Data interstitial', async () => {
+    (useAuth as any).mockReturnValue({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isLoading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      logoutEverywhere: vi.fn(),
+      handleCredentialResponse: vi.fn()
+    });
+
+    (apiService.getMap as any).mockRejectedValue(new Error('Authentication required'));
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/private-map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+            <Route path="/login" element={<div data-testid="login-page">Login Page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('login-page')).toBeInTheDocument();
+    });
+
+    // Should never show "No Data" or "Unable to load map offline"
+    expect(screen.queryByText(/No Data/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Unable to load map offline/i)).not.toBeInTheDocument();
   });
 });
 
