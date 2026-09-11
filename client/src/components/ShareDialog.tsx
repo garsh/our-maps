@@ -269,20 +269,37 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
     }} onClick={onClose}>
       <div 
         style={{ 
-          background: 'white', 
+          background: 'var(--surface-color)', 
+          border: '1px solid var(--border-color)',
           padding: '2rem', 
           borderRadius: 'var(--radius-lg)', 
           width: '450px', 
           maxWidth: '90%',
-          boxShadow: 'var(--shadow-lg)' 
+          boxShadow: 'var(--shadow-lg)',
+          color: 'var(--text-primary)'
         }} 
         onClick={e => e.stopPropagation()}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>
-            <Share2 size={24} color="var(--primary-color)" /> Share Map
+            <Share2 size={24} color="var(--primary-accent, var(--primary-color))" /> Share Map
           </h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', padding: '4px' }}>
+          <button 
+            onClick={onClose} 
+            aria-label="Close"
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: 'var(--text-secondary)', 
+              cursor: 'pointer', 
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
+          >
             <X size={24} />
           </button>
         </div>
@@ -296,7 +313,18 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
                     type="button"
                     onClick={handleConnectContacts}
                     disabled={isConnectingContacts}
-                    style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'transparent', border: 'none', color: 'var(--primary-color)', fontSize: '0.95rem', fontWeight: '700', cursor: 'pointer', padding: '4px 0' }}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '8px', 
+                      background: 'transparent', 
+                      border: 'none', 
+                      color: 'var(--primary-accent, var(--primary-color))', 
+                      fontSize: '0.95rem', 
+                      fontWeight: '700', 
+                      cursor: isConnectingContacts ? 'not-allowed' : 'pointer', 
+                      padding: '4px 0' 
+                    }}
                   >
                     {isConnectingContacts ? <Loader2 size={16} className="animate-spin" /> : <Users size={16} />}
                     {isConnectingContacts ? 'Connecting...' : 'Load Your Contacts'}
@@ -327,7 +355,7 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
                     top: '40px', 
                     left: 0, 
                     right: 0, 
-                    background: 'white', 
+                    background: 'var(--surface-color)', 
                     border: '1px solid var(--border-color)', 
                     borderRadius: 'var(--radius-sm)', 
                     boxShadow: 'var(--shadow-lg)', 
@@ -339,19 +367,28 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
                       <div 
                         key={contact.email} 
                         onClick={() => { setEmail(contact.email); setShowDropdown(false); }}
-                        style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', borderBottom: '1px solid #f1f1f1' }}
+                        style={{ 
+                          padding: '8px 12px', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '10px', 
+                          cursor: 'pointer', 
+                          borderBottom: '1px solid var(--border-color)',
+                          color: 'var(--text-primary)',
+                          transition: 'background-color 0.15s ease'
+                        }}
                         onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
                         onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                       >
                         {contact.photoUrl ? (
                           <img src={contact.photoUrl} alt={contact.name} style={{ width: '28px', height: '28px', borderRadius: '50%' }} />
                         ) : (
-                          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>
+                          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--bg-color)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
                             <UserIcon size={14} />
                           </div>
                         )}
                         <div>
-                          <div style={{ fontWeight: '700', fontSize: '0.85rem' }}>{contact.name}</div>
+                          <div style={{ fontWeight: '700', fontSize: '0.85rem', color: 'var(--text-primary)' }}>{contact.name}</div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{contact.email}</div>
                         </div>
                       </div>
@@ -370,9 +407,9 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
                     flex: 1, 
                     padding: '10px', 
                     borderRadius: 'var(--radius-sm)', 
-                    border: role === 'view' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', 
-                    background: role === 'view' ? 'rgba(72, 61, 139, 0.05)' : 'white',
-                    color: role === 'view' ? 'var(--primary-color)' : 'var(--text-secondary)',
+                    border: role === 'view' ? '2px solid var(--primary-accent, var(--primary-color))' : '1px solid var(--border-color)', 
+                    background: role === 'view' ? 'color-mix(in srgb, var(--primary-accent, var(--primary-color)) 15%, transparent)' : 'var(--surface-color)',
+                    color: role === 'view' ? 'var(--primary-accent, var(--primary-color))' : 'var(--text-secondary)',
                     fontWeight: '700',
                     fontSize: '0.9rem',
                     cursor: 'pointer',
@@ -388,9 +425,9 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
                     flex: 1, 
                     padding: '10px', 
                     borderRadius: 'var(--radius-sm)', 
-                    border: role === 'edit' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', 
-                    background: role === 'edit' ? 'rgba(72, 61, 139, 0.05)' : 'white',
-                    color: role === 'edit' ? 'var(--primary-color)' : 'var(--text-secondary)',
+                    border: role === 'edit' ? '2px solid var(--primary-accent, var(--primary-color))' : '1px solid var(--border-color)', 
+                    background: role === 'edit' ? 'color-mix(in srgb, var(--primary-accent, var(--primary-color)) 15%, transparent)' : 'var(--surface-color)',
+                    color: role === 'edit' ? 'var(--primary-accent, var(--primary-color))' : 'var(--text-secondary)',
                     fontWeight: '700',
                     fontSize: '0.9rem',
                     cursor: 'pointer',
@@ -407,9 +444,9 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
                       flex: 1, 
                       padding: '10px', 
                       borderRadius: 'var(--radius-sm)', 
-                      border: role === 'owner' ? '2px solid var(--primary-color)' : '1px solid var(--border-color)', 
-                      background: role === 'owner' ? 'rgba(72, 61, 139, 0.05)' : 'white',
-                      color: role === 'owner' ? 'var(--primary-color)' : 'var(--text-secondary)',
+                      border: role === 'owner' ? '2px solid var(--primary-accent, var(--primary-color))' : '1px solid var(--border-color)', 
+                      background: role === 'owner' ? 'color-mix(in srgb, var(--primary-accent, var(--primary-color)) 15%, transparent)' : 'var(--surface-color)',
+                      color: role === 'owner' ? 'var(--primary-accent, var(--primary-color))' : 'var(--text-secondary)',
                       fontWeight: '700',
                       fontSize: '0.9rem',
                       cursor: 'pointer',
@@ -430,9 +467,9 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
                 padding: '12px', 
                 border: 'none',
                 borderRadius: 'var(--radius-md)',
-                color: (loading || !email || !role) ? '#888' : 'white',
+                color: (loading || !email || !role) ? 'var(--text-secondary)' : 'white',
                 fontWeight: '600',
-                background: (loading || !email || !role) ? '#e0e0e0' : 'var(--primary-color)',
+                background: (loading || !email || !role) ? 'var(--border-color)' : 'var(--primary-color)',
                 cursor: (loading || !email || !role) ? 'not-allowed' : 'pointer' 
               }}
             >
@@ -443,23 +480,23 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
 
         <h4 style={{ marginBottom: '1rem', fontSize: '0.8rem', fontWeight: '800', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Who Has Access</h4>
         <div style={{ maxHeight: '250px', overflowY: 'auto', margin: '0 -10px', padding: '0 10px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid #f1f1f1', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border-color)', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               {owner?.picture ? (
                 <img src={owner.picture} alt="Owner" style={{ width: '34px', height: '34px', borderRadius: '50%' }} />
               ) : (
-                <div style={{ background: 'rgba(72, 61, 139, 0.1)', padding: '8px', borderRadius: '50%', color: 'var(--primary-color)' }}>
+                <div style={{ background: 'color-mix(in srgb, var(--primary-accent, var(--primary-color)) 15%, transparent)', padding: '8px', borderRadius: '50%', color: 'var(--primary-accent, var(--primary-color))' }}>
                   <ShieldCheck size={18} />
                 </div>
               )}
               <div>
-                <div style={{ fontWeight: '700', fontSize: '0.95rem' }}>{isOwner ? 'You' : (owner?.name || owner?.email || 'Owner')}</div>
-                <div style={{ fontSize: '0.75rem', color: '#aaa', fontWeight: '800' }}>Owner</div>
+                <div style={{ fontWeight: '700', fontSize: '0.95rem', color: 'var(--text-primary)' }}>{isOwner ? 'You' : (owner?.name || owner?.email || 'Owner')}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '800' }}>Owner</div>
               </div>
             </div>
           </div>
           {permissions.map(perm => (
-            <div key={perm.userId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f1f1f1' }}>
+            <div key={perm.userId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--border-color)' }}>
               {userToRemove === perm.userId ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                   <div style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)' }}>Remove {perm.userName || perm.userEmail} from this map?</div>
@@ -470,7 +507,7 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
                     >Remove</button>
                     <button 
                       onClick={() => setUserToRemove(null)}
-                      style={{ padding: '6px 12px', background: '#e0e0e0', color: '#555', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                      style={{ padding: '6px 12px', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
                     >Cancel</button>
                   </div>
                 </div>
@@ -480,19 +517,19 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
                     {perm.userPicture ? (
                       <img src={perm.userPicture} alt={perm.userName || perm.userEmail} style={{ width: '34px', height: '34px', borderRadius: '50%' }} />
                     ) : (
-                      <div style={{ background: '#f1f1f1', padding: '8px', borderRadius: '50%', color: '#666' }}>
+                      <div style={{ background: 'var(--bg-color)', border: '1px solid var(--border-color)', padding: '7px', borderRadius: '50%', color: 'var(--text-secondary)' }}>
                         <UserIcon size={18} />
                       </div>
                     )}
                     <div>
                       <div style={{ fontWeight: '700', fontSize: '0.95rem', color: 'var(--text-primary)' }}>{perm.userName || perm.userEmail}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#aaa', fontWeight: '800' }}>{perm.role === 'edit' ? 'Editor' : 'Viewer'}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '800' }}>{perm.role === 'edit' ? 'Editor' : 'Viewer'}</div>
                     </div>
                   </div>
                   {isOwner && (
                     <button 
                       onClick={() => setUserToRemove(perm.userId)}
-                      style={{ background: 'rgba(203, 43, 62, 0.1)', border: 'none', color: 'var(--error-color)', padding: '8px', borderRadius: '50%', cursor: 'pointer', display: 'flex' }}
+                      style={{ background: 'color-mix(in srgb, var(--error-color) 15%, transparent)', border: 'none', color: 'var(--error-color)', padding: '8px', borderRadius: '50%', cursor: 'pointer', display: 'flex' }}
                       title="Remove access"
                     >
                       <Trash2 size={16} />
@@ -505,16 +542,47 @@ export default function ShareDialog({ isOpen, onClose, onShare, onRemoveShare, p
         </div>
 
         <div style={{ marginTop: '2rem', textAlign: 'right' }}>
-          <button onClick={onClose} style={{ background: 'var(--bg-color)', border: 'none', padding: '10px 24px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontWeight: '700', color: 'var(--text-secondary)' }}>Done</button>
+          <button 
+            onClick={onClose} 
+            style={{ 
+              background: 'var(--bg-color)', 
+              border: '1px solid var(--border-color)', 
+              padding: '10px 24px', 
+              borderRadius: 'var(--radius-sm)', 
+              cursor: 'pointer', 
+              fontWeight: '700', 
+              color: 'var(--text-secondary)',
+              transition: 'background-color 0.15s ease, color 0.15s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'var(--surface-color)';
+              e.currentTarget.style.color = 'var(--text-primary)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'var(--bg-color)';
+              e.currentTarget.style.color = 'var(--text-secondary)';
+            }}
+          >Done</button>
         </div>
       </div>
       
       {confirmTransferEmail && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, backdropFilter: 'blur(4px)' }} onClick={() => setConfirmTransferEmail(null)}>
-          <div style={{ background: 'white', padding: '2.5rem', borderRadius: 'var(--radius-lg)', maxWidth: '400px', width: '90%', boxShadow: 'var(--shadow-lg)' }} onClick={e => e.stopPropagation()}>
+          <div 
+            style={{ 
+              background: 'var(--surface-color)', 
+              border: '1px solid var(--border-color)',
+              padding: '2.5rem', 
+              borderRadius: 'var(--radius-lg)', 
+              maxWidth: '400px', 
+              width: '90%', 
+              boxShadow: 'var(--shadow-lg)' 
+            }} 
+            onClick={e => e.stopPropagation()}
+          >
             <h3 style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>Transfer Ownership?</h3>
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, margin: '1rem 0 2rem 0' }}>
-              Are you sure you want to transfer ownership of this map to <strong>{confirmTransferEmail}</strong>? 
+              Are you sure you want to transfer ownership of this map to <strong style={{ color: 'var(--text-primary)' }}>{confirmTransferEmail}</strong>? 
               <br/><br/>
               You will automatically be downgraded to an Editor, and you will no longer have the ability to delete this map or manage permissions.
             </p>

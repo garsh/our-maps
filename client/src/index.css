@@ -2,6 +2,7 @@
   --primary-color: #483D8B; /* DarkSlateBlue */
   --primary-light: #6A5ACD;
   --primary-hover: var(--primary-light);
+  --primary-accent: var(--primary-color);
   --success-color: #2AAD27; /* SuccessGreen from Android */
   --error-color: #CB2B3E; /* Red from Android */
   --bg-color: #f8f9fa;
@@ -26,6 +27,7 @@
   --text-secondary: #94a3b8;
   --border-color: #333333;
   --primary-hover: #b3a6ff;
+  --primary-accent: #a5b4fc;
   --shadow-sm: 0 0 2px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.4);
   --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
   --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.5);
