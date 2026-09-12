@@ -30,3 +30,24 @@ export async function getMapRole(userId: string | undefined | null, mapId: strin
 
   return null;
 }
+
+/** Owner or an explicit share row — not implicit public-link view. */
+export async function canSeeMapCollaborators(
+  userId: string | undefined | null,
+  mapId: string
+): Promise<boolean> {
+  if (!userId || !mapId) return false;
+
+  const db = await getDb();
+  const row = await db.get(
+    `SELECT m.owner_id, mp.role
+     FROM maps m
+     LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
+     WHERE m.id = ?`,
+    userId,
+    mapId
+  );
+  if (!row) return false;
+  if (row.owner_id === userId) return true;
+  return row.role === 'edit' || row.role === 'view';
+}

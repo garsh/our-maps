@@ -14,9 +14,9 @@ import { Server, Socket } from 'socket.io';
 import mapsRouter from './routes/maps';
 import type { User } from '@shared/interfaces';
 import placesRouter from './routes/places';
-import { googleLoginHandler, sharedContactsHandler, searchUsersHandler, authMiddleware, authenticateToken, getJwtSecret, meHandler, mockLoginHandler, logoutHandler, logoutEverywhereHandler, parseCookies, SESSION_COOKIE, getUserForSession, cleanupSessionCache } from './auth';
+import { googleLoginHandler, sharedContactsHandler, searchUsersHandler, authMiddleware, authenticateToken, getJwtSecret, assertMockAuthConfig, meHandler, mockLoginHandler, logoutHandler, logoutEverywhereHandler, parseCookies, SESSION_COOKIE, getUserForSession, cleanupSessionCache } from './auth';
 import { getMapRole, canEditMap, canViewMap } from './permissions';
-import { resolveSafeMapFile, sanitizeMapFilename, getSafeMapFileSize, ensureOnDemandFontFile, isAllowedFontstack } from './mapFiles';
+import { resolveSafeMapFile, sanitizeMapFilename, getSafeMapFileSize, ensureOnDemandFontFile, isAllowedFontstack, buildCandidateMapsDirs, evaluateFileRange, PMTILES_MAX_RANGE_BYTES } from './mapFiles';
 import { isAllowedOrigin } from './cors';
 import { getCspDirectives } from './csp';
 import { socketPayloadSchemas } from './schemas';
@@ -226,20 +226,12 @@ io.on('connection', (socket: Socket) => {
 
 
 // Serve maps directory (PMTiles, fonts, sprites) with HTTP Range Request and CORS support
-const searchRoots = [
-  process.cwd(),
-  path.resolve(__dirname, '../..'),
-  path.resolve(__dirname, '../../..'),
-];
-const searchSubdirs = [
-  'data/maps', 'data/sprites', 'data/fonts', 'data',
-  'server/public/maps', 'server/public/sprites', 'server/public/fonts', 'server/public',
-  'public/maps', 'public/sprites', 'public/fonts', 'public'
-];
-const candidateMapsDirs: string[] = Array.from(new Set([
-  process.env.MAPS_DIR,
-  ...searchRoots.flatMap(root => searchSubdirs.map(sub => path.resolve(root, sub)))
-].filter(Boolean) as string[]));
+const candidateMapsDirs = buildCandidateMapsDirs({
+  extraRoots: [
+    path.resolve(__dirname, '../..'),
+    path.resolve(__dirname, '../../..'),
+  ],
+});
 
 const mapsDir = candidateMapsDirs.find((d) => fs.existsSync(d)) || candidateMapsDirs[0];
 
@@ -257,11 +249,11 @@ try {
   }
 }
 
-// High-speed binary tile streaming for bulk offline downloads
-app.post('/api/maps/tiles/stream', (req, res) => handleTileStream(req, res, candidateMapsDirs));
-app.post('/maps/tiles/stream', (req, res) => handleTileStream(req, res, candidateMapsDirs));
-app.post('/api/maps/tiles/extract-size', (req, res) => handleExtractSize(req, res, candidateMapsDirs));
-app.post('/maps/tiles/extract-size', (req, res) => handleExtractSize(req, res, candidateMapsDirs));
+// High-speed binary tile streaming for bulk offline downloads (session required)
+app.post('/api/maps/tiles/stream', authMiddleware, (req, res) => handleTileStream(req, res, candidateMapsDirs));
+app.post('/maps/tiles/stream', authMiddleware, (req, res) => handleTileStream(req, res, candidateMapsDirs));
+app.post('/api/maps/tiles/extract-size', authMiddleware, (req, res) => handleExtractSize(req, res, candidateMapsDirs));
+app.post('/maps/tiles/extract-size', authMiddleware, (req, res) => handleExtractSize(req, res, candidateMapsDirs));
 
 app.get('/maps/:filename(*)', async (req, res) => {
   const filename = req.params.filename || 'planet.pmtiles';
@@ -308,20 +300,24 @@ app.get('/maps/:filename(*)', async (req, res) => {
       res.setHeader('Content-Type', 'application/octet-stream');
     }
 
-    if (range) {
-      const parts = range.replace(/bytes=/, '').split('-');
-      const partialstart = parts[0];
-      const partialend = parts[1];
-
-      const start = parseInt(partialstart, 10);
-      const end = partialend ? parseInt(partialend, 10) : total - 1;
-      
-      if (start >= total || end >= total || start > end) {
-        console.warn(`[MAPS 416] Invalid range: ${range} for size ${total}`);
+    const rangeHeader = Array.isArray(range) ? range[0] : range;
+    const isPmtiles = foundFilePath.endsWith('.pmtiles');
+    const evaluated = evaluateFileRange(
+      typeof rangeHeader === 'string' ? rangeHeader : undefined,
+      total,
+      isPmtiles ? { requireRange: true, maxBytes: PMTILES_MAX_RANGE_BYTES } : undefined
+    );
+    if (!evaluated.ok) {
+      if (evaluated.status === 416) {
+        console.warn(`[MAPS 416] ${evaluated.error}: ${range} for size ${total}`);
         res.status(416).setHeader('Content-Range', `bytes */${total}`);
         return res.end();
       }
+      return res.status(400).json({ error: evaluated.error });
+    }
 
+    const { start, end } = evaluated;
+    if (rangeHeader) {
       const chunksize = (end - start) + 1;
 
       res.status(206);
@@ -397,6 +393,7 @@ export { app };
 
 if (process.env.NODE_ENV !== 'test') {
   getJwtSecret();
+  assertMockAuthConfig();
   purgeExpiredSessions().catch((err) => {
     console.error('[AUTH] Failed to purge expired sessions:', err);
   });

@@ -11,7 +11,14 @@ const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 export const DEV_JWT_SECRET = 'our-maps-dev-secret-key-30-days';
 
 export function isMockAuthAllowed(): boolean {
-  return process.env.NODE_ENV !== 'production';
+  if (process.env.NODE_ENV === 'production') return false;
+  return process.env.ALLOW_MOCK_AUTH === 'true';
+}
+
+export function assertMockAuthConfig(): void {
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_MOCK_AUTH === 'true') {
+    throw new Error('ALLOW_MOCK_AUTH must not be enabled when NODE_ENV=production');
+  }
 }
 
 export function getJwtSecret(): string {

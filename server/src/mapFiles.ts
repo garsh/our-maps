@@ -3,6 +3,92 @@ import path from 'path';
 
 export const ALLOWED_MAP_EXTENSIONS = new Set(['.pmtiles', '.pbf', '.png', '.json']);
 
+export const PMTILES_MAX_RANGE_BYTES = 8 * 1024 * 1024;
+
+const MAP_ASSET_SUBDIRS = [
+  'data/maps',
+  'data/sprites',
+  'data/fonts',
+  'server/public/maps',
+  'server/public/sprites',
+  'server/public/fonts',
+  'public/maps',
+  'public/sprites',
+  'public/fonts',
+] as const;
+
+function isFilesystemRoot(p: string): boolean {
+  const resolved = path.resolve(p);
+  return path.parse(resolved).root === resolved;
+}
+
+/** Allowlisted maps/sprites/fonts dirs only — never `/` or `/data` as a tile root. */
+export function buildCandidateMapsDirs(options?: {
+  cwd?: string;
+  extraRoots?: string[];
+  mapsDir?: string;
+}): string[] {
+  const cwd = options?.cwd ?? process.cwd();
+  const extraRoots = options?.extraRoots ?? [];
+  const searchRoots = [cwd, ...extraRoots].filter((root) => root && !isFilesystemRoot(root));
+  const mapsDir = options?.mapsDir ?? process.env.MAPS_DIR;
+  const dirs = [
+    mapsDir,
+    ...searchRoots.flatMap((root) => MAP_ASSET_SUBDIRS.map((sub) => path.resolve(root, sub))),
+  ].filter((d): d is string => Boolean(d));
+  return Array.from(new Set(dirs));
+}
+
+export type FileRangeResult =
+  | { ok: true; start: number; end: number }
+  | { ok: false; status: 400 | 416; error: string };
+
+export function evaluateFileRange(
+  rangeHeader: string | undefined,
+  total: number,
+  limits?: { requireRange?: boolean; maxBytes?: number }
+): FileRangeResult {
+  const requireRange = limits?.requireRange ?? false;
+  const maxBytes = limits?.maxBytes;
+
+  if (!rangeHeader) {
+    if (requireRange) {
+      return { ok: false, status: 400, error: 'Range header required' };
+    }
+    if (total <= 0) {
+      return { ok: true, start: 0, end: -1 };
+    }
+    return { ok: true, start: 0, end: total - 1 };
+  }
+
+  const raw = rangeHeader.trim();
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(raw);
+  if (!match) {
+    return { ok: false, status: 416, error: 'Invalid range' };
+  }
+
+  const start = match[1] === '' ? 0 : Number.parseInt(match[1], 10);
+  const end = match[2] === '' ? total - 1 : Number.parseInt(match[2], 10);
+  if (
+    !Number.isFinite(start) ||
+    !Number.isFinite(end) ||
+    start < 0 ||
+    end < 0 ||
+    start >= total ||
+    end >= total ||
+    start > end
+  ) {
+    return { ok: false, status: 416, error: 'Range not satisfiable' };
+  }
+
+  const length = end - start + 1;
+  if (maxBytes !== undefined && length > maxBytes) {
+    return { ok: false, status: 416, error: 'Range too large' };
+  }
+
+  return { ok: true, start, end };
+}
+
 const resolvedMapFilePathCache = new Map<string, string>();
 const resolvedMapFileSizeCache = new Map<string, number>();
 
@@ -61,6 +147,17 @@ export function resolveSafeMapFile(filename: string, dirs: string[]): string | n
     }
   }
 
+  const realAllowlistedDirs: string[] = [];
+  for (const dir of dirs) {
+    if (!dir) continue;
+    try {
+      const resolvedDir = path.resolve(dir);
+      realAllowlistedDirs.push(fs.existsSync(resolvedDir) ? fs.realpathSync(resolvedDir) : resolvedDir);
+    } catch {
+      realAllowlistedDirs.push(path.resolve(dir));
+    }
+  }
+
   for (const { dir, rel } of candidates) {
     const resolvedDir = path.resolve(dir);
     const resolvedFile = path.resolve(resolvedDir, rel);
@@ -68,8 +165,13 @@ export function resolveSafeMapFile(filename: string, dirs: string[]): string | n
 
     try {
       if (fs.existsSync(resolvedFile) && !fs.statSync(resolvedFile).isDirectory()) {
-        resolvedMapFilePathCache.set(sanitized, resolvedFile);
-        return resolvedFile;
+        const realFile = fs.realpathSync(resolvedFile);
+        const insideAllowlist = realAllowlistedDirs.some(
+          (allowed) => realFile === allowed || isPathInside(allowed, realFile)
+        );
+        if (!insideAllowlist) continue;
+        resolvedMapFilePathCache.set(sanitized, realFile);
+        return realFile;
       }
     } catch {
       // Ignore filesystem permission read errors

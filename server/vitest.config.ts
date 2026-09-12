@@ -9,6 +9,7 @@ export default defineConfig({
     silent: true,
     env: {
       NODE_ENV: 'test',
+      ALLOW_MOCK_AUTH: 'true',
     },
   },
   resolve: {

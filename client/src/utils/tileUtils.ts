@@ -407,6 +407,8 @@ export function getYRange(north: number, south: number, zoom: number, buffer = 0
     return [yStart, yEnd];
 }
 
+// Large-region offline downloads are intentional. This cap is the resource bound;
+// do not lower it in the name of server resource exhaustion (see AGENTS.md).
 export const MAX_EXTRACT_TILES = 50_000_000;
 
 export function countTiles(box: BoundingBox, minZoom: number, maxZoom: number): number {

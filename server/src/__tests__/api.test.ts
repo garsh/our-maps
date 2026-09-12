@@ -25,6 +25,8 @@ describe('API Endpoints', () => {
 
   const authHeader = { 'x-mock-user': JSON.stringify(mockUser) };
 
+  const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
+
   beforeEach(async () => {
     const db = await getDb();
     await db.exec('DELETE FROM user_map_access');
@@ -37,15 +39,15 @@ describe('API Endpoints', () => {
   });
 
   it('POST /api/maps should create a new map', async () => {
-    const mapId = 'test-map-id';
+    const mapId = uuid(1);
     const mapData = {
       id: mapId,
       name: 'Test Map',
       layers: [
-        { id: 'layer-1', name: 'My Layer', position: 0 }
+        { id: uuid(2), name: 'My Layer', position: 0 }
       ],
       pins: [
-        { id: 'pin-1', map_id: mapId, layerId: 'layer-1', lat: 10, lng: 20, label: 'Pin 1', description: 'Desc 1', color: 'red', icon: 'hotel', position: 0 }
+        { id: uuid(3), map_id: mapId, layerId: uuid(2), lat: 10, lng: 20, label: 'Pin 1', description: 'Desc 1', color: 'red', icon: 'hotel', position: 0 }
       ]
     };
 
@@ -69,7 +71,7 @@ describe('API Endpoints', () => {
 
     const pins = await db.all('SELECT * FROM pins WHERE map_id = ?', mapId);
     expect(pins).toHaveLength(1);
-    expect(pins[0].layer_id).toBe('layer-1');
+    expect(pins[0].layer_id).toBe(uuid(2));
     expect(pins[0].position).toBe(0);
   });
 
@@ -86,15 +88,15 @@ describe('API Endpoints', () => {
   });
 
   it('POST /api/maps should create a new map with layers and pins', async () => {
-    const mapId = 'create-map-with-layers-id';
+    const mapId = uuid(10);
     const postData = {
       id: mapId,
       name: 'Map with Groups',
       layers: [
-        { id: 'layer-uuid-1', name: 'Layer 1', position: 0 }
+        { id: uuid(11), name: 'Layer 1', position: 0 }
       ],
       pins: [
-        { id: 'pin-uuid-1', layerId: 'layer-uuid-1', lat: 10, lng: 20, label: 'Pin 1', position: 0 }
+        { id: uuid(12), layerId: uuid(11), lat: 10, lng: 20, label: 'Pin 1', position: 0 }
       ]
     };
 
@@ -109,15 +111,15 @@ describe('API Endpoints', () => {
     const db = await getDb();
     const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ?', mapId);
     expect(layers).toHaveLength(1);
-    expect(layers[0].id).toBe('layer-uuid-1');
+    expect(layers[0].id).toBe(uuid(11));
   });
 
   it('GET /api/maps/:id should return map data', async () => {
-    const mapId = 'test-map-id';
+    const mapId = uuid(20);
     const db = await getDb();
     await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', mapId, 'Loaded Map', mockUser.id);
     await db.run('INSERT INTO pins (id, map_id, lat, lng, label) VALUES (?, ?, ?, ?, ?)', 
-      'p1', mapId, 5, 5, 'L1');
+      uuid(21), mapId, 5, 5, 'L1');
 
     const res = await request(app).get(`/api/maps/${mapId}`).set(authHeader);
     expect(res.status).toBe(200);
@@ -127,17 +129,17 @@ describe('API Endpoints', () => {
   });
 
   it('PUT /api/maps/:id should update map name and pins', async () => {
-    const mapId = 'update-map-id';
+    const mapId = uuid(30);
     const db = await getDb();
     await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', mapId, 'Old Name', mockUser.id);
 
     const updateData = {
       name: 'New Name',
       layers: [
-        { id: 'g1', name: 'G1', position: 0 }
+        { id: uuid(31), name: 'G1', position: 0 }
       ],
       pins: [
-        { id: 'new-pin', map_id: mapId, layerId: 'g1', lat: 50, lng: 60, label: 'New Pin', description: 'New Desc', color: 'green', icon: 'airport', position: 0 }
+        { id: uuid(32), map_id: mapId, layerId: uuid(31), lat: 50, lng: 60, label: 'New Pin', description: 'New Desc', color: 'green', icon: 'airport', position: 0 }
       ]
     };
 
@@ -157,12 +159,12 @@ describe('API Endpoints', () => {
 
     const pins = await db.all('SELECT * FROM pins WHERE map_id = ?', mapId);
     expect(pins).toHaveLength(1);
-    expect(pins[0].id).toBe('new-pin');
-    expect(pins[0].layer_id).toBe('g1');
+    expect(pins[0].id).toBe(uuid(32));
+    expect(pins[0].layer_id).toBe(uuid(31));
   });
 
   it('POST, GET, and PUT /api/maps should handle customColors per map', async () => {
-    const mapId = 'custom-colors-map-id';
+    const mapId = uuid(40);
     const postData = {
       id: mapId,
       name: 'Custom Colors Map',
@@ -223,7 +225,7 @@ describe('API Endpoints', () => {
     );
 
     // Let's create a map to verify it can read/write maps
-    const mapId = 'jwt-map-id';
+    const mapId = uuid(50);
     const mapData = {
       id: mapId,
       name: 'JWT Map',
@@ -327,16 +329,16 @@ describe('API Endpoints', () => {
   });
 
   it('POST /api/maps should allow long pin labels and descriptions (> 255 characters)', async () => {
-    const mapId = 'long-label-map-id';
+    const mapId = uuid(60);
     const longLabel = 'Stoos Ridge trail - This hike was absolutely breathtaking! It’s especially enjoyable because it’s only 2.5 miles along a ridge and you get to see 7 lakes along the way\nanother unique thing about Stoos is that you take the steepest funicular in the world to embark on it!\n💲33.59 usd per person';
     const mapData = {
       id: mapId,
       name: 'Italy and Switzerland',
-      layers: [{ id: 'layer-1', name: 'Untitled layer', position: 0 }],
+      layers: [{ id: uuid(61), name: 'Untitled layer', position: 0 }],
       pins: [
         {
-          id: 'pin-1',
-          layerId: 'layer-1',
+          id: uuid(62),
+          layerId: uuid(61),
           lat: 46.9567923,
           lng: 8.6654823,
           label: longLabel,
@@ -357,12 +359,12 @@ describe('API Endpoints', () => {
   });
 
   it('GET /api/maps/:id/permissions should return owner, permissions, and userRole without pins or layers', async () => {
-    const mapId = 'permissions-test-map';
+    const mapId = uuid(70);
     const mapData = {
       id: mapId,
       name: 'Permissions Map',
-      layers: [{ id: 'layer-1', name: 'Layer', position: 0 }],
-      pins: [{ id: 'pin-1', layerId: 'layer-1', lat: 10, lng: 20, label: 'Pin 1', position: 0 }]
+      layers: [{ id: uuid(71), name: 'Layer', position: 0 }],
+      pins: [{ id: uuid(72), layerId: uuid(71), lat: 10, lng: 20, label: 'Pin 1', position: 0 }]
     };
 
     // Create map
@@ -395,7 +397,7 @@ describe('API Endpoints', () => {
   });
 
   it('GET /api/auth/shared-contacts only returns emails from existing shares', async () => {
-    const mapId = 'shared-contacts-map';
+    const mapId = uuid(80);
     await request(app).post('/api/maps').set(authHeader).send({
       id: mapId,
       name: 'Shared Contacts Map',
@@ -452,6 +454,25 @@ describe('API Endpoints', () => {
     expect(ownerRes.body.userRole).toBe('owner');
   });
 
+  it('GET .pmtiles requires a Range header and serves a bounded range', async () => {
+    const mapsDir = path.resolve(__dirname, '../../../data/maps');
+    const filePath = path.join(mapsDir, 'range-cap-test.pmtiles');
+    fs.mkdirSync(mapsDir, { recursive: true });
+    fs.writeFileSync(filePath, Buffer.alloc(64 * 1024, 7));
+    try {
+      const noRange = await request(app).get('/maps/range-cap-test.pmtiles');
+      expect(noRange.status).toBe(400);
+
+      const ranged = await request(app)
+        .get('/maps/range-cap-test.pmtiles')
+        .set('Range', 'bytes=0-15');
+      expect(ranged.status).toBe(206);
+      expect(ranged.headers['content-length']).toBe('16');
+    } finally {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+  });
+
   it('rejects map file path traversal', async () => {
     const traversalRes = await request(app).get('/maps/..%2F..%2F..%2Fetc/passwd');
     expect(traversalRes.status).toBe(404);
@@ -462,16 +483,16 @@ describe('API Endpoints', () => {
   });
 
   it('POST /api/maps should efficiently batch insert 250 pins across multiple layers', async () => {
-    const mapId = 'batch-insert-map-id';
+    const mapId = uuid(90);
     const layers = Array.from({ length: 5 }, (_, i) => ({
-      id: `layer-batch-${i}`,
+      id: uuid(200 + i),
       name: `Layer ${i}`,
       position: i
     }));
     const pins = Array.from({ length: 250 }, (_, i) => ({
-      id: `pin-batch-${i}`,
+      id: uuid(300 + i),
       map_id: mapId,
-      layerId: `layer-batch-${i % 5}`,
+      layerId: uuid(200 + (i % 5)),
       lat: 40 + i * 0.001,
       lng: -74 - i * 0.001,
       label: `Batch Pin ${i}`,
@@ -499,7 +520,7 @@ describe('API Endpoints', () => {
   });
 
   it('handles public link sharing and anonymous access correctly', async () => {
-    const mapId = 'public-sharing-test-map';
+    const mapId = uuid(100);
     const db = await getDb();
     await db.run('INSERT INTO maps (id, name, owner_id, is_public) VALUES (?, ?, ?, 0)', mapId, 'Secret Map', mockUser.id);
     await db.run('INSERT INTO pins (id, map_id, lat, lng, label) VALUES (?, ?, 10, 20, ?)', 'pin-p1', mapId, 'Public Pin');
@@ -527,6 +548,10 @@ describe('API Endpoints', () => {
     expect(publicRes.body.ownerPicture).toBeUndefined();
     expect(publicRes.body.ownerId).toBe('');
     expect(publicRes.body.permissions).toEqual([]);
+    expect(publicRes.body).not.toHaveProperty('owner_email');
+    expect(publicRes.body).not.toHaveProperty('owner_id');
+    expect(publicRes.body).not.toHaveProperty('owner_name');
+    expect(publicRes.body).not.toHaveProperty('owner_picture');
 
     // 4. Non-owner cannot toggle public sharing
     const strangerUser = { id: 'stranger-id', email: 'stranger@example.com', name: 'Stranger' };
@@ -536,6 +561,22 @@ describe('API Endpoints', () => {
       .set({ 'x-mock-user': JSON.stringify(strangerUser) })
       .send({ isPublic: false });
     expect(forbiddenRes.status).toBe(403);
+
+    const strangerGet = await request(app)
+      .get(`/api/maps/${mapId}`)
+      .set({ 'x-mock-user': JSON.stringify(strangerUser) });
+    expect(strangerGet.status).toBe(200);
+    expect(strangerGet.body.userRole).toBe('view');
+    expect(strangerGet.body.permissions).toEqual([]);
+    expect(strangerGet.body.ownerEmail).toBeUndefined();
+    expect(strangerGet.body.ownerId).toBe('');
+    expect(strangerGet.body).not.toHaveProperty('owner_email');
+    expect(strangerGet.body).not.toHaveProperty('owner_id');
+
+    const ownerGet = await request(app).get(`/api/maps/${mapId}`).set(authHeader);
+    expect(ownerGet.status).toBe(200);
+    expect(ownerGet.body.ownerEmail).toBe(mockUser.email);
+    expect(ownerGet.body.ownerId).toBe(mockUser.id);
 
     // 5. Owner toggles back to private
     const privateToggleRes = await request(app)
@@ -548,5 +589,72 @@ describe('API Endpoints', () => {
     // 6. Anonymous request is now blocked again
     const reblockedRes = await request(app).get(`/api/maps/${mapId}`);
     expect(reblockedRes.status).toBe(401);
+  });
+
+  it.each([
+    '/api/maps/tiles/extract-size',
+    '/maps/tiles/extract-size',
+    '/api/maps/tiles/stream',
+    '/maps/tiles/stream',
+  ])('%s requires authentication and accepts a session', async (path) => {
+    const unauth = await request(app).post(path).send({});
+    expect(unauth.status).toBe(401);
+
+    const auth = await request(app).post(path).set(authHeader).send({});
+    expect(auth.status).toBe(400);
+    expect(auth.body.error).toMatch(/bbox/i);
+  });
+
+  it('POST /api/maps rejects non-UUID ids and invalid pin colors', async () => {
+    const badId = await request(app).post('/api/maps').set(authHeader).send({
+      id: 'not-a-uuid',
+      name: 'Bad',
+      layers: [],
+      pins: [],
+    });
+    expect(badId.status).toBe(400);
+
+    const badColor = await request(app).post('/api/maps').set(authHeader).send({
+      id: uuid(400),
+      name: 'Bad Color',
+      layers: [],
+      pins: [{ id: uuid(401), lat: 0, lng: 0, color: '#fff" /><script>', position: 0 }],
+    });
+    expect(badColor.status).toBe(400);
+  });
+
+  it('PUT /api/maps cannot move another map\'s pins by reusing their ids', async () => {
+    const ownerA = mockUser;
+    const ownerB = { id: 'owner-b-id', email: 'b@example.com', name: 'Owner B' };
+    const db = await getDb();
+    await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', ownerB.id, ownerB.email, ownerB.name);
+
+    const mapA = uuid(500);
+    const mapB = uuid(501);
+    const pinId = uuid(502);
+    await request(app).post('/api/maps').set(authHeader).send({
+      id: mapA,
+      name: 'Map A',
+      layers: [],
+      pins: [{ id: pinId, lat: 1, lng: 2, label: 'Secret', position: 0 }],
+    });
+    await request(app).post('/api/maps').set({ 'x-mock-user': JSON.stringify(ownerB) }).send({
+      id: mapB,
+      name: 'Map B',
+      layers: [],
+      pins: [],
+    });
+
+    const steal = await request(app)
+      .put(`/api/maps/${mapB}`)
+      .set({ 'x-mock-user': JSON.stringify(ownerB) })
+      .send({
+        pins: [{ id: pinId, lat: 9, lng: 9, label: 'Stolen', position: 0 }],
+      });
+    expect(steal.status).toBe(200);
+
+    const original = await db.get('SELECT map_id, label FROM pins WHERE id = ?', pinId);
+    expect(original.map_id).toBe(mapA);
+    expect(original.label).toBe('Secret');
   });
 });

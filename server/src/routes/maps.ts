@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { getDb } from '../db';
 import type { Pin, MapData, MapPermission, PinLayer, PinIcon } from '@shared/interfaces';
 import { authMiddleware, optionalAuthMiddleware, type AuthRequest } from '../auth';
-import { getMapRole, canEditMap } from '../permissions';
+import { getMapRole, canEditMap, canSeeMapCollaborators } from '../permissions';
 import { MapCreateSchema, MapUpdateSchema, ShareSchema, PinSchema, LayerSchema } from '../schemas';
 import { revokeUserMapAccess, updateUserMapRole, syncSocketsOnPublicChange } from '../realtime';
 import { z } from 'zod';
@@ -115,9 +115,10 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
     customColors = [];
   }
 
-  // Do not expose owner info or collaborator lists to non-logged-in visitors
+  // Owner contact and collaborator lists: owner or explicit share only (not public-link view)
+  const includeCollaborators = await canSeeMapCollaborators(userId, mapId);
   let permissions: MapPermission[] = [];
-  if (userId) {
+  if (includeCollaborators) {
     const perms = await db.all(`
       SELECT mp.user_id, mp.role, u.email, u.name, u.picture
       FROM map_permissions mp
@@ -135,11 +136,12 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
   }
 
   const response: MapData = {
-    ...map,
-    ownerId: userId ? map.owner_id : '',
-    ownerName: userId ? map.owner_name : undefined,
-    ownerEmail: userId ? map.owner_email : undefined,
-    ownerPicture: userId ? map.owner_picture : undefined,
+    id: map.id,
+    name: map.name,
+    ownerId: includeCollaborators ? map.owner_id : '',
+    ownerName: includeCollaborators ? map.owner_name : undefined,
+    ownerEmail: includeCollaborators ? map.owner_email : undefined,
+    ownerPicture: includeCollaborators ? map.owner_picture : undefined,
     layers: layers || [],
     pins: formattedPins,
     customColors,
@@ -174,8 +176,9 @@ router.get('/:id/permissions', optionalAuthMiddleware, async (req: AuthRequest, 
     return res.status(userId ? 403 : 401).json({ error: 'Access denied' });
   }
 
+  const includeCollaborators = await canSeeMapCollaborators(userId, mapId);
   let permissions: MapPermission[] = [];
-  if (userId) {
+  if (includeCollaborators) {
     const perms = await db.all(`
       SELECT mp.user_id, mp.role, u.email, u.name, u.picture
       FROM map_permissions mp
@@ -193,7 +196,7 @@ router.get('/:id/permissions', optionalAuthMiddleware, async (req: AuthRequest, 
   }
 
   res.json({
-    owner: userId ? {
+    owner: includeCollaborators ? {
       id: map.owner_id,
       name: map.owner_name,
       email: map.owner_email,
@@ -287,9 +290,9 @@ export async function syncMapLayersAndPins(
         INSERT INTO pin_layers (id, map_id, name, position) 
         VALUES ${valuePlaceholders}
         ON CONFLICT(id) DO UPDATE SET 
-          map_id = excluded.map_id,
           name = excluded.name,
           position = excluded.position
+        WHERE pin_layers.map_id = excluded.map_id
       `, ...params);
     }
   }
@@ -348,7 +351,6 @@ export async function syncMapLayersAndPins(
         INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position) 
         VALUES ${valuePlaceholders}
         ON CONFLICT(id) DO UPDATE SET 
-          map_id = excluded.map_id,
           layer_id = excluded.layer_id,
           lat = excluded.lat,
           lng = excluded.lng,
@@ -358,6 +360,7 @@ export async function syncMapLayersAndPins(
           color = excluded.color,
           icon = excluded.icon,
           position = excluded.position
+        WHERE pins.map_id = excluded.map_id
       `, ...params);
     }
   }

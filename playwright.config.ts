@@ -26,6 +26,7 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       env: {
         NODE_ENV: 'development',
+        ALLOW_MOCK_AUTH: 'true',
         VITE_MOCK_AUTH: 'true',
         VITE_GOOGLE_CLIENT_ID: 'MOCK_CLIENT_ID',
         GOOGLE_CLIENT_ID: 'MOCK_CLIENT_ID',

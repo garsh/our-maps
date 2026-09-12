@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { getJwtSecret, DEV_JWT_SECRET, isMockAuthAllowed, authenticateToken, AuthError, userFromGooglePayload, cleanupSessionCache, clearSessionCacheForTests } from '../auth';
+import { getJwtSecret, DEV_JWT_SECRET, isMockAuthAllowed, assertMockAuthConfig, authenticateToken, AuthError, userFromGooglePayload, cleanupSessionCache, clearSessionCacheForTests } from '../auth';
 
 describe('JWT production requirements', () => {
   const originalNodeEnv = process.env.NODE_ENV;
@@ -42,6 +42,7 @@ describe('JWT production requirements', () => {
 describe('mock auth gating', () => {
   const originalNodeEnv = process.env.NODE_ENV;
   const originalJwtSecret = process.env.JWT_SECRET;
+  const originalAllowMock = process.env.ALLOW_MOCK_AUTH;
 
   afterEach(() => {
     process.env.NODE_ENV = originalNodeEnv;
@@ -50,16 +51,28 @@ describe('mock auth gating', () => {
     } else {
       process.env.JWT_SECRET = originalJwtSecret;
     }
+    if (originalAllowMock === undefined) {
+      delete process.env.ALLOW_MOCK_AUTH;
+    } else {
+      process.env.ALLOW_MOCK_AUTH = originalAllowMock;
+    }
   });
 
-  it('allows mock auth outside production', () => {
+  it('allows mock auth outside production only when ALLOW_MOCK_AUTH is true', () => {
     process.env.NODE_ENV = 'test';
+    process.env.ALLOW_MOCK_AUTH = 'true';
     expect(isMockAuthAllowed()).toBe(true);
+
+    process.env.NODE_ENV = 'development';
+    delete process.env.ALLOW_MOCK_AUTH;
+    expect(isMockAuthAllowed()).toBe(false);
   });
 
-  it('rejects mock auth in production even if Google is unconfigured', () => {
+  it('rejects mock auth in production even if ALLOW_MOCK_AUTH is set', () => {
     process.env.NODE_ENV = 'production';
+    process.env.ALLOW_MOCK_AUTH = 'true';
     expect(isMockAuthAllowed()).toBe(false);
+    expect(() => assertMockAuthConfig()).toThrow(/ALLOW_MOCK_AUTH/);
   });
 
   it('rejects mock user headers in production', async () => {

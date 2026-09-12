@@ -10,8 +10,51 @@ import {
   clearMapFilePathCache,
   getSafeMapFileSize,
   ensureOnDemandFontFile,
-  clearFontDownloadInflightForTests
+  clearFontDownloadInflightForTests,
+  buildCandidateMapsDirs,
+  evaluateFileRange,
+  PMTILES_MAX_RANGE_BYTES
 } from '../mapFiles';
+
+describe('candidate map directories', () => {
+  it('does not use filesystem root or /data as a search root', () => {
+    const dirs = buildCandidateMapsDirs({
+      cwd: '/app',
+      extraRoots: ['/', '/app'],
+      mapsDir: undefined,
+    });
+    expect(dirs).not.toContain('/data');
+    expect(dirs).not.toContain('/');
+    expect(dirs).toContain(path.resolve('/app', 'data/maps'));
+    expect(dirs.some((d) => d === path.resolve('/', 'data/maps') || d === '/data/maps')).toBe(false);
+  });
+});
+
+describe('PMTiles range limits', () => {
+  const total = 137_000_000_000;
+
+  it('requires a Range header and caps length at 8 MiB', () => {
+    expect(evaluateFileRange(undefined, total, { requireRange: true, maxBytes: PMTILES_MAX_RANGE_BYTES })).toEqual({
+      ok: false,
+      status: 400,
+      error: 'Range header required',
+    });
+    expect(evaluateFileRange('bytes=0-', total, { requireRange: true, maxBytes: PMTILES_MAX_RANGE_BYTES })).toEqual({
+      ok: false,
+      status: 416,
+      error: 'Range too large',
+    });
+    expect(evaluateFileRange('bytes=0-16383', total, { requireRange: true, maxBytes: PMTILES_MAX_RANGE_BYTES })).toEqual({
+      ok: true,
+      start: 0,
+      end: 16383,
+    });
+  });
+
+  it('still allows full-file GET when Range is not required', () => {
+    expect(evaluateFileRange(undefined, 100)).toEqual({ ok: true, start: 0, end: 99 });
+  });
+});
 
 describe('map file path sanitization', () => {
   it('accepts normal map, sprite, and font paths', () => {
@@ -71,6 +114,20 @@ describe('safe map file resolution', () => {
     expect(resolveSafeMapFile('../secret.json', [mapsDir, spritesDir])).toBeNull();
     expect(resolveSafeMapFile('../../secret.json', [mapsDir])).toBeNull();
     expect(isPathInside(mapsDir, secretFile)).toBe(false);
+  });
+
+  it('does not follow a symlink out of the allowlisted directories', () => {
+    const linkPath = path.join(mapsDir, 'escape.json');
+    fs.symlinkSync(secretFile, linkPath);
+    expect(resolveSafeMapFile('escape.json', [mapsDir, spritesDir])).toBeNull();
+  });
+
+  it('allows a symlink whose real path is still inside another allowlisted dir', () => {
+    const linkPath = path.join(mapsDir, 'light.png');
+    fs.symlinkSync(path.join(spritesDir, 'light.png'), linkPath);
+    expect(resolveSafeMapFile('light.png', [mapsDir, spritesDir])).toBe(
+      path.resolve(spritesDir, 'light.png')
+    );
   });
 
   it('confines on-demand font downloads to the data root', () => {

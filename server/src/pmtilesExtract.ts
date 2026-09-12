@@ -92,6 +92,8 @@ export function rangeIntersectsWanted(startId: number, endId: number, wanted: nu
   return idx < wanted.length && wanted[idx] < endId;
 }
 
+// Large-region offline downloads are intentional. This cap is the resource bound;
+// do not lower it or add extract concurrency / Docker mem_limit in the name of exhaustion.
 export const DEFAULT_MAX_EXTRACT_TILES = 50_000_000;
 
 export function getMaxExtractTiles(): number {

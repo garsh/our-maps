@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { getDb, setDbName, closeDb } from '../db';
-import { getMapRole, canEditMap, canViewMap } from '../permissions';
+import { getMapRole, canEditMap, canViewMap, canSeeMapCollaborators } from '../permissions';
 
 describe('map role checks', () => {
   beforeAll(async () => {
@@ -63,5 +63,16 @@ describe('map role checks', () => {
   ])('evaluates capability matrix for role $role: view=$canView, edit=$canEdit', ({ role, canView, canEdit }) => {
     expect(canViewMap(role as any)).toBe(canView);
     expect(canEditMap(role as any)).toBe(canEdit);
+  });
+
+  it('hides collaborators from public-link viewers but not explicit shares', async () => {
+    expect(await canSeeMapCollaborators(ownerId, mapId)).toBe(true);
+    expect(await canSeeMapCollaborators(editorId, mapId)).toBe(true);
+    expect(await canSeeMapCollaborators(viewerId, mapId)).toBe(true);
+    expect(await canSeeMapCollaborators(strangerId, mapId)).toBe(false);
+    expect(await canSeeMapCollaborators(strangerId, 'public-map')).toBe(false);
+    expect(await canSeeMapCollaborators(undefined, 'public-map')).toBe(false);
+    expect(await canSeeMapCollaborators(editorId, 'public-map')).toBe(true);
+    expect(await canSeeMapCollaborators(ownerId, 'public-map')).toBe(true);
   });
 });
