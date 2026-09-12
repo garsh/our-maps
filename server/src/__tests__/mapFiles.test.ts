@@ -81,6 +81,12 @@ describe('safe map file resolution', () => {
 
     expect(getSafeFontDownloadTarget('fonts/../../../tmp/evil.pbf', dataRoot)).toBeNull();
     expect(getSafeFontDownloadTarget('sprites/light.png', dataRoot)).toBeNull();
+    expect(getSafeFontDownloadTarget('fonts/FakeFont/0-255.pbf', dataRoot)).toBeNull();
+    expect(getSafeFontDownloadTarget('fonts/Noto Sans Regular/not-a-range.pbf', dataRoot)).toBeNull();
+
+    // CJK / international range in allowed fontstack
+    const cjk = getSafeFontDownloadTarget('fonts/Noto Sans Regular/19968-20223.pbf', dataRoot);
+    expect(cjk?.targetPath).toBe(path.resolve(dataRoot, 'fonts/Noto Sans Regular/19968-20223.pbf'));
   });
 
   it('calculates and caches safe map file size asynchronously', async () => {

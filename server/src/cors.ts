@@ -2,7 +2,8 @@
 const LOCAL_HOSTS = new Set(['bird.lan', '192.168.253.3', 'localhost', '127.0.0.1']);
 
 function configuredOrigins(): string[] {
-  return (process.env.CORS_ORIGIN || '*')
+  const fallback = process.env.NODE_ENV === 'production' ? 'https://ourmaps.mooo.com' : '*';
+  return (process.env.CORS_ORIGIN || fallback)
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
@@ -23,7 +24,7 @@ export function isAllowedOrigin(origin: string | undefined): boolean {
   if (!origin) return true;
 
   const configured = configuredOrigins();
-  if (configured.includes('*')) return true;
+  if (configured.includes('*') && process.env.NODE_ENV !== 'production') return true;
   if (configured.includes(origin)) return true;
 
   return isLocalHostOrigin(origin);

@@ -58,10 +58,10 @@ import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { exportMap, importMapFile } from '../utils/fileUtils';
 import { 
   countTiles,
-  estimateSizeMB, 
   getPinsBoundingBox,
   getManifestStats,
   saveMapOffline,
+  MAX_EXTRACT_TILES,
   type BoundingBox,
   type MapDownloadStatus
 } from '../utils/tileUtils';
@@ -1909,7 +1909,7 @@ const Sidebar = ({
         const tileProgress = stats.total > 0 && stats.completed > 0 && stats.completed < stats.total
           ? stats.completed / stats.total
           : null;
-        const isPartial = resume.partBytes > 0 || (stats.total > 0 && stats.completed < stats.total);
+        const isPartial = resume.partBytes > 0 || (stats.total > 0 && stats.completed > 0 && stats.completed < stats.total);
         if (isPartial) {
           setIsDownloaded(false);
           setHasPartialDownload(true);
@@ -1956,24 +1956,20 @@ const Sidebar = ({
         };
     }
 
+    const totalCount = countTiles(bbox, 1, 15);
+    if (totalCount > MAX_EXTRACT_TILES) {
+      alert(`This map area is too large to download for offline use (${totalCount.toLocaleString()} tiles exceeds the maximum limit of ${MAX_EXTRACT_TILES.toLocaleString()} tiles). Please narrow your map area or remove distant pins.`);
+      return;
+    }
+
     setIsPreparingDownload(true);
     try {
-      // Full map tile downloads for zooms 1 to 15 covering the entire bounding box
-      const totalCount = countTiles(bbox, 1, 15);
-      let estimatedSizeMB = estimateSizeMB(totalCount);
-      let extractBytes = 0;
-      try {
-        const extract = await apiService.estimateExtract(bbox, 1, 15);
-        if (extract.bytes > 0) {
-          estimatedSizeMB = extract.bytes / (1024 * 1024);
-          extractBytes = extract.bytes;
-        }
-      } catch {
-        // Fall back to the per-tile heuristic if the planner is unavailable.
+      const extract = await apiService.estimateExtract(bbox, 1, 15);
+      if (!extract || !extract.bytes || extract.bytes <= 0) {
+        throw new Error('Unable to estimate download size from server.');
       }
-      if (!extractBytes && estimatedSizeMB > 0) {
-        extractBytes = Math.round(estimatedSizeMB * 1024 * 1024);
-      }
+      const estimatedSizeMB = extract.bytes / (1024 * 1024);
+      const extractBytes = extract.bytes;
 
       const storageStatus = await canFit(estimatedSizeMB);
       setIsPreparingDownload(false);
@@ -2004,9 +2000,9 @@ const Sidebar = ({
       }
 
       tileWorkerManager.startDownload(mapId, { bbox, totalTiles: totalCount });
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to prepare download:', err);
-      alert('Failed to prepare download.');
+      alert(`Failed to prepare download: ${err?.message || 'Server error'}`);
     } finally {
       setIsPreparingDownload(false);
     }

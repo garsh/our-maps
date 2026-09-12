@@ -5,7 +5,15 @@ import path from 'path';
 import crypto from 'crypto';
 import { PMTiles } from 'pmtiles';
 import { resolveSafeMapFile } from './mapFiles';
-import { planExtract, streamPlannedExtract, type BoundingBox, type ExtractPlan } from './pmtilesExtract';
+import {
+  planExtract,
+  streamPlannedExtract,
+  type BoundingBox,
+  type ExtractPlan,
+  validateExtractBbox,
+  countExtractTiles,
+  getMaxExtractTiles,
+} from './pmtilesExtract';
 
 const readAsync = promisify(fs.read);
 
@@ -315,19 +323,23 @@ function writeChunk(res: Response, chunk: Buffer): Promise<void> {
 
 function parseExtractRequest(req: Request): { bbox: BoundingBox; startZoom: number; endZoom: number } | { error: string } {
   const { bbox, minZoom = 1, maxZoom = 15 } = req.body || {};
-  if (!bbox || typeof bbox.north !== 'number' || typeof bbox.south !== 'number' ||
-      typeof bbox.east !== 'number' || typeof bbox.west !== 'number') {
-    return { error: 'Valid bbox { north, south, east, west } is required' };
+  const validated = validateExtractBbox(bbox);
+  if (!validated.valid) {
+    return { error: validated.error };
   }
   const startZoom = Math.max(1, Math.min(15, Number(minZoom) || 1));
   const endZoom = Math.max(startZoom, Math.min(15, Number(maxZoom) || 15));
+
+  const estimatedTiles = countExtractTiles(validated.bbox, startZoom, endZoom);
+  const maxAllowed = getMaxExtractTiles();
+  if (estimatedTiles > maxAllowed) {
+    return {
+      error: `Requested bounding box requires ${estimatedTiles.toLocaleString()} tiles, which exceeds the maximum extract limit of ${maxAllowed.toLocaleString()} tiles.`,
+    };
+  }
+
   return {
-    bbox: {
-      north: bbox.north,
-      south: bbox.south,
-      east: bbox.east,
-      west: bbox.west,
-    },
+    bbox: validated.bbox,
     startZoom,
     endZoom,
   };

@@ -79,12 +79,29 @@ export function resolveSafeMapFile(filename: string, dirs: string[]): string | n
   return null;
 }
 
+export const ALLOWED_FONTSTACKS = new Set([
+  'Noto Sans Regular',
+  'Noto Sans Medium',
+  'Noto Sans Italic',
+  'Noto Sans Devanagari Regular v1'
+]);
+
+export function isAllowedFontstack(fontFilename: string): boolean {
+  if (!fontFilename.startsWith('fonts/')) return false;
+  const parts = fontFilename.slice('fonts/'.length).split('/');
+  if (parts.length !== 2) return false;
+  const fontstack = parts[0];
+  const file = parts[1];
+  if (!ALLOWED_FONTSTACKS.has(fontstack)) return false;
+  return /^\d+-\d+\.pbf$/.test(file);
+}
+
 export function getSafeFontDownloadTarget(
   filename: string,
   dataRoot: string
 ): { targetPath: string; targetDir: string } | null {
   const sanitized = sanitizeMapFilename(filename);
-  if (!sanitized || !sanitized.startsWith('fonts/') || !sanitized.endsWith('.pbf')) {
+  if (!sanitized || !isAllowedFontstack(sanitized)) {
     return null;
   }
 

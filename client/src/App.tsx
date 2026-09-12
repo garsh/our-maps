@@ -789,6 +789,17 @@ export function MapEditor() {
         navigate('/', { replace: true });
       });
 
+      socket.on('map-access-revoked', (data: { mapId: string }) => {
+        if (data.mapId !== id) return;
+        alert('Your access to this map has been revoked.');
+        navigate('/', { replace: true });
+      });
+
+      socket.on('map-role-updated', (data: { mapId: string; role: 'owner' | 'edit' | 'view' }) => {
+        if (data.mapId !== id) return;
+        setUserRole(data.role);
+      });
+
       return () => {
         if (autoSaveTimerRef.current) {
           clearTimeout(autoSaveTimerRef.current);

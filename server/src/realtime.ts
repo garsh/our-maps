@@ -328,3 +328,47 @@ export async function handleCustomColorsUpdate(data: CustomColorsUpdatePayload) 
     mapId
   );
 }
+
+export function revokeUserMapAccess(io: any, userId: string, mapId: string) {
+  if (!io || !io.sockets || !io.sockets.sockets) return;
+  for (const socket of io.sockets.sockets.values()) {
+    if (socket.data?.user?.id === userId) {
+      if (socket.data.mapRoles) {
+        socket.data.mapRoles.delete(mapId);
+      }
+      socket.leave(`map:${mapId}`);
+      socket.emit('map-access-revoked', { mapId });
+    }
+  }
+}
+
+export function updateUserMapRole(io: any, userId: string, mapId: string, role: string) {
+  if (!io || !io.sockets || !io.sockets.sockets) return;
+  for (const socket of io.sockets.sockets.values()) {
+    if (socket.data?.user?.id === userId) {
+      if (!socket.data.mapRoles) socket.data.mapRoles = new Map<string, string>();
+      socket.data.mapRoles.set(mapId, role);
+      socket.emit('map-role-updated', { mapId, role });
+    }
+  }
+}
+
+export async function syncSocketsOnPublicChange(io: any, mapId: string, isPublic: boolean, ownerId: string, db: any) {
+  if (!io) return;
+  io.to(`map:${mapId}`).emit('map-public-updated', { mapId, isPublic });
+  if (isPublic || !io.sockets || !io.sockets.sockets) return;
+
+  const explicitRows = await db.all('SELECT user_id, role FROM map_permissions WHERE map_id = ?', mapId);
+  const explicitUsers = new Set<string>(explicitRows.map((r: any) => r.user_id));
+
+  for (const socket of io.sockets.sockets.values()) {
+    const uid = socket.data?.user?.id;
+    if (!uid || (uid !== ownerId && !explicitUsers.has(uid))) {
+      if (socket.rooms && socket.rooms.has(`map:${mapId}`)) {
+        if (socket.data.mapRoles) socket.data.mapRoles.delete(mapId);
+        socket.leave(`map:${mapId}`);
+        socket.emit('map-access-revoked', { mapId });
+      }
+    }
+  }
+}

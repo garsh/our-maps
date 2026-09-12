@@ -105,6 +105,28 @@ interface CachedSession {
 
 const sessionCache = new Map<string, CachedSession>();
 const SESSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_SESSION_CACHE_ENTRIES = 2000;
+
+export function cleanupSessionCache() {
+  const now = Date.now();
+  for (const [sessionId, entry] of sessionCache.entries()) {
+    if (entry.expiresAtMs <= now) {
+      sessionCache.delete(sessionId);
+    }
+  }
+  while (sessionCache.size > MAX_SESSION_CACHE_ENTRIES) {
+    const oldestKey = sessionCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      sessionCache.delete(oldestKey);
+    } else {
+      break;
+    }
+  }
+}
+
+export function clearSessionCacheForTests() {
+  sessionCache.clear();
+}
 
 export async function getUserForSession(sessionId: string): Promise<User> {
   const cached = sessionCache.get(sessionId);
@@ -138,6 +160,9 @@ export async function getUserForSession(sessionId: string): Promise<User> {
     name: row.name,
     picture: row.picture
   };
+  if (sessionCache.size >= MAX_SESSION_CACHE_ENTRIES) {
+    cleanupSessionCache();
+  }
   sessionCache.set(sessionId, {
     user,
     expiresAtMs: Math.min(now + SESSION_CACHE_TTL_MS, dbExpiresAtMs)

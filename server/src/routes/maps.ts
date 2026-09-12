@@ -5,6 +5,7 @@ import type { Pin, MapData, MapPermission, PinLayer, PinIcon } from '@shared/int
 import { authMiddleware, optionalAuthMiddleware, type AuthRequest } from '../auth';
 import { getMapRole, canEditMap } from '../permissions';
 import { MapCreateSchema, MapUpdateSchema, ShareSchema, PinSchema, LayerSchema } from '../schemas';
+import { revokeUserMapAccess, updateUserMapRole, syncSocketsOnPublicChange } from '../realtime';
 import { z } from 'zod';
 
 const router = Router();
@@ -491,7 +492,7 @@ router.put('/:id/public', authMiddleware, async (req: AuthRequest, res) => {
 
     const io = req.app.get('io');
     if (io) {
-      io.to(`map:${mapId}`).emit('map-public-updated', { mapId, isPublic });
+      await syncSocketsOnPublicChange(io, mapId, isPublic, map.owner_id, db);
     }
 
     res.json({ message: 'Map link sharing updated', isPublic });
@@ -554,6 +555,16 @@ router.post('/:id/share', authMiddleware, async (req: AuthRequest, res) => {
       `, mapId, targetUser.id, role);
     }
 
+    const io = req.app.get('io');
+    if (io) {
+      if (role === 'owner') {
+        updateUserMapRole(io, targetUser.id, mapId, 'owner');
+        updateUserMapRole(io, userId, mapId, 'edit');
+      } else {
+        updateUserMapRole(io, targetUser.id, mapId, role);
+      }
+    }
+
     res.json({
       message: 'Map shared',
       userId: targetUser.id,
@@ -579,13 +590,23 @@ router.delete('/:id/share/:userId', authMiddleware, async (req: AuthRequest, res
   const db = await getDb();
 
   try {
-    const map = await db.get('SELECT owner_id FROM maps WHERE id = ?', mapId);
+    const map = await db.get('SELECT owner_id, is_public FROM maps WHERE id = ?', mapId);
     if (!map) return res.status(404).json({ error: 'Map not found' });
     if (map.owner_id !== ownerId && ownerId !== targetUserId) {
       return res.status(403).json({ error: 'Only owner can manage shares, or you can remove yourself' });
     }
 
     await db.run('DELETE FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, targetUserId);
+
+    const io = req.app.get('io');
+    if (io) {
+      if (Boolean(map.is_public)) {
+        updateUserMapRole(io, targetUserId, mapId, 'view');
+      } else {
+        revokeUserMapAccess(io, targetUserId, mapId);
+      }
+    }
+
     res.json({ message: 'Permission removed' });
   } catch (error: any) {
     console.error('[SERVER] DELETE /api/maps share ERROR:', error);

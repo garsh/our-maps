@@ -33,8 +33,9 @@ export interface ExtractPlan {
 }
 
 function longToX(lon: number, zoom: number): number {
+  if (lon >= 180.0) return (1 << zoom) - 1;
   const x = Math.floor(((lon + 180.0) / 360.0) * (1 << zoom));
-  return ((x % (1 << zoom)) + (1 << zoom)) % (1 << zoom);
+  return Math.max(0, Math.min((1 << zoom) - 1, x));
 }
 
 function latToY(lat: number, zoom: number): number {
@@ -47,6 +48,9 @@ function latToY(lat: number, zoom: number): number {
 
 export function getXRanges(west: number, east: number, zoom: number, buffer = 0): Array<[number, number]> {
   const maxTile = (1 << zoom) - 1;
+  if (east - west >= 360 || (west <= -180 && east >= 180)) {
+    return [[0, maxTile]];
+  }
   const rawXMin = longToX(west, zoom) - buffer;
   const rawXMax = longToX(east, zoom) + buffer;
   if (west <= east) {
@@ -88,7 +92,63 @@ export function rangeIntersectsWanted(startId: number, endId: number, wanted: nu
   return idx < wanted.length && wanted[idx] < endId;
 }
 
+export const DEFAULT_MAX_EXTRACT_TILES = 50_000_000;
+
+export function getMaxExtractTiles(): number {
+  const envVal = Number(process.env.MAX_EXTRACT_TILES);
+  return Number.isFinite(envVal) && envVal > 0 ? envVal : DEFAULT_MAX_EXTRACT_TILES;
+}
+
+export function validateExtractBbox(bbox: any): { valid: true; bbox: BoundingBox } | { valid: false; error: string } {
+  if (!bbox || typeof bbox !== 'object') {
+    return { valid: false, error: 'Valid bbox { north, south, east, west } is required' };
+  }
+  const { north, south, east, west } = bbox;
+  if (!Number.isFinite(north) || !Number.isFinite(south) || !Number.isFinite(east) || !Number.isFinite(west)) {
+    return { valid: false, error: 'Bbox coordinates must be finite numbers' };
+  }
+  if (north < -85.0511 || north > 85.0511 || south < -85.0511 || south > 85.0511) {
+    return { valid: false, error: 'Latitude must be between -85.0511 and 85.0511' };
+  }
+  if (west < -180 || west > 180 || east < -180 || east > 180) {
+    return { valid: false, error: 'Longitude must be between -180 and 180' };
+  }
+  if (south > north) {
+    return { valid: false, error: 'South latitude cannot be greater than north latitude' };
+  }
+  return {
+    valid: true,
+    bbox: { north, south, east, west }
+  };
+}
+
+export function countExtractTiles(bbox: BoundingBox, minZoom: number, maxZoom: number): number {
+  let count = 0;
+  for (let z = minZoom; z <= maxZoom; z++) {
+    if (z <= 4) {
+      const maxTile = (1 << z) - 1;
+      count += (maxTile + 1) * (maxTile + 1);
+    } else {
+      const buffer = z >= 5 && z <= 8 ? 2 : z === 9 ? 1 : 0;
+      const [yStart, yEnd] = getYRange(bbox.north, bbox.south, z, buffer);
+      const height = yEnd - yStart + 1;
+      const xRanges = getXRanges(bbox.west, bbox.east, z, buffer);
+      for (const [xStart, xEnd] of xRanges) {
+        const width = xEnd - xStart + 1;
+        count += (width * height);
+      }
+    }
+  }
+  return count;
+}
+
 export function collectWantedTileIds(bbox: BoundingBox, minZoom: number, maxZoom: number): number[] {
+  const estimatedCount = countExtractTiles(bbox, minZoom, maxZoom);
+  const maxAllowed = getMaxExtractTiles();
+  if (estimatedCount > maxAllowed) {
+    throw new Error(`Requested bounding box requires ${estimatedCount.toLocaleString()} tiles, which exceeds the maximum extract limit of ${maxAllowed.toLocaleString()} tiles`);
+  }
+
   const ids: number[] = [];
   for (let z = minZoom; z <= maxZoom; z++) {
     if (z <= 4) {

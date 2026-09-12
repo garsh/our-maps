@@ -4,12 +4,15 @@ import { isAllowedOrigin } from '../cors';
 describe('isAllowedOrigin', () => {
   const originalCors = process.env.CORS_ORIGIN;
   const originalPort = process.env.PORT;
+  const originalNodeEnv = process.env.NODE_ENV;
 
   afterEach(() => {
     if (originalCors === undefined) delete process.env.CORS_ORIGIN;
     else process.env.CORS_ORIGIN = originalCors;
     if (originalPort === undefined) delete process.env.PORT;
     else process.env.PORT = originalPort;
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
   });
 
   it('allows requests with no Origin', () => {
@@ -50,8 +53,16 @@ describe('isAllowedOrigin', () => {
     expect(isAllowedOrigin('https://evil-localhost.example')).toBe(false);
   });
 
-  it('allows any origin when CORS_ORIGIN is *', () => {
+  it('allows any origin when CORS_ORIGIN is * in development', () => {
+    process.env.NODE_ENV = 'development';
     process.env.CORS_ORIGIN = '*';
     expect(isAllowedOrigin('https://evil.example')).toBe(true);
+  });
+
+  it('rejects wildcard origin when NODE_ENV is production', () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.CORS_ORIGIN;
+    expect(isAllowedOrigin('https://evil.example')).toBe(false);
+    expect(isAllowedOrigin('https://ourmaps.mooo.com')).toBe(true);
   });
 });

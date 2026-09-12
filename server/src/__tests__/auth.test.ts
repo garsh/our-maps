@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { getJwtSecret, DEV_JWT_SECRET, isMockAuthAllowed, authenticateToken, AuthError, userFromGooglePayload } from '../auth';
+import { getJwtSecret, DEV_JWT_SECRET, isMockAuthAllowed, authenticateToken, AuthError, userFromGooglePayload, cleanupSessionCache, clearSessionCacheForTests } from '../auth';
 
 describe('JWT production requirements', () => {
   const originalNodeEnv = process.env.NODE_ENV;
@@ -114,5 +114,12 @@ describe('userFromGooglePayload', () => {
     expect(() => userFromGooglePayload({ ...verified, email_verified: undefined })).toThrow(
       /Verify this email with Google, then sign in again/
     );
+  });
+
+  describe('cleanupSessionCache', () => {
+    it('runs cleanupSessionCache without error', () => {
+      clearSessionCacheForTests();
+      expect(() => cleanupSessionCache()).not.toThrow();
+    });
   });
 });

@@ -187,4 +187,53 @@ describe('Realtime Delta Handlers', () => {
     expect(layer.map_id).toBe('other-map');
     expect(layer.name).toBe('Original Layer');
   });
+
+  describe('revokeUserMapAccess and updateUserMapRole', () => {
+    it('revokes map access and evicts socket from room', () => {
+      const emitted: Array<{ event: string; data: any }> = [];
+      const leftRooms: string[] = [];
+      const mockSocket: any = {
+        id: 's1',
+        data: {
+          user: { id: 'user-to-revoke' },
+          mapRoles: new Map([['map-1', 'edit']])
+        },
+        leave: (room: string) => leftRooms.push(room),
+        emit: (event: string, data: any) => emitted.push({ event, data })
+      };
+      const mockIo: any = {
+        sockets: {
+          sockets: new Map([['s1', mockSocket]])
+        }
+      };
+
+      realtime.revokeUserMapAccess(mockIo, 'user-to-revoke', 'map-1');
+
+      expect(mockSocket.data.mapRoles.has('map-1')).toBe(false);
+      expect(leftRooms).toContain('map:map-1');
+      expect(emitted).toContainEqual({ event: 'map-access-revoked', data: { mapId: 'map-1' } });
+    });
+
+    it('updates user role on socket and emits map-role-updated', () => {
+      const emitted: Array<{ event: string; data: any }> = [];
+      const mockSocket: any = {
+        id: 's1',
+        data: {
+          user: { id: 'user-to-update' },
+          mapRoles: new Map([['map-1', 'edit']])
+        },
+        emit: (event: string, data: any) => emitted.push({ event, data })
+      };
+      const mockIo: any = {
+        sockets: {
+          sockets: new Map([['s1', mockSocket]])
+        }
+      };
+
+      realtime.updateUserMapRole(mockIo, 'user-to-update', 'map-1', 'view');
+
+      expect(mockSocket.data.mapRoles.get('map-1')).toBe('view');
+      expect(emitted).toContainEqual({ event: 'map-role-updated', data: { mapId: 'map-1', role: 'view' } });
+    });
+  });
 });

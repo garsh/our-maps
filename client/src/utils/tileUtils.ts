@@ -380,6 +380,9 @@ export async function removeMapDownload(mapId: string): Promise<void> {
 
 export function getXRanges(west: number, east: number, zoom: number, buffer = 0): Array<[number, number]> {
     const maxTile = (1 << zoom) - 1;
+    if (east - west >= 360 || (west <= -180 && east >= 180)) {
+        return [[0, maxTile]];
+    }
     const rawXMin = longToX(west, zoom) - buffer;
     const rawXMax = longToX(east, zoom) + buffer;
     if (west <= east) {
@@ -403,6 +406,8 @@ export function getYRange(north: number, south: number, zoom: number, buffer = 0
     const yEnd = Math.min(maxTile, Math.max(yMin, yMax) + buffer);
     return [yStart, yEnd];
 }
+
+export const MAX_EXTRACT_TILES = 50_000_000;
 
 export function countTiles(box: BoundingBox, minZoom: number, maxZoom: number): number {
     let count = 0;
@@ -430,8 +435,9 @@ export function estimateSizeMB(tileCount: number): number {
 }
 
 function longToX(lon: number, zoom: number): number {
+    if (lon >= 180.0) return (1 << zoom) - 1;
     const x = Math.floor(((lon + 180.0) / 360.0) * (1 << zoom));
-    return ((x % (1 << zoom)) + (1 << zoom)) % (1 << zoom);
+    return Math.max(0, Math.min((1 << zoom) - 1, x));
 }
 
 function latToY(lat: number, zoom: number): number {

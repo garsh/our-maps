@@ -13,6 +13,9 @@ import {
   planExtract,
   getXRanges,
   streamPlannedExtract,
+  validateExtractBbox,
+  countExtractTiles,
+  DEFAULT_MAX_EXTRACT_TILES,
 } from '../pmtilesExtract';
 function countTilesLocal(bbox: { north: number; south: number; east: number; west: number }, minZoom: number, maxZoom: number): number {
   return collectWantedTileIds(bbox, minZoom, maxZoom).length;
@@ -213,5 +216,44 @@ describe('pmtilesExtract integration', () => {
     expect(header.numAddressedTiles).toBe(340);
     expect(await out.getZxy(4, 0, 0)).toBeDefined();
     expect(await out.getZxy(4, 15, 15)).toBeDefined();
+  });
+
+  describe('extract bounding box validation and tile limits', () => {
+    it('validates bounding box coordinates correctly', () => {
+      expect(validateExtractBbox(null).valid).toBe(false);
+      expect(validateExtractBbox({ north: '40', south: 30, east: -70, west: -80 }).valid).toBe(false);
+      expect(validateExtractBbox({ north: 90, south: 30, east: -70, west: -80 }).valid).toBe(false);
+      expect(validateExtractBbox({ north: 40, south: -90, east: -70, west: -80 }).valid).toBe(false);
+      expect(validateExtractBbox({ north: 40, south: 50, east: -70, west: -80 }).valid).toBe(false);
+      expect(validateExtractBbox({ north: 40, south: 30, east: 190, west: -80 }).valid).toBe(false);
+      expect(validateExtractBbox({ north: 40, south: 30, east: -70, west: -80 }).valid).toBe(true);
+    });
+
+    it('accurately counts tiles before allocation', () => {
+      const bbox = { north: 40.75, south: 40.70, east: -73.95, west: -74.00 };
+      const estimated = countExtractTiles(bbox, 1, 15);
+      const actual = collectWantedTileIds(bbox, 1, 15).length;
+      expect(estimated).toBe(actual);
+    });
+
+    it('rejects bounding boxes that exceed the maximum extract limit', () => {
+      // Global bounding box produces over 1 billion tiles at zoom 15
+      const globalBbox = { north: 85, south: -85, east: 180, west: -180 };
+      expect(countExtractTiles(globalBbox, 1, 15)).toBeGreaterThan(DEFAULT_MAX_EXTRACT_TILES);
+      expect(() => collectWantedTileIds(globalBbox, 1, 15)).toThrow(/exceeds the maximum extract limit/);
+    });
+
+    it('allows large legitimate multi-state road trip bounds without error', () => {
+      // 2026 Midwest Road Trip bounds (~4.7M tiles)
+      const midwestBbox = {
+        north: 48.0086918,
+        south: 35.7083018,
+        east: -79.742506,
+        west: -105.1146168
+      };
+      const count = countExtractTiles(midwestBbox, 1, 15);
+      expect(count).toBeGreaterThan(4_000_000);
+      expect(count).toBeLessThan(DEFAULT_MAX_EXTRACT_TILES);
+    });
   });
 });

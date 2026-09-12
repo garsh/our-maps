@@ -74,9 +74,19 @@ self.onmessage = async (e) => {
             }
 
             if ((!streamRes.ok && streamRes.status !== 206) || !streamRes.body) {
-                const message = streamRes.statusText || `HTTP ${streamRes.status}`;
+                let message = streamRes.statusText || `HTTP ${streamRes.status}`;
+                try {
+                    const errorJson = await streamRes.json();
+                    if (errorJson?.error) {
+                        message = errorJson.error;
+                    } else if (errorJson?.message) {
+                        message = errorJson.message;
+                    }
+                } catch {
+                    // Ignore JSON parse error on non-JSON response
+                }
                 console.error(`[TILE_STREAM_CLIENT][worker] Stream request failed: status=${streamRes.status}, message=${message}`);
-                throw new Error(`Map extract failed: ${message}`);
+                throw new Error(message);
             }
 
             const startOffset = streamRes.status === 206 ? offset : 0;

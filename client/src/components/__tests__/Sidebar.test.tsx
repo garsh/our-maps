@@ -286,6 +286,46 @@ describe('Sidebar', () => {
     vi.restoreAllMocks();
   });
 
+  it('prevents downloading when map area exceeds MAX_EXTRACT_TILES', async () => {
+    const tileUtilsModule = await import('../../utils/tileUtils');
+    vi.spyOn(tileUtilsModule, 'countTiles').mockReturnValue(60_000_000);
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    render(<TestWrapper handlers={{ mapId: 'test-map-too-large' }} />);
+    
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+    
+    const downloadBtn = await screen.findByText(/Download for Offline/i);
+    fireEvent.click(downloadBtn);
+
+    expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('too large to download'));
+    alertSpy.mockRestore();
+    vi.restoreAllMocks();
+  });
+
+  it('aborts download preparation and alerts if size estimation fails', async () => {
+    const tileUtilsModule = await import('../../utils/tileUtils');
+    vi.spyOn(tileUtilsModule, 'countTiles').mockReturnValue(100);
+    const apiModule = await import('../../services/api');
+    vi.spyOn(apiModule.apiService, 'estimateExtract').mockRejectedValue(new Error('Server extract limit reached'));
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    render(<TestWrapper handlers={{ mapId: 'test-map-est-fail' }} />);
+    
+    const moreBtn = screen.getByLabelText(/more options/i);
+    fireEvent.click(moreBtn);
+    
+    const downloadBtn = await screen.findByText(/Download for Offline/i);
+    fireEvent.click(downloadBtn);
+
+    await vi.waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('Server extract limit reached'));
+    });
+    alertSpy.mockRestore();
+    vi.restoreAllMocks();
+  });
+
   it('generates correct navigation URL with first pin as origin when location tracking is off', () => {
     const mockPins = [
         { id: '1', lat: 35.0, lng: -97.0, label: 'Oklahoma', position: 0 },

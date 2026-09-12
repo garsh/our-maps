@@ -14,9 +14,9 @@ import { Server, Socket } from 'socket.io';
 import mapsRouter from './routes/maps';
 import type { User } from '@shared/interfaces';
 import placesRouter from './routes/places';
-import { googleLoginHandler, sharedContactsHandler, searchUsersHandler, authMiddleware, authenticateToken, getJwtSecret, meHandler, mockLoginHandler, logoutHandler, logoutEverywhereHandler, parseCookies, SESSION_COOKIE, getUserForSession } from './auth';
+import { googleLoginHandler, sharedContactsHandler, searchUsersHandler, authMiddleware, authenticateToken, getJwtSecret, meHandler, mockLoginHandler, logoutHandler, logoutEverywhereHandler, parseCookies, SESSION_COOKIE, getUserForSession, cleanupSessionCache } from './auth';
 import { getMapRole, canEditMap, canViewMap } from './permissions';
-import { resolveSafeMapFile, sanitizeMapFilename, getSafeMapFileSize, ensureOnDemandFontFile } from './mapFiles';
+import { resolveSafeMapFile, sanitizeMapFilename, getSafeMapFileSize, ensureOnDemandFontFile, isAllowedFontstack } from './mapFiles';
 import { isAllowedOrigin } from './cors';
 import { getCspDirectives } from './csp';
 import { socketPayloadSchemas } from './schemas';
@@ -80,6 +80,16 @@ const placesLimiter = rateLimit({
   skip: () => process.env.NODE_ENV === 'test',
 });
 app.use('/api/places', placesLimiter);
+
+const tileExtractLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many tile download requests, please try again later.' },
+  skip: () => process.env.NODE_ENV === 'test',
+});
+app.use(['/api/maps/tiles/stream', '/maps/tiles/stream', '/api/maps/tiles/extract-size', '/maps/tiles/extract-size'], tileExtractLimiter);
 
 // CORS: exact origin match (comma-separated CORS_ORIGIN) plus LAN/dev hosts
 app.use(cors({
@@ -259,7 +269,7 @@ app.get('/maps/:filename(*)', async (req, res) => {
   let foundFilePath = resolveSafeMapFile(filename, candidateMapsDirs);
 
   // On-demand font download fallback if font file not yet on disk
-  if (!foundFilePath && sanitizedName && sanitizedName.startsWith('fonts/') && sanitizedName.endsWith('.pbf')) {
+  if (!foundFilePath && sanitizedName && isAllowedFontstack(sanitizedName)) {
     try {
       const downloaded = await ensureOnDemandFontFile(sanitizedName, path.resolve(process.cwd(), 'data'));
       if (downloaded) {
@@ -390,11 +400,13 @@ if (process.env.NODE_ENV !== 'test') {
   purgeExpiredSessions().catch((err) => {
     console.error('[AUTH] Failed to purge expired sessions:', err);
   });
+  cleanupSessionCache();
   cleanupPlanDiskCache(mapsDir);
   setInterval(() => {
     purgeExpiredSessions().catch((err) => {
       console.error('[AUTH] Failed to purge expired sessions:', err);
     });
+    cleanupSessionCache();
     cleanupPlanDiskCache(mapsDir);
   }, 60 * 60 * 1000);
   server.listen(port as number, '0.0.0.0', () => {
