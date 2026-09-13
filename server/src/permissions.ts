@@ -51,3 +51,40 @@ export async function canSeeMapCollaborators(
   if (row.owner_id === userId) return true;
   return row.role === 'edit' || row.role === 'view';
 }
+
+/**
+ * When a logged-in user accesses a map that is shared via link, add that user
+ * as having view permissions for the map (unless they are owner or already have a permission).
+ * Returns true if a new permission row was inserted.
+ */
+export async function addMapViewerIfLinkShared(
+  userId: string | undefined | null,
+  mapId: string,
+  mapOrPublic?: { owner_id?: string | null; is_public?: number | boolean | null }
+): Promise<boolean> {
+  if (!userId || !mapId) return false;
+
+  const db = await getDb();
+  let ownerId = mapOrPublic?.owner_id;
+  let isPublic = mapOrPublic?.is_public;
+
+  if (ownerId === undefined || isPublic === undefined) {
+    const map = await db.get('SELECT owner_id, is_public FROM maps WHERE id = ?', mapId);
+    if (!map) return false;
+    ownerId = map.owner_id;
+    isPublic = map.is_public;
+  }
+
+  if (!Boolean(isPublic) || ownerId === userId) {
+    return false;
+  }
+
+  const result = await db.run(`
+    INSERT INTO map_permissions (map_id, user_id, role)
+    VALUES (?, ?, 'view')
+    ON CONFLICT(map_id, user_id) DO NOTHING
+  `, mapId, userId);
+
+  return Boolean(result && result.changes && result.changes > 0);
+}
+

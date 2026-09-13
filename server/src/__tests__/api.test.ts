@@ -567,11 +567,30 @@ describe('API Endpoints', () => {
       .set({ 'x-mock-user': JSON.stringify(strangerUser) });
     expect(strangerGet.status).toBe(200);
     expect(strangerGet.body.userRole).toBe('view');
-    expect(strangerGet.body.permissions).toEqual([]);
-    expect(strangerGet.body.ownerEmail).toBeUndefined();
-    expect(strangerGet.body.ownerId).toBe('');
+    expect(strangerGet.body.permissions).toEqual([
+      {
+        userId: strangerUser.id,
+        userEmail: strangerUser.email,
+        userName: strangerUser.name,
+        userPicture: null,
+        role: 'view'
+      }
+    ]);
+    expect(strangerGet.body.ownerEmail).toBe(mockUser.email);
+    expect(strangerGet.body.ownerId).toBe(mockUser.id);
     expect(strangerGet.body).not.toHaveProperty('owner_email');
     expect(strangerGet.body).not.toHaveProperty('owner_id');
+
+    // Verify permission row was persisted in the database
+    const strangerPerm = await db.get('SELECT * FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, strangerUser.id);
+    expect(strangerPerm).toEqual({ map_id: mapId, user_id: strangerUser.id, role: 'view' });
+
+    // Verify map is now in stranger's accessible maps list
+    const strangerMaps = await request(app)
+      .get('/api/maps')
+      .set({ 'x-mock-user': JSON.stringify(strangerUser) });
+    expect(strangerMaps.status).toBe(200);
+    expect(strangerMaps.body.map((m: any) => m.id)).toContain(mapId);
 
     const ownerGet = await request(app).get(`/api/maps/${mapId}`).set(authHeader);
     expect(ownerGet.status).toBe(200);
@@ -589,6 +608,13 @@ describe('API Endpoints', () => {
     // 6. Anonymous request is now blocked again
     const reblockedRes = await request(app).get(`/api/maps/${mapId}`);
     expect(reblockedRes.status).toBe(401);
+
+    // 7. Stranger still retains view access since they were added to map_permissions
+    const strangerRetainedGet = await request(app)
+      .get(`/api/maps/${mapId}`)
+      .set({ 'x-mock-user': JSON.stringify(strangerUser) });
+    expect(strangerRetainedGet.status).toBe(200);
+    expect(strangerRetainedGet.body.userRole).toBe('view');
   });
 
   it.each([

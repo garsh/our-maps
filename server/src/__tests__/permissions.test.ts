@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { getDb, setDbName, closeDb } from '../db';
-import { getMapRole, canEditMap, canViewMap, canSeeMapCollaborators } from '../permissions';
+import { getMapRole, canEditMap, canViewMap, canSeeMapCollaborators, addMapViewerIfLinkShared } from '../permissions';
 
 describe('map role checks', () => {
   beforeAll(async () => {
@@ -75,4 +75,37 @@ describe('map role checks', () => {
     expect(await canSeeMapCollaborators(editorId, 'public-map')).toBe(true);
     expect(await canSeeMapCollaborators(ownerId, 'public-map')).toBe(true);
   });
+
+  it('addMapViewerIfLinkShared grants view permission to logged-in users accessing link-shared maps', async () => {
+    const db = await getDb();
+
+    // 1. Anonymous user cannot be added
+    expect(await addMapViewerIfLinkShared(undefined, 'public-map')).toBe(false);
+    expect(await addMapViewerIfLinkShared(null, 'public-map')).toBe(false);
+
+    // 2. Owner accessing their own map is not added to map_permissions
+    expect(await addMapViewerIfLinkShared(ownerId, 'public-map')).toBe(false);
+    const ownerPerm = await db.get('SELECT * FROM map_permissions WHERE map_id = ? AND user_id = ?', 'public-map', ownerId);
+    expect(ownerPerm).toBeUndefined();
+
+    // 3. Private map does not add viewer
+    expect(await addMapViewerIfLinkShared(strangerId, mapId)).toBe(false);
+    const privatePerm = await db.get('SELECT * FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, strangerId);
+    expect(privatePerm).toBeUndefined();
+
+    // 4. Logged-in stranger accessing public map is granted view permission
+    expect(await addMapViewerIfLinkShared(strangerId, 'public-map')).toBe(true);
+    const perm = await db.get('SELECT * FROM map_permissions WHERE map_id = ? AND user_id = ?', 'public-map', strangerId);
+    expect(perm).toEqual({ map_id: 'public-map', user_id: strangerId, role: 'view' });
+    expect(await canSeeMapCollaborators(strangerId, 'public-map')).toBe(true);
+
+    // 5. Subsequent access is idempotent and returns false
+    expect(await addMapViewerIfLinkShared(strangerId, 'public-map')).toBe(false);
+
+    // 6. User with existing edit permission is not downgraded
+    expect(await addMapViewerIfLinkShared(editorId, 'public-map')).toBe(false);
+    const editorPerm = await db.get('SELECT * FROM map_permissions WHERE map_id = ? AND user_id = ?', 'public-map', editorId);
+    expect(editorPerm?.role).toBe('edit');
+  });
 });
+

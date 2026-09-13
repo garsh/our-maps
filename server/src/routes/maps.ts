@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { getDb } from '../db';
 import type { Pin, MapData, MapPermission, PinLayer, PinIcon } from '@shared/interfaces';
 import { authMiddleware, optionalAuthMiddleware, type AuthRequest } from '../auth';
-import { getMapRole, canEditMap, canSeeMapCollaborators } from '../permissions';
+import { getMapRole, canEditMap, canSeeMapCollaborators, addMapViewerIfLinkShared } from '../permissions';
 import { MapCreateSchema, MapUpdateSchema, ShareSchema, PinSchema, LayerSchema } from '../schemas';
 import { revokeUserMapAccess, updateUserMapRole, syncSocketsOnPublicChange } from '../realtime';
 import { z } from 'zod';
@@ -58,6 +58,8 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
     return res.status(404).json({ error: 'Map not found' });
   }
 
+  const newlyAdded = await addMapViewerIfLinkShared(userId, mapId, map);
+
   const role = await getMapRole(userId, mapId);
   if (!role) {
     return res.status(userId ? 403 : 401).json({ error: userId ? 'Access denied' : 'Authentication required' });
@@ -66,7 +68,7 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
   // ETag based on updated_at (falls back to map id if column not yet migrated)
   const etag = `"${mapId}-${map.updated_at || map.id}"`;
   const ifNoneMatch = req.headers['if-none-match'];
-  if (ifNoneMatch && ifNoneMatch === etag) {
+  if (!newlyAdded && ifNoneMatch && ifNoneMatch === etag) {
     // Map unchanged — skip DB reads and payload serialisation
     res.setHeader('ETag', etag);
     return res.status(304).end();
@@ -80,7 +82,7 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
     );
     const lastAccessed = existingAccess?.last_accessed_at ? new Date(existingAccess.last_accessed_at).getTime() : 0;
     const thirtyMinutes = 30 * 60 * 1000;
-    if (Date.now() - lastAccessed > thirtyMinutes) {
+    if (newlyAdded || Date.now() - lastAccessed > thirtyMinutes) {
       await db.run(`
         INSERT INTO user_map_access (user_id, map_id, last_accessed_at) 
         VALUES (?, ?, CURRENT_TIMESTAMP) 
@@ -88,6 +90,7 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
       `, userId, mapId);
     }
   }
+
 
   const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ? ORDER BY position ASC, id ASC', mapId);
   const pins = await db.all('SELECT * FROM pins WHERE map_id = ? ORDER BY position ASC, id ASC', mapId);
@@ -170,6 +173,8 @@ router.get('/:id/permissions', optionalAuthMiddleware, async (req: AuthRequest, 
   if (!map) {
     return res.status(404).json({ error: 'Map not found' });
   }
+
+  await addMapViewerIfLinkShared(userId, mapId, map);
 
   const role = await getMapRole(userId, mapId);
   if (!role) {

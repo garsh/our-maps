@@ -15,7 +15,7 @@ import mapsRouter from './routes/maps';
 import type { User } from '@shared/interfaces';
 import placesRouter from './routes/places';
 import { googleLoginHandler, sharedContactsHandler, searchUsersHandler, authMiddleware, authenticateToken, getJwtSecret, assertMockAuthConfig, meHandler, mockLoginHandler, logoutHandler, logoutEverywhereHandler, parseCookies, SESSION_COOKIE, getUserForSession, cleanupSessionCache } from './auth';
-import { getMapRole, canEditMap, canViewMap } from './permissions';
+import { getMapRole, canEditMap, canViewMap, addMapViewerIfLinkShared } from './permissions';
 import { resolveSafeMapFile, sanitizeMapFilename, getSafeMapFileSize, ensureOnDemandFontFile, isAllowedFontstack, buildCandidateMapsDirs, evaluateFileRange, PMTILES_MAX_RANGE_BYTES } from './mapFiles';
 import { isAllowedOrigin } from './cors';
 import { getCspDirectives } from './csp';
@@ -154,7 +154,8 @@ io.on('connection', (socket: Socket) => {
   socket.on('join-map', async (mapId: string) => {
     if (typeof mapId !== 'string' || !mapId) return;
     const user = getAuthedUser(socket);
-    const role = await getMapRole(user.id, mapId);
+    await addMapViewerIfLinkShared(user?.id, mapId);
+    const role = await getMapRole(user?.id, mapId);
     if (!canViewMap(role)) {
       socket.emit('join-map-error', { mapId, error: 'Access denied' });
       return;
