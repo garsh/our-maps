@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import ShareDialog from '../ShareDialog';
 
@@ -133,5 +133,72 @@ describe('ShareDialog Dark Mode & Styling', () => {
 
     fireEvent.click(copyBtn);
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/map/map-abc'));
+  });
+
+  it('allows owner to change access level of an existing collaborator from Editor to Viewer', () => {
+    const onShare = vi.fn().mockResolvedValue(undefined);
+    render(<ShareDialog {...defaultProps} onShare={onShare} />);
+
+    const accessSelect = screen.getByLabelText('Access level for Collab User') as HTMLSelectElement;
+    expect(accessSelect).toBeInTheDocument();
+    expect(accessSelect.value).toBe('edit');
+
+    fireEvent.change(accessSelect, { target: { value: 'view' } });
+    expect(onShare).toHaveBeenCalledWith('collab@example.com', 'view');
+  });
+
+  it('allows owner to change access level from Viewer to Editor', () => {
+    const onShare = vi.fn().mockResolvedValue(undefined);
+    const viewerProps = {
+      ...defaultProps,
+      permissions: [
+        { userId: 'user-3', userName: 'Viewer User', userEmail: 'viewer@example.com', role: 'view' as const },
+      ],
+      onShare,
+    };
+    render(<ShareDialog {...viewerProps} />);
+
+    const accessSelect = screen.getByLabelText('Access level for Viewer User') as HTMLSelectElement;
+    expect(accessSelect).toBeInTheDocument();
+    expect(accessSelect.value).toBe('view');
+
+    fireEvent.change(accessSelect, { target: { value: 'edit' } });
+    expect(onShare).toHaveBeenCalledWith('viewer@example.com', 'edit');
+  });
+
+  it('opens transfer confirmation dialog when Transfer Ownership is selected in the collaborator dropdown', () => {
+    const onShare = vi.fn().mockResolvedValue(undefined);
+    render(<ShareDialog {...defaultProps} onShare={onShare} />);
+
+    const accessSelect = screen.getByLabelText('Access level for Collab User') as HTMLSelectElement;
+    fireEvent.change(accessSelect, { target: { value: 'owner' } });
+
+    // onShare should not be called immediately
+    expect(onShare).not.toHaveBeenCalled();
+
+    // Confirmation dialog should be visible
+    const transferHeading = screen.getByText('Transfer Ownership?');
+    expect(transferHeading).toBeInTheDocument();
+    const transferModal = transferHeading.closest('div[style*="padding: 2.5rem"]') as HTMLElement;
+    expect(transferModal).toBeInTheDocument();
+    expect(within(transferModal).getByText('collab@example.com')).toBeInTheDocument();
+
+    const transferBtn = screen.getByRole('button', { name: 'Transfer' });
+    fireEvent.click(transferBtn);
+    expect(onShare).toHaveBeenCalledWith('collab@example.com', 'owner');
+  });
+
+  it('does not allow non-owners to change access levels', () => {
+    const nonOwnerProps = {
+      ...defaultProps,
+      currentUserId: 'user-2', // Collab User, not Owner
+    };
+    render(<ShareDialog {...nonOwnerProps} />);
+
+    // Access level select should not exist for non-owners
+    expect(screen.queryByLabelText('Access level for Collab User')).not.toBeInTheDocument();
+
+    // Static text should be present
+    expect(screen.getByText('Editor')).toBeInTheDocument();
   });
 });

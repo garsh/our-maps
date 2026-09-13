@@ -1245,8 +1245,17 @@ export function MapEditor() {
       if (data.userRole) setUserRole(data.userRole);
     } else if (res?.userId) {
       setPermissions(prev => {
-        const filtered = prev.filter(p => p.userId !== res.userId);
-        return [...filtered, {
+        const exists = prev.some(p => p.userId === res.userId);
+        if (exists) {
+          return prev.map(p => p.userId === res.userId ? {
+            ...p,
+            userEmail: res.email || email,
+            userName: res.userName || p.userName || email,
+            userPicture: res.userPicture ?? p.userPicture,
+            role: res.role || role
+          } : p);
+        }
+        return [...prev, {
           userId: res.userId,
           userEmail: res.email || email,
           userName: res.userName || email,

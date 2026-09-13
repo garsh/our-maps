@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Share2, Trash2, X, User as UserIcon, ShieldCheck, Users, Loader2, Link2, Check } from 'lucide-react';
+import { Share2, Trash2, X, User as UserIcon, ShieldCheck, Users, Loader2, Link2, Check, ChevronDown } from 'lucide-react';
 import type { MapPermission } from '@shared/interfaces';
 import { useGoogleLogin } from '@react-oauth/google';
 import { apiService } from '../services/api';
@@ -131,6 +131,7 @@ export default function ShareDialog({
   const [copied, setCopied] = useState(false);
   const [confirmTransferEmail, setConfirmTransferEmail] = useState<string | null>(null);
   const [userToRemove, setUserToRemove] = useState<string | null>(null);
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [isConnectingContacts, setIsConnectingContacts] = useState(false);
@@ -293,6 +294,18 @@ export default function ShareDialog({
     }
   };
 
+  const handleRoleChange = async (targetEmail: string, targetUserId: string, newRole: 'view' | 'edit') => {
+    setError(null);
+    setUpdatingUserId(targetUserId);
+    try {
+      await onShare(targetEmail, newRole);
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to update access level');
+    } finally {
+      setUpdatingUserId(null);
+    }
+  };
+
   return (
     <div style={{ 
       position: 'fixed', 
@@ -313,8 +326,8 @@ export default function ShareDialog({
           border: '1px solid var(--border-color)',
           padding: '2rem', 
           borderRadius: 'var(--radius-lg)', 
-          width: '450px', 
-          maxWidth: '90%',
+          width: '500px', 
+          maxWidth: '92%',
           boxShadow: 'var(--shadow-lg)',
           color: 'var(--text-primary)'
         }} 
@@ -518,6 +531,7 @@ export default function ShareDialog({
           </form>
         )}
 
+        {error && !isOwner && <div style={{ color: 'var(--error-color)', fontSize: '0.85rem', marginBottom: '12px', background: 'rgba(203, 43, 62, 0.1)', padding: '8px', borderRadius: '4px' }}>{error}</div>}
         <h4 style={{ marginBottom: '1rem', fontSize: '0.8rem', fontWeight: '800', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Who Has Access</h4>
         <div style={{ maxHeight: '250px', overflowY: 'auto', margin: '0 -10px', padding: '0 10px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border-color)', alignItems: 'center' }}>
@@ -536,7 +550,7 @@ export default function ShareDialog({
             </div>
           </div>
           {permissions.map(perm => (
-            <div key={perm.userId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--border-color)' }}>
+            <div key={perm.userId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--border-color)', gap: '12px' }}>
               {userToRemove === perm.userId ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                   <div style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)' }}>Remove {perm.userName || perm.userEmail} from this map?</div>
@@ -553,28 +567,110 @@ export default function ShareDialog({
                 </div>
               ) : (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
                     {perm.userPicture ? (
-                      <img src={perm.userPicture} alt={perm.userName || perm.userEmail} style={{ width: '34px', height: '34px', borderRadius: '50%' }} />
+                      <img src={perm.userPicture} alt={perm.userName || perm.userEmail} style={{ width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0 }} />
                     ) : (
-                      <div style={{ background: 'var(--bg-color)', border: '1px solid var(--border-color)', padding: '7px', borderRadius: '50%', color: 'var(--text-secondary)' }}>
-                        <UserIcon size={18} />
+                      <div style={{ background: 'var(--bg-color)', border: '1px solid var(--border-color)', padding: '6px', borderRadius: '50%', color: 'var(--text-secondary)', flexShrink: 0 }}>
+                        <UserIcon size={16} />
                       </div>
                     )}
-                    <div>
-                      <div style={{ fontWeight: '700', fontSize: '0.95rem', color: 'var(--text-primary)' }}>{perm.userName || perm.userEmail}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '800' }}>{perm.role === 'edit' ? 'Editor' : 'Viewer'}</div>
+                    <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                      <div 
+                        title={perm.userName || perm.userEmail}
+                        style={{ fontWeight: '700', fontSize: '0.9rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      >
+                        {perm.userName || perm.userEmail}
+                      </div>
+                      {perm.userName && perm.userName !== perm.userEmail && (
+                        <div 
+                          title={perm.userEmail}
+                          style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        >
+                          {perm.userEmail}
+                        </div>
+                      )}
+                      {!isOwner && (
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '800' }}>
+                          {perm.role === 'edit' ? 'Editor' : 'Viewer'}
+                        </div>
+                      )}
                     </div>
                   </div>
-                  {isOwner && (
-                    <button 
-                      onClick={() => setUserToRemove(perm.userId)}
-                      style={{ background: 'color-mix(in srgb, var(--error-color) 15%, transparent)', border: 'none', color: 'var(--error-color)', padding: '8px', borderRadius: '50%', cursor: 'pointer', display: 'flex' }}
-                      title="Remove access"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                    {isOwner && (
+                      <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                        <select 
+                          aria-label={`Access level for ${perm.userName || perm.userEmail}`}
+                          value={perm.role}
+                          disabled={updatingUserId === perm.userId}
+                          onChange={async (e) => {
+                            const newRole = e.target.value as 'view' | 'edit' | 'owner';
+                            if (newRole === perm.role) return;
+                            if (newRole === 'owner') {
+                              setConfirmTransferEmail(perm.userEmail);
+                              return;
+                            }
+                            await handleRoleChange(perm.userEmail, perm.userId, newRole);
+                          }}
+                          style={{
+                            appearance: 'none',
+                            WebkitAppearance: 'none',
+                            background: 'var(--bg-color)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: '4px 18px 4px 8px',
+                            fontSize: '0.75rem',
+                            fontWeight: '600',
+                            color: 'var(--text-secondary)',
+                            cursor: updatingUserId === perm.userId ? 'not-allowed' : 'pointer',
+                            outline: 'none',
+                            width: '74px',
+                            boxSizing: 'border-box',
+                            transition: 'border-color 0.15s ease, background-color 0.15s ease'
+                          }}
+                        >
+                          <option value="view" style={{ color: 'var(--text-secondary)', background: 'var(--surface-color)' }}>Viewer</option>
+                          <option value="edit" style={{ color: 'var(--text-secondary)', background: 'var(--surface-color)' }}>Editor</option>
+                          <option value="owner" style={{ color: 'var(--text-secondary)', background: 'var(--surface-color)' }}>Transfer Ownership</option>
+                        </select>
+                        {updatingUserId === perm.userId ? (
+                          <Loader2 size={12} className="animate-spin" style={{ position: 'absolute', right: '5px', pointerEvents: 'none', color: 'var(--text-secondary)' }} />
+                        ) : (
+                          <ChevronDown size={12} style={{ position: 'absolute', right: '5px', pointerEvents: 'none', color: 'var(--text-secondary)' }} />
+                        )}
+                      </div>
+                    )}
+                    {isOwner && (
+                      <button 
+                        onClick={() => setUserToRemove(perm.userId)}
+                        style={{ 
+                          background: 'transparent', 
+                          border: 'none', 
+                          color: 'var(--text-secondary)', 
+                          padding: '5px', 
+                          borderRadius: 'var(--radius-sm)', 
+                          cursor: 'pointer', 
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.color = 'var(--error-color)';
+                          e.currentTarget.style.background = 'color-mix(in srgb, var(--error-color) 12%, transparent)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.color = 'var(--text-secondary)';
+                          e.currentTarget.style.background = 'transparent';
+                        }}
+                        title="Remove access"
+                        aria-label={`Remove ${perm.userName || perm.userEmail}`}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    )}
+                  </div>
                 </>
               )}
             </div>
