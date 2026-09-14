@@ -667,6 +667,72 @@ describe('App Components Error Handling', () => {
     expect(screen.getByText('Offline')).toBeInTheDocument();
   });
 
+  it('reconnects and reconciles on resume from background, transitioning sync pill from Syncing to Synced', async () => {
+    (getOfflineMap as any).mockResolvedValue(null);
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-sync-1',
+      name: 'Sync Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner',
+    });
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-sync-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Synced')).toBeInTheDocument();
+    });
+
+    // Simulate initial socket connection completing
+    act(() => {
+      mockSocket.connected = true;
+      socketCallbacks['connect']?.();
+    });
+
+    // Device goes to sleep in background
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'hidden',
+      configurable: true,
+    });
+    mockSocket.connected = false;
+    act(() => {
+      socketCallbacks['disconnect']?.('transport close');
+    });
+
+    // App resumes from background
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'visible',
+      configurable: true,
+    });
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    // While reconnecting, status pill displays "Syncing"
+    expect(screen.getByText('Syncing')).toBeInTheDocument();
+    expect(mockSocket.connect).toHaveBeenCalled();
+
+    // Socket reconnects and reconciliation finishes
+    mockSocket.connected = true;
+    await act(async () => {
+      await socketCallbacks['connect']?.();
+    });
+
+    // Status pill cleanly switches to "Synced"
+    await waitFor(() => {
+      expect(screen.getByText('Synced')).toBeInTheDocument();
+      expect(screen.queryByText('Syncing')).not.toBeInTheDocument();
+    });
+  });
+
   it('redirects with No Data when attempting to open an incompletely downloaded map while offline', async () => {
     sessionStorage.setItem('ourmaps_offline', '1');
     const { isMapDownloaded } = await vi.importActual<typeof import('../utils/tileUtils')>('../utils/tileUtils');

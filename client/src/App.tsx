@@ -53,6 +53,7 @@ export function MapEditor() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isLoading: isAuthLoading } = useAuth();
   const socketRef = useRef<Socket | null>(null);
+  const reconcileOnReconnectRef = useRef<(currentMapId: string) => Promise<void>>(async () => {});
   
   const [pins, setPins] = useState<Pin[]>([])
   const pinsRef = useRef(pins);
@@ -218,8 +219,13 @@ export function MapEditor() {
           if (s && !s.connected) {
             setIsSyncing(true);
             s.connect();
+          } else if (s && s.connected && id && id !== 'new') {
+            reconcileOnReconnectRef.current(id);
+          } else {
+            setIsSyncing(false);
           }
         } else {
+          setIsSyncing(false);
           applyOffline(true, true);
         }
       }
@@ -602,6 +608,8 @@ export function MapEditor() {
             return;
           }
           reconcileOnReconnect(id);
+        } else {
+          setIsSyncing(false);
         }
       });
 
@@ -609,6 +617,7 @@ export function MapEditor() {
         if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
           return;
         }
+        setIsSyncing(false);
         applyOffline(true, true);
       });
 
@@ -620,6 +629,7 @@ export function MapEditor() {
           if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
             return;
           }
+          setIsSyncing(false);
           applyOffline(true, true);
         }
       });
@@ -948,6 +958,7 @@ export function MapEditor() {
 
   const reconcileOnReconnect = async (currentMapId: string) => {
     const epoch = ++loadEpochRef.current;
+    setIsSyncing(true);
     try {
       const serverData = await apiService.getMap(currentMapId);
       if (epoch !== loadEpochRef.current) return;
@@ -1077,8 +1088,13 @@ export function MapEditor() {
       setIsDirty(false);
     } catch (err) {
       console.error('[SOCKET] Reconnect reconciliation failed:', err);
+    } finally {
+      if (epoch === loadEpochRef.current) {
+        setIsSyncing(false);
+      }
     }
   };
+  reconcileOnReconnectRef.current = reconcileOnReconnect;
 
   const loadMap = async (mapId: string, silent = false) => {
     const epoch = ++loadEpochRef.current;
