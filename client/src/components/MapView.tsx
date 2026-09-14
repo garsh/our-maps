@@ -15,7 +15,7 @@ import type { MapTheme } from './Sidebar';
 import { getActiveExtractPMTiles, getExtractTileJSON, preloadExtract, setActiveOfflineMapId } from '../utils/offlineExtract';
 import { clearHoveredPin, getHoveredPinId, useHoveredPinId, hasFinePointer } from '../utils/pinHover';
 import { setMapViewportBounds } from '../utils/mapViewport';
-import { ensurePinImageByKey, ensurePinImages, getPinIconKey } from '../utils/pinIconSprite';
+import { ensurePinImageByKey, ensurePinImages, getPinIconKey, clearRegisteredImages } from '../utils/pinIconSprite';
 import { applyBundledSprites } from '../utils/basemapSprites';
 
 maplibregl.setWorkerUrl(workerUrl);
@@ -672,15 +672,83 @@ const MapView = ({
   const visiblePinsRef = useRef(visiblePins);
   visiblePinsRef.current = visiblePins;
 
+  const [mapSessionKey, setMapSessionKey] = useState(0);
+  const contextLostRef = useRef(false);
+  const mapCleanupRef = useRef<(() => void) | null>(null);
+
+  const currentViewStateRef = useRef<{
+    longitude: number;
+    latitude: number;
+    zoom: number;
+    pitch: number;
+    bearing: number;
+  } | null>(null);
+
+  const [isMapLoaded, setIsMapLoaded] = useState(false);
+
+  const triggerMapRemount = useCallback(() => {
+    if (!currentViewStateRef.current && mapRef.current) {
+      try {
+        const m = mapRef.current.getMap();
+        if (m && typeof m.getCenter === 'function') {
+          const c = m.getCenter();
+          currentViewStateRef.current = {
+            longitude: c.lng,
+            latitude: c.lat,
+            zoom: typeof m.getZoom === 'function' ? m.getZoom() : 10,
+            pitch: typeof m.getPitch === 'function' ? m.getPitch() : 0,
+            bearing: typeof m.getBearing === 'function' ? m.getBearing() : 0,
+          };
+        }
+      } catch {}
+    }
+    contextLostRef.current = false;
+    clearRegisteredImages();
+    setIsMapLoaded(false);
+    setMapSessionKey((k) => k + 1);
+  }, []);
+
   const setMapRef = useCallback((instance: MapRef | null) => {
+    if (mapCleanupRef.current) {
+      mapCleanupRef.current();
+      mapCleanupRef.current = null;
+    }
+
     mapRef.current = instance;
     if (!instance) return;
     const mapInstance = instance.getMap();
     attachMissingImageResolver(mapInstance);
+
+    const onContextLost = (e?: any) => {
+      if (e && typeof e.preventDefault === 'function') {
+        e.preventDefault();
+      }
+      contextLostRef.current = true;
+    };
+
+    const onContextRestored = () => {
+      if (document.visibilityState === 'visible') {
+        triggerMapRemount();
+      }
+    };
+
+    let canvas: HTMLCanvasElement | null = null;
+
     if (mapInstance && typeof mapInstance.on === 'function') {
       mapInstance.on('error', (e: any) => {
         console.error('[MAPLIBRE ERROR]', e?.error?.message || e?.error || e);
       });
+      mapInstance.on('webglcontextlost', onContextLost);
+      mapInstance.on('webglcontextrestored', onContextRestored);
+
+      try {
+        canvas = typeof mapInstance.getCanvas === 'function' ? mapInstance.getCanvas() : null;
+        if (canvas) {
+          canvas.addEventListener('webglcontextlost', onContextLost);
+          canvas.addEventListener('webglcontextrestored', onContextRestored);
+        }
+      } catch {}
+
       mapInstance.on('style.load', () => {
         setIsMapLoaded(true);
         const flavor: 'light' | 'dark' = mapTheme === 'dark' ? 'dark' : 'light';
@@ -711,14 +779,74 @@ const MapView = ({
       });
     }
 
+    mapCleanupRef.current = () => {
+      if (mapInstance && typeof mapInstance.off === 'function') {
+        try {
+          mapInstance.off('webglcontextlost', onContextLost);
+          mapInstance.off('webglcontextrestored', onContextRestored);
+        } catch {}
+      }
+      if (canvas) {
+        try {
+          canvas.removeEventListener('webglcontextlost', onContextLost);
+          canvas.removeEventListener('webglcontextrestored', onContextRestored);
+        } catch {}
+      }
+    };
+
     // Immediately enable map load and trigger initial frame render
     setIsMapLoaded(true);
     if (mapInstance) {
       mapInstance.triggerRepaint();
     }
-  }, [mapTheme]);
+  }, [mapTheme, triggerMapRemount]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const map = mapRef.current?.getMap?.();
+        const canvas = map?.getCanvas?.();
+        let isContextLost = contextLostRef.current;
+
+        if (!isContextLost && map && typeof (map as any).isWebGLContextLost === 'function') {
+          try {
+            isContextLost = (map as any).isWebGLContextLost();
+          } catch {}
+        }
+
+        if (!isContextLost && canvas) {
+          try {
+            const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+            if (gl && typeof gl.isContextLost === 'function' && gl.isContextLost()) {
+              isContextLost = true;
+            }
+          } catch {}
+        }
+
+        if (isContextLost) {
+          triggerMapRemount();
+        } else if (map) {
+          try {
+            if (typeof map.resize === 'function') map.resize();
+            if (typeof map.triggerRepaint === 'function') map.triggerRepaint();
+          } catch {}
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pageshow', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pageshow', handleVisibilityChange);
+      if (mapCleanupRef.current) {
+        mapCleanupRef.current();
+        mapCleanupRef.current = null;
+      }
+    };
+  }, [triggerMapRemount]);
   const lastTargetPinId = useRef<string | null>(null);
-  const [isMapLoaded, setIsMapLoaded] = useState(false);
   const compassSvgRef = useRef<SVGSVGElement | null>(null);
   const compassGroupRef = useRef<SVGGElement | null>(null);
   const compassButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -1487,9 +1615,32 @@ const MapView = ({
     onHoverPinRef.current?.(null);
   }, []);
 
-  const handleMapMove = useCallback(() => {
+  const handleMapMove = useCallback((evt?: any) => {
     if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
     touchStartRef.current = null;
+    if (evt?.viewState) {
+      currentViewStateRef.current = {
+        longitude: evt.viewState.longitude,
+        latitude: evt.viewState.latitude,
+        zoom: evt.viewState.zoom,
+        pitch: evt.viewState.pitch ?? 0,
+        bearing: evt.viewState.bearing ?? 0,
+      };
+    } else if (mapRef.current) {
+      try {
+        const m = mapRef.current.getMap();
+        if (m && typeof m.getCenter === 'function') {
+          const c = m.getCenter();
+          currentViewStateRef.current = {
+            longitude: c.lng,
+            latitude: c.lat,
+            zoom: typeof m.getZoom === 'function' ? m.getZoom() : 10,
+            pitch: typeof m.getPitch === 'function' ? m.getPitch() : 0,
+            bearing: typeof m.getBearing === 'function' ? m.getBearing() : 0,
+          };
+        }
+      } catch {}
+    }
     updateCompassDirect();
     clearHoverDuringPan();
   }, [updateCompassDirect, clearHoverDuringPan]);
@@ -1698,10 +1849,12 @@ const MapView = ({
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>
       {mapStyle && (
         <Map
+          key={mapSessionKey}
+          id={`map-session-${mapSessionKey}`}
           attributionControl={false}
           localIdeographFontFamily="'Noto Sans CJK JP', 'Hiragino Kaku Gothic ProN', 'Meiryo', 'Yu Gothic', sans-serif"
           ref={setMapRef}
-          initialViewState={initialViewState}
+          initialViewState={currentViewStateRef.current || initialViewState}
           mapStyle={mapStyle}
           style={{ width: '100%', height: '100%' }}
           doubleClickZoom={false}

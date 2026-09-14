@@ -31,6 +31,14 @@ const mockGetBounds = vi.fn(() => ({
   contains: () => true,
 }));
 
+const mockResize = vi.fn();
+const mockTriggerRepaint = vi.fn();
+const mockIsWebGLContextLost = vi.fn(() => false);
+const mockOn = vi.fn();
+const mockOff = vi.fn();
+const mockCanvasAddEventListener = vi.fn();
+const mockCanvasRemoveEventListener = vi.fn();
+
 const mockMapInstance = {
   getMap: () => ({
     getZoom: mockGetZoom,
@@ -39,18 +47,28 @@ const mockMapInstance = {
     getBounds: mockGetBounds,
     project: mockProject,
     getContainer: mockGetContainer,
-    getCanvas: () => ({ style: {} }),
+    getCanvas: () => ({
+      style: {},
+      addEventListener: mockCanvasAddEventListener,
+      removeEventListener: mockCanvasRemoveEventListener,
+      getContext: vi.fn(),
+    }),
     easeTo: mockEaseTo,
     flyTo: mockFlyTo,
     fitBounds: mockFitBounds,
     setTerrain: vi.fn(),
-    triggerRepaint: vi.fn(),
+    triggerRepaint: mockTriggerRepaint,
     hasImage: vi.fn(() => false),
     addImage: vi.fn(),
     setMissingStyleImageResolver: vi.fn(),
     isStyleLoaded: vi.fn(() => true),
     isMoving: vi.fn(() => false),
+    isWebGLContextLost: mockIsWebGLContextLost,
+    resize: mockResize,
+    on: mockOn,
+    off: mockOff,
     once: vi.fn(),
+    getCenter: vi.fn(() => ({ lat: 10, lng: 20 })),
   }),
   getZoom: mockGetZoom,
   getBearing: mockGetBearing,
@@ -451,5 +469,84 @@ describe('MapView Compass and Tilt Indicator', () => {
       center: [20, 10],
       padding: expect.objectContaining({ left: 480 }),
     }));
+  });
+
+  it('triggers map resize and repaint when document becomes visible without context loss', () => {
+    mockResize.mockClear();
+    mockTriggerRepaint.mockClear();
+
+    render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+      />
+    );
+
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'visible',
+      configurable: true,
+    });
+
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(mockResize).toHaveBeenCalled();
+    expect(mockTriggerRepaint).toHaveBeenCalled();
+  });
+
+  it('remounts map instance with fresh key and preserved viewState when WebGL context loss is detected', () => {
+    mockResize.mockClear();
+    mockTriggerRepaint.mockClear();
+
+    render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+      />
+    );
+
+    const initialId = capturedMapProps.current?.id;
+    expect(initialId).toBe('map-session-0');
+
+    // Simulate user panning to new coordinates
+    act(() => {
+      capturedMapProps.current.onMove({
+        viewState: {
+          longitude: -79.99,
+          latitude: 40.44,
+          zoom: 14.5,
+          pitch: 30,
+          bearing: 45,
+        },
+      });
+    });
+
+    // Simulate WebGL context loss
+    mockIsWebGLContextLost.mockReturnValue(true);
+
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'visible',
+      configurable: true,
+    });
+
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    // Map should have remounted with session id = map-session-1
+    const remountedId = capturedMapProps.current?.id;
+    expect(remountedId).toBe('map-session-1');
+
+    // Initial view state on remount must preserve the panned position
+    expect(capturedMapProps.current.initialViewState).toEqual({
+      longitude: -79.99,
+      latitude: 40.44,
+      zoom: 14.5,
+      pitch: 30,
+      bearing: 45,
+    });
   });
 });

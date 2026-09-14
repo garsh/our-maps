@@ -23,14 +23,22 @@ vi.mock('../utils/tileUtils', async () => {
 vi.mock('../components/MapView', () => ({
   default: () => <div data-testid="map-view" />
 }));
-vi.mock('socket.io-client', () => {
-  const socket = {
+const { mockSocket, socketCallbacks } = vi.hoisted(() => {
+  const socketCallbacks: Record<string, Function> = {};
+  const mockSocket = {
     emit: vi.fn(),
-    on: vi.fn(),
+    on: vi.fn((event: string, cb: Function) => {
+      socketCallbacks[event] = cb;
+    }),
+    connect: vi.fn(),
     disconnect: vi.fn(),
-    connected: false
+    connected: false,
   };
-  return { io: vi.fn(() => socket) };
+  return { mockSocket, socketCallbacks };
+});
+
+vi.mock('socket.io-client', () => {
+  return { io: vi.fn(() => mockSocket) };
 });
 
 describe('App Components Error Handling', () => {
@@ -603,6 +611,60 @@ describe('App Components Error Handling', () => {
     expect(screen.queryByText('Offline')).not.toBeInTheDocument();
     expect(screen.queryByText('Syncing...')).not.toBeInTheDocument();
     expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
+  });
+
+  it('does not set offline mode when socket disconnects while document is hidden in background', async () => {
+    (getOfflineMap as any).mockResolvedValue(null);
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-bg-1',
+      name: 'Background Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner',
+    });
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-bg-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Synced')).toBeInTheDocument();
+    });
+
+    // Simulate device going to sleep / background
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'hidden',
+      configurable: true,
+    });
+
+    // Simulate background socket drop
+    act(() => {
+      socketCallbacks['disconnect']?.('transport close');
+    });
+
+    // Application should NOT be marked offline
+    expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
+    expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+
+    // Now simulate foreground socket drop while visible
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'visible',
+      configurable: true,
+    });
+
+    act(() => {
+      socketCallbacks['disconnect']?.('transport close');
+    });
+
+    // Now application should transition to offline
+    expect(sessionStorage.getItem('ourmaps_offline')).toBe('1');
+    expect(screen.getByText('Offline')).toBeInTheDocument();
   });
 
   it('redirects with No Data when attempting to open an incompletely downloaded map while offline', async () => {

@@ -211,11 +211,25 @@ export function MapEditor() {
     };
     const handleOnline = () => applyOffline(false, true);
     const handleOffline = () => applyOffline(true, true);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        if (typeof navigator !== 'undefined' && navigator.onLine) {
+          const s = socketRef.current;
+          if (s && !s.connected) {
+            setIsSyncing(true);
+            s.connect();
+          }
+        } else {
+          applyOffline(true, true);
+        }
+      }
+    };
 
     window.addEventListener('resize', handleResize);
     window.visualViewport?.addEventListener('resize', handleResize);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
@@ -227,6 +241,7 @@ export function MapEditor() {
       window.visualViewport?.removeEventListener('resize', handleResize);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [applyOffline]);
 
@@ -591,12 +606,20 @@ export function MapEditor() {
       });
 
       socket.on('connect_error', () => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+          return;
+        }
         applyOffline(true, true);
       });
 
       socket.on('disconnect', (reason: string) => {
         // 'io client disconnect' is intentional (unmount/logout); ignore to avoid spurious offline flicker
         if (reason !== 'io client disconnect') {
+          // If the page is hidden in the background (e.g. mobile lock or tab switch),
+          // socket disconnect is standard OS power-saving behavior, not a network failure.
+          if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+            return;
+          }
           applyOffline(true, true);
         }
       });
