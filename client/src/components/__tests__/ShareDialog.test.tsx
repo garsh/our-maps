@@ -10,6 +10,7 @@ vi.mock('../../services/api', () => ({
   apiService: {
     searchUsers: vi.fn().mockResolvedValue({ users: [] }),
     sharedContacts: vi.fn().mockResolvedValue({ emails: [] }),
+    filterContacts: vi.fn().mockResolvedValue({ existingEmails: [] }),
   },
 }));
 
@@ -200,5 +201,27 @@ describe('ShareDialog Dark Mode & Styling', () => {
 
     // Static text should be present
     expect(screen.getByText('Editor')).toBeInTheDocument();
+  });
+
+  it('loads contacts and filters candidate emails against all registered Our Maps users', async () => {
+    const { apiService } = await import('../../services/api');
+    vi.mocked(apiService.filterContacts).mockResolvedValue({
+      existingEmails: ['alice@example.com']
+    });
+
+    render(<ShareDialog {...defaultProps} />);
+
+    const loadContactsBtn = screen.getByRole('button', { name: /Load Your Contacts/i });
+    expect(loadContactsBtn).toBeInTheDocument();
+
+    fireEvent.click(loadContactsBtn);
+
+    const contactName = await screen.findByText('Alice Adams');
+    expect(contactName).toBeInTheDocument();
+    expect(screen.getByText('alice@example.com')).toBeInTheDocument();
+    expect(screen.queryByText('Bob Barker')).not.toBeInTheDocument();
+    expect(apiService.filterContacts).toHaveBeenCalledWith(
+      expect.arrayContaining(['alice@example.com', 'bob@example.com'])
+    );
   });
 });

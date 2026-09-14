@@ -417,6 +417,45 @@ describe('API Endpoints', () => {
     expect(res.body.emails).not.toContain('test@example.com');
   });
 
+  it('POST /api/auth/filter-contacts filters candidate emails against all registered users', async () => {
+    const db = await getDb();
+    await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', 'collab-shared', 'collab-shared@example.com', 'Collab Shared');
+    await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', 'stranger-user', 'stranger@example.com', 'Stranger');
+
+    const res = await request(app)
+      .post('/api/auth/filter-contacts')
+      .set(authHeader)
+      .send({
+        emails: [
+          'COLLAB-SHARED@EXAMPLE.COM',
+          'stranger@example.com',
+          'unregistered@example.com',
+          'test@example.com'
+        ]
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.existingEmails).toContain('collab-shared@example.com');
+    expect(res.body.existingEmails).toContain('stranger@example.com');
+    expect(res.body.existingEmails).not.toContain('unregistered@example.com');
+    expect(res.body.existingEmails).not.toContain('test@example.com');
+  });
+
+  it('POST /api/auth/filter-contacts handles validation and empty input', async () => {
+    const badRes = await request(app)
+      .post('/api/auth/filter-contacts')
+      .set(authHeader)
+      .send({ emails: 'not-an-array' });
+    expect(badRes.status).toBe(400);
+
+    const emptyRes = await request(app)
+      .post('/api/auth/filter-contacts')
+      .set(authHeader)
+      .send({ emails: [] });
+    expect(emptyRes.status).toBe(200);
+    expect(emptyRes.body.existingEmails).toEqual([]);
+  });
+
   it('does not grant other users access to mock-user-id maps', async () => {
     const db = await getDb();
     await db.run(

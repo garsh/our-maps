@@ -12,6 +12,7 @@ interface Contact {
 }
 
 const fetchMockContacts = async (): Promise<Contact[]> => {
+  const isTest = (globalThis as any).process?.env?.NODE_ENV === 'test' || (import.meta as any).env?.MODE === 'test';
   return new Promise(resolve => {
     setTimeout(() => {
       resolve([
@@ -20,7 +21,7 @@ const fetchMockContacts = async (): Promise<Contact[]> => {
         { name: 'Charlie Chaplin', email: 'charlie@example.com', photoUrl: 'https://i.pravatar.cc/150?u=a04258114e29026702d', type: 'other' },
         { name: 'Diana Prince', email: 'diana@example.com', photoUrl: 'https://i.pravatar.cc/150?u=a04258114e29026708c', type: 'other' }
       ]);
-    }, 1000);
+    }, isTest ? 0 : 1000);
   });
 };
 
@@ -138,6 +139,7 @@ export default function ShareDialog({
   const [showDropdown, setShowDropdown] = useState(false);
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const searchAbortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -169,8 +171,10 @@ export default function ShareDialog({
           const { users } = await apiService.searchUsers(email, controller.signal);
           if (!controller.signal.aborted) {
             setFilteredContacts(users);
-            if (users.length > 0 && email.length > 0) {
-              if (!(users.length === 1 && users[0].email === email)) {
+            if (users.length > 0) {
+              if (email.length > 0 && !(users.length === 1 && users[0].email === email)) {
+                setShowDropdown(true);
+              } else if (typeof document !== 'undefined' && document.activeElement === inputRef.current) {
                 setShowDropdown(true);
               }
             }
@@ -207,9 +211,10 @@ export default function ShareDialog({
     onSuccess: async (tokenResponse) => {
       try {
         const fetchedContacts = await fetchGoogleContacts(tokenResponse.access_token);
-        const { emails: sharedEmails } = await apiService.sharedContacts();
-        const shared = new Set(sharedEmails.map((email) => email.toLowerCase()));
-        const validContacts = fetchedContacts.filter(c => shared.has(c.email.toLowerCase()));
+        const emails = fetchedContacts.map((c) => c.email);
+        const { existingEmails } = await apiService.filterContacts(emails);
+        const existingSet = new Set(existingEmails.map((email) => email.toLowerCase()));
+        const validContacts = fetchedContacts.filter(c => existingSet.has(c.email.toLowerCase()));
         
         setContacts(validContacts);
         setShowDropdown(true);
@@ -230,9 +235,10 @@ export default function ShareDialog({
     if (!hasClientId || forceMock) {
       try {
         const mockContacts = await fetchMockContacts();
-        const { emails: sharedEmails } = await apiService.sharedContacts();
-        const shared = new Set(sharedEmails.map((email) => email.toLowerCase()));
-        const validContacts = mockContacts.filter(c => shared.has(c.email.toLowerCase()));
+        const emails = mockContacts.map((c) => c.email);
+        const { existingEmails } = await apiService.filterContacts(emails);
+        const existingSet = new Set(existingEmails.map((email) => email.toLowerCase()));
+        const validContacts = mockContacts.filter(c => existingSet.has(c.email.toLowerCase()));
         
         setContacts(validContacts);
         setShowDropdown(true);
@@ -387,6 +393,7 @@ export default function ShareDialog({
               
               <div style={{ position: 'relative' }} ref={dropdownRef}>
                 <input 
+                  ref={inputRef}
                   type="email" 
                   placeholder="user@example.com" 
                   value={email}

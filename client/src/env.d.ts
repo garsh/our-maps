@@ -8,6 +8,7 @@ declare module '*.png?inline' {
 
 interface ImportMetaEnv {
   readonly VITE_APP_BUILD_TIME: string;
+  readonly MODE?: string;
 }
 
 interface ImportMeta {

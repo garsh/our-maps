@@ -474,3 +474,52 @@ export async function searchUsersHandler(req: AuthRequest, res: Response) {
     res.status(500).json({ error: 'Failed to search users' });
   }
 }
+
+export async function filterContactsHandler(req: AuthRequest, res: Response) {
+  try {
+    const { emails } = req.body;
+    if (!Array.isArray(emails)) {
+      return res.status(400).json({ error: 'emails array required' });
+    }
+    if (emails.length === 0) {
+      return res.json({ existingEmails: [] });
+    }
+
+    const currentUserEmail = (req.user?.email || '').toLowerCase();
+    const sanitizedEmails = Array.from(
+      new Set(
+        emails
+          .filter((e): e is string => typeof e === 'string' && e.trim().length > 0)
+          .map((e) => e.trim().toLowerCase())
+      )
+    );
+
+    if (sanitizedEmails.length === 0) {
+      return res.json({ existingEmails: [] });
+    }
+
+    const db = await getDb();
+    const existingEmailsSet = new Set<string>();
+    const CHUNK_SIZE = 500;
+
+    for (let i = 0; i < sanitizedEmails.length; i += CHUNK_SIZE) {
+      const chunk = sanitizedEmails.slice(i, i + CHUNK_SIZE);
+      const placeholders = chunk.map(() => '?').join(',');
+      const rows = await db.all(
+        `SELECT email FROM users WHERE LOWER(email) IN (${placeholders}) AND LOWER(email) != ?`,
+        ...chunk,
+        currentUserEmail
+      );
+      for (const row of rows) {
+        if (row.email) {
+          existingEmailsSet.add(row.email.toLowerCase());
+        }
+      }
+    }
+
+    return res.json({ existingEmails: Array.from(existingEmailsSet) });
+  } catch (err: any) {
+    console.error('Failed to filter contacts', err);
+    res.status(500).json({ error: 'Failed to filter contacts' });
+  }
+}

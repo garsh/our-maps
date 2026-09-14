@@ -243,6 +243,15 @@ export const apiService = {
     return handleResponse<{ message: string; isPublic: boolean }>(res, this._logoutCallback, 'Failed to update link sharing settings');
   },
 
+  async filterContacts(emails: string[]): Promise<{ existingEmails: string[] }> {
+    const res = await fetchWithRetry(`${API_BASE}/auth/filter-contacts`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ emails }),
+    }, 0);
+    return handleResponse<{ existingEmails: string[] }>(res, this._logoutCallback, 'Failed to filter contacts');
+  },
+
   async sharedContacts(): Promise<{ emails: string[] }> {
     const res = await fetchWithRetry(`${API_BASE}/auth/shared-contacts`, {
       headers: getHeaders(),
