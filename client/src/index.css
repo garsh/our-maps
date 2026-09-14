@@ -174,10 +174,17 @@ button:active {
   letter-spacing: 0.3px;
 }
 
+.app-container {
+  height: 100vh;
+  height: 100dvh;
+}
+
 /* Mobile Layout */
 @media (max-width: 768px) {
   .app-container {
     flex-direction: column !important;
+    height: 100vh;
+    height: 100dvh;
   }
   
   .mobile-bottom-sheet {
@@ -240,6 +247,17 @@ button:active {
 
 .bottom-sheet-drag-handle:active {
   cursor: grabbing;
+}
+
+.mobile-map-controls {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 10;
 }
 
 .drag-pill {

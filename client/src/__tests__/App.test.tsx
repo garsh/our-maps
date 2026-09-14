@@ -301,6 +301,7 @@ describe('App Components Error Handling', () => {
     const sheet = container.querySelector('.mobile-bottom-sheet') as HTMLElement;
     expect(handle).toBeTruthy();
     expect(sheet).toBeTruthy();
+    expect(sheet.querySelector('.mobile-map-controls')).toBeTruthy();
 
     // Standard height for 800px height is Math.min(350, Math.round(800 * 0.45)) = 350px
     expect(sheet.style.height).toBe('350px');

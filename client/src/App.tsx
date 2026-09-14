@@ -213,6 +213,7 @@ export function MapEditor() {
     const handleOffline = () => applyOffline(true, true);
 
     window.addEventListener('resize', handleResize);
+    window.visualViewport?.addEventListener('resize', handleResize);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
@@ -223,6 +224,7 @@ export function MapEditor() {
         pendingTransitionTimerRef.current = null;
       }
       window.removeEventListener('resize', handleResize);
+      window.visualViewport?.removeEventListener('resize', handleResize);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -362,6 +364,7 @@ export function MapEditor() {
 
 
   const [selectedNavIds, setSelectedNavIds] = useState<Set<string>>(new Set());
+  const [mobileControlsTarget, setMobileControlsTarget] = useState<HTMLDivElement | null>(null);
   const [isTrackingLocation, setIsTrackingLocation] = useState(false);
   const [hiddenLayerIds, setHiddenLayerIds] = useState<Set<string | null>>(() => {
     const mapIdVal = id || null;
@@ -1748,7 +1751,7 @@ export function MapEditor() {
 
   if (isMapLoading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-color)', userSelect: 'none', WebkitUserSelect: 'none' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100dvh', background: 'var(--bg-color)', userSelect: 'none', WebkitUserSelect: 'none' }}>
         <Loader2 size={64} className="animate-spin" style={{ color: 'var(--primary-color)', marginBottom: '1.5rem' }} />
         <h2 style={{ color: 'var(--primary-color)', fontWeight: '700' }}>Loading your map...</h2>
       </div>
@@ -1757,7 +1760,7 @@ export function MapEditor() {
 
   if (error === 'No Data') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-color)', color: 'var(--text-primary)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100dvh', background: 'var(--bg-color)', color: 'var(--text-primary)' }}>
         <h2 style={{ color: 'var(--primary-color)', fontWeight: '700', marginBottom: '0.5rem' }}>No Data</h2>
         <p style={{ color: 'var(--text-secondary)' }}>Unable to load map offline. Redirecting...</p>
       </div>
@@ -1768,6 +1771,7 @@ export function MapEditor() {
     <header 
       ref={headerRef}
       style={{ 
+        position: 'relative',
         padding: '0.4rem 1rem', 
         background: 'var(--primary-color, #483D8B)', 
         color: 'white', 
@@ -1822,7 +1826,7 @@ export function MapEditor() {
   );
 
   return (
-    <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', fontFamily: 'inherit', userSelect: isResizing ? 'none' : 'auto' }} className="app-container">
+    <div style={{ display: 'flex', height: '100dvh', width: '100vw', overflow: 'hidden', fontFamily: 'inherit', userSelect: isResizing ? 'none' : 'auto' }} className="app-container">
       {isMobile && appHeader}
 
       <div 
@@ -1852,6 +1856,14 @@ export function MapEditor() {
           >
             <div className="drag-pill" />
           </div>
+        )}
+
+        {isMobile && (
+          <div 
+            id="mobile-map-controls" 
+            ref={setMobileControlsTarget}
+            className="mobile-map-controls"
+          />
         )}
 
         {!isMobile && appHeader}
@@ -2009,6 +2021,8 @@ export function MapEditor() {
             previewLocation={previewLocation}
             bottomPadding={isMobile ? sheetHeight : 0}
             leftPadding={isMobile ? 0 : sidebarWidth}
+            isMobile={isMobile}
+            mobileControlsTarget={mobileControlsTarget}
             mapTheme={mapTheme}
             showSatellite={showSatellite}
             showHillshade={showHillshade}
@@ -2042,7 +2056,7 @@ const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated, isLoading } = useAuth();
   
   if (isLoading) {
-    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>Loading...</div>;
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100dvh' }}>Loading...</div>;
   }
   
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;

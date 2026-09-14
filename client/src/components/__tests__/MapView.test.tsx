@@ -11,6 +11,7 @@ const { capturedMapProps } = vi.hoisted(() => ({
 // Mock react-map-gl/maplibre
 const mockEaseTo = vi.fn();
 const mockFlyTo = vi.fn();
+const mockFitBounds = vi.fn();
 const mockGetZoom = vi.fn(() => 10);
 const mockGetBearing = vi.fn(() => 0);
 const mockGetPitch = vi.fn(() => 0);
@@ -41,7 +42,7 @@ const mockMapInstance = {
     getCanvas: () => ({ style: {} }),
     easeTo: mockEaseTo,
     flyTo: mockFlyTo,
-    fitBounds: vi.fn(),
+    fitBounds: mockFitBounds,
     setTerrain: vi.fn(),
     triggerRepaint: vi.fn(),
     hasImage: vi.fn(() => false),
@@ -56,8 +57,8 @@ const mockMapInstance = {
   getPitch: mockGetPitch,
   getBounds: mockGetBounds,
   easeTo: mockEaseTo,
-  flyTo: vi.fn(),
-  fitBounds: vi.fn(),
+  flyTo: mockFlyTo,
+  fitBounds: mockFitBounds,
 };
 
 vi.mock('react-map-gl/maplibre', () => {
@@ -141,6 +142,31 @@ describe('MapView Compass and Tilt Indicator', () => {
     expect(locatorButton).toBeInTheDocument();
   });
 
+  it('portals compass and location buttons into mobileControlsTarget on mobile', () => {
+    const portalTarget = document.createElement('div');
+    portalTarget.id = 'mobile-map-controls';
+    document.body.appendChild(portalTarget);
+
+    render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        onBoundsChange={vi.fn()}
+        isMobile={true}
+        mobileControlsTarget={portalTarget}
+      />
+    );
+
+    const compassButton = screen.getByRole('button', { name: /Compass - Reset bearing to North/i });
+    const locatorButton = screen.getByRole('button', { name: /Find my location/i });
+
+    expect(portalTarget.contains(compassButton)).toBe(true);
+    expect(portalTarget.contains(locatorButton)).toBe(true);
+
+    document.body.removeChild(portalTarget);
+  });
+
   it('resets compass bearing and tilt when control button is clicked', () => {
     vi.useFakeTimers();
     render(
@@ -160,6 +186,78 @@ describe('MapView Compass and Tilt Indicator', () => {
 
     expect(mockEaseTo).toHaveBeenCalledWith({ pitch: 60, duration: 300 });
     vi.useRealTimers();
+  });
+
+  it('centers a single pin with paddedMapView on double-click of compass', () => {
+    const mockPins = [
+      { id: 'pin-1', lat: 10, lng: 20, label: 'Single Pin', color: 'blue' as const, position: 0 }
+    ];
+
+    render(
+      <MapView
+        pins={mockPins}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        onBoundsChange={vi.fn()}
+        leftPadding={0}
+        bottomPadding={350}
+      />
+    );
+
+    const compassButton = screen.getByRole('button', { name: /Compass - Reset bearing to North/i });
+    fireEvent.click(compassButton);
+    fireEvent.click(compassButton);
+
+    expect(mockFlyTo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        center: [20, 10],
+        zoom: 6,
+        padding: {
+          top: 80,
+          left: 80,
+          right: 80,
+          bottom: 430,
+        },
+      })
+    );
+  });
+
+  it('fits multiple pins with paddedMapView on double-click of compass', () => {
+    const mockPins = [
+      { id: 'pin-1', lat: 10, lng: 20, label: 'Pin 1', color: 'blue' as const, position: 0 },
+      { id: 'pin-2', lat: 30, lng: 40, label: 'Pin 2', color: 'red' as const, position: 1 },
+    ];
+
+    render(
+      <MapView
+        pins={mockPins}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        onBoundsChange={vi.fn()}
+        leftPadding={0}
+        bottomPadding={350}
+      />
+    );
+
+    const compassButton = screen.getByRole('button', { name: /Compass - Reset bearing to North/i });
+    fireEvent.click(compassButton);
+    fireEvent.click(compassButton);
+
+    expect(mockFitBounds).toHaveBeenCalledWith(
+      [
+        [20, 10],
+        [40, 30],
+      ],
+      expect.objectContaining({
+        maxZoom: 13,
+        padding: {
+          top: 80,
+          left: 80,
+          right: 80,
+          bottom: 430,
+        },
+      })
+    );
   });
 
   it('triggers onHoverPin with pin.id on mouse enter and (null, pin.id) on mouse leave', () => {

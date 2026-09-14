@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
+import { createPortal } from 'react-dom';
 import Map, { Marker, AttributionControl, Source, Layer, type MapRef } from 'react-map-gl/maplibre';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -198,8 +199,9 @@ interface MapViewProps {
   show3DBuildings?: boolean;
   isOffline?: boolean;
   onLocationTrackingChange?: (isTracking: boolean) => void;
+  isMobile?: boolean;
+  mobileControlsTarget?: HTMLElement | null;
 }
-
 const UserLocationMarker = ({ position }: { position: { lat: number; lng: number } }) => {
   return (
     <Marker longitude={position.lng} latitude={position.lat} anchor="center">
@@ -623,9 +625,25 @@ const MapView = ({
   show3DBuildings = true,
   isOffline = false,
   onLocationTrackingChange,
+  isMobile = false,
+  mobileControlsTarget,
 }: MapViewProps) => {
 
   const mapRef = useRef<MapRef | null>(null);
+
+  const [domTarget, setDomTarget] = useState<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (isMobile) {
+      const el = mobileControlsTarget || (typeof document !== 'undefined' ? document.getElementById('mobile-map-controls') : null);
+      setDomTarget(el);
+    } else {
+      setDomTarget(null);
+    }
+  }, [isMobile, mobileControlsTarget]);
+
+  const activeTarget = (isMobile && (mobileControlsTarget || domTarget)) || null;
+  const isPortaled = Boolean(activeTarget);
 
   useLayoutEffect(() => {
     if (!mapId) return;
@@ -1326,7 +1344,13 @@ const MapView = ({
         const maxLng = Math.max(first[1], second[1]);
 
         if (Math.abs(maxLat - minLat) < 0.0001 && Math.abs(maxLng - minLng) < 0.0001) {
-          return { longitude: minLng, latitude: minLat, zoom: 6 };
+          return {
+            bounds: [minLng - 0.0001, minLat - 0.0001, maxLng + 0.0001, maxLat + 0.0001] as [number, number, number, number],
+            fitBoundsOptions: {
+              padding: paddedMapView(leftPadding, bottomPadding),
+              maxZoom: 6,
+            },
+          };
         }
 
         return {
@@ -1496,6 +1520,7 @@ const MapView = ({
           bearing: 0,
           pitch: 0,
           duration,
+          padding: paddedMapView(leftPadding, bottomPadding),
           ...FLY_TO_TERRAIN,
         });
       } else {
@@ -1693,6 +1718,7 @@ const MapView = ({
           onMoveEnd={updateBounds}
           onRotateEnd={updateBounds}
           onPitchEnd={updateBounds}
+          onResize={updateBounds}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
@@ -1888,113 +1914,123 @@ const MapView = ({
         </div>
       )}
 
-      {/* Combined Compass & Tilt Indicator Control */}
-      <button
-        ref={compassButtonRef}
-        onClick={handleCombinedCompassTilt}
-        onPointerDown={handleCompassPointerDown}
-        onPointerUp={handleCompassPointerUp}
-        onPointerCancel={handleCompassPointerUp}
-        onPointerLeave={handleCompassPointerUp}
-        style={{
-          position: 'absolute',
-          bottom: '60px',
-          right: '12px',
-          width: '42px',
-          height: '42px',
-          borderRadius: '12px',
-          background: 'var(--surface-color)',
-          border: '1px solid var(--border-color)',
-          boxShadow: 'var(--shadow-md)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          zIndex: 1000,
-          color: mapTheme === 'dark' ? '#cbd5e1' : 'var(--primary-color)',
-          transition: 'all 0.2s',
-          touchAction: 'none',
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface-color)')}
-        title="Heading: 0°, Tilt: 0° (Click to reset)"
-        aria-label="Compass - Reset bearing to North"
-      >
-        <svg
-          ref={compassSvgRef}
-          width="34"
-          height="34"
-          viewBox="0 0 24 24"
-          style={{
-            transform: 'perspective(60px) rotateX(0deg)',
-            filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.25))',
-            willChange: 'transform',
-          }}
-        >
-          <g
-            ref={compassGroupRef}
-            style={{
-              transform: 'rotate(0deg)',
-              transformOrigin: '12px 12px',
-              willChange: 'transform',
-            }}
-          >
-            {/* Outer ring around compass */}
-            <circle cx="12" cy="12" r="11" fill="none" stroke={mapTheme === 'dark' ? '#cbd5e1' : 'currentColor'} strokeWidth="1.5" opacity={mapTheme === 'dark' ? 0.95 : 0.8} />
-            {/* North pointer (solid red) */}
-            <polygon points="12,1 17,12 7,12" fill="#ea4335" />
-            {/* South pointer */}
-            <polygon points="12,23 17,12 7,12" fill={mapTheme === 'dark' ? '#9ca3af' : '#374151'} />
-          </g>
-        </svg>
-      </button>
-
-      <button
-        onClick={handleToggleLocationTracking}
-        style={{
-          position: 'absolute',
-          bottom: '10px',
-          right: '12px',
-          width: '42px',
-          height: '42px',
-          borderRadius: '12px',
-          background: 'var(--surface-color)',
-          border: isTrackingLocation ? '2px solid #4285F4' : '1px solid var(--border-color)',
-          boxShadow: 'var(--shadow-md)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          zIndex: 1000,
-          color: isTrackingLocation ? '#4285F4' : (mapTheme === 'dark' ? '#cbd5e1' : 'var(--primary-color)'),
-          transition: 'all 0.2s',
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface-color)')}
-        title={!isTrackingLocation ? 'Find my location' : userLocation ? 'Stop location tracking' : 'Locating...'}
-        aria-label={!isTrackingLocation ? 'Find my location' : userLocation ? 'Stop location tracking' : 'Locating...'}
-        aria-pressed={isTrackingLocation}
-      >
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Locate size={24} />
-          {isTrackingLocation && (
-            <div
+      {/* Combined Compass & Tilt Indicator Control and Location Tracking */}
+      {(() => {
+        const mapControls = (
+          <>
+            <button
+              ref={compassButtonRef}
+              onClick={handleCombinedCompassTilt}
+              onPointerDown={handleCompassPointerDown}
+              onPointerUp={handleCompassPointerUp}
+              onPointerCancel={handleCompassPointerUp}
+              onPointerLeave={handleCompassPointerUp}
               style={{
-                position: 'absolute',
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                backgroundColor: '#4285F4',
-                ...(userLocation
-                  ? {}
-                  : {
-                      animation: 'locatePulse 1.4s ease-in-out infinite',
-                    }),
+                position: isPortaled ? 'relative' : 'absolute',
+                bottom: isPortaled ? undefined : '60px',
+                right: isPortaled ? undefined : '12px',
+                width: '42px',
+                height: '42px',
+                borderRadius: '12px',
+                background: 'var(--surface-color)',
+                border: '1px solid var(--border-color)',
+                boxShadow: 'var(--shadow-md)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 1000,
+                color: mapTheme === 'dark' ? '#cbd5e1' : 'var(--primary-color)',
+                transition: 'all 0.2s',
+                touchAction: 'none',
+                pointerEvents: 'auto',
               }}
-            />
-          )}
-        </div>
-      </button>
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface-color)')}
+              title="Heading: 0°, Tilt: 0° (Click to reset)"
+              aria-label="Compass - Reset bearing to North"
+            >
+              <svg
+                ref={compassSvgRef}
+                width="34"
+                height="34"
+                viewBox="0 0 24 24"
+                style={{
+                  transform: 'perspective(60px) rotateX(0deg)',
+                  filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.25))',
+                  willChange: 'transform',
+                }}
+              >
+                <g
+                  ref={compassGroupRef}
+                  style={{
+                    transform: 'rotate(0deg)',
+                    transformOrigin: '12px 12px',
+                    willChange: 'transform',
+                  }}
+                >
+                  {/* Outer ring around compass */}
+                  <circle cx="12" cy="12" r="11" fill="none" stroke={mapTheme === 'dark' ? '#cbd5e1' : 'currentColor'} strokeWidth="1.5" opacity={mapTheme === 'dark' ? 0.95 : 0.8} />
+                  {/* North pointer (solid red) */}
+                  <polygon points="12,1 17,12 7,12" fill="#ea4335" />
+                  {/* South pointer */}
+                  <polygon points="12,23 17,12 7,12" fill={mapTheme === 'dark' ? '#9ca3af' : '#374151'} />
+                </g>
+              </svg>
+            </button>
+
+            <button
+              onClick={handleToggleLocationTracking}
+              style={{
+                position: isPortaled ? 'relative' : 'absolute',
+                bottom: isPortaled ? undefined : '10px',
+                right: isPortaled ? undefined : '12px',
+                width: '42px',
+                height: '42px',
+                borderRadius: '12px',
+                background: 'var(--surface-color)',
+                border: isTrackingLocation ? '2px solid #4285F4' : '1px solid var(--border-color)',
+                boxShadow: 'var(--shadow-md)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 1000,
+                color: isTrackingLocation ? '#4285F4' : (mapTheme === 'dark' ? '#cbd5e1' : 'var(--primary-color)'),
+                transition: 'all 0.2s',
+                pointerEvents: 'auto',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface-color)')}
+              title={!isTrackingLocation ? 'Find my location' : userLocation ? 'Stop location tracking' : 'Locating...'}
+              aria-label={!isTrackingLocation ? 'Find my location' : userLocation ? 'Stop location tracking' : 'Locating...'}
+              aria-pressed={isTrackingLocation}
+            >
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Locate size={24} />
+                {isTrackingLocation && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: '#4285F4',
+                      ...(userLocation
+                        ? {}
+                        : {
+                            animation: 'locatePulse 1.4s ease-in-out infinite',
+                          }),
+                    }}
+                  />
+                )}
+              </div>
+            </button>
+          </>
+        );
+
+        return activeTarget ? createPortal(mapControls, activeTarget) : mapControls;
+      })()}
 
       <style>{`
         @keyframes locatePulse {
