@@ -733,6 +733,57 @@ describe('App Components Error Handling', () => {
     });
   });
 
+  it('does not refetch the map on resume when the socket is still connected', async () => {
+    (getOfflineMap as any).mockResolvedValue(null);
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-connected-resume',
+      name: 'Connected Resume Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner',
+    });
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-connected-resume']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Synced')).toBeInTheDocument();
+    });
+
+    act(() => {
+      mockSocket.connected = true;
+      socketCallbacks['connect']?.();
+    });
+
+    const getMapCallsAfterLoad = (apiService.getMap as any).mock.calls.length;
+    mockSocket.connect.mockClear();
+
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'hidden',
+      configurable: true,
+    });
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'visible',
+      configurable: true,
+    });
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(mockSocket.connect).not.toHaveBeenCalled();
+    expect((apiService.getMap as any).mock.calls.length).toBe(getMapCallsAfterLoad);
+    expect(screen.getByText('Synced')).toBeInTheDocument();
+    expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+    expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
+  });
+
   it('redirects with No Data when attempting to open an incompletely downloaded map while offline', async () => {
     sessionStorage.setItem('ourmaps_offline', '1');
     const { isMapDownloaded } = await vi.importActual<typeof import('../utils/tileUtils')>('../utils/tileUtils');

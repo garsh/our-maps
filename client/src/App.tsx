@@ -219,9 +219,9 @@ export function MapEditor() {
           if (s && !s.connected) {
             setIsSyncing(true);
             s.connect();
-          } else if (s && s.connected && id && id !== 'new') {
-            reconcileOnReconnectRef.current(id);
           } else {
+            // Socket still reports connected: MapView restores the canvas on
+            // visibility/pageshow. A real drop reconnects and GETs via `connect`.
             setIsSyncing(false);
           }
         } else {
