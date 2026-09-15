@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getTilesForArea, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, saveMapToViewCache, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB, stripMapCachePii } from '../tileUtils';
+import { getTilesForArea, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, saveMapToViewCache, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB, stripMapCachePii, unionCachedMapsWithDownloads } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 const { mockExtracts, mockPartSizes, mockMetaBytes } = vi.hoisted(() => ({
@@ -30,6 +30,7 @@ vi.mock('../extractStore', () => ({
 describe('tileUtils', () => {
     let openSpy: any;
     let stores: Map<string, Map<any, any>>;
+    let deletedStores: string[];
 
     beforeEach(() => {
         resetDBForTesting();
@@ -37,6 +38,7 @@ describe('tileUtils', () => {
         mockPartSizes.clear();
         mockMetaBytes.clear();
         stores = new Map<string, Map<any, any>>();
+        deletedStores = [];
         const getStore = (name: string) => {
             if (!stores.has(name)) stores.set(name, new Map());
             return stores.get(name)!;
@@ -44,7 +46,8 @@ describe('tileUtils', () => {
         openSpy = vi.fn(() => {
             const req: any = {
                 result: {
-                    objectStoreNames: { contains: (name: string) => name === 'maps' || stores.has(name) },
+                    objectStoreNames: { contains: (name: string) => name === 'maps' || name === 'tiles' || name === 'manifest' || stores.has(name) },
+                    deleteObjectStore: (name: string) => { deletedStores.push(name); },
                     transaction: (_names?: string | string[]) => {
                         const tx: any = {
                             objectStore: (name: string) => {
@@ -317,6 +320,35 @@ describe('tileUtils', () => {
         expect(retrieved.extractTotalBytes).toBe(2000);
         expect(retrieved).not.toHaveProperty('permissions');
         expect(retrieved).not.toHaveProperty('ownerEmail');
+    });
+
+    it('unions complete extracts missing from cached_maps onto the offline list', async () => {
+        await saveMapOffline({
+            id: 'extract-only',
+            name: 'Extract Only',
+            layers: [],
+            pins: [],
+        } as any);
+        await saveMapOffline({
+            id: 'cached-too',
+            name: 'Also Cached',
+            layers: [],
+            pins: [],
+        } as any);
+        mockExtracts.add('extract-only');
+
+        const cached = [
+            { id: 'cached-too', name: 'From Cache', ownerId: 'u1', ownerName: 'User' },
+        ];
+        const merged = await unionCachedMapsWithDownloads(cached);
+        expect(merged.map((m) => m.id)).toEqual(['extract-only', 'cached-too']);
+        expect(merged[0].name).toBe('Extract Only');
+        expect(merged[1].name).toBe('From Cache');
+    });
+
+    it('deletes leftover tiles and manifest stores on database upgrade', async () => {
+        await openDB();
+        expect(deletedStores).toEqual(['tiles', 'manifest']);
     });
 
     it('should reuse singleton IDBDatabase connection across multiple operations', async () => {

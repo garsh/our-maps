@@ -195,6 +195,15 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     }
   }, [query, computeLocalResults, executeGlobalSearch]);
 
+  const handleSearchThisAreaRef = useRef(handleSearchThisArea);
+  handleSearchThisAreaRef.current = handleSearchThisArea;
+  const onSearchAreaStateChangeRef = useRef(onSearchAreaStateChange);
+  onSearchAreaStateChangeRef.current = onSearchAreaStateChange;
+  const lastSearchAreaNoticeRef = useRef<{ showPill: boolean; isSearching: boolean } | null>(null);
+  const stableSearchThisArea = useCallback(() => {
+    handleSearchThisAreaRef.current();
+  }, []);
+
   // Debounced global search triggered solely on query text changes
   const prevQueryRef = useRef(query);
   useEffect(() => {
@@ -225,25 +234,29 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     }
   }, [pins, computeLocalResults, query, lastSearchedBounds]);
 
-  // Notify parent of "Search this area" pill availability when user pans/zooms after an initial search
+  // Notify parent of "Search this area" pill availability when user pans/zooms after an initial search.
+  // Only push a new object when showPill or the searching spinner actually flips — not on every pan.
   useEffect(() => {
-    if (onSearchAreaStateChange) {
-      if (
-        query.trim().length >= 3 &&
-        effectiveBounds &&
-        lastSearchedBounds &&
-        effectiveBounds !== lastSearchedBounds
-      ) {
-        onSearchAreaStateChange({
-          showPill: true,
-          onSearchThisArea: handleSearchThisArea,
-          isSearching,
-        });
-      } else {
-        onSearchAreaStateChange(null);
-      }
+    const showPill = Boolean(
+      query.trim().length >= 3 &&
+      effectiveBounds &&
+      lastSearchedBounds &&
+      effectiveBounds !== lastSearchedBounds
+    );
+    const searching = showPill && isSearching;
+    const prev = lastSearchAreaNoticeRef.current;
+    if (prev && prev.showPill === showPill && prev.isSearching === searching) return;
+    lastSearchAreaNoticeRef.current = { showPill, isSearching: searching };
+    if (showPill) {
+      onSearchAreaStateChangeRef.current?.({
+        showPill: true,
+        onSearchThisArea: stableSearchThisArea,
+        isSearching: searching,
+      });
+    } else {
+      onSearchAreaStateChangeRef.current?.(null);
     }
-  }, [query, effectiveBounds, lastSearchedBounds, isSearching, onSearchAreaStateChange, handleSearchThisArea]);
+  }, [query, effectiveBounds, lastSearchedBounds, isSearching, stableSearchThisArea]);
 
   useEffect(() => {
     return () => {

@@ -19,7 +19,7 @@ const DB_NAME = 'MapTilesDB_v2';
 const MANIFEST_STORE = 'manifest';
 const TILE_STORE = 'tiles';
 const MAP_STORE = 'maps';
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -51,6 +51,11 @@ export async function openDB(): Promise<IDBDatabase> {
                             store.createIndex('lastAccessedAt', 'lastAccessedAt', { unique: false });
                         }
                     }
+                }
+                // v7: leftover per-tile stores from pre-extract downloads
+                if (typeof db.deleteObjectStore === 'function') {
+                    if (db.objectStoreNames.contains(TILE_STORE)) db.deleteObjectStore(TILE_STORE);
+                    if (db.objectStoreNames.contains(MANIFEST_STORE)) db.deleteObjectStore(MANIFEST_STORE);
                 }
             };
             request.onsuccess = () => {
@@ -269,6 +274,35 @@ export async function listOfflineMaps(): Promise<MapData[]> {
     } catch {
         return [];
     }
+}
+
+export interface CachedMapSummary {
+    id: string;
+    name: string;
+    ownerId?: string;
+    ownerName?: string;
+    lastAccessedAt?: string;
+}
+
+/**
+ * Offline home list: keep cached_maps entries and prepend any complete
+ * local extracts that are missing from that list (e.g. localStorage cleared).
+ */
+export async function unionCachedMapsWithDownloads<T extends CachedMapSummary>(cached: T[]): Promise<T[]> {
+    const maps = await listOfflineMaps();
+    const cachedIds = new Set(cached.map((m) => m.id));
+    const extras: T[] = [];
+    await Promise.all(maps.map(async (m) => {
+        if (!m?.id || cachedIds.has(m.id)) return;
+        if (!(await extractExists(m.id))) return;
+        extras.push({
+            id: m.id,
+            name: m.name || 'Unnamed Map',
+            ownerId: m.ownerId || '',
+            ownerName: m.ownerName || '',
+        } as T);
+    }));
+    return extras.length === 0 ? cached : [...extras, ...cached];
 }
 
 export interface MapDownloadStatus {

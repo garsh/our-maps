@@ -7,7 +7,7 @@ import {
   subscribeMapViewportBounds,
   resetMapViewportBoundsForTests,
 } from '../mapViewport';
-import { reverseGeocode } from '../geocoding';
+import { reverseGeocode, clearGeocodeCacheForTests } from '../geocoding';
 import type { Pin } from '@shared/interfaces';
 
 describe('mapUtils', () => {
@@ -176,6 +176,7 @@ describe('mapUtils', () => {
   describe('reverseGeocode', () => {
     beforeEach(() => {
       global.fetch = vi.fn();
+      clearGeocodeCacheForTests();
     });
 
     afterEach(() => {
@@ -212,6 +213,47 @@ describe('mapUtils', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(r1).toBe('Test');
       expect(r2).toBe('Test');
+    });
+
+    it('coalesces in-flight lookups for the same rounded coordinates', async () => {
+      const fetchMock = global.fetch as any;
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({ address: 'Same Block' }),
+      });
+
+      const p1 = reverseGeocode(1.00001, 1.00002);
+      const p2 = reverseGeocode(1.00003, 1.00004);
+      const [r1, r2] = await Promise.all([p1, p2]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(r1).toBe('Same Block');
+      expect(r2).toBe('Same Block');
+    });
+
+    it('reuses a successful cache hit and does not cache failures', async () => {
+      const fetchMock = global.fetch as any;
+      fetchMock
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ address: 'Cached St' }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 502,
+          json: async () => ({ error: 'Reverse geocode failed' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ address: 'Retry St' }),
+        });
+
+      expect(await reverseGeocode(10, 20)).toBe('Cached St');
+      expect(await reverseGeocode(10.00001, 20.00002)).toBe('Cached St');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      expect(await reverseGeocode(30, 40)).toBeNull();
+      expect(await reverseGeocode(30, 40)).toBe('Retry St');
+      expect(fetchMock).toHaveBeenCalledTimes(3);
     });
   });
 });

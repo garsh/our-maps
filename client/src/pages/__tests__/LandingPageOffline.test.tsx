@@ -20,6 +20,7 @@ vi.mock('../../utils/tileUtils', async () => {
   return {
     ...actual,
     getMapDownloadStatuses: vi.fn(),
+    unionCachedMapsWithDownloads: vi.fn(async (cached: { id: string }[]) => cached),
   };
 });
 
@@ -56,6 +57,7 @@ describe('LandingPage Offline Map Access', () => {
     const downloadStatuses = new Map();
     downloadStatuses.set('map-downloaded', { isComplete: true, isPartial: false });
     (tileUtils.getMapDownloadStatuses as any).mockResolvedValue(downloadStatuses);
+    (tileUtils.unionCachedMapsWithDownloads as any).mockImplementation(async (cached: typeof mockMaps) => cached);
   });
 
   afterEach(() => {
@@ -138,6 +140,31 @@ describe('LandingPage Offline Map Access', () => {
 
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(screen.getByText('This map is not available in offline mode')).toBeInTheDocument();
+  });
+
+  it('shows downloaded maps that are missing from cached_maps while offline', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    localStorage.removeItem('cached_maps');
+    (tileUtils.unionCachedMapsWithDownloads as any).mockImplementation(async () => [
+      { id: 'map-extract-only', name: 'Extract Only Map', ownerId: 'user-1', ownerName: 'Test User' },
+    ]);
+    const downloadStatuses = new Map();
+    downloadStatuses.set('map-extract-only', { isComplete: true, isPartial: false });
+    (tileUtils.getMapDownloadStatuses as any).mockResolvedValue(downloadStatuses);
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Extract Only Map')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Extract Only Map'));
+    expect(mockNavigate).toHaveBeenCalledWith('/map/map-extract-only');
   });
 
   it('displays Offline badge for undownloaded maps when offline', async () => {

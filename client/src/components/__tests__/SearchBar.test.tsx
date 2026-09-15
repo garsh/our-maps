@@ -201,6 +201,19 @@ describe('SearchBar', () => {
         expect.objectContaining({ showPill: true })
       );
     });
+
+    mockOnSearchAreaStateChange.mockClear();
+    rerender(
+      <SearchBar
+        onAddPin={mockOnAddPin}
+        pins={[]}
+        debounceMs={10}
+        mapBounds="137.0,38.0,138.0,37.0"
+        onSearchAreaStateChange={mockOnSearchAreaStateChange}
+      />
+    );
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockOnSearchAreaStateChange).not.toHaveBeenCalled();
   });
 
   it('executes search immediately on Enter key press', async () => {

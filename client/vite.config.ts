@@ -105,6 +105,12 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
+            // Home-screen list is stored in localStorage.cached_maps; a SW
+            // NetworkFirst copy can disagree after a flaky reconnect.
+            urlPattern: /\/api\/maps\/?(?:\?.*)?$/i,
+            handler: 'NetworkOnly',
+          },
+          {
             urlPattern: /\/api\/.*/i,
             handler: 'NetworkFirst',
             options: {

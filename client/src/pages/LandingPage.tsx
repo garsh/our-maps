@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { apiService } from '../services/api';
 import { Map as MapIcon, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download, Upload, Sun, Moon, Eye } from 'lucide-react';
-import { getMapDownloadStatuses, type MapDownloadStatus } from '../utils/tileUtils';
+import { getMapDownloadStatuses, unionCachedMapsWithDownloads, type MapDownloadStatus } from '../utils/tileUtils';
 import { tileWorkerManager } from '../utils/tileWorkerManager';
 import { getStoredJson, setStoredJson } from '../utils/storageUtils';
 import { isForcedOffline, setForcedOffline } from '../utils/offlineSession';
@@ -176,14 +176,11 @@ export default function LandingPage() {
     }
   };
 
-  const applyCachedMaps = () => {
-    const cachedData = getStoredJson<MapSummary[] | null>('cached_maps', null);
-    if (cachedData) {
-      setMaps(cachedData);
-      fetchDownloadedMapStatuses(cachedData);
-    } else {
-      fetchDownloadedMapStatuses();
-    }
+  const applyCachedMaps = async () => {
+    const cachedData = getStoredJson<MapSummary[] | null>('cached_maps', null) || [];
+    const merged = await unionCachedMapsWithDownloads(cachedData);
+    setMaps(merged);
+    fetchDownloadedMapStatuses(merged);
   };
 
   const fetchMaps = async (opts?: { force?: boolean }) => {
@@ -193,7 +190,7 @@ export default function LandingPage() {
     if (!opts?.force && browserOffline) {
       setForcedOffline(true);
       setIsOffline(true);
-      applyCachedMaps();
+      await applyCachedMaps();
       setLoading(false);
       return;
     }
@@ -213,7 +210,7 @@ export default function LandingPage() {
       }
       setForcedOffline(true);
       setIsOffline(true);
-      applyCachedMaps();
+      await applyCachedMaps();
     } finally {
       setLoading(false);
     }
