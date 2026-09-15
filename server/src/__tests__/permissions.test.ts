@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { getDb, setDbName, closeDb } from '../db';
-import { getMapRole, canEditMap, canViewMap, canSeeMapCollaborators, addMapViewerIfLinkShared } from '../permissions';
+import { getMapRole, canEditMap, canViewMap, canSeeMapCollaborators, addMapViewerIfLinkShared, resolveMapAccess } from '../permissions';
 
 describe('map role checks', () => {
   beforeAll(async () => {
@@ -53,6 +53,38 @@ describe('map role checks', () => {
     { userId: ownerId, targetMapId: 'public-map', expected: 'owner' },
   ])('resolves role $expected for user $userId on map $targetMapId', async ({ userId, targetMapId, expected }) => {
     expect(await getMapRole(userId, targetMapId)).toBe(expected);
+  });
+
+  it('resolveMapAccess derives role and collaborator visibility without extra queries', () => {
+    expect(resolveMapAccess(ownerId, { owner_id: ownerId, is_public: 0, permission_role: null })).toEqual({
+      role: 'owner',
+      canSeeCollaborators: true,
+    });
+    expect(resolveMapAccess(editorId, { owner_id: ownerId, is_public: 0, permission_role: 'edit' })).toEqual({
+      role: 'edit',
+      canSeeCollaborators: true,
+    });
+    expect(resolveMapAccess(viewerId, { owner_id: ownerId, is_public: 0, permission_role: 'view' })).toEqual({
+      role: 'view',
+      canSeeCollaborators: true,
+    });
+    expect(resolveMapAccess(strangerId, { owner_id: ownerId, is_public: 1, permission_role: null })).toEqual({
+      role: 'view',
+      canSeeCollaborators: false,
+    });
+    expect(resolveMapAccess(undefined, { owner_id: ownerId, is_public: 1, permission_role: null })).toEqual({
+      role: 'view',
+      canSeeCollaborators: false,
+    });
+    expect(resolveMapAccess(strangerId, { owner_id: ownerId, is_public: 0, permission_role: null })).toEqual({
+      role: null,
+      canSeeCollaborators: false,
+    });
+    expect(resolveMapAccess(strangerId, { owner_id: ownerId, is_public: 1, permission_role: null }, { newlyGrantedView: true })).toEqual({
+      role: 'view',
+      canSeeCollaborators: true,
+    });
+    expect(resolveMapAccess(ownerId, null)).toEqual({ role: null, canSeeCollaborators: false });
   });
 
   it.each([

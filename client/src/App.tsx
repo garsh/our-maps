@@ -836,6 +836,11 @@ export function MapEditor() {
         setUserRole(data.role);
       });
 
+      socket.on('map-public-updated', (data: { mapId: string; isPublic: boolean }) => {
+        if (data.mapId !== id) return;
+        setIsPublic(Boolean(data.isPublic));
+      });
+
       return () => {
         if (autoSaveTimerRef.current) {
           clearTimeout(autoSaveTimerRef.current);

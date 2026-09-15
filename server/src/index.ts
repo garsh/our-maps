@@ -15,12 +15,12 @@ import mapsRouter from './routes/maps';
 import type { User } from '@shared/interfaces';
 import placesRouter from './routes/places';
 import { googleLoginHandler, sharedContactsHandler, searchUsersHandler, filterContactsHandler, authMiddleware, authenticateToken, getJwtSecret, assertMockAuthConfig, meHandler, mockLoginHandler, logoutHandler, logoutEverywhereHandler, parseCookies, SESSION_COOKIE, getUserForSession, cleanupSessionCache } from './auth';
-import { getMapRole, canEditMap, canViewMap, addMapViewerIfLinkShared } from './permissions';
+import { getMapRole, canEditMap, canViewMap, addMapViewerIfLinkShared, resolveMapAccess } from './permissions';
+import { getDb, purgeExpiredSessions } from './db';
 import { resolveSafeMapFile, sanitizeMapFilename, getSafeMapFileSize, ensureOnDemandFontFile, isAllowedFontstack, buildCandidateMapsDirs, evaluateFileRange, PMTILES_MAX_RANGE_BYTES } from './mapFiles';
 import { isAllowedOrigin } from './cors';
 import { getCspDirectives } from './csp';
 import { socketPayloadSchemas } from './schemas';
-import { purgeExpiredSessions } from './db';
 import * as realtime from './realtime';
 import { handleExtractSize, handleTileStream, cleanupPlanDiskCache } from './tileStream';
 
@@ -155,8 +155,21 @@ io.on('connection', (socket: Socket) => {
   socket.on('join-map', async (mapId: string) => {
     if (typeof mapId !== 'string' || !mapId) return;
     const user = getAuthedUser(socket);
-    await addMapViewerIfLinkShared(user?.id, mapId);
-    const role = await getMapRole(user?.id, mapId);
+    const db = await getDb();
+    const map = await db.get(
+      `SELECT m.owner_id, m.is_public, mp.role as permission_role
+       FROM maps m
+       LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
+       WHERE m.id = ?`,
+      user?.id || null,
+      mapId
+    );
+    if (!map) {
+      socket.emit('join-map-error', { mapId, error: 'Access denied' });
+      return;
+    }
+    const newlyAdded = await addMapViewerIfLinkShared(user?.id, mapId, map);
+    const { role } = resolveMapAccess(user?.id, map, { newlyGrantedView: newlyAdded });
     if (!canViewMap(role)) {
       socket.emit('join-map-error', { mapId, error: 'Access denied' });
       return;

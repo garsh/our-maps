@@ -220,12 +220,13 @@ export default function LandingPage() {
   };
 
   const fetchMapsRef = useRef(fetchMaps);
+  const fetchDownloadedMapStatusesRef = useRef(fetchDownloadedMapStatuses);
   useEffect(() => {
     fetchMapsRef.current = fetchMaps;
+    fetchDownloadedMapStatusesRef.current = fetchDownloadedMapStatuses;
   });
 
   useEffect(() => {
-    fetchDownloadedMapStatuses();
     fetchMaps();
     
     const handleOnline = () => {
@@ -237,11 +238,16 @@ export default function LandingPage() {
       setForcedOffline(true);
       setIsOffline(true);
     };
-    
+
+    const VISIBILITY_STATUS_DEBOUNCE_MS = 500;
+    let visibilityTimer: ReturnType<typeof setTimeout> | null = null;
     const handleVisible = () => {
-      if (document.visibilityState === 'visible') {
-        fetchDownloadedMapStatuses();
-      }
+      if (document.visibilityState !== 'visible') return;
+      if (visibilityTimer) clearTimeout(visibilityTimer);
+      visibilityTimer = setTimeout(() => {
+        visibilityTimer = null;
+        fetchDownloadedMapStatusesRef.current();
+      }, VISIBILITY_STATUS_DEBOUNCE_MS);
     };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -288,6 +294,7 @@ export default function LandingPage() {
     window.addEventListener('scroll', handleDismissTooltip, { passive: true });
 
     return () => {
+      if (visibilityTimer) clearTimeout(visibilityTimer);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       document.removeEventListener('visibilitychange', handleVisible);

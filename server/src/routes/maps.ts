@@ -3,12 +3,46 @@ import crypto from 'crypto';
 import { getDb } from '../db';
 import type { Pin, MapData, MapPermission, PinLayer, PinIcon } from '@shared/interfaces';
 import { authMiddleware, optionalAuthMiddleware, type AuthRequest } from '../auth';
-import { getMapRole, canEditMap, canSeeMapCollaborators, addMapViewerIfLinkShared } from '../permissions';
+import { getMapRole, canEditMap, addMapViewerIfLinkShared, resolveMapAccess } from '../permissions';
 import { MapCreateSchema, MapUpdateSchema, ShareSchema, PinSchema, LayerSchema } from '../schemas';
 import { revokeUserMapAccess, updateUserMapRole, syncSocketsOnPublicChange } from '../realtime';
 import { z } from 'zod';
 
 const router = Router();
+
+function formatPinRow(p: {
+  id: string;
+  layer_id?: string | null;
+  lat: number;
+  lng: number;
+  label?: string | null;
+  description?: string | null;
+  address?: string | null;
+  color?: string | null;
+  icon?: string | null;
+  position?: number | null;
+}): Pin {
+  return {
+    id: p.id,
+    lat: p.lat,
+    lng: p.lng,
+    label: p.label || '',
+    description: p.description || undefined,
+    address: p.address || undefined,
+    color: p.color || 'blue',
+    icon: (p.icon as PinIcon) || 'default',
+    position: p.position || 0,
+    layerId: p.layer_id || undefined,
+  };
+}
+
+function formatLayerRow(l: { id: string; name: string; position?: number | null }): PinLayer {
+  return {
+    id: l.id,
+    name: l.name,
+    position: l.position || 0,
+  };
+}
 
 // GET all accessible maps for the landing page
 router.get('/', authMiddleware, async (req: AuthRequest, res) => {
@@ -48,19 +82,22 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
   const db = await getDb();
 
   const map = await db.get(`
-    SELECT m.*, u.name as owner_name, u.email as owner_email, u.picture as owner_picture 
+    SELECT m.*, u.name as owner_name, u.email as owner_email, u.picture as owner_picture,
+           mp.role as permission_role
     FROM maps m 
     LEFT JOIN users u ON m.owner_id = u.id 
+    LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
     WHERE m.id = ?
-  `, mapId);
+  `, userId || null, mapId);
   
   if (!map) {
     return res.status(404).json({ error: 'Map not found' });
   }
 
   const newlyAdded = await addMapViewerIfLinkShared(userId, mapId, map);
-
-  const role = await getMapRole(userId, mapId);
+  const { role, canSeeCollaborators: includeCollaborators } = resolveMapAccess(userId, map, {
+    newlyGrantedView: newlyAdded,
+  });
   if (!role) {
     return res.status(userId ? 403 : 401).json({ error: userId ? 'Access denied' : 'Authentication required' });
   }
@@ -92,21 +129,17 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
   }
 
 
-  const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ? ORDER BY position ASC, id ASC', mapId);
-  const pins = await db.all('SELECT * FROM pins WHERE map_id = ? ORDER BY position ASC, id ASC', mapId);
+  const layers = await db.all(
+    'SELECT id, name, position FROM pin_layers WHERE map_id = ? ORDER BY position ASC, id ASC',
+    mapId
+  );
+  const pins = await db.all(
+    'SELECT id, layer_id, lat, lng, label, description, address, color, icon, position FROM pins WHERE map_id = ? ORDER BY position ASC, id ASC',
+    mapId
+  );
 
-  // Map fields for frontend consistency
-  const formattedPins = pins.map(p => {
-    const { layer_id, ...rest } = p;
-    return {
-      ...rest,
-      layerId: layer_id,
-      address: p.address,
-      color: p.color || 'blue',
-      icon: p.icon || 'default',
-      position: p.position || 0
-    };
-  });
+  const formattedPins = pins.map(formatPinRow);
+  const formattedLayers = (layers || []).map(formatLayerRow);
 
   let customColors: string[] = [];
   try {
@@ -119,7 +152,6 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
   }
 
   // Owner contact and collaborator lists: owner or explicit share only (not public-link view)
-  const includeCollaborators = await canSeeMapCollaborators(userId, mapId);
   let permissions: MapPermission[] = [];
   if (includeCollaborators) {
     const perms = await db.all(`
@@ -145,7 +177,7 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
     ownerName: includeCollaborators ? map.owner_name : undefined,
     ownerEmail: includeCollaborators ? map.owner_email : undefined,
     ownerPicture: includeCollaborators ? map.owner_picture : undefined,
-    layers: layers || [],
+    layers: formattedLayers,
     pins: formattedPins,
     customColors,
     userRole: role,
@@ -164,24 +196,25 @@ router.get('/:id/permissions', optionalAuthMiddleware, async (req: AuthRequest, 
   const db = await getDb();
 
   const map = await db.get(`
-    SELECT m.id, m.owner_id, m.is_public, u.name as owner_name, u.email as owner_email, u.picture as owner_picture 
+    SELECT m.id, m.owner_id, m.is_public, u.name as owner_name, u.email as owner_email, u.picture as owner_picture,
+           mp.role as permission_role
     FROM maps m 
     LEFT JOIN users u ON m.owner_id = u.id 
+    LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
     WHERE m.id = ?
-  `, mapId);
+  `, userId || null, mapId);
 
   if (!map) {
     return res.status(404).json({ error: 'Map not found' });
   }
 
-  await addMapViewerIfLinkShared(userId, mapId, map);
-
-  const role = await getMapRole(userId, mapId);
+  const newlyAdded = await addMapViewerIfLinkShared(userId, mapId, map);
+  const { role, canSeeCollaborators: includeCollaborators } = resolveMapAccess(userId, map, {
+    newlyGrantedView: newlyAdded,
+  });
   if (!role) {
     return res.status(userId ? 403 : 401).json({ error: 'Access denied' });
   }
-
-  const includeCollaborators = await canSeeMapCollaborators(userId, mapId);
   let permissions: MapPermission[] = [];
   if (includeCollaborators) {
     const perms = await db.all(`

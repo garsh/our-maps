@@ -2,6 +2,12 @@ import { getDb } from './db';
 
 export type MapRole = 'owner' | 'edit' | 'view';
 
+export interface MapAccessRow {
+  owner_id?: string | null;
+  is_public?: number | boolean | null;
+  permission_role?: string | null;
+}
+
 export function canViewMap(role: MapRole | null | undefined): boolean {
   return role === 'owner' || role === 'edit' || role === 'view';
 }
@@ -10,25 +16,48 @@ export function canEditMap(role: MapRole | null | undefined): boolean {
   return role === 'owner' || role === 'edit';
 }
 
+/**
+ * Derive role and collaborator visibility from an already-loaded maps row
+ * (optionally joined to the current user's map_permissions.role).
+ * `newlyGrantedView` covers the case where addMapViewerIfLinkShared inserted
+ * a view row after the SELECT, so permission_role on the row is still stale.
+ */
+export function resolveMapAccess(
+  userId: string | undefined | null,
+  map: MapAccessRow | null | undefined,
+  options?: { newlyGrantedView?: boolean }
+): { role: MapRole | null; canSeeCollaborators: boolean } {
+  if (!map) return { role: null, canSeeCollaborators: false };
+
+  if (userId && map.owner_id === userId) {
+    return { role: 'owner', canSeeCollaborators: true };
+  }
+
+  const permRole = options?.newlyGrantedView ? 'view' : map.permission_role;
+  if (permRole === 'edit' || permRole === 'view') {
+    return { role: permRole, canSeeCollaborators: true };
+  }
+
+  if (Boolean(map.is_public)) {
+    return { role: 'view', canSeeCollaborators: false };
+  }
+
+  return { role: null, canSeeCollaborators: false };
+}
+
 export async function getMapRole(userId: string | undefined | null, mapId: string): Promise<MapRole | null> {
   if (!mapId) return null;
 
   const db = await getDb();
   const row = await db.get(
-    `SELECT m.owner_id, m.is_public, mp.role
+    `SELECT m.owner_id, m.is_public, mp.role as permission_role
      FROM maps m
      LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
      WHERE m.id = ?`,
     userId || null,
     mapId
   );
-  if (!row) return null;
-
-  if (userId && row.owner_id === userId) return 'owner';
-  if (row.role === 'edit' || row.role === 'view') return row.role;
-  if (Boolean(row.is_public)) return 'view';
-
-  return null;
+  return resolveMapAccess(userId, row).role;
 }
 
 /** Owner or an explicit share row — not implicit public-link view. */
@@ -40,16 +69,14 @@ export async function canSeeMapCollaborators(
 
   const db = await getDb();
   const row = await db.get(
-    `SELECT m.owner_id, mp.role
+    `SELECT m.owner_id, m.is_public, mp.role as permission_role
      FROM maps m
      LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
      WHERE m.id = ?`,
     userId,
     mapId
   );
-  if (!row) return false;
-  if (row.owner_id === userId) return true;
-  return row.role === 'edit' || row.role === 'view';
+  return resolveMapAccess(userId, row).canSeeCollaborators;
 }
 
 /**

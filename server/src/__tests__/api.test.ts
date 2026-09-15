@@ -128,6 +128,45 @@ describe('API Endpoints', () => {
     expect(res.body.userRole).toBe('owner');
   });
 
+  it('GET /api/maps/:id serializes pins and layers without map_id or layer_id', async () => {
+    const mapId = uuid(22);
+    const layerId = uuid(23);
+    const pinId = uuid(24);
+    const db = await getDb();
+    await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', mapId, 'Shape Map', mockUser.id);
+    await db.run(
+      'INSERT INTO pin_layers (id, map_id, name, position) VALUES (?, ?, ?, ?)',
+      layerId, mapId, 'Layer A', 1
+    );
+    await db.run(
+      'INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      pinId, mapId, layerId, 12.5, -8.25, 'Cafe', 'Notes', '1 Main St', 'green', 'restaurant', 2
+    );
+
+    const res = await request(app).get(`/api/maps/${mapId}`).set(authHeader);
+    expect(res.status).toBe(200);
+
+    expect(res.body.layers).toHaveLength(1);
+    expect(res.body.layers[0]).toEqual({ id: layerId, name: 'Layer A', position: 1 });
+    expect(res.body.layers[0]).not.toHaveProperty('map_id');
+
+    expect(res.body.pins).toHaveLength(1);
+    expect(res.body.pins[0]).toEqual({
+      id: pinId,
+      lat: 12.5,
+      lng: -8.25,
+      label: 'Cafe',
+      description: 'Notes',
+      address: '1 Main St',
+      color: 'green',
+      icon: 'restaurant',
+      position: 2,
+      layerId,
+    });
+    expect(res.body.pins[0]).not.toHaveProperty('map_id');
+    expect(res.body.pins[0]).not.toHaveProperty('layer_id');
+  });
+
   it('PUT /api/maps/:id should update map name and pins', async () => {
     const mapId = uuid(30);
     const db = await getDb();

@@ -845,5 +845,55 @@ describe('App Components Error Handling', () => {
     expect(screen.queryByText(/No Data/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Unable to load map offline/i)).not.toBeInTheDocument();
   });
+
+  it('updates the public-link setting when map-public-updated arrives', async () => {
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Share Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner',
+      isPublic: false,
+      ownerId: mockUser.id,
+      ownerName: mockUser.name,
+      ownerEmail: mockUser.email,
+    });
+    (apiService.getMapPermissions as any).mockResolvedValue({
+      owner: { id: mockUser.id, name: mockUser.name, email: mockUser.email },
+      permissions: [],
+      userRole: 'owner',
+      isPublic: false,
+    });
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Share Map')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+    fireEvent.click(screen.getByText('Share'));
+
+    const radio = await screen.findByLabelText('Allow anybody with the link to view');
+    expect(radio).not.toBeChecked();
+
+    act(() => {
+      socketCallbacks['map-public-updated']?.({ mapId: 'map-other', isPublic: true });
+    });
+    expect(radio).not.toBeChecked();
+
+    act(() => {
+      socketCallbacks['map-public-updated']?.({ mapId: 'map-1', isPublic: true });
+    });
+    expect(radio).toBeChecked();
+  });
 });
 

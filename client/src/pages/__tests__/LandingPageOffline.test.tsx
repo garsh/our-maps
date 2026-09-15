@@ -285,6 +285,54 @@ describe('LandingPage Offline Map Access', () => {
     expect(screen.getByText('This map is not available in offline mode')).toBeInTheDocument();
   });
 
+  it('scans download statuses once after maps load, not twice on mount', async () => {
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Downloaded Map')).toBeInTheDocument();
+    });
+
+    expect(tileUtils.getMapDownloadStatuses).toHaveBeenCalledTimes(1);
+    expect(tileUtils.getMapDownloadStatuses).toHaveBeenCalledWith(['map-downloaded', 'map-not-downloaded']);
+  });
+
+  it('debounces visibility-triggered download status scans', async () => {
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(tileUtils.getMapDownloadStatuses).toHaveBeenCalledTimes(1);
+    });
+
+    vi.useFakeTimers();
+    try {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'));
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      expect(tileUtils.getMapDownloadStatuses).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(tileUtils.getMapDownloadStatuses).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('asks to delete leftover older-version storage after Remove All Downloads', async () => {
     vi.spyOn(tileWorkerManager, 'removeAllDownloads').mockResolvedValue(undefined);
     (legacyStorage.findUnrecognizedStorage as any).mockResolvedValue([
