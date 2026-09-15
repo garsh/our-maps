@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import Sidebar, { computeCustomCollisionDetection } from '../Sidebar';
+import Sidebar, { computeCustomCollisionDetection, OFFLINE_HIGH_ZOOM_TERRAIN_HINT } from '../Sidebar';
 import { useState } from 'react';
 import * as dndSortable from '@dnd-kit/sortable';
 import * as dndCore from '@dnd-kit/core';
@@ -565,6 +565,22 @@ describe('Sidebar', () => {
     expect(buildingsOption).toBeInTheDocument();
     fireEvent.click(buildingsOption);
     expect(onToggle3DBuildings).toHaveBeenCalledWith(false);
+  });
+
+  it('shows 3D terrain as off and explains auto-off when suspended at high offline zoom', () => {
+    const onToggle3DTerrain = vi.fn();
+    render(<TestWrapper handlers={{ onToggle3DTerrain, show3DTerrain: true, terrainSuspended: true }} />);
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+    const terrainOption = screen.getByText('3D Terrain');
+    const row = terrainOption.closest('div[title]') as HTMLElement;
+    expect(row).toHaveAttribute('title', OFFLINE_HIGH_ZOOM_TERRAIN_HINT);
+    const switchKnob = row.lastElementChild?.firstElementChild as HTMLElement;
+    expect(switchKnob.style.left).toBe('2px');
+
+    fireEvent.click(terrainOption);
+    expect(onToggle3DTerrain).not.toHaveBeenCalled();
+    expect(screen.getByText(OFFLINE_HIGH_ZOOM_TERRAIN_HINT)).toBeInTheDocument();
   });
 
   it('keeps appearance menu open when dark mode is toggled', () => {

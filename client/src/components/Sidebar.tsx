@@ -92,6 +92,9 @@ const KEYBOARD_SENSOR_OPTIONS = { coordinateGetter: sortableKeyboardCoordinates 
 
 export type MapTheme = 'light' | 'dark';
 
+export const OFFLINE_HIGH_ZOOM_TERRAIN_HINT =
+  '3D Terrain automatically turns off at high zoom levels when offline.';
+
 interface SidebarProps {
   mapId: string | null;
   mapName: string;
@@ -140,6 +143,7 @@ interface SidebarProps {
   showHillshade?: boolean;
   onToggleHillshade?: (enabled: boolean) => void;
   show3DTerrain?: boolean;
+  terrainSuspended?: boolean;
   onToggle3DTerrain?: (enabled: boolean) => void;
   show3DBuildings?: boolean;
   onToggle3DBuildings?: (enabled: boolean) => void;
@@ -1716,6 +1720,7 @@ const Sidebar = ({
   showHillshade = true,
   onToggleHillshade,
   show3DTerrain = true,
+  terrainSuspended = false,
   onToggle3DTerrain,
   show3DBuildings = true,
   onToggle3DBuildings,
@@ -1724,6 +1729,10 @@ const Sidebar = ({
   onSearchAreaStateChange
 }: SidebarProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [terrainHintVisible, setTerrainHintVisible] = useState(false);
+  useEffect(() => {
+    if (!isMenuOpen || !terrainSuspended) setTerrainHintVisible(false);
+  }, [isMenuOpen, terrainSuspended]);
   const menuRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -2069,7 +2078,7 @@ const Sidebar = ({
   const mouseSensor = useSensor(MouseSensor, MOUSE_SENSOR_OPTIONS);
   const touchSensor = useSensor(TouchSensor, TOUCH_SENSOR_OPTIONS);
   const keyboardSensor = useSensor(KeyboardSensor, KEYBOARD_SENSOR_OPTIONS);
-  const sensors = useSensors(...(readOnly ? [] : [mouseSensor, touchSensor, keyboardSensor]));
+  const sensors = useSensors(mouseSensor, touchSensor, keyboardSensor);
 
   const layerIndexMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -2623,8 +2632,14 @@ const Sidebar = ({
                     </div>
                   </div>
                   <div
+                    title={terrainSuspended ? OFFLINE_HIGH_ZOOM_TERRAIN_HINT : undefined}
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (terrainSuspended) {
+                        setTerrainHintVisible(true);
+                        return;
+                      }
+                      setTerrainHintVisible(false);
                       onToggle3DTerrain?.(!show3DTerrain);
                     }}
                     style={{
@@ -2634,15 +2649,15 @@ const Sidebar = ({
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       fontSize: '0.82rem',
-                      fontWeight: show3DTerrain ? '600' : '500',
+                      fontWeight: (show3DTerrain && !terrainSuspended) ? '600' : '500',
                       color: 'var(--text-primary)',
-                      borderBottom: '1px solid var(--border-color)',
+                      borderBottom: terrainHintVisible ? 'none' : '1px solid var(--border-color)',
                     }}
                     onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Mountain size={15} style={{ color: show3DTerrain ? '#1d4ed8' : '#64748b' }} />
+                      <Mountain size={15} style={{ color: (show3DTerrain && !terrainSuspended) ? '#1d4ed8' : '#64748b' }} />
                       <span>3D Terrain</span>
                     </div>
                     <div
@@ -2650,7 +2665,7 @@ const Sidebar = ({
                         width: '34px',
                         height: '18px',
                         borderRadius: '10px',
-                        background: show3DTerrain ? '#3b82f6' : '#e2e8f0',
+                        background: (show3DTerrain && !terrainSuspended) ? '#3b82f6' : '#e2e8f0',
                         position: 'relative',
                         transition: 'background 0.2s ease',
                         flexShrink: 0,
@@ -2664,13 +2679,27 @@ const Sidebar = ({
                           background: 'white',
                           position: 'absolute',
                           top: '2px',
-                          left: show3DTerrain ? '18px' : '2px',
+                          left: (show3DTerrain && !terrainSuspended) ? '18px' : '2px',
                           transition: 'left 0.2s ease',
                           boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
                         }}
                       />
                     </div>
                   </div>
+                  {terrainHintVisible && (
+                    <div
+                      role="status"
+                      style={{
+                        padding: '0 16px 10px 28px',
+                        fontSize: '0.72rem',
+                        lineHeight: 1.35,
+                        color: 'var(--text-secondary)',
+                        borderBottom: '1px solid var(--border-color)',
+                      }}
+                    >
+                      {OFFLINE_HIGH_ZOOM_TERRAIN_HINT}
+                    </div>
+                  )}
                   <div
                     onClick={(e) => {
                       e.stopPropagation();

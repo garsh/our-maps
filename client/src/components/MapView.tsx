@@ -17,6 +17,7 @@ import { clearHoveredPin, getHoveredPinId, useHoveredPinId, hasFinePointer } fro
 import { setMapViewportBounds } from '../utils/mapViewport';
 import { ensurePinImageByKey, ensurePinImages, getPinIconKey, clearRegisteredImages } from '../utils/pinIconSprite';
 import { applyBundledSprites } from '../utils/basemapSprites';
+import { FLAT_TERRARIUM_256_PNG } from '../utils/flatTerrariumPng';
 
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -47,11 +48,34 @@ function getFallbackMetadata(baseUrl: string) {
   };
 }
 
-// 1x1 PNG with RGBA (128, 0, 0, 255) representing 0 meters elevation in Terrarium format
-// ((128 * 256 + 0 + 0/256) - 32768 = 0m)
-const FLAT_TERRARIUM_PNG = new Uint8Array([
-  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 104, 96, 96, 248, 15, 0, 3, 4, 1, 128, 11, 131, 200, 20, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130
-]);
+/** MapLibre treats status 404 as a missing tile and overzooms a parent. Other throws abort the tile. */
+function throwTileNotFound(z: string | number, x: string | number, y: string | number): never {
+  const err = new Error(`Tile not found: ${z}/${x}/${y}`) as Error & { status: number };
+  err.status = 404;
+  throw err;
+}
+
+/** DEM terrain blanks some GPUs past ~16 while offline. */
+const OFFLINE_TERRAIN_MAX_ZOOM = 16;
+
+export function shouldSuspendOfflineTerrain(zoom: number, isOffline: boolean): boolean {
+  return isOffline && zoom > OFFLINE_TERRAIN_MAX_ZOOM;
+}
+
+function syncOfflineTerrain(map: any, show3DTerrain: boolean, isOffline: boolean) {
+  if (!map || typeof map.setTerrain !== 'function') return;
+  const zoom = typeof map.getZoom === 'function' ? map.getZoom() : 0;
+  const terrainOn = show3DTerrain && !shouldSuspendOfflineTerrain(zoom, isOffline);
+  try {
+    const hasTerrain = typeof map.getTerrain === 'function' ? !!map.getTerrain() : false;
+    if (terrainOn && !hasTerrain) {
+      map.setTerrain({ source: 'terrainElevation', exaggeration: 1.0 });
+    } else if (!terrainOn && hasTerrain) {
+      map.setTerrain(null);
+    }
+  } catch {}
+}
+
 
 let isDEMProtocolRegistered = false;
 function setupDEMProtocol() {
@@ -87,9 +111,12 @@ function setupDEMProtocol() {
         } catch {}
       }
 
-      // 3. Fallback for offline mode when tile is not in cache:
-      // Return 0m flat elevation tile so MapLibre renders flat terrain without breaking the canvas
-      return { data: FLAT_TERRARIUM_PNG.buffer.slice(0) };
+      // 3. Uncached offline DEM: 256×256 0m Terrarium PNG (same size as AWS tiles /
+      // raster-dem tileSize). A 1×1 fallback caused "dem dimension mismatch" when
+      // MapLibre backfilled borders against neighboring 256px tiles.
+      const flat = new Uint8Array(FLAT_TERRARIUM_256_PNG.byteLength);
+      flat.set(FLAT_TERRARIUM_256_PNG);
+      return { data: flat.buffer };
     });
   }
 }
@@ -115,9 +142,9 @@ function setupPMTilesProtocol() {
             if (result && result.data && result.data.byteLength > 0) {
               return { data: new Uint8Array(result.data) };
             }
-            // Extract is loaded: missing tiles must throw so MapLibre overzooms a parent tile.
+            // Extract is loaded: missing tiles must 404 so MapLibre overzooms a parent tile.
             // Do not fall through to the network — navigator.onLine can be true while the server is down.
-            throw new Error(`Tile not found: ${z}/${x}/${y}`);
+            throwTileNotFound(z, x, y);
           }
         } catch (extractErr) {
           if (extractErr instanceof Error && extractErr.message.startsWith('Tile not found:')) {
@@ -138,10 +165,10 @@ function setupPMTilesProtocol() {
         }
 
         // CRITICAL FOR OFFLINE MODE:
-        // 3. Tile missing offline -> throw Error rather than returning a 0-byte tile!
+        // 3. Tile missing offline -> 404 rather than returning a 0-byte tile!
         // Returning a 0-byte tile causes MapLibre to treat the tile as valid-but-empty and erase the canvas.
-        // Throwing an Error causes MapLibre to automatically scale up and render the parent zoom tile (zooms 4-8).
-        throw new Error(`Tile not found: ${z}/${x}/${y}`);
+        // status 404 causes MapLibre to overzoom a parent tile instead of aborting the source.
+        throwTileNotFound(z, x, y);
       }
 
       // Metadata / TileJSON schema request.
@@ -182,6 +209,7 @@ interface MapViewProps {
   onPinClick?: (pin: Pin) => void;
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
   onBoundsChange?: (bounds: string) => void;
+  onZoomChange?: (zoom: number) => void;
   targetPinId?: string | null;
   boundsToFit?: [[number, number], [number, number]] | null;
   userRole?: 'owner' | 'edit' | 'view';
@@ -608,6 +636,7 @@ const MapView = ({
   onPinClick,
   onUpdatePin,
   onBoundsChange,
+  onZoomChange,
   targetPinId,
   boundsToFit,
   userRole = 'owner',
@@ -630,6 +659,10 @@ const MapView = ({
 }: MapViewProps) => {
 
   const mapRef = useRef<MapRef | null>(null);
+  const overlayPrefsRef = useRef({ show3DTerrain, isOffline });
+  overlayPrefsRef.current = { show3DTerrain, isOffline };
+  const onZoomChangeRef = useRef(onZoomChange);
+  onZoomChangeRef.current = onZoomChange;
 
   const [domTarget, setDomTarget] = useState<HTMLElement | null>(null);
 
@@ -759,23 +792,24 @@ const MapView = ({
           mapInstance.triggerRepaint();
         });
       });
-      mapInstance.on('sourcedata', (e: any) => {
-        if (e.sourceDataType === 'metadata' || e.sourceDataType === 'content') {
-          mapInstance.triggerRepaint();
-        }
-      });
-      mapInstance.on('data', (e: any) => {
-        if (e.dataType === 'style' || e.dataType === 'source') {
-          mapInstance.triggerRepaint();
-        }
-      });
       mapInstance.once('load', () => {
         setIsMapLoaded(true);
+        syncOfflineTerrain(mapInstance, overlayPrefsRef.current.show3DTerrain, overlayPrefsRef.current.isOffline);
+        if (typeof mapInstance.getZoom === 'function') {
+          onZoomChangeRef.current?.(mapInstance.getZoom());
+        }
         mapInstance.triggerRepaint();
       });
       mapInstance.once('idle', () => {
         setIsMapLoaded(true);
         mapInstance.triggerRepaint();
+      });
+      mapInstance.on('zoom', () => {
+        const prefs = overlayPrefsRef.current;
+        syncOfflineTerrain(mapInstance, prefs.show3DTerrain, prefs.isOffline);
+        if (typeof mapInstance.getZoom === 'function') {
+          onZoomChangeRef.current?.(mapInstance.getZoom());
+        }
       });
     }
 
@@ -1009,17 +1043,11 @@ const MapView = ({
       if (!m) return;
 
       try {
-        if (typeof m.setTerrain === 'function') {
-          // 3D Terrain is routed via dem:// protocol which:
-          // 1. Returns cached DEM tiles offline (full 3D terrain rendered offline when cached)
-          // 2. Returns 0m flat elevation fallback if offline and not cached (preventing blank map bugs)
-          // 3. Fetches and caches DEM tiles from AWS S3 when online
-          if (show3DTerrain) {
-            m.setTerrain({ source: 'terrainElevation', exaggeration: 1.0 });
-          } else {
-            m.setTerrain(null);
-          }
-        }
+        // 3D Terrain is routed via dem:// protocol which:
+        // 1. Returns cached DEM tiles offline (full 3D terrain rendered offline when cached)
+        // 2. Returns 0m flat elevation fallback if offline and not cached (preventing blank map bugs)
+        // 3. Fetches and caches DEM tiles from AWS S3 when online
+        syncOfflineTerrain(m, overlayPrefsRef.current.show3DTerrain, overlayPrefsRef.current.isOffline);
         if (typeof m.triggerRepaint === 'function') {
           m.triggerRepaint();
         }
@@ -1035,7 +1063,7 @@ const MapView = ({
     } else {
       syncTerrain();
     }
-  }, [mapTheme, show3DTerrain, isMapLoaded]);
+  }, [mapTheme, show3DTerrain, isMapLoaded, isOffline]);
 
   const appliedThemeRef = useRef(mapTheme);
   // Recolor the existing style in one frame. setStyle on theme change reloads
@@ -1861,6 +1889,8 @@ const MapView = ({
           maxZoom={22}
           minZoom={1}
           maxPitch={85}
+          // Slice z=15 vector tiles up to map maxZoom 22 instead of GPU-stretching them.
+          zoomLevelsToOverscale={0}
           onLoad={handleMapLoad}
           onZoomStart={clearHoverDuringPan}
           onZoomEnd={updateBounds}

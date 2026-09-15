@@ -20,9 +20,13 @@ vi.mock('../utils/tileUtils', async () => {
     isMapDownloaded: vi.fn(async () => true),
   };
 });
-vi.mock('../components/MapView', () => ({
-  default: () => <div data-testid="map-view" />
-}));
+vi.mock('../components/MapView', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../components/MapView')>();
+  return {
+    ...actual,
+    default: () => <div data-testid="map-view" />,
+  };
+});
 const { mockSocket, socketCallbacks } = vi.hoisted(() => {
   const socketCallbacks: Record<string, Function> = {};
   const mockSocket = {

@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import MapView, { isPinInPaddedViewport } from '../MapView';
+import MapView, { isPinInPaddedViewport, shouldSuspendOfflineTerrain } from '../MapView';
 import { getHoveredPinId, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
 import { getMapViewportBounds, resetMapViewportBoundsForTests } from '../../utils/mapViewport';
 
@@ -114,6 +114,16 @@ vi.mock('pmtiles', () => ({
     tilev4 = vi.fn();
   },
 }));
+
+describe('shouldSuspendOfflineTerrain', () => {
+  it('suspends 3D terrain only when offline and zoomed past 16', () => {
+    expect(shouldSuspendOfflineTerrain(16, true)).toBe(false);
+    expect(shouldSuspendOfflineTerrain(16.01, true)).toBe(true);
+    expect(shouldSuspendOfflineTerrain(22, true)).toBe(true);
+    expect(shouldSuspendOfflineTerrain(22, false)).toBe(false);
+    expect(shouldSuspendOfflineTerrain(10, true)).toBe(false);
+  });
+});
 
 describe('isPinInPaddedViewport', () => {
   it('treats a pin under the sidebar padding as out of view', () => {
@@ -548,5 +558,35 @@ describe('MapView Compass and Tilt Indicator', () => {
       pitch: 30,
       bearing: 45,
     });
+  });
+
+  it('slices vector tiles above source maxzoom instead of GPU-stretching z=15', () => {
+    render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+      />
+    );
+
+    expect(capturedMapProps.current.maxZoom).toBe(22);
+    expect(capturedMapProps.current.zoomLevelsToOverscale).toBe(0);
+    expect(capturedMapProps.current.mapStyle?.sources?.protomaps?.maxzoom).toBe(15);
+  });
+
+  it('does not subscribe to per-tile sourcedata or data repaint handlers', () => {
+    render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+      />
+    );
+
+    const onEvents = mockOn.mock.calls.map((call) => call[0]);
+    expect(onEvents).toContain('style.load');
+    expect(onEvents).toContain('webglcontextlost');
+    expect(onEvents).not.toContain('sourcedata');
+    expect(onEvents).not.toContain('data');
   });
 });

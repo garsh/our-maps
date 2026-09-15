@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
-import MapView from './components/MapView'
+import MapView, { shouldSuspendOfflineTerrain } from './components/MapView'
 import Sidebar from './components/Sidebar'
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
@@ -112,6 +112,7 @@ export function MapEditor() {
   const [show3DTerrain, setShow3DTerrain] = useState<boolean>(() => {
     return getStoredBoolean('ourmaps_3d_terrain', getStoredBoolean('ourmaps_3d', true));
   });
+  const [mapZoom, setMapZoom] = useState(1);
 
   const handleToggle3DTerrain = useCallback((enabled: boolean) => {
     setShow3DTerrain(enabled);
@@ -151,6 +152,7 @@ export function MapEditor() {
   const [isOffline, setIsOffline] = useState(
     () => (typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY)
   );
+  const terrainSuspended = shouldSuspendOfflineTerrain(mapZoom, isOffline);
   const [isSyncing, setIsSyncing] = useState(
     () => id !== 'new' && !((typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY))
   );
@@ -590,7 +592,6 @@ export function MapEditor() {
 
       // Reconnect re-sync handler
       socket.on('connect', () => {
-        console.log('[SOCKET] Connected to server, re-syncing map data');
         // Cancel any pending HTTP PUT auto-save and abort in-flight saves to avoid collision with delta sync
         if (autoSaveTimerRef.current) {
           clearTimeout(autoSaveTimerRef.current);
@@ -876,8 +877,8 @@ export function MapEditor() {
     }
   }, [id, user]);
 
-  // Auto-save logic — only depends on pins/layers/mapName when editMode is true,
-  // so remote delta updates don't wastefully schedule this effect for view-only sessions.
+  // Auto-save on local edits. Deps stay a fixed length so going offline
+  // (editMode true → false) does not trip React's hook-deps size warning.
   useEffect(() => {
     if (!editMode || isMapLoading) return;
     
@@ -930,7 +931,7 @@ export function MapEditor() {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editMode, ...(editMode ? [mapName, pins, layers, customColors] : [])]);
+  }, [editMode, isMapLoading, mapName, pins, layers, customColors]);
 
   // Warn on browser-level navigation (tab close, refresh, address bar) when dirty
   useEffect(() => {
@@ -1992,6 +1993,7 @@ export function MapEditor() {
             showHillshade={showHillshade}
             onToggleHillshade={handleToggleHillshade}
             show3DTerrain={show3DTerrain}
+            terrainSuspended={terrainSuspended}
             onToggle3DTerrain={handleToggle3DTerrain}
             show3DBuildings={show3DBuildings}
             onToggle3DBuildings={handleToggle3DBuildings}
@@ -2068,6 +2070,7 @@ export function MapEditor() {
             showHillshade={showHillshade}
             show3DTerrain={show3DTerrain}
             show3DBuildings={show3DBuildings}
+            onZoomChange={setMapZoom}
             onLocationTrackingChange={setIsTrackingLocation}
           />
         </div>

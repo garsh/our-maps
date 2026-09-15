@@ -53,7 +53,7 @@ function getSharedCanvasContext(): { canvas: HTMLCanvasElement; ctx: CanvasRende
     sharedCanvas = document.createElement('canvas');
     sharedCanvas.width = 60;
     sharedCanvas.height = 84;
-    sharedCtx = sharedCanvas.getContext('2d');
+    sharedCtx = sharedCanvas.getContext('2d', { willReadFrequently: true });
   }
   return sharedCtx ? { canvas: sharedCanvas, ctx: sharedCtx } : null;
 }
