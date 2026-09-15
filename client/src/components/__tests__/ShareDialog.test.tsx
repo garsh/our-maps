@@ -236,4 +236,32 @@ describe('ShareDialog Dark Mode & Styling', () => {
       expect.arrayContaining(['alice@example.com', 'bob@example.com'])
     );
   });
+
+  it('unions registered Google contacts with prior Our Maps collaborators in the share dropdown', async () => {
+    const { apiService } = await import('../../services/api');
+    vi.mocked(apiService.filterContacts).mockResolvedValue({
+      existingEmails: ['alice@example.com']
+    });
+    vi.mocked(apiService.searchUsers).mockResolvedValue({
+      users: [
+        { name: 'Sam Shared', email: 'sam@example.com', photoUrl: '', type: 'other' }
+      ]
+    });
+
+    render(<ShareDialog {...defaultProps} />);
+
+    const loadContactsBtn = screen.getByRole('button', { name: /Load Your Contacts/i });
+    fireEvent.click(loadContactsBtn);
+
+    // Google contact who has an account
+    expect(await screen.findByText('Alice Adams')).toBeInTheDocument();
+    expect(screen.getByText('alice@example.com')).toBeInTheDocument();
+
+    // Prior Our Maps collaborator not in Google contacts
+    expect(screen.getByText('Sam Shared')).toBeInTheDocument();
+    expect(screen.getByText('sam@example.com')).toBeInTheDocument();
+
+    // Google contact who does not have an account
+    expect(screen.queryByText('Bob Barker')).not.toBeInTheDocument();
+  });
 });

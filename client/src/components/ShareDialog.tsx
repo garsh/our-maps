@@ -27,6 +27,7 @@ const fetchMockContacts = async (): Promise<Contact[]> => {
 
 const fetchGoogleContacts = async (accessToken: string): Promise<Contact[]> => {
   const contacts: Contact[] = [];
+  const seenEmails = new Set<string>();
   
   try {
     const res = await fetch('https://people.googleapis.com/v1/people/me/connections?personFields=names,emailAddresses,photos,memberships&pageSize=1000', {
@@ -38,19 +39,23 @@ const fetchGoogleContacts = async (accessToken: string): Promise<Contact[]> => {
         data.connections.forEach((conn: any) => {
           const email = conn.emailAddresses?.[0]?.value;
           if (email) {
-            let isFavorite = false;
-            if (conn.memberships) {
-              isFavorite = conn.memberships.some((m: any) => 
-                m.contactGroupMembership?.contactGroupResourceName === 'contactGroups/starred' ||
-                m.contactGroupMembership?.contactGroupId === 'starred'
-              );
+            const lower = email.toLowerCase();
+            if (!seenEmails.has(lower)) {
+              seenEmails.add(lower);
+              let isFavorite = false;
+              if (conn.memberships) {
+                isFavorite = conn.memberships.some((m: any) => 
+                  m.contactGroupMembership?.contactGroupResourceName === 'contactGroups/starred' ||
+                  m.contactGroupMembership?.contactGroupId === 'starred'
+                );
+              }
+              contacts.push({
+                name: conn.names?.[0]?.displayName || email,
+                email: email,
+                photoUrl: conn.photos?.[0]?.url,
+                type: isFavorite ? 'favorite' : 'frequent'
+              });
             }
-            contacts.push({
-              name: conn.names?.[0]?.displayName || email,
-              email: email,
-              photoUrl: conn.photos?.[0]?.url,
-              type: isFavorite ? 'favorite' : 'frequent'
-            });
           }
         });
       }
@@ -68,13 +73,17 @@ const fetchGoogleContacts = async (accessToken: string): Promise<Contact[]> => {
       if (dataOther.otherContacts) {
         dataOther.otherContacts.forEach((conn: any) => {
           const email = conn.emailAddresses?.[0]?.value;
-          if (email && !contacts.some(c => c.email === email)) {
-            contacts.push({
-              name: conn.names?.[0]?.displayName || email,
-              email: email,
-              photoUrl: conn.photos?.[0]?.url,
-              type: 'other'
-            });
+          if (email) {
+            const lower = email.toLowerCase();
+            if (!seenEmails.has(lower)) {
+              seenEmails.add(lower);
+              contacts.push({
+                name: conn.names?.[0]?.displayName || email,
+                email: email,
+                photoUrl: conn.photos?.[0]?.url,
+                type: 'other'
+              });
+            }
           }
         });
       }
@@ -96,6 +105,43 @@ const fetchGoogleContacts = async (accessToken: string): Promise<Contact[]> => {
   });
   
   return contacts;
+};
+
+export const mergeGoogleContactsWithOurMapsUsers = (
+  googleContacts: Contact[],
+  existingEmails: string[],
+  ourMapsUsers: Contact[]
+): Contact[] => {
+  const existingSet = new Set(existingEmails.map((email) => email.toLowerCase()));
+  const validGoogleContacts = googleContacts.filter(c => existingSet.has(c.email.toLowerCase()));
+
+  const seenEmails = new Set(validGoogleContacts.map(c => c.email.toLowerCase()));
+  const union: Contact[] = [...validGoogleContacts];
+
+  for (const user of ourMapsUsers) {
+    const emailLower = user.email?.toLowerCase();
+    if (emailLower && !seenEmails.has(emailLower)) {
+      seenEmails.add(emailLower);
+      union.push({
+        name: user.name || user.email,
+        email: user.email,
+        photoUrl: user.photoUrl,
+        type: 'other',
+      });
+    }
+  }
+
+  union.sort((a, b) => {
+    const order = { 'favorite': 0, 'frequent': 1, 'other': 2 };
+    const typeA = a.type || 'other';
+    const typeB = b.type || 'other';
+    if (order[typeA] !== order[typeB]) {
+      return order[typeA] - order[typeB];
+    }
+    return a.name.localeCompare(b.name);
+  });
+
+  return union;
 };
 
 interface ShareDialogProps {
@@ -214,11 +260,13 @@ export default function ShareDialog({
       try {
         const fetchedContacts = await fetchGoogleContacts(tokenResponse.access_token);
         const emails = fetchedContacts.map((c) => c.email);
-        const { existingEmails } = await apiService.filterContacts(emails);
-        const existingSet = new Set(existingEmails.map((email) => email.toLowerCase()));
-        const validContacts = fetchedContacts.filter(c => existingSet.has(c.email.toLowerCase()));
+        const [{ existingEmails }, { users: recentUsers }] = await Promise.all([
+          apiService.filterContacts(emails),
+          apiService.searchUsers('').catch(() => ({ users: [] })),
+        ]);
+        const unionContacts = mergeGoogleContactsWithOurMapsUsers(fetchedContacts, existingEmails, recentUsers || []);
         
-        setContacts(validContacts);
+        setContacts(unionContacts);
         setShowDropdown(true);
       } catch (err) {
         console.error('Failed to load contacts', err);
@@ -238,11 +286,13 @@ export default function ShareDialog({
       try {
         const mockContacts = await fetchMockContacts();
         const emails = mockContacts.map((c) => c.email);
-        const { existingEmails } = await apiService.filterContacts(emails);
-        const existingSet = new Set(existingEmails.map((email) => email.toLowerCase()));
-        const validContacts = mockContacts.filter(c => existingSet.has(c.email.toLowerCase()));
+        const [{ existingEmails }, { users: recentUsers }] = await Promise.all([
+          apiService.filterContacts(emails),
+          apiService.searchUsers('').catch(() => ({ users: [] })),
+        ]);
+        const unionContacts = mergeGoogleContactsWithOurMapsUsers(mockContacts, existingEmails, recentUsers || []);
         
-        setContacts(validContacts);
+        setContacts(unionContacts);
         setShowDropdown(true);
       } catch (err) {
         console.error('Failed to load mock contacts', err);
