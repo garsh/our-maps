@@ -189,6 +189,18 @@ describe('ShareDialog Dark Mode & Styling', () => {
     expect(onShare).toHaveBeenCalledWith('collab@example.com', 'owner');
   });
 
+  it('lets an owner toggle link sharing from userRole before owner profile loads', () => {
+    render(
+      <ShareDialog
+        {...defaultProps}
+        owner={null}
+        userRole="owner"
+        onTogglePublic={vi.fn()}
+      />
+    );
+    expect(screen.getByLabelText('Allow anybody with the link to view')).not.toBeDisabled();
+  });
+
   it('does not allow non-owners to change access levels', () => {
     const nonOwnerProps = {
       ...defaultProps,

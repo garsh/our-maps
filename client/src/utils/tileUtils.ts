@@ -73,13 +73,30 @@ export async function openDB(): Promise<IDBDatabase> {
     return dbPromise;
 }
 
+/** Drop collaborator/owner profile fields that are not needed to render a map offline. */
+export function stripMapCachePii(mapData: MapData): MapData {
+    const {
+        permissions: _permissions,
+        ownerId: _ownerId,
+        ownerName: _ownerName,
+        ownerEmail: _ownerEmail,
+        ownerPicture: _ownerPicture,
+        ...rest
+    } = mapData;
+    return rest;
+}
+
 export async function saveMapOffline(mapData: MapData): Promise<void> {
     if (typeof indexedDB === 'undefined') return;
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(MAP_STORE, 'readwrite');
         const store = transaction.objectStore(MAP_STORE);
-        const req = store.put({ ...mapData, isExplicitDownload: true, lastAccessedAt: Date.now() });
+        const req = store.put({
+            ...stripMapCachePii(mapData),
+            isExplicitDownload: true,
+            lastAccessedAt: Date.now(),
+        });
         req.onsuccess = () => resolve();
         req.onerror = () => reject(req.error);
         transaction.onerror = () => reject(transaction.error);
@@ -121,27 +138,25 @@ export async function saveMapToViewCache(mapData: MapData, etag?: string): Promi
             // Preserve isExplicitDownload if the record already exists
             const getReq = store.get(mapData.id);
             getReq.onsuccess = () => {
-                const existing = getReq.result as (MapData & { isExplicitDownload?: boolean; etag?: string }) | undefined;
-                if (existing?.isExplicitDownload) {
-                    // Already a pinned offline download — only update data, keep flag
-                    const putReq = store.put({
-                        ...mapData,
-                        isExplicitDownload: true,
-                        etag: etag ?? existing.etag,
-                        lastAccessedAt: Date.now(),
-                    });
-                    putReq.onsuccess = () => resolve();
-                    putReq.onerror = () => reject(putReq.error);
-                } else {
-                    const putReq = store.put({
-                        ...mapData,
-                        isExplicitDownload: false,
-                        etag: etag ?? null,
-                        lastAccessedAt: Date.now(),
-                    });
-                    putReq.onsuccess = () => resolve();
-                    putReq.onerror = () => reject(putReq.error);
-                }
+                const existing = getReq.result as (MapData & {
+                    isExplicitDownload?: boolean;
+                    etag?: string;
+                    totalTiles?: number;
+                    completedTiles?: number;
+                    extractTotalBytes?: number;
+                }) | undefined;
+                const stripped = stripMapCachePii(mapData);
+                const putReq = store.put({
+                    ...stripped,
+                    isExplicitDownload: Boolean(existing?.isExplicitDownload),
+                    etag: etag ?? existing?.etag ?? null,
+                    lastAccessedAt: Date.now(),
+                    totalTiles: stripped.totalTiles ?? existing?.totalTiles,
+                    completedTiles: stripped.completedTiles ?? existing?.completedTiles,
+                    extractTotalBytes: stripped.extractTotalBytes ?? existing?.extractTotalBytes,
+                });
+                putReq.onsuccess = () => resolve();
+                putReq.onerror = () => reject(putReq.error);
             };
             getReq.onerror = () => reject(getReq.error);
             tx.onerror = () => reject(tx.error);

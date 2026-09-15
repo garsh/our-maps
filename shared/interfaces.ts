@@ -38,7 +38,7 @@ export interface PinLayer {
 export interface MapData {
   id: string;
   name: string;
-  ownerId: string;
+  ownerId?: string;
   ownerName?: string;
   ownerEmail?: string;
   ownerPicture?: string;

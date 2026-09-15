@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getTilesForArea, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB } from '../tileUtils';
+import { getTilesForArea, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, saveMapToViewCache, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB, stripMapCachePii } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 const { mockExtracts, mockPartSizes, mockMetaBytes } = vi.hoisted(() => ({
@@ -242,6 +242,81 @@ describe('tileUtils', () => {
         expect(afterRemove).toBeNull();
         expect(await isMapDownloaded('offline-map-123')).toBe(false);
         expect(mockExtracts.has('offline-map-123')).toBe(false);
+    });
+
+    it('strips owner and collaborator fields from offline map snapshots', async () => {
+        await saveMapOffline({
+            id: 'pii-map',
+            name: 'PII Map',
+            ownerId: 'user-1',
+            ownerName: 'Owner',
+            ownerEmail: 'owner@example.com',
+            ownerPicture: 'https://example.com/a.png',
+            permissions: [{ userId: 'u2', userEmail: 'a@b.c', userName: 'A', role: 'edit' }],
+            layers: [],
+            pins: [],
+            userRole: 'owner',
+            isPublic: true,
+        } as any);
+
+        const retrieved = await getOfflineMap('pii-map');
+        expect(retrieved?.name).toBe('PII Map');
+        expect(retrieved?.userRole).toBe('owner');
+        expect(retrieved?.isPublic).toBe(true);
+        expect(retrieved).not.toHaveProperty('permissions');
+        expect(retrieved).not.toHaveProperty('ownerId');
+        expect(retrieved).not.toHaveProperty('ownerName');
+        expect(retrieved).not.toHaveProperty('ownerEmail');
+        expect(retrieved).not.toHaveProperty('ownerPicture');
+
+        expect(stripMapCachePii({
+            id: 'x',
+            name: 'X',
+            ownerId: 'u',
+            ownerEmail: 'e@e.e',
+            permissions: [],
+            layers: [],
+            pins: [],
+        } as any)).toEqual({
+            id: 'x',
+            name: 'X',
+            layers: [],
+            pins: [],
+        });
+    });
+
+    it('view-cache writes preserve explicit-download progress without collaborator PII', async () => {
+        await saveMapOffline({
+            id: 'dl-map',
+            name: 'DL',
+            ownerId: 'u1',
+            layers: [],
+            pins: [],
+            totalTiles: 100,
+            completedTiles: 40,
+            extractTotalBytes: 2000,
+        } as any);
+
+        await saveMapToViewCache({
+            id: 'dl-map',
+            name: 'DL Updated',
+            ownerEmail: 'owner@example.com',
+            permissions: [{ userId: 'u2', userEmail: 'a@b.c', userName: 'A', role: 'view' }],
+            layers: [],
+            pins: [{ id: 'p1', lat: 1, lng: 2, label: 'P', position: 0 }],
+            userRole: 'owner',
+        } as any, '"etag-1"');
+
+        const retrieved = await getOfflineMap('dl-map') as any;
+        expect(retrieved.name).toBe('DL Updated');
+        expect(retrieved.pins).toHaveLength(1);
+        expect(retrieved.isExplicitDownload).toBe(true);
+        expect(retrieved.etag).toBe('"etag-1"');
+        expect(retrieved.totalTiles).toBe(100);
+        expect(retrieved.completedTiles).toBe(40);
+        expect(retrieved.extractTotalBytes).toBe(2000);
+        expect(retrieved).not.toHaveProperty('permissions');
+        expect(retrieved).not.toHaveProperty('ownerEmail');
     });
 
     it('should reuse singleton IDBDatabase connection across multiple operations', async () => {

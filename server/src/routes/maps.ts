@@ -82,10 +82,9 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
   const db = await getDb();
 
   const map = await db.get(`
-    SELECT m.*, u.name as owner_name, u.email as owner_email, u.picture as owner_picture,
+    SELECT m.id, m.name, m.owner_id, m.custom_colors, m.is_public, m.updated_at,
            mp.role as permission_role
-    FROM maps m 
-    LEFT JOIN users u ON m.owner_id = u.id 
+    FROM maps m
     LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
     WHERE m.id = ?
   `, userId || null, mapId);
@@ -95,7 +94,7 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
   }
 
   const newlyAdded = await addMapViewerIfLinkShared(userId, mapId, map);
-  const { role, canSeeCollaborators: includeCollaborators } = resolveMapAccess(userId, map, {
+  const { role } = resolveMapAccess(userId, map, {
     newlyGrantedView: newlyAdded,
   });
   if (!role) {
@@ -151,38 +150,14 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
     customColors = [];
   }
 
-  // Owner contact and collaborator lists: owner or explicit share only (not public-link view)
-  let permissions: MapPermission[] = [];
-  if (includeCollaborators) {
-    const perms = await db.all(`
-      SELECT mp.user_id, mp.role, u.email, u.name, u.picture
-      FROM map_permissions mp
-      JOIN users u ON mp.user_id = u.id 
-      WHERE mp.map_id = ?
-    `, mapId);
-
-    permissions = perms.map(p => ({
-      userId: p.user_id,
-      userEmail: p.email,
-      userName: p.name,
-      userPicture: p.picture,
-      role: p.role
-    }));
-  }
-
   const response: MapData = {
     id: map.id,
     name: map.name,
-    ownerId: includeCollaborators ? map.owner_id : '',
-    ownerName: includeCollaborators ? map.owner_name : undefined,
-    ownerEmail: includeCollaborators ? map.owner_email : undefined,
-    ownerPicture: includeCollaborators ? map.owner_picture : undefined,
     layers: formattedLayers,
     pins: formattedPins,
     customColors,
     userRole: role,
     isPublic: Boolean(map.is_public),
-    permissions
   };
 
   res.setHeader('ETag', etag);

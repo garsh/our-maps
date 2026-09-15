@@ -1,5 +1,5 @@
 import type { Pin, MapData, MapPermission } from '@shared/interfaces';
-import { getOfflineMap, saveMapOffline, saveMapToViewCache, getMapETag, touchMapCacheAccess, pruneViewCache, isMapDownloaded, type BoundingBox } from '../utils/tileUtils';
+import { getOfflineMap, saveMapToViewCache, getMapETag, touchMapCacheAccess, pruneViewCache, type BoundingBox } from '../utils/tileUtils';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -162,13 +162,9 @@ export const apiService = {
       const data = await handleResponse<MapData>(res, this._logoutCallback, `Server error: ${res.status}`);
       const etag = res.headers.get('etag') ?? undefined;
 
-      // Always save to view cache for instant future loads (LRU-managed)
+      // Always save to view cache for instant future loads (LRU-managed).
+      // Explicit offline downloads are updated in the same write (flag preserved).
       saveMapToViewCache(data, etag).catch(() => {});
-
-      // Also refresh explicit offline downloads when already downloaded
-      isMapDownloaded(id).then(downloaded => {
-        if (downloaded) saveMapOffline(data);
-      }).catch(() => {});
 
       // Prune stale view-cache entries during idle time
       if (typeof requestIdleCallback !== 'undefined') {
@@ -196,6 +192,7 @@ export const apiService = {
     owner: { id: string; name?: string; email?: string; picture?: string };
     permissions: MapPermission[];
     userRole?: 'owner' | 'edit' | 'view';
+    isPublic?: boolean;
   }> {
     const res = await fetchWithRetry(`${API_BASE}/maps/${id}/permissions`, { headers: getHeaders() });
     return handleResponse(res, this._logoutCallback, 'Failed to fetch map permissions');

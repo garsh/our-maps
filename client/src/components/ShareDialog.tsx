@@ -106,6 +106,7 @@ interface ShareDialogProps {
   permissions: MapPermission[];
   owner?: { id: string, name?: string, email?: string, picture?: string } | null;
   currentUserId: string;
+  userRole?: 'owner' | 'edit' | 'view';
   isPublic?: boolean;
   onTogglePublic?: (isPublic: boolean) => Promise<void>;
   mapId?: string | null;
@@ -119,11 +120,12 @@ export default function ShareDialog({
   permissions, 
   owner, 
   currentUserId,
+  userRole,
   isPublic = false,
   onTogglePublic,
   mapId
 }: ShareDialogProps) {
-  const isOwner = owner?.id === currentUserId;
+  const isOwner = userRole === 'owner' || owner?.id === currentUserId;
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'view' | 'edit' | 'owner' | null>(null);
   const [error, setError] = useState<string | null>(null);

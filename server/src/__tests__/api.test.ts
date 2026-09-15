@@ -165,6 +165,13 @@ describe('API Endpoints', () => {
     });
     expect(res.body.pins[0]).not.toHaveProperty('map_id');
     expect(res.body.pins[0]).not.toHaveProperty('layer_id');
+    expect(res.body).not.toHaveProperty('permissions');
+    expect(res.body).not.toHaveProperty('ownerId');
+    expect(res.body).not.toHaveProperty('ownerName');
+    expect(res.body).not.toHaveProperty('ownerEmail');
+    expect(res.body).not.toHaveProperty('ownerPicture');
+    expect(res.body.userRole).toBe('owner');
+    expect(res.body.isPublic).toBe(false);
   });
 
   it('PUT /api/maps/:id should update map name and pins', async () => {
@@ -615,21 +622,27 @@ describe('API Endpoints', () => {
     expect(toggleRes.status).toBe(200);
     expect(toggleRes.body.isPublic).toBe(true);
 
-    // 3. Unauthenticated request to public map -> 200, role 'view', isPublic true, owner info redacted
+    // 3. Unauthenticated request to public map -> 200, role 'view', isPublic true, no owner/collaborator payload
     const publicRes = await request(app).get(`/api/maps/${mapId}`);
     expect(publicRes.status).toBe(200);
     expect(publicRes.body.userRole).toBe('view');
     expect(publicRes.body.isPublic).toBe(true);
     expect(publicRes.body.pins).toHaveLength(1);
-    expect(publicRes.body.ownerName).toBeUndefined();
-    expect(publicRes.body.ownerEmail).toBeUndefined();
-    expect(publicRes.body.ownerPicture).toBeUndefined();
-    expect(publicRes.body.ownerId).toBe('');
-    expect(publicRes.body.permissions).toEqual([]);
+    expect(publicRes.body).not.toHaveProperty('ownerName');
+    expect(publicRes.body).not.toHaveProperty('ownerEmail');
+    expect(publicRes.body).not.toHaveProperty('ownerPicture');
+    expect(publicRes.body).not.toHaveProperty('ownerId');
+    expect(publicRes.body).not.toHaveProperty('permissions');
     expect(publicRes.body).not.toHaveProperty('owner_email');
     expect(publicRes.body).not.toHaveProperty('owner_id');
     expect(publicRes.body).not.toHaveProperty('owner_name');
     expect(publicRes.body).not.toHaveProperty('owner_picture');
+
+    const publicPerms = await request(app).get(`/api/maps/${mapId}/permissions`);
+    expect(publicPerms.status).toBe(200);
+    expect(publicPerms.body.owner).toBeNull();
+    expect(publicPerms.body.permissions).toEqual([]);
+    expect(publicPerms.body.userRole).toBe('view');
 
     // 4. Non-owner cannot toggle public sharing
     const strangerUser = { id: 'stranger-id', email: 'stranger@example.com', name: 'Stranger' };
@@ -645,7 +658,21 @@ describe('API Endpoints', () => {
       .set({ 'x-mock-user': JSON.stringify(strangerUser) });
     expect(strangerGet.status).toBe(200);
     expect(strangerGet.body.userRole).toBe('view');
-    expect(strangerGet.body.permissions).toEqual([
+    expect(strangerGet.body).not.toHaveProperty('permissions');
+    expect(strangerGet.body).not.toHaveProperty('ownerEmail');
+    expect(strangerGet.body).not.toHaveProperty('ownerId');
+
+    const strangerPerms = await request(app)
+      .get(`/api/maps/${mapId}/permissions`)
+      .set({ 'x-mock-user': JSON.stringify(strangerUser) });
+    expect(strangerPerms.status).toBe(200);
+    expect(strangerPerms.body.userRole).toBe('view');
+    expect(strangerPerms.body.owner).toEqual(expect.objectContaining({
+      id: mockUser.id,
+      name: mockUser.name,
+      email: mockUser.email,
+    }));
+    expect(strangerPerms.body.permissions).toEqual([
       {
         userId: strangerUser.id,
         userEmail: strangerUser.email,
@@ -654,10 +681,6 @@ describe('API Endpoints', () => {
         role: 'view'
       }
     ]);
-    expect(strangerGet.body.ownerEmail).toBe(mockUser.email);
-    expect(strangerGet.body.ownerId).toBe(mockUser.id);
-    expect(strangerGet.body).not.toHaveProperty('owner_email');
-    expect(strangerGet.body).not.toHaveProperty('owner_id');
 
     // Verify permission row was persisted in the database
     const strangerPerm = await db.get('SELECT * FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, strangerUser.id);
@@ -672,8 +695,15 @@ describe('API Endpoints', () => {
 
     const ownerGet = await request(app).get(`/api/maps/${mapId}`).set(authHeader);
     expect(ownerGet.status).toBe(200);
-    expect(ownerGet.body.ownerEmail).toBe(mockUser.email);
-    expect(ownerGet.body.ownerId).toBe(mockUser.id);
+    expect(ownerGet.body.userRole).toBe('owner');
+    expect(ownerGet.body).not.toHaveProperty('ownerEmail');
+    expect(ownerGet.body).not.toHaveProperty('ownerId');
+    expect(ownerGet.body).not.toHaveProperty('permissions');
+
+    const ownerPerms = await request(app).get(`/api/maps/${mapId}/permissions`).set(authHeader);
+    expect(ownerPerms.status).toBe(200);
+    expect(ownerPerms.body.owner.email).toBe(mockUser.email);
+    expect(ownerPerms.body.owner.id).toBe(mockUser.id);
 
     // 5. Owner toggles back to private
     const privateToggleRes = await request(app)

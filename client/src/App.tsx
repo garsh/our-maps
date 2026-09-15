@@ -969,12 +969,11 @@ export function MapEditor() {
       if (epoch !== loadEpochRef.current) return;
 
       if (!isDirtyRef.current) {
-        setOwner({ id: serverData.ownerId, name: serverData.ownerName, email: serverData.ownerEmail, picture: serverData.ownerPicture });
         setLayers(serverData.layers || []);
         setPins(serverData.pins || []);
         setCustomColors(serverData.customColors || []);
         setUserRole(serverData.userRole || 'view');
-        setPermissions(serverData.permissions || []);
+        if (typeof serverData.isPublic === 'boolean') setIsPublic(serverData.isPublic);
         setIsDirty(false);
         pendingDeletedPinIdsRef.current.clear();
         pendingDeletedLayerIdsRef.current.clear();
@@ -1134,13 +1133,11 @@ export function MapEditor() {
           isInitialLoadRef.current = true;
           setMapId(cached.id);
           setMapName(cached.name || 'Unnamed Map');
-          setOwner({ id: cached.ownerId, name: cached.ownerName, email: cached.ownerEmail, picture: cached.ownerPicture });
           setLayers(cached.layers || []);
           setPins(cached.pins || []);
           setCustomColors(cached.customColors || []);
           setUserRole(cached.userRole || 'view');
           setIsPublic(Boolean(cached.isPublic));
-          setPermissions(cached.permissions || []);
           if (cached.pins && cached.pins.length > 0) {
             if (!silent) {
               const lats = cached.pins.map(p => p.lat);
@@ -1176,7 +1173,6 @@ export function MapEditor() {
       isInitialLoadRef.current = true;
       setMapId(data.id);
       setMapName(data.name || 'Unnamed Map');
-      setOwner({ id: data.ownerId, name: data.ownerName, email: data.ownerEmail, picture: data.ownerPicture });
       setLayers(data.layers || []);
       setPins(data.pins);
       setCustomColors(data.customColors || []);
@@ -1193,7 +1189,6 @@ export function MapEditor() {
       }
       setUserRole(data.userRole || 'view');
       setIsPublic(Boolean(data.isPublic));
-      setPermissions(data.permissions || []);
       setIsDirty(false);
       setIsSyncing(false);
       // Item D: Successful network response exits offline mode if trapped by sessionStorage
@@ -1277,6 +1272,7 @@ export function MapEditor() {
           setPermissions(data.permissions || []);
           if (data.owner) setOwner(data.owner);
           if (data.userRole) setUserRole(data.userRole);
+          if (typeof data.isPublic === 'boolean') setIsPublic(data.isPublic);
         })
         .catch(err => console.error('Failed to refresh permissions', err));
     }
@@ -2086,6 +2082,7 @@ export function MapEditor() {
           permissions={permissions}
           owner={owner}
           currentUserId={user?.id || ''}
+          userRole={userRole}
           isPublic={isPublic}
           onTogglePublic={handleTogglePublic}
           mapId={mapId}

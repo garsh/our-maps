@@ -1985,7 +1985,6 @@ const Sidebar = ({
       const currentMapData: MapData = {
         id: mapId,
         name: mapName,
-        ownerId: '',
         layers,
         pins,
         customColors: customColors || [],
