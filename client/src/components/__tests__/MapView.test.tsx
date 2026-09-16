@@ -1,11 +1,13 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import MapView, { isPinInPaddedViewport, shouldSuspendOfflineTerrain } from '../MapView';
+import * as maplibregl from 'maplibre-gl';
+import MapView, { isPinInPaddedViewport, syncOfflineTerrain } from '../MapView';
 import { getHoveredPinId, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
 import { getMapViewportBounds, resetMapViewportBoundsForTests } from '../../utils/mapViewport';
 
-const { capturedMapProps } = vi.hoisted(() => ({
+const { capturedMapProps, capturedSourceProps } = vi.hoisted(() => ({
   capturedMapProps: { current: null as any },
+  capturedSourceProps: { current: [] as any[] },
 }));
 
 // Mock react-map-gl/maplibre
@@ -94,7 +96,10 @@ vi.mock('react-map-gl/maplibre', () => {
       return <div data-testid="react-map-gl-mock">{children}</div>;
     },
     Marker: ({ children }: any) => <div data-testid="marker-mock">{children}</div>,
-    Source: ({ children }: any) => <div data-testid="source-mock">{children}</div>,
+    Source: (props: any) => {
+      capturedSourceProps.current.push(props);
+      return <div data-testid="source-mock">{props.children}</div>;
+    },
     Layer: () => null,
     AttributionControl: () => null,
   };
@@ -115,13 +120,290 @@ vi.mock('pmtiles', () => ({
   },
 }));
 
-describe('shouldSuspendOfflineTerrain', () => {
-  it('suspends 3D terrain only when offline and zoomed past 16', () => {
-    expect(shouldSuspendOfflineTerrain(16, true)).toBe(false);
-    expect(shouldSuspendOfflineTerrain(16.01, true)).toBe(true);
-    expect(shouldSuspendOfflineTerrain(22, true)).toBe(true);
-    expect(shouldSuspendOfflineTerrain(22, false)).toBe(false);
-    expect(shouldSuspendOfflineTerrain(10, true)).toBe(false);
+describe('syncOfflineTerrain', () => {
+  it('enables and disables terrain based on show3DTerrain and allows tileManager.maxzoom up to 22', () => {
+    const mockMap = {
+      setTerrain: vi.fn(),
+      getTerrain: vi.fn(() => null),
+      terrain: {
+        tileManager: { maxzoom: 22 },
+      },
+    };
+
+    // When show3DTerrain is true and terrain not currently active
+    syncOfflineTerrain(mockMap, true);
+    expect(mockMap.setTerrain).toHaveBeenCalledWith({ source: 'terrainElevation', exaggeration: 1.0 });
+    expect(mockMap.terrain.tileManager.maxzoom).toBe(22);
+
+    // When show3DTerrain is true and terrain is already active
+    mockMap.getTerrain.mockReturnValue({ source: 'terrainElevation' } as any);
+    mockMap.setTerrain.mockClear();
+    syncOfflineTerrain(mockMap, true);
+    expect(mockMap.setTerrain).not.toHaveBeenCalled();
+    expect(mockMap.terrain.tileManager.maxzoom).toBe(22);
+
+    // When show3DTerrain is false and terrain is active
+    syncOfflineTerrain(mockMap, false);
+    expect(mockMap.setTerrain).toHaveBeenCalledWith(null);
+  });
+
+  it('patches _getDEMTileMatrix to calculate parent DEM overzoom accurately', () => {
+    const mockMap = {
+      setTerrain: vi.fn(),
+      getTerrain: vi.fn(() => ({ source: 'terrainElevation' })),
+      terrain: {
+        tileManager: { maxzoom: 22 },
+        _getDEMTileMatrix: vi.fn(() => 'unpatched'),
+        _demMatrixCache: new Map(),
+        _elevationSamplerCache: new Map(),
+      },
+    };
+
+    syncOfflineTerrain(mockMap, true);
+    expect((mockMap.terrain as any)._originalGetDEMTileMatrix).toBeDefined();
+
+    // Test matrix calculation when sourceTile is parent DEM tile (e.g. z=14) and tileID is z=18
+    const tileID = {
+      key: '18/52503/100655',
+      canonical: { z: 18, x: 52503, y: 100655 },
+      overscaledZ: 19,
+    };
+    const sourceTile = {
+      tileID: { key: '14/3281/6290', canonical: { z: 14, x: 3281, y: 6290 } },
+    };
+
+    const matrix = (mockMap.terrain as any)._getDEMTileMatrix(tileID, sourceTile);
+    expect(matrix).toBeInstanceOf(Float64Array);
+    // dz = 18 - 14 = 4. Scale = 1 / (8192 * 16)
+    expect(matrix[0]).toBeCloseTo(1 / (8192 * 16), 10);
+    expect(matrix[5]).toBeCloseTo(1 / (8192 * 16), 10);
+    // dx = 52503 % 16 = 7. Translation X = 7 / 16
+    expect(matrix[12]).toBeCloseTo(7 / 16, 10);
+    // dy = 100655 % 16 = 15. Translation Y = 15 / 16
+    expect(matrix[13]).toBeCloseTo(15 / 16, 10);
+
+    // Test that safe bilinear sampling protection is applied to DEMData prototype
+    const mockProto = {
+      sampleBilinear: vi.fn((x: number, y: number) => ({ x, y })),
+    };
+    const demObj = Object.create(mockProto);
+    demObj.dim = 256;
+    (mockMap.terrain as any)._getDEMTileMatrix(tileID, { ...sourceTile, dem: demObj });
+    expect((mockProto as any)._safeSampleBilinear).toBeDefined();
+    // Testing clamping for coordinates out of bounds
+    demObj.sampleBilinear(300, -5);
+    expect(mockProto._safeSampleBilinear).toHaveBeenCalledWith(256 - 1e-4, -1);
+
+    // Test matrix calculation when tileID has a fractional canonical.z (from MapLibre's getElevationForLngLatZoom)
+    const floatTileID = {
+      key: '18.64/52503/100655',
+      canonical: { z: 18.64, x: 52503, y: 100655 },
+      overscaledZ: 18.64,
+    };
+    const floatMatrix = (mockMap.terrain as any)._getDEMTileMatrix(floatTileID, sourceTile);
+    // dz must be floored to 18 - 14 = 4 (not 4.64), preserving integer power of 2
+    expect(floatMatrix[0]).toBeCloseTo(1 / (8192 * 16), 10);
+    expect(floatMatrix[12]).toBeCloseTo(7 / 16, 10);
+    expect(floatMatrix[13]).toBeCloseTo(15 / 16, 10);
+  });
+
+  it('stabilizes camera against zoom jumping and empty-delta repositioning in deep terrain', () => {
+    const mockCameraProto = {
+      _elevateCameraIfInsideTerrain: vi.fn(() => ({ pitch: 0, zoom: 16.98 })),
+      _finalizeElevation: vi.fn(),
+      applyUpdatedTransform: vi.fn(),
+    };
+    const mockCamera = Object.create(mockCameraProto);
+    mockCamera.elevationFreeze = true;
+    mockCamera.terrain = {
+      getElevationForLngLatZoom: vi.fn(() => 3250),
+    };
+
+    const mockCameraHelperProto = {
+      handleMapControlsPan: vi.fn(),
+    };
+    const mockCameraHelper = Object.create(mockCameraHelperProto);
+    mockCamera.cameraHelper = mockCameraHelper;
+
+    const mockHandlersProto = {
+      _updateMapTransform: vi.fn(),
+      _handleMapControls: vi.fn(),
+      _fireEvents: vi.fn(),
+    };
+    const mockHandlers = Object.create(mockHandlersProto);
+    mockHandlers._camera = mockCamera;
+    mockHandlers._terrainMovement = true;
+    mockHandlers._eventsInProgress = { zoom: { handlerName: 'scrollZoom' } };
+    mockHandlers._handlersById = { scrollZoom: { isActive: () => false } };
+
+    const mockHelperProto = {
+      recalculateZoomAndCenter: vi.fn(function (this: any, elevation: number) {
+        this.elevation = elevation;
+        this.setZoom(16.98); // simulates MapLibre changing zoom
+        this._center = { lng: -107.0, lat: 38.0 }; // simulates MapLibre shifting center
+      }),
+      setCenter: vi.fn(function (this: any, c: any) { this._center = c; }),
+      setElevation: vi.fn(function (this: any, e: number) { this.elevation = e; }),
+    };
+    const mockHelper = Object.create(mockHelperProto);
+    mockHelper.zoom = 17.64;
+    mockHelper.pitch = 0;
+    mockHelper.center = { lng: -107.897, lat: 38.497 };
+    mockHelper._center = { lng: -107.897, lat: 38.497 };
+    mockHelper.elevation = 3200;
+    mockHelper.setZoom = vi.fn(function (this: any, z: number) { this.zoom = z; });
+
+    const mockTrProto = {
+      recalculateZoomAndCenter: vi.fn(function (this: any, terrain?: any) {
+        this.elevation = 3250;
+        this.zoom = 16.98;
+        this.center = { lng: -107.0, lat: 38.0 };
+      }),
+      setCenter: vi.fn(function (this: any, c: any) { this.center = c; }),
+      setElevation: vi.fn(function (this: any, e: number) { this.elevation = e; this._elevation = e; }),
+      setZoom: vi.fn(function (this: any, z: number) { this.zoom = z; }),
+    };
+    const mockTr = Object.create(mockTrProto);
+    mockTr.zoom = 17.64;
+    mockTr.pitch = 0;
+    mockTr.center = { lng: -107.897, lat: 38.497 };
+    mockTr.elevation = 3200;
+    mockTr._elevation = 3200;
+    mockTr._helper = mockHelper;
+    mockTr.centerPoint = { x: 500, y: 400, distSqr: (p: any) => (p.x - 500) ** 2 + (p.y - 400) ** 2 };
+    mockCamera.transform = mockTr;
+
+    const mockTerrain = {
+      tileManager: { maxzoom: 22 },
+      _getOverscaledTileIDFromLngLatZoom: vi.fn((lnglat: any, z: number) => ({ tileID: { canonical: { z } } })),
+      getElevationForLngLatZoom: vi.fn(() => 3250),
+    };
+
+    const mockMap = {
+      setTerrain: vi.fn(),
+      getTerrain: vi.fn(() => ({ source: 'terrainElevation' })),
+      terrain: mockTerrain,
+      _camera: mockCamera,
+      _handlers: mockHandlers,
+      transform: mockTr,
+      triggerRepaint: vi.fn(),
+    };
+
+    syncOfflineTerrain(mockMap, true);
+    expect(mockCameraProto._stableElevateCameraIfInsideTerrain).toBeDefined();
+    expect(mockCameraProto._stableApplyUpdatedTransform).toBeDefined();
+    expect(mockTrProto._stableRecalculateZoomAndCenter).toBeDefined();
+    expect(mockTrProto._stableSetElevation).toBeDefined();
+    expect(mockHelperProto._stableRecalculateZoomAndCenter).toBeDefined();
+    expect(mockCameraHelperProto._stableHandleMapControlsPan).toBeDefined();
+    expect(mockHandlersProto._stableUpdateMapTransform).toBeDefined();
+    expect(mockHandlersProto._stableHandleMapControls).toBeDefined();
+    expect((mockTerrain as any)._originalGetOverscaledTileIDFromLngLatZoom).toBeDefined();
+
+    // Verify _getOverscaledTileIDFromLngLatZoom floors fractional zoom
+    (mockTerrain as any)._getOverscaledTileIDFromLngLatZoom({ lng: 0, lat: 0 }, 18.64);
+    expect((mockTerrain as any)._originalGetOverscaledTileIDFromLngLatZoom).toHaveBeenCalledWith({ lng: 0, lat: 0 }, 18);
+
+    // 1. In top-down mode (pitch < 45), camera altitude below terrain should elevate without forcing zoom back
+    const trTopDown = {
+      pitch: 0,
+      zoom: 17.5,
+      elevation: 3200,
+      getCameraLngLat: () => [-107.7, 37.8],
+      getCameraAltitude: () => 3210, // lower than terrain elevation (3250)
+    };
+    const result = mockCamera._elevateCameraIfInsideTerrain(trTopDown);
+    expect(result).toEqual({ elevation: 3250 });
+    expect(result.zoom).toBeUndefined();
+
+    // 2. recalculateZoomAndCenter on transform & helper should update elevation directly in top-down view (pitch < 60) without mutating zoom or center
+    mockHelper.recalculateZoomAndCenter(3201.7);
+    expect(mockHelperProto.setElevation).toHaveBeenCalledWith(3201.7);
+    expect(mockHelper.zoom).toBe(17.64);
+    expect(mockHelper.center).toEqual({ lng: -107.897, lat: 38.497 });
+
+    mockTr.recalculateZoomAndCenter(mockTerrain);
+    expect(mockTerrain.getElevationForLngLatZoom).toHaveBeenCalledWith({ lng: -107.897, lat: 38.497 }, 17);
+    expect(mockTrProto._stableSetElevation).toHaveBeenCalledWith(3250);
+    expect(mockTr.zoom).toBe(17.64);
+    expect(mockTr.center).toEqual({ lng: -107.897, lat: 38.497 });
+
+    // 3. handleMapControlsPan ignores empty deltas (finish timeout) and center-point around anchor, but applies valid zoomDelta or panDelta
+    mockCameraHelper.handleMapControlsPan({}, mockTr, {});
+    expect(mockCameraHelperProto._stableHandleMapControlsPan).not.toHaveBeenCalled();
+
+    mockCameraHelper.handleMapControlsPan({ zoomDelta: 0.1, around: { x: 500.001, y: 400.001, distSqr: () => 0.000002 } }, mockTr, {});
+    expect(mockCameraHelperProto._stableHandleMapControlsPan).not.toHaveBeenCalled();
+
+    mockCameraHelper.handleMapControlsPan({ zoomDelta: 0.1, around: { x: 600, y: 400, distSqr: () => 10000 } }, mockTr, {});
+    expect(mockCameraHelperProto._stableHandleMapControlsPan).toHaveBeenCalled();
+
+    // 4. _updateMapTransform does not mutate camera when no deltas exist, but fires events directly
+    mockHandlers._updateMapTransform({}, { zoom: false }, {});
+    expect(mockHandlersProto._stableUpdateMapTransform).not.toHaveBeenCalled();
+    expect(mockHandlersProto._stableFireEvents).toHaveBeenCalledWith({ zoom: false }, {}, true);
+
+    mockHandlers._updateMapTransform({ zoomDelta: 0.2 }, { zoom: true }, {});
+    expect(mockHandlersProto._stableUpdateMapTransform).toHaveBeenCalledWith({ zoomDelta: 0.2 }, { zoom: true }, {});
+
+    // 5. _finalizeElevation clears elevationFreeze without calling recalculateZoomAndCenter when pitch < 60
+    expect(mockCameraProto._stableFinalizeElevation).toBeDefined();
+    mockCamera.elevationFreeze = true;
+    mockCamera._finalizeElevation();
+    expect(mockCamera.elevationFreeze).toBe(false);
+    expect(mockCameraProto._stableFinalizeElevation).not.toHaveBeenCalled();
+
+    // 6. _fireEvents clears _terrainMovement and elevationFreeze when finishedMoving occurs without recalculating zoom/center
+    expect(mockHandlersProto._stableFireEvents).toBeDefined();
+    mockHandlers._terrainMovement = true;
+    mockCamera.elevationFreeze = true;
+    mockHandlers._camera._requestedCameraState = {};
+    mockHandlers._fireEvents({}, {}, true);
+    expect(mockHandlers._terrainMovement).toBe(false);
+    expect(mockCamera.elevationFreeze).toBe(false);
+    expect(mockHandlers._camera._requestedCameraState).toBeUndefined();
+    expect(mockHandlersProto._stableFireEvents).toHaveBeenCalled();
+
+    // 7. _handleMapControls unfreezes elevation during pure zoom so elevation updates continuously
+    expect(mockHandlersProto._stableHandleMapControls).toBeDefined();
+    mockCamera.elevationFreeze = true;
+    mockHandlers._handleMapControls({ combinedEventsInProgress: { zoom: true, drag: false } });
+    expect(mockCamera.elevationFreeze).toBe(false);
+
+    // 8. setElevation eases sudden elevation changes (> 0.05m) when idle to prevent single-frame vertical pops
+    mockHandlers._terrainMovement = false;
+    mockTr._elevation = 3200;
+    mockMap.triggerRepaint.mockClear();
+    mockTr.setElevation(3204);
+    expect(mockTrProto._stableSetElevation).toHaveBeenCalledWith(3200.5);
+    expect(mockMap.triggerRepaint).toHaveBeenCalled();
+
+    // Small elevation changes (<= 0.05m) apply directly
+    mockTr._elevation = 3200;
+    mockTr.setElevation(3200.02);
+    expect(mockTrProto._stableSetElevation).toHaveBeenCalledWith(3200.02);
+  });
+});
+
+describe('dem protocol handler', () => {
+  it('registers dem protocol and throws 404 for uncached offline tiles and z > 15 to allow parent overzooming', async () => {
+    const demCall = (maplibregl.addProtocol as any).mock.calls.find((call: any[]) => call[0] === 'dem');
+    expect(demCall).toBeDefined();
+    const handler = demCall[1];
+
+    // z > 15 throws 404
+    await expect(handler({ url: 'dem://https://s3.amazonaws.com/elevation-tiles-prod/terrarium/16/100/200.png' }, new AbortController()))
+      .rejects.toMatchObject({ status: 404, message: expect.stringContaining('Tile not found: 16/100/200') });
+
+    // uncached tile offline throws 404
+    await expect(handler({ url: 'dem://https://s3.amazonaws.com/elevation-tiles-prod/terrarium/15/6562/12582.png' }, new AbortController()))
+      .rejects.toMatchObject({ status: 404, message: expect.stringContaining('Tile not found: 15/6562/12582') });
+
+    // aborted request throws AbortError cleanly
+    const abortedController = new AbortController();
+    abortedController.abort();
+    await expect(handler({ url: 'dem://https://s3.amazonaws.com/elevation-tiles-prod/terrarium/15/6562/12582.png' }, abortedController))
+      .rejects.toMatchObject({ name: 'AbortError' });
   });
 });
 
@@ -560,7 +842,7 @@ describe('MapView Compass and Tilt Indicator', () => {
     });
   });
 
-  it('slices vector tiles above source maxzoom instead of GPU-stretching z=15', () => {
+  it('slices vector tiles up to zoom 18 (zoomLevelsToOverscale=4) to prevent tile explosion at zoom 22', () => {
     render(
       <MapView
         pins={[]}
@@ -570,7 +852,7 @@ describe('MapView Compass and Tilt Indicator', () => {
     );
 
     expect(capturedMapProps.current.maxZoom).toBe(22);
-    expect(capturedMapProps.current.zoomLevelsToOverscale).toBe(0);
+    expect(capturedMapProps.current.zoomLevelsToOverscale).toBe(4);
     expect(capturedMapProps.current.mapStyle?.sources?.protomaps?.maxzoom).toBe(15);
   });
 
@@ -588,5 +870,20 @@ describe('MapView Compass and Tilt Indicator', () => {
     expect(onEvents).toContain('webglcontextlost');
     expect(onEvents).not.toContain('sourcedata');
     expect(onEvents).not.toContain('data');
+  });
+
+  it('configures pins-source with maxzoom=24 to ensure geojson-vt indexes features at high zoom', () => {
+    capturedSourceProps.current = [];
+    render(
+      <MapView
+        pins={[{ id: 'pin-1', lat: 38.4975, lng: -107.8975, title: 'Test Pin', color: 'red' } as any]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+      />
+    );
+
+    const pinsSource = capturedSourceProps.current.find((s: any) => s.id === 'pins-source');
+    expect(pinsSource).toBeDefined();
+    expect(pinsSource.maxzoom).toBe(24);
   });
 });

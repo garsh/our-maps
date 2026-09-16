@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
-import MapView, { shouldSuspendOfflineTerrain } from './components/MapView'
+import MapView from './components/MapView'
 import Sidebar from './components/Sidebar'
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
@@ -112,7 +112,6 @@ export function MapEditor() {
   const [show3DTerrain, setShow3DTerrain] = useState<boolean>(() => {
     return getStoredBoolean('ourmaps_3d_terrain', getStoredBoolean('ourmaps_3d', true));
   });
-  const [mapZoom, setMapZoom] = useState(1);
 
   const handleToggle3DTerrain = useCallback((enabled: boolean) => {
     setShow3DTerrain(enabled);
@@ -152,7 +151,6 @@ export function MapEditor() {
   const [isOffline, setIsOffline] = useState(
     () => (typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY)
   );
-  const terrainSuspended = shouldSuspendOfflineTerrain(mapZoom, isOffline);
   const [isSyncing, setIsSyncing] = useState(
     () => id !== 'new' && !((typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY))
   );
@@ -1993,7 +1991,6 @@ export function MapEditor() {
             showHillshade={showHillshade}
             onToggleHillshade={handleToggleHillshade}
             show3DTerrain={show3DTerrain}
-            terrainSuspended={terrainSuspended}
             onToggle3DTerrain={handleToggle3DTerrain}
             show3DBuildings={show3DBuildings}
             onToggle3DBuildings={handleToggle3DBuildings}
@@ -2070,7 +2067,6 @@ export function MapEditor() {
             showHillshade={showHillshade}
             show3DTerrain={show3DTerrain}
             show3DBuildings={show3DBuildings}
-            onZoomChange={setMapZoom}
             onLocationTrackingChange={setIsTrackingLocation}
           />
         </div>

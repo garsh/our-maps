@@ -17,7 +17,6 @@ import { clearHoveredPin, getHoveredPinId, useHoveredPinId, hasFinePointer } fro
 import { setMapViewportBounds } from '../utils/mapViewport';
 import { ensurePinImageByKey, ensurePinImages, getPinIconKey, clearRegisteredImages } from '../utils/pinIconSprite';
 import { applyBundledSprites } from '../utils/basemapSprites';
-import { FLAT_TERRARIUM_256_PNG } from '../utils/flatTerrariumPng';
 
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -55,27 +54,327 @@ function throwTileNotFound(z: string | number, x: string | number, y: string | n
   throw err;
 }
 
-/** DEM terrain blanks some GPUs past ~16 while offline. */
-const OFFLINE_TERRAIN_MAX_ZOOM = 16;
-
-export function shouldSuspendOfflineTerrain(zoom: number, isOffline: boolean): boolean {
-  return isOffline && zoom > OFFLINE_TERRAIN_MAX_ZOOM;
-}
-
-function syncOfflineTerrain(map: any, show3DTerrain: boolean, isOffline: boolean) {
+export function syncOfflineTerrain(map: any, show3DTerrain: boolean) {
   if (!map || typeof map.setTerrain !== 'function') return;
-  const zoom = typeof map.getZoom === 'function' ? map.getZoom() : 0;
-  const terrainOn = show3DTerrain && !shouldSuspendOfflineTerrain(zoom, isOffline);
   try {
     const hasTerrain = typeof map.getTerrain === 'function' ? !!map.getTerrain() : false;
-    if (terrainOn && !hasTerrain) {
-      map.setTerrain({ source: 'terrainElevation', exaggeration: 1.0 });
-    } else if (!terrainOn && hasTerrain) {
+    if (show3DTerrain) {
+      if (!hasTerrain) {
+        map.setTerrain({ source: 'terrainElevation', exaggeration: 1.0 });
+      }
+      if (map.terrain?.tileManager) {
+        // Allow terrain RTT generation up to zoom 22 so vector roads and linear features
+        // are rendered at full screen resolution without pixelation, blur, or stair-stepping.
+        map.terrain.tileManager.maxzoom = 22;
+      }
+      if (map.terrain && !map.terrain._originalGetDEMTileMatrix) {
+        map.terrain._originalGetDEMTileMatrix = map.terrain._getDEMTileMatrix;
+        map.terrain._demMatrixCache?.clear?.();
+        map.terrain._elevationSamplerCache?.clear?.();
+        map.terrain._getDEMTileMatrix = function (tileID: any, sourceTile: any) {
+          if (sourceTile?.dem) {
+            const proto = Object.getPrototypeOf(sourceTile.dem);
+            if (proto && !proto._safeSampleBilinear && typeof proto.sampleBilinear === 'function') {
+              proto._safeSampleBilinear = proto.sampleBilinear;
+              proto.sampleBilinear = function (x: number, y: number) {
+                const dim = this.dim || 256;
+                const clampedX = Math.max(-1, Math.min(dim - 1e-4, x));
+                const clampedY = Math.max(-1, Math.min(dim - 1e-4, y));
+                return proto._safeSampleBilinear.call(this, clampedX, clampedY);
+              };
+            }
+          }
+
+          const matrixKey = `${sourceTile.tileID?.key || ''}/${tileID.key || ''}`;
+          const cachedMatrix = this._demMatrixCache?.get?.(matrixKey);
+          if (cachedMatrix) return cachedMatrix;
+
+          // MapLibre bug fix: dz must be the true zoom difference between the tile geometry
+          // and the covering parent DEM tile (sourceTile.tileID.canonical.z).
+          // MapLibre's built-in code had `if (tileID.canonical.z >= maxzoom) dz = tileID.canonical.z - maxzoom`
+          // which falsely assumes sourceTile is at maxzoom (15). When zoom 15 is missing offline and
+          // sourceTile is an ancestor (e.g. z=14), MapLibre sets dz=0 or the wrong dz, corrupting
+          // u_terrain_matrix and projecting 3D buildings and pin symbols to the wrong elevation
+          // (underground / culled by terrain depth).
+          // Crucially: targetCanonicalZ and sourceCanonicalZ MUST be floored to integers.
+          // In getElevationForLngLatZoom, MapLibre passes floating point zooms (e.g. 18.59, 18.62).
+          // If dz is fractional, pow2dz is non-integer, causing targetCanonicalX % pow2dz to oscillate
+          // chaotically across the DEM tile, resulting in 1,000+ meter elevation spikes and camera jumping.
+          const sourceCanonicalZ = Math.floor(sourceTile.tileID?.canonical?.z ?? sourceTile.canonical?.z ?? 0);
+          const targetCanonicalZ = Math.floor(tileID.canonical?.z ?? tileID.overscaledZ ?? 0);
+          const targetCanonicalX = Math.floor(tileID.canonical?.x ?? 0);
+          const targetCanonicalY = Math.floor(tileID.canonical?.y ?? 0);
+
+          const dz = Math.max(0, targetCanonicalZ - sourceCanonicalZ);
+          const pow2dz = 1 << dz;
+          const dx = targetCanonicalX % pow2dz;
+          const dy = targetCanonicalY % pow2dz;
+          // MapLibre internal tile coordinate extent is EXTENT = 8192 (not 4096).
+          // Using 4096 doubled the DEM pixel scale and caused coordinates to exceed dim (256),
+          // throwing RangeError: Out of range source coordinates for DEM data in sampleBilinear.
+          const EXTENT = 8192;
+          const s = 1 / (EXTENT * pow2dz);
+          const demMatrix = new Float64Array(16);
+          demMatrix[0] = s;
+          demMatrix[5] = s;
+          demMatrix[12] = dx / pow2dz;
+          demMatrix[13] = dy / pow2dz;
+          demMatrix[15] = 1;
+          this._demMatrixCache?.set?.(matrixKey, demMatrix);
+          return demMatrix;
+        };
+      }
+
+      if (map.terrain && !map.terrain._originalGetOverscaledTileIDFromLngLatZoom && typeof map.terrain._getOverscaledTileIDFromLngLatZoom === 'function') {
+        map.terrain._originalGetOverscaledTileIDFromLngLatZoom = map.terrain._getOverscaledTileIDFromLngLatZoom;
+        map.terrain._getOverscaledTileIDFromLngLatZoom = function (lnglat: any, zoom: number) {
+          // MapLibre's built-in _getOverscaledTileIDFromLngLatZoom passes float zoom into OverscaledTileID constructor,
+          // which corrupts canonical.z to a float and misses caches. Floor zoom to integer tile levels.
+          return this._originalGetOverscaledTileIDFromLngLatZoom.call(this, lnglat, Math.floor(zoom));
+        };
+      }
+
+      // Stabilize camera against MapLibre terrain zoom jumping and pushback above zoom 16:
+      const camera = (map as any)._camera;
+      if (camera) {
+        const cameraProto = Object.getPrototypeOf(camera);
+        if (cameraProto && !cameraProto._stableElevateCameraIfInsideTerrain && typeof cameraProto._elevateCameraIfInsideTerrain === 'function') {
+          cameraProto._stableElevateCameraIfInsideTerrain = cameraProto._elevateCameraIfInsideTerrain;
+          cameraProto._elevateCameraIfInsideTerrain = function (tr: any) {
+            // When pitch is low (< 45 deg), the user is viewing top-down.
+            // In deep zoom (z > 16), MapLibre's built-in formula pushes the camera's zoom
+            // backwards to ~16.98 whenever cameraAltitude approaches terrain elevation,
+            // creating an aggressive tug-of-war zoom jump against the user's scroll input.
+            // By returning { elevation: minAltitude }, we keep camera above ground without resetting the user's zoom.
+            if (tr?.pitch < 45) {
+              if (!this.terrain && tr.elevation >= 0) return {};
+              const cameraLngLat = tr.getCameraLngLat?.();
+              const cameraAltitude = tr.getCameraAltitude?.();
+              const minAltitude = this.terrain && typeof this.terrain.getElevationForLngLatZoom === 'function' && cameraLngLat
+                ? this.terrain.getElevationForLngLatZoom(cameraLngLat, Math.floor(tr.zoom))
+                : 0;
+              if (typeof minAltitude === 'number' && Number.isFinite(minAltitude) && typeof cameraAltitude === 'number' && cameraAltitude < minAltitude) {
+                return { elevation: minAltitude };
+              }
+              return {};
+            }
+            return this._stableElevateCameraIfInsideTerrain.call(this, tr);
+          };
+        }
+        if (cameraProto && !cameraProto._stableFinalizeElevation && typeof cameraProto._finalizeElevation === 'function') {
+          cameraProto._stableFinalizeElevation = cameraProto._finalizeElevation;
+          cameraProto._finalizeElevation = function () {
+            this.elevationFreeze = false;
+            if ((this.transform?.pitch ?? 0) < 60) {
+              return;
+            }
+            return this._stableFinalizeElevation.call(this);
+          };
+        }
+        if (cameraProto && !cameraProto._stableApplyUpdatedTransform && typeof cameraProto.applyUpdatedTransform === 'function') {
+          cameraProto._stableApplyUpdatedTransform = cameraProto.applyUpdatedTransform;
+          cameraProto.applyUpdatedTransform = function (tr: any) {
+            const beforeCenter = this.transform?.center ? { lng: this.transform.center.lng, lat: this.transform.center.lat } : null;
+            const res = this._stableApplyUpdatedTransform.call(this, tr);
+            if ((this.transform?.pitch ?? 0) < 60 && beforeCenter && this.transform?.center) {
+              const handlers = (map as any)._handlers;
+              const hasActiveDeltas = handlers?._changes?.some?.(([c]: any) => (
+                (c?.panDelta?.mag?.() ?? 0) > 0.05 ||
+                Math.abs(c?.zoomDelta ?? 0) > 1e-4
+              ));
+              // When idle (e.g. gesture finalize / finish frame), prevent tiny center drift
+              if (!hasActiveDeltas && !handlers?._terrainMovement) {
+                const dLng = this.transform.center.lng - beforeCenter.lng;
+                const dLat = this.transform.center.lat - beforeCenter.lat;
+                if (Math.hypot(dLng, dLat) > 1e-9 && Math.hypot(dLng, dLat) < 1e-4) {
+                  this.transform.setCenter(beforeCenter);
+                }
+              }
+            }
+            return res;
+          };
+        }
+      }
+
+      const tr = (map as any)._camera?.transform || (map as any).transform;
+      if (tr) {
+        const trProto = Object.getPrototypeOf(tr);
+        if (trProto && !trProto._stableRecalculateZoomAndCenter && typeof trProto.recalculateZoomAndCenter === 'function') {
+          trProto._stableRecalculateZoomAndCenter = trProto.recalculateZoomAndCenter;
+          trProto.recalculateZoomAndCenter = function (terrain?: any) {
+            if (this.pitch < 60) {
+              // When pitch is < 60, the camera is viewing top-down or gentle tilt.
+              // MapLibre's default recalculateZoomAndCenter reads center from the GPU depth
+              // framebuffer via screenPointToLocation(this.centerPoint, terrain) and recalculates
+              // zoom & center, causing a visible "nudge" / repositioning ~200ms after zooming stops.
+              // Instead, preserve exact center and zoom, and only update the ground elevation.
+              if (terrain && typeof terrain.getElevationForLngLatZoom === 'function') {
+                const tileZ = this._helper?._tileZoom ?? Math.max(0, Math.floor(this.zoom));
+                const ele = terrain.getElevationForLngLatZoom(this.center, tileZ);
+                if (typeof ele === 'number' && Number.isFinite(ele)) {
+                  this.setElevation(ele);
+                }
+              }
+              return;
+            }
+            const currentZoom = this.zoom;
+            const currentCenter = this.center;
+            this._stableRecalculateZoomAndCenter.call(this, terrain);
+            if (typeof currentZoom === 'number' && Number.isFinite(currentZoom)) {
+              this.setZoom(currentZoom);
+            }
+            if (currentCenter && this.pitch < 60) {
+              this.setCenter(currentCenter);
+            }
+          };
+        }
+        if (trProto && !trProto._stableSetElevation && typeof trProto.setElevation === 'function') {
+          trProto._stableSetElevation = trProto.setElevation;
+          trProto.setElevation = function (elevation: number) {
+            if (elevation === this._elevation) return;
+            // In top-down / low pitch mode (pitch < 60), if the map is idle and not in active movement,
+            // avoid sudden vertical elevation jumps (> 0.05m) that scale perspective in a single frame.
+            const handlers = (map as any)._handlers;
+            const isIdle = !handlers?.isMoving?.() && !handlers?._terrainMovement;
+            if (this.pitch < 60 && isIdle && typeof this._elevation === 'number' && Number.isFinite(this._elevation)) {
+              const delta = elevation - this._elevation;
+              if (Math.abs(delta) > 0.05) {
+                const step = Math.sign(delta) * Math.min(Math.abs(delta) * 0.25, 0.5);
+                const nextEle = this._elevation + step;
+                this._stableSetElevation.call(this, nextEle);
+                if (typeof map.triggerRepaint === 'function') {
+                  map.triggerRepaint();
+                }
+                return;
+              }
+            }
+            return this._stableSetElevation.call(this, elevation);
+          };
+        }
+      }
+
+      const helper = (map as any)._camera?.transform?._helper || (map as any).transform?._helper;
+      if (helper) {
+        const helperProto = Object.getPrototypeOf(helper);
+        if (helperProto && !helperProto._stableRecalculateZoomAndCenter && typeof helperProto.recalculateZoomAndCenter === 'function') {
+          helperProto._stableRecalculateZoomAndCenter = helperProto.recalculateZoomAndCenter;
+          helperProto.recalculateZoomAndCenter = function (elevation: number) {
+            if (this.pitch < 60) {
+              if (typeof elevation === 'number' && Number.isFinite(elevation)) {
+                this.setElevation(elevation);
+              }
+              return;
+            }
+            const currentZoom = this.zoom;
+            const currentCenter = this.center;
+            this._stableRecalculateZoomAndCenter.call(this, elevation);
+            // Preserve user's zoom on moveend / terrain finalization so ground elevation differences
+            // under the center point do not cause zoom levels to snap or oscillate.
+            if (typeof currentZoom === 'number' && Number.isFinite(currentZoom)) {
+              this.setZoom(currentZoom);
+            }
+            // In top-down / gentle pitch views, elevation adjustments must not shift the map center.
+            if (currentCenter && this.pitch < 60) {
+              if (typeof this.setCenter === 'function') {
+                this.setCenter(currentCenter);
+              } else {
+                this._center = currentCenter;
+              }
+            }
+          };
+        }
+      }
+
+      // Guard handleMapControlsPan against empty deltas:
+      // When scroll zooming stops, MapLibre's ScrollZoomHandler fires a 200ms finish timeout.
+      // In terrain mode, if handleMapControlsPan is called with no deltas, setLocationAtPoint
+      // calculates an erroneous offset between the 3D terrain hit point and the flat reference plane,
+      // nudging the center point ~200ms after the user stopped scrolling.
+      const cameraHelper = (map as any)._camera?.cameraHelper;
+      if (cameraHelper) {
+        const cameraHelperProto = Object.getPrototypeOf(cameraHelper);
+        if (cameraHelperProto && !cameraHelperProto._stableHandleMapControlsPan && typeof cameraHelperProto.handleMapControlsPan === 'function') {
+          cameraHelperProto._stableHandleMapControlsPan = cameraHelperProto.handleMapControlsPan;
+          cameraHelperProto.handleMapControlsPan = function (deltas: any, tr: any, preZoomAroundLoc: any) {
+            const hasPan = (deltas?.panDelta?.mag?.() ?? 0) > 0.05;
+            const hasZoom = Math.abs(deltas?.zoomDelta ?? 0) > 1e-4;
+            if (!hasPan && !hasZoom) return;
+            if (deltas?.around && tr?.centerPoint && deltas.around.distSqr(tr.centerPoint) < 1.0e-2) return;
+            return this._stableHandleMapControlsPan.call(this, deltas, tr, preZoomAroundLoc);
+          };
+        }
+      }
+
+      // Guard HandlerManager._updateMapTransform against mutating the transform when no deltas exist:
+      const handlers = (map as any)._handlers;
+      if (handlers) {
+        const handlersProto = Object.getPrototypeOf(handlers);
+        if (handlersProto && !handlersProto._stableUpdateMapTransform && typeof handlersProto._updateMapTransform === 'function') {
+          handlersProto._stableUpdateMapTransform = handlersProto._updateMapTransform;
+          handlersProto._updateMapTransform = function (combinedResult: any, combinedEventsInProgress: any, deactivatedHandlers: any) {
+            const hasDelta = (
+              (combinedResult?.panDelta?.mag?.() ?? 0) > 0.05 ||
+              Math.abs(combinedResult?.zoomDelta ?? 0) > 1e-4 ||
+              Math.abs(combinedResult?.bearingDelta ?? 0) > 1e-4 ||
+              Math.abs(combinedResult?.pitchDelta ?? 0) > 1e-4 ||
+              Math.abs(combinedResult?.rollDelta ?? 0) > 1e-4
+            );
+            if (!hasDelta) {
+              this._fireEvents(combinedEventsInProgress, deactivatedHandlers, true);
+              return;
+            }
+            return this._stableUpdateMapTransform.call(this, combinedResult, combinedEventsInProgress, deactivatedHandlers);
+          };
+        }
+        if (handlersProto && !handlersProto._stableHandleMapControls && typeof handlersProto._handleMapControls === 'function') {
+          handlersProto._stableHandleMapControls = handlersProto._handleMapControls;
+          handlersProto._handleMapControls = function (args: any) {
+            const res = this._stableHandleMapControls.call(this, args);
+            // In top-down / low pitch terrain mode (pitch < 60), keep elevation unfrozen during pure zoom
+            // so ground elevation updates continuously frame-by-frame with the zoom motion.
+            // This prevents a delayed ~200ms elevation snap when the gesture settles.
+            if ((this._camera?.transform?.pitch ?? 0) < 60 && args?.combinedEventsInProgress?.zoom && !args?.combinedEventsInProgress?.drag) {
+              if (this._camera) {
+                this._camera.elevationFreeze = false;
+              }
+            }
+            return res;
+          };
+        }
+        if (handlersProto && !handlersProto._stableFireEvents && typeof handlersProto._fireEvents === 'function') {
+          handlersProto._stableFireEvents = handlersProto._fireEvents;
+          handlersProto._fireEvents = function (newEventsInProgress: any, deactivatedHandlers: any, allowEndAnimation: any) {
+            const wasMoving = !!(this._eventsInProgress?.zoom || this._eventsInProgress?.drag || this._eventsInProgress?.roll || this._eventsInProgress?.pitch || this._eventsInProgress?.rotate);
+            const nowMoving = !!(newEventsInProgress?.zoom || newEventsInProgress?.drag || newEventsInProgress?.roll || newEventsInProgress?.pitch || newEventsInProgress?.rotate);
+            const nextEvents = { ...newEventsInProgress };
+            for (const name in this._eventsInProgress) {
+              const { handlerName } = this._eventsInProgress[name] || {};
+              if (handlerName && !this._handlersById?.[handlerName]?.isActive?.()) {
+                delete nextEvents[name];
+              }
+            }
+            const stillMoving = !!(nextEvents?.zoom || nextEvents?.drag || nextEvents?.roll || nextEvents?.pitch || nextEvents?.rotate);
+            const finishedMoving = (wasMoving || nowMoving) && !stillMoving;
+            const hasDeactivated = deactivatedHandlers && Object.keys(deactivatedHandlers).length > 0;
+
+            if ((finishedMoving || hasDeactivated) && this._terrainMovement && (this._camera?.transform?.pitch ?? 0) < 60) {
+              this._camera.elevationFreeze = false;
+              this._terrainMovement = false;
+              this._terrainGestureAnchorElevation = null;
+              delete (this._camera as any)._requestedCameraState;
+            }
+
+            return this._stableFireEvents.call(this, newEventsInProgress, deactivatedHandlers, allowEndAnimation);
+          };
+        }
+      }
+    } else if (hasTerrain) {
       map.setTerrain(null);
     }
-  } catch {}
+  } catch (err) {
+    console.error('syncOfflineTerrain error:', err);
+  }
 }
-
 
 let isDEMProtocolRegistered = false;
 function setupDEMProtocol() {
@@ -83,6 +382,18 @@ function setupDEMProtocol() {
     isDEMProtocolRegistered = true;
     maplibregl.addProtocol('dem', async (params, abortController) => {
       const realUrl = params.url.replace(/^dem:\/\//, '');
+
+      // Parse z, x, y if available from url: e.g. /tiles/{z}/{x}/{y}.png or terrarium/{z}/{x}/{y}.png
+      const match = realUrl.match(/\/(\d+)\/(\d+)\/(\d+)/);
+      const z = match ? Number(match[1]) : 0;
+      const x = match ? Number(match[2]) : 0;
+      const y = match ? Number(match[3]) : 0;
+
+      // DEM tiles only exist up to zoom 15 on AWS S3 Terrarium. Requests for z > 15
+      // are overscaled; throw 404 so MapLibre overzooms the z=15 parent DEM tile.
+      if (z > 15) {
+        throwTileNotFound(z, x, y);
+      }
 
       // 1. Try CacheStorage (Workbox elevation-tiles-cache)
       try {
@@ -94,13 +405,18 @@ function setupDEMProtocol() {
             return { data: buf };
           }
         }
-      } catch {}
+      } catch (err) {
+        console.warn('DEM cache check error:', err);
+      }
 
       // 2. If online, fetch from network and cache for offline 3D use
       if (navigator.onLine) {
+        if (abortController?.signal?.aborted) {
+          throw new DOMException('The user aborted a request.', 'AbortError');
+        }
         try {
           const res = await fetch(realUrl, { signal: abortController.signal });
-          if (res.ok) {
+          if (res && res.ok) {
             const clone = res.clone();
             const buf = await res.arrayBuffer();
             if (typeof caches !== 'undefined') {
@@ -108,15 +424,24 @@ function setupDEMProtocol() {
             }
             return { data: buf };
           }
-        } catch {}
+        } catch (fetchErr: any) {
+          if (abortController?.signal?.aborted || fetchErr?.name === 'AbortError') {
+            throw (fetchErr?.name === 'AbortError' ? fetchErr : new DOMException('The user aborted a request.', 'AbortError'));
+          }
+          // Network unreachable / offline / blocked in tests: fall through to 404 parent overzoom without noisy warnings
+        }
       }
 
-      // 3. Uncached offline DEM: 256×256 0m Terrarium PNG (same size as AWS tiles /
-      // raster-dem tileSize). A 1×1 fallback caused "dem dimension mismatch" when
-      // MapLibre backfilled borders against neighboring 256px tiles.
-      const flat = new Uint8Array(FLAT_TERRARIUM_256_PNG.byteLength);
-      flat.set(FLAT_TERRARIUM_256_PNG);
-      return { data: flat.buffer };
+      // 3. Missing / uncached DEM tile: throw 404 status.
+      // MapLibre interprets status 404 as a missing tile and automatically overzooms
+      // the parent DEM tile cached in the region (or uses empty flat mesh if no DEM exists).
+      // NEVER return a 0m flat dummy tile here, because returning 0m elevation in mountainous
+      // terrain (e.g. Colorado at 2,500m-4,000m) tricks MapLibre into setting camera ground elevation
+      // to 0m, creating a 2,500m elevation mismatch that frustum-culls all terrain and vector tiles!
+      if (abortController?.signal?.aborted) {
+        throw new DOMException('The user aborted a request.', 'AbortError');
+      }
+      throwTileNotFound(z, x, y);
     });
   }
 }
@@ -151,7 +476,7 @@ function setupPMTilesProtocol() {
             throw extractErr;
           }
           if (abortController.signal.aborted) throw extractErr;
-          console.error('Failed to read offline map extract', extractErr);
+          console.error('Failed to read offline map extract:', extractErr);
         }
 
         // 2. No local extract. If the browser reports online, try the live planet archive.
@@ -209,7 +534,6 @@ interface MapViewProps {
   onPinClick?: (pin: Pin) => void;
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
   onBoundsChange?: (bounds: string) => void;
-  onZoomChange?: (zoom: number) => void;
   targetPinId?: string | null;
   boundsToFit?: [[number, number], [number, number]] | null;
   userRole?: 'owner' | 'edit' | 'view';
@@ -636,7 +960,6 @@ const MapView = ({
   onPinClick,
   onUpdatePin,
   onBoundsChange,
-  onZoomChange,
   targetPinId,
   boundsToFit,
   userRole = 'owner',
@@ -659,10 +982,8 @@ const MapView = ({
 }: MapViewProps) => {
 
   const mapRef = useRef<MapRef | null>(null);
-  const overlayPrefsRef = useRef({ show3DTerrain, isOffline });
-  overlayPrefsRef.current = { show3DTerrain, isOffline };
-  const onZoomChangeRef = useRef(onZoomChange);
-  onZoomChangeRef.current = onZoomChange;
+  const show3DTerrainRef = useRef(show3DTerrain);
+  show3DTerrainRef.current = show3DTerrain;
 
   const [domTarget, setDomTarget] = useState<HTMLElement | null>(null);
 
@@ -768,9 +1089,6 @@ const MapView = ({
     let canvas: HTMLCanvasElement | null = null;
 
     if (mapInstance && typeof mapInstance.on === 'function') {
-      mapInstance.on('error', (e: any) => {
-        console.error('[MAPLIBRE ERROR]', e?.error?.message || e?.error || e);
-      });
       mapInstance.on('webglcontextlost', onContextLost);
       mapInstance.on('webglcontextrestored', onContextRestored);
 
@@ -794,22 +1112,12 @@ const MapView = ({
       });
       mapInstance.once('load', () => {
         setIsMapLoaded(true);
-        syncOfflineTerrain(mapInstance, overlayPrefsRef.current.show3DTerrain, overlayPrefsRef.current.isOffline);
-        if (typeof mapInstance.getZoom === 'function') {
-          onZoomChangeRef.current?.(mapInstance.getZoom());
-        }
+        syncOfflineTerrain(mapInstance, show3DTerrainRef.current);
         mapInstance.triggerRepaint();
       });
       mapInstance.once('idle', () => {
         setIsMapLoaded(true);
         mapInstance.triggerRepaint();
-      });
-      mapInstance.on('zoom', () => {
-        const prefs = overlayPrefsRef.current;
-        syncOfflineTerrain(mapInstance, prefs.show3DTerrain, prefs.isOffline);
-        if (typeof mapInstance.getZoom === 'function') {
-          onZoomChangeRef.current?.(mapInstance.getZoom());
-        }
       });
     }
 
@@ -1045,9 +1353,9 @@ const MapView = ({
       try {
         // 3D Terrain is routed via dem:// protocol which:
         // 1. Returns cached DEM tiles offline (full 3D terrain rendered offline when cached)
-        // 2. Returns 0m flat elevation fallback if offline and not cached (preventing blank map bugs)
+        // 2. Returns HTTP status 404 for missing tiles to trigger parent DEM overzooming
         // 3. Fetches and caches DEM tiles from AWS S3 when online
-        syncOfflineTerrain(m, overlayPrefsRef.current.show3DTerrain, overlayPrefsRef.current.isOffline);
+        syncOfflineTerrain(m, show3DTerrainRef.current);
         if (typeof m.triggerRepaint === 'function') {
           m.triggerRepaint();
         }
@@ -1063,7 +1371,7 @@ const MapView = ({
     } else {
       syncTerrain();
     }
-  }, [mapTheme, show3DTerrain, isMapLoaded, isOffline]);
+  }, [mapTheme, show3DTerrain, isMapLoaded]);
 
   const appliedThemeRef = useRef(mapTheme);
   // Recolor the existing style in one frame. setStyle on theme change reloads
@@ -1889,8 +2197,9 @@ const MapView = ({
           maxZoom={22}
           minZoom={1}
           maxPitch={85}
-          // Slice z=15 vector tiles up to map maxZoom 22 instead of GPU-stretching them.
-          zoomLevelsToOverscale={0}
+          // Allow MapLibre to slice vector tiles up to zoom 18 (22 - 4) and overscale
+          // above that to prevent exponential tile explosion and WebGL context loss at deep zoom levels.
+          zoomLevelsToOverscale={4}
           onLoad={handleMapLoad}
           onZoomStart={clearHoverDuringPan}
           onZoomEnd={updateBounds}
@@ -1981,7 +2290,7 @@ const MapView = ({
           )}
 
           {/* WebGL Symbol Layer for GPU-accelerated Pin Rendering */}
-          <Source id="pins-source" type="geojson" data={pinsGeoJson}>
+          <Source id="pins-source" type="geojson" data={pinsGeoJson} maxzoom={24}>
             <Layer
               id="pins-symbol-layer"
               type="symbol"
