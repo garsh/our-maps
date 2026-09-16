@@ -41,13 +41,6 @@ export const LayerSchema = z.object({
   position: z.number().int().nonnegative().optional().default(0),
 });
 
-export const MapUpdateSchema = z.object({
-  name: z.string().min(1).max(1000).optional(),
-  customColors: z.array(HexColorSchema).max(50).optional(),
-  layers: z.array(LayerSchema).max(MAX_LAYERS_PER_MAP).optional(),
-  pins: z.array(PinSchema).max(MAX_PINS_PER_MAP).optional(),
-});
-
 export const MapCreateSchema = z.object({
   id: UuidSchema,
   name: z.string().min(1).max(1000),

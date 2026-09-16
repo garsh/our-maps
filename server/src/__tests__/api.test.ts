@@ -174,42 +174,29 @@ describe('API Endpoints', () => {
     expect(res.body.isPublic).toBe(false);
   });
 
-  it('PUT /api/maps/:id should update map name and pins', async () => {
+  it('PUT /api/maps/:id is not a map-update endpoint', async () => {
     const mapId = uuid(30);
     const db = await getDb();
     await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', mapId, 'Old Name', mockUser.id);
 
-    const updateData = {
-      name: 'New Name',
-      layers: [
-        { id: uuid(31), name: 'G1', position: 0 }
-      ],
-      pins: [
-        { id: uuid(32), map_id: mapId, layerId: uuid(31), lat: 50, lng: 60, label: 'New Pin', description: 'New Desc', color: 'green', icon: 'airport', position: 0 }
-      ]
-    };
-
     const res = await request(app)
       .put(`/api/maps/${mapId}`)
       .set(authHeader)
-      .send(updateData);
+      .send({
+        name: 'New Name',
+        layers: [{ id: uuid(31), name: 'G1', position: 0 }],
+        pins: [{ id: uuid(32), lat: 50, lng: 60, label: 'New Pin', position: 0 }],
+      });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(404);
 
     const map = await db.get('SELECT * FROM maps WHERE id = ?', mapId);
-    expect(map.name).toBe('New Name');
-
-    const layers = await db.all('SELECT * FROM pin_layers WHERE map_id = ?', mapId);
-    expect(layers).toHaveLength(1);
-    expect(layers[0].name).toBe('G1');
-
+    expect(map.name).toBe('Old Name');
     const pins = await db.all('SELECT * FROM pins WHERE map_id = ?', mapId);
-    expect(pins).toHaveLength(1);
-    expect(pins[0].id).toBe(uuid(32));
-    expect(pins[0].layer_id).toBe(uuid(31));
+    expect(pins).toHaveLength(0);
   });
 
-  it('POST, GET, and PUT /api/maps should handle customColors per map', async () => {
+  it('POST and GET /api/maps should handle customColors per map', async () => {
     const mapId = uuid(40);
     const postData = {
       id: mapId,
@@ -233,22 +220,6 @@ describe('API Endpoints', () => {
 
     expect(getRes.status).toBe(200);
     expect(getRes.body.customColors).toEqual(['#ffc800', '#c8ff00']);
-
-    const updateRes = await request(app)
-      .put(`/api/maps/${mapId}`)
-      .set(authHeader)
-      .send({
-        customColors: ['#ffc800', '#c8ff00', '#00ffc8']
-      });
-
-    expect(updateRes.status).toBe(200);
-
-    const getRes2 = await request(app)
-      .get(`/api/maps/${mapId}`)
-      .set(authHeader);
-
-    expect(getRes2.status).toBe(200);
-    expect(getRes2.body.customColors).toEqual(['#ffc800', '#c8ff00', '#00ffc8']);
   });
 
   it('POST /api/auth/google-login should return 400 if credential is missing', async () => {
@@ -757,38 +728,4 @@ describe('API Endpoints', () => {
     expect(badColor.status).toBe(400);
   });
 
-  it('PUT /api/maps cannot move another map\'s pins by reusing their ids', async () => {
-    const ownerA = mockUser;
-    const ownerB = { id: 'owner-b-id', email: 'b@example.com', name: 'Owner B' };
-    const db = await getDb();
-    await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', ownerB.id, ownerB.email, ownerB.name);
-
-    const mapA = uuid(500);
-    const mapB = uuid(501);
-    const pinId = uuid(502);
-    await request(app).post('/api/maps').set(authHeader).send({
-      id: mapA,
-      name: 'Map A',
-      layers: [],
-      pins: [{ id: pinId, lat: 1, lng: 2, label: 'Secret', position: 0 }],
-    });
-    await request(app).post('/api/maps').set({ 'x-mock-user': JSON.stringify(ownerB) }).send({
-      id: mapB,
-      name: 'Map B',
-      layers: [],
-      pins: [],
-    });
-
-    const steal = await request(app)
-      .put(`/api/maps/${mapB}`)
-      .set({ 'x-mock-user': JSON.stringify(ownerB) })
-      .send({
-        pins: [{ id: pinId, lat: 9, lng: 9, label: 'Stolen', position: 0 }],
-      });
-    expect(steal.status).toBe(200);
-
-    const original = await db.get('SELECT map_id, label FROM pins WHERE id = ?', pinId);
-    expect(original.map_id).toBe(mapA);
-    expect(original.label).toBe('Secret');
-  });
 });

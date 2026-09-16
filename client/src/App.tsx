@@ -31,7 +31,7 @@ import type { DragEndEvent } from '@dnd-kit/core'
 import { Loader2, Map as MapIcon, RotateCw } from 'lucide-react';
 import type { SearchAreaState } from './components/SearchBar';
 import { reorderPins, reorderLayers, isSameLayer, emitPinMoveOrReorderEvents } from './utils/reorderUtils';
-import { generateId } from './utils/fileUtils';
+import { generateId, mergeImportedMapData } from './utils/fileUtils';
 import { getOfflineMap, isMapDownloaded, touchMapCacheAccess, saveMapToViewCache } from './utils/tileUtils';
 import { preloadExtract, setActiveOfflineMapId } from './utils/offlineExtract';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
@@ -76,6 +76,8 @@ export function MapEditor() {
     }
   }, [id]);
   const [mapName, setMapName] = useState(id === 'new' ? 'Unnamed Map' : '');
+  const mapNameRef = useRef(mapName);
+  mapNameRef.current = mapName;
   const [owner, setOwner] = useState<{ id: string, name?: string, email?: string, picture?: string } | null>(null);
   const [isMapLoading, setIsMapLoading] = useState(!!id && id !== 'new');
   const [userRole, setUserRole] = useState<'owner' | 'edit' | 'view'>('owner');
@@ -433,9 +435,9 @@ export function MapEditor() {
   const pendingDeletedPinIdsRef = useRef<Set<string>>(new Set());
   const pendingDeletedLayerIdsRef = useRef<Set<string>>(new Set());
 
-  // Prevent auto-save HTTP PUT from racing against socket reconnection
+  // Debounced POST /api/maps for brand-new maps that do not have an id yet
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoSaveAbortRef = useRef<AbortController | null>(null);
+  const createInFlightRef = useRef(false);
 
   // Request epoch to prevent stale loadMap or reconcileOnReconnect responses from overwriting fresh state
   const loadEpochRef = useRef(0);
@@ -590,15 +592,6 @@ export function MapEditor() {
 
       // Reconnect re-sync handler
       socket.on('connect', () => {
-        // Cancel any pending HTTP PUT auto-save and abort in-flight saves to avoid collision with delta sync
-        if (autoSaveTimerRef.current) {
-          clearTimeout(autoSaveTimerRef.current);
-          autoSaveTimerRef.current = null;
-        }
-        if (autoSaveAbortRef.current) {
-          autoSaveAbortRef.current.abort();
-          autoSaveAbortRef.current = null;
-        }
         applyOffline(false, true);
         if (id) {
           socket.emit('join-map', id);
@@ -814,11 +807,6 @@ export function MapEditor() {
         setIsDirty(false);
       });
 
-      socket.on('map-reloaded', (data: { mapId: string }) => {
-        if (data.mapId !== id) return;
-        loadMap(id, true);
-      });
-
       socket.on('map-deleted', (data: { mapId: string }) => {
         if (data.mapId !== id) return;
         navigate('/', { replace: true });
@@ -844,10 +832,6 @@ export function MapEditor() {
         if (autoSaveTimerRef.current) {
           clearTimeout(autoSaveTimerRef.current);
           autoSaveTimerRef.current = null;
-        }
-        if (autoSaveAbortRef.current) {
-          autoSaveAbortRef.current.abort();
-          autoSaveAbortRef.current = null;
         }
         if (pendingTransitionTimerRef.current) {
           clearTimeout(pendingTransitionTimerRef.current);
@@ -875,52 +859,28 @@ export function MapEditor() {
     }
   }, [id, user]);
 
-  // Auto-save on local edits. Deps stay a fixed length so going offline
-  // (editMode true → false) does not trip React's hook-deps size warning.
+  // Create brand-new maps via POST /api/maps. Existing maps persist through socket deltas.
   useEffect(() => {
-    if (!editMode || isMapLoading) return;
-    
+    if (!editMode || isMapLoading || mapId) return;
+
     if (isRemoteUpdateRef.current) {
       isRemoteUpdateRef.current = false;
       return;
     }
 
     if (isInitialLoadRef.current) {
-        isInitialLoadRef.current = false;
-        return;
-    }
-
-    // Don't auto-save empty new maps
-    if (!mapId && pins.length === 0 && mapName === 'Unnamed Map') return;
-
-    // For brand new maps without an ID, create the initial map via POST /api/maps
-    if (!mapId) {
-      setIsDirty(true);
-      const timer = setTimeout(() => {
-        handleSave();
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-
-    // When WebSocket is connected, mutations are already saved atomically to SQLite via realtime delta events.
-    // We avoid triggering full-array HTTP PUT requests to prevent collaborative overwrites.
-    const isSocketConnected = socketRef.current?.connected;
-    if (isSocketConnected) {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-      }
-      setIsDirty(false);
+      isInitialLoadRef.current = false;
       return;
     }
 
-    // If socket is disconnected/offline, mark as dirty and debounce HTTP save fallback
+    if (pins.length === 0 && layers.length === 0 && mapName === 'Unnamed Map') return;
+
     setIsDirty(true);
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
       autoSaveTimerRef.current = null;
       handleSave();
-    }, 2000);
+    }, 1000);
 
     return () => {
       if (autoSaveTimerRef.current) {
@@ -929,7 +889,7 @@ export function MapEditor() {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editMode, isMapLoading, mapName, pins, layers, customColors]);
+  }, [editMode, isMapLoading, mapId, mapName, pins, layers, customColors]);
 
   // Warn on browser-level navigation (tab close, refresh, address bar) when dirty
   useEffect(() => {
@@ -1218,47 +1178,33 @@ export function MapEditor() {
   };
 
   const handleSave = async () => {
-    if (userRole === 'view') return;
+    if (userRoleRef.current === 'view') return;
+    if (mapIdRef.current) return;
+    if (createInFlightRef.current) return;
+
+    createInFlightRef.current = true;
     setIsSaving(true);
     setError(null);
 
-    // Cancel any previous in-flight save
-    if (autoSaveAbortRef.current) {
-      autoSaveAbortRef.current.abort();
-    }
-    const abortController = new AbortController();
-    autoSaveAbortRef.current = abortController;
-
     try {
-      if (mapId) {
-        await apiService.updateMap(mapId, mapName, layers, pins, abortController.signal, customColorsRef.current);
-        setIsDirty(false);
-      } else {
-        const newId = generateId();
-        hasLoadedRef.current = true;
-        await apiService.createMap({ 
-          id: newId, 
-          name: mapName, 
-          layers, 
-          pins,
-          customColors: customColorsRef.current,
-          ownerId: user?.id || '',
-        });
-        setIsDirty(false);
-        setMapId(newId);
-        navigate(`/map/${newId}`, { replace: true });
-      }
+      const newId = generateId();
+      hasLoadedRef.current = true;
+      await apiService.createMap({
+        id: newId,
+        name: mapNameRef.current || 'Unnamed Map',
+        layers: layersRef.current,
+        pins: pinsRef.current,
+        customColors: customColorsRef.current,
+        ownerId: user?.id || '',
+      });
+      setIsDirty(false);
+      setMapId(newId);
+      navigate(`/map/${newId}`, { replace: true });
     } catch (err: any) {
-      if (err?.name === 'AbortError') {
-        // Aborted because socket reconnected or newer save started; ignore
-        return;
-      }
       console.error('Failed to save map', err);
       setError('NOT Synced');
     } finally {
-      if (autoSaveAbortRef.current === abortController) {
-        autoSaveAbortRef.current = null;
-      }
+      createInFlightRef.current = false;
       setIsSaving(false);
     }
   };
@@ -1734,21 +1680,55 @@ export function MapEditor() {
 
   const handleImport = useCallback((data: Partial<MapData>) => {
     if (!editModeRef.current || isOfflineRef.current) return;
-    if (data.name) setMapName(data.name);
-    if (data.pins) {
-      setPins(data.pins);
-      if (data.pins.length > 0) {
-        const lats = data.pins.map(p => p.lat);
-        const lngs = data.pins.map(p => p.lng);
-        const bounds: [[number, number], [number, number]] = [
-          [Math.min(...lats), Math.min(...lngs)],
-          [Math.max(...lats), Math.max(...lngs)]
-        ];
-        triggerBoundsToFit(bounds, 1000);
+
+    const merged = mergeImportedMapData(layersRef.current, pinsRef.current, data);
+    if (merged.addedLayers.length === 0 && merged.addedPins.length === 0) {
+      if (merged.skippedPins > 0 || merged.skippedLayers > 0) {
+        alert('This map is full. Remove some pins or layers before importing.');
       }
+      return;
     }
-    if (data.layers) setLayers(data.layers);
-  }, []);
+
+    setLayers(merged.layers);
+    setPins(merged.pins);
+
+    const currentName = mapNameRef.current;
+    if (data.name && currentName === 'Unnamed Map') {
+      setMapName(data.name);
+    }
+
+    const currentMapId = mapIdRef.current;
+    if (currentMapId) {
+      const socket = socketRef.current;
+      if (data.name && currentName === 'Unnamed Map') {
+        socket?.emit('map-name-update', { mapId: currentMapId, name: data.name });
+      }
+      merged.addedLayers.forEach(layer => {
+        socket?.emit('layer-create', { mapId: currentMapId, layer });
+      });
+      merged.addedPins.forEach(pin => {
+        socket?.emit('pin-create', {
+          mapId: currentMapId,
+          layerId: pin.layerId === undefined ? null : pin.layerId,
+          pin,
+        });
+      });
+    }
+
+    if (merged.addedPins.length > 0) {
+      const lats = merged.addedPins.map(p => p.lat);
+      const lngs = merged.addedPins.map(p => p.lng);
+      const bounds: [[number, number], [number, number]] = [
+        [Math.min(...lats), Math.min(...lngs)],
+        [Math.max(...lats), Math.max(...lngs)]
+      ];
+      triggerBoundsToFit(bounds, 1000);
+    }
+
+    if (merged.skippedPins > 0 || merged.skippedLayers > 0) {
+      alert(`Imported ${merged.addedPins.length} pin(s). ${merged.skippedPins} pin(s) and ${merged.skippedLayers} layer(s) were skipped because of map size limits.`);
+    }
+  }, [triggerBoundsToFit]);
 
   const sidebarWidthRef = useRef(sidebarWidth);
   sidebarWidthRef.current = sidebarWidth;

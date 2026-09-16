@@ -1,6 +1,10 @@
 import type { MapData, Pin, PinLayer } from '@shared/interfaces';
 import { mapDataToKml, parseKmlHierarchy } from './kmlUtils';
 import { isValidPinColor, isValidPinIcon, DEFAULT_PIN_COLOR, DEFAULT_PIN_ICON } from './mapUtils';
+import { isSameLayer } from './reorderUtils';
+
+export const MAX_PINS_PER_MAP = 5000;
+export const MAX_LAYERS_PER_MAP = 100;
 
 /**
  * Converts MapData to a GeoJSON FeatureCollection
@@ -227,3 +231,91 @@ export const importMapFile = async (file: File): Promise<Partial<MapData>> => {
 
   throw new Error('Unsupported file extension');
 };
+
+export interface MergedImport {
+  layers: PinLayer[];
+  pins: Pin[];
+  addedLayers: PinLayer[];
+  addedPins: Pin[];
+  skippedLayers: number;
+  skippedPins: number;
+}
+
+function nextImportedPinPosition(pins: Pin[], layerId?: string): number {
+  const layerPins = pins.filter(p => isSameLayer(p.layerId, layerId));
+  return layerPins.length > 0 ? Math.max(...layerPins.map(p => p.position || 0)) + 1 : 0;
+}
+
+/** Append imported layers/pins onto an existing map. Always mints new ids. */
+export function mergeImportedMapData(
+  existingLayers: PinLayer[],
+  existingPins: Pin[],
+  imported: Partial<MapData>,
+  options?: { maxPins?: number; maxLayers?: number }
+): MergedImport {
+  const maxPins = options?.maxPins ?? MAX_PINS_PER_MAP;
+  const maxLayers = options?.maxLayers ?? MAX_LAYERS_PER_MAP;
+  const importedLayers = imported.layers || [];
+  const importedPins = imported.pins || [];
+
+  const addedLayers: PinLayer[] = [];
+  const layerIdMap = new Map<string, string>();
+  const skippedImportedLayerIds = new Set<string>();
+  const layerBudget = Math.max(0, maxLayers - existingLayers.length);
+  let skippedLayers = 0;
+
+  for (const layer of importedLayers) {
+    if (addedLayers.length >= layerBudget) {
+      skippedLayers += 1;
+      if (layer.id) skippedImportedLayerIds.add(layer.id);
+      continue;
+    }
+    const newId = generateId();
+    if (layer.id) layerIdMap.set(layer.id, newId);
+    addedLayers.push({
+      id: newId,
+      name: layer.name || `Layer ${existingLayers.length + addedLayers.length + 1}`,
+      position: existingLayers.length + addedLayers.length,
+    });
+  }
+
+  const addedPins: Pin[] = [];
+  const mergedPins = [...existingPins];
+  const pinBudget = Math.max(0, maxPins - existingPins.length);
+  let skippedPins = 0;
+
+  for (const pin of importedPins) {
+    if (pin.layerId && skippedImportedLayerIds.has(pin.layerId)) {
+      skippedPins += 1;
+      continue;
+    }
+    if (addedPins.length >= pinBudget) {
+      skippedPins += 1;
+      continue;
+    }
+    const layerId = pin.layerId ? layerIdMap.get(pin.layerId) : undefined;
+    const newPin: Pin = {
+      id: generateId(),
+      lat: pin.lat,
+      lng: pin.lng,
+      label: pin.label || '',
+      description: pin.description,
+      address: pin.address,
+      color: pin.color,
+      icon: pin.icon,
+      layerId,
+      position: nextImportedPinPosition(mergedPins, layerId),
+    };
+    addedPins.push(newPin);
+    mergedPins.push(newPin);
+  }
+
+  return {
+    layers: [...existingLayers, ...addedLayers],
+    pins: mergedPins,
+    addedLayers,
+    addedPins,
+    skippedLayers,
+    skippedPins,
+  };
+}

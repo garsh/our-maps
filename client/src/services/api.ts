@@ -1,4 +1,4 @@
-import type { Pin, MapData, MapPermission } from '@shared/interfaces';
+import type { MapData, MapPermission } from '@shared/interfaces';
 import { getOfflineMap, saveMapToViewCache, getMapETag, touchMapCacheAccess, pruneViewCache, type BoundingBox } from '../utils/tileUtils';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -210,16 +210,6 @@ export const apiService = {
       console.error('API createMap FETCH ERROR:', err);
       throw err;
     }
-  },
-
-  async updateMap(id: string, name: string, layers: any[], pins: Pin[], signal?: AbortSignal, customColors?: string[]): Promise<{ message: string }> {
-    const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, {
-      method: 'PUT',
-      headers: getHeaders(),
-      body: JSON.stringify({ name, layers, pins, customColors }),
-      signal,
-    });
-    return handleResponse<{ message: string }>(res, this._logoutCallback, 'Failed to update map');
   },
 
   async shareMap(id: string, email: string, role: 'view' | 'edit' | 'owner'): Promise<any> {

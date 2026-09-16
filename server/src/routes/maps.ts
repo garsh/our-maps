@@ -3,8 +3,8 @@ import crypto from 'crypto';
 import { getDb } from '../db';
 import type { Pin, MapData, MapPermission, PinLayer, PinIcon } from '@shared/interfaces';
 import { authMiddleware, optionalAuthMiddleware, type AuthRequest } from '../auth';
-import { getMapRole, canEditMap, addMapViewerIfLinkShared, resolveMapAccess } from '../permissions';
-import { MapCreateSchema, MapUpdateSchema, ShareSchema, PinSchema, LayerSchema } from '../schemas';
+import { addMapViewerIfLinkShared, resolveMapAccess } from '../permissions';
+import { MapCreateSchema, ShareSchema, PinSchema, LayerSchema } from '../schemas';
 import { revokeUserMapAccess, updateUserMapRole, syncSocketsOnPublicChange } from '../realtime';
 import { z } from 'zod';
 
@@ -434,56 +434,6 @@ router.post('/', authMiddleware, async (req: AuthRequest, res) => {
       return res.status(400).json({ error: 'Validation failed', details: error.issues });
     }
     console.error('[SERVER] POST /api/maps ERROR:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// PUT update map (Atomic Sync / Upsert Strategy)
-router.put('/:id', authMiddleware, async (req: AuthRequest, res) => {
-  try {
-    const validatedData = MapUpdateSchema.parse(req.body);
-    const { name, layers, pins, customColors } = validatedData;
-    const mapId = req.params.id;
-    const userId = req.user!.id;
-    const db = await getDb();
-
-    const map = await db.get('SELECT owner_id FROM maps WHERE id = ?', mapId);
-    if (!map) return res.status(404).json({ error: 'Map not found' });
-
-    const role = await getMapRole(userId, mapId);
-    if (!canEditMap(role)) {
-      return res.status(403).json({ error: 'Write access denied' });
-    }
-
-    await db.run('BEGIN TRANSACTION');
-
-    try {
-      if (name) {
-        await db.run('UPDATE maps SET name = ? WHERE id = ?', name, mapId);
-      }
-      if (customColors !== undefined) {
-        await db.run('UPDATE maps SET custom_colors = ? WHERE id = ?', JSON.stringify(customColors), mapId);
-      }
-
-      await syncMapLayersAndPins(db, mapId, layers, pins, { isNewMap: false });
-
-      await db.run('COMMIT');
-
-      const io = req.app.get('io');
-      if (io) {
-        io.to(`map:${mapId}`).emit('map-reloaded', { mapId });
-      }
-
-      res.json({ message: 'Map updated successfully' });
-    } catch (error) {
-      await db.run('ROLLBACK');
-      throw error;
-    }
-  } catch (error: any) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Validation failed', details: error.issues });
-    }
-    console.error('[SERVER] PUT /api/maps ERROR:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

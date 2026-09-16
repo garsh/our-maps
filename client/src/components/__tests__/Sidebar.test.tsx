@@ -673,6 +673,13 @@ describe('Sidebar', () => {
     expect(screen.queryByLabelText('Edit')).not.toBeInTheDocument();
   });
 
+  it('shows Import in the menu even when the map already has pins', () => {
+    render(<TestWrapper />);
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+    expect(screen.getByText('Import')).toBeInTheDocument();
+  });
+
   it('calls onRemoveLayer when Delete Layer button is confirmed', () => {
     const onRemoveLayer = vi.fn();
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);

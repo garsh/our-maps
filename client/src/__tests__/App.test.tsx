@@ -50,6 +50,7 @@ describe('App Components Error Handling', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSocket.connected = false;
     
     // Default Auth Mock
     (useAuth as any).mockReturnValue({
@@ -87,19 +88,12 @@ describe('App Components Error Handling', () => {
     });
   });
 
-  it('MapEditor shows error message when saving fails', async () => {
-    (apiService.getMap as any).mockResolvedValue({
-      id: 'map-1',
-      name: 'Test Map',
-      pins: [],
-      layers: [],
-      userRole: 'owner'
-    });
-    (apiService.updateMap as any).mockRejectedValue(new Error('Save Failed'));
+  it('MapEditor shows error message when creating a new map fails', async () => {
+    (apiService.createMap as any).mockRejectedValue(new Error('Save Failed'));
 
     render(
       <GoogleOAuthProvider clientId="test-client-id">
-        <MemoryRouter initialEntries={['/map/map-1']}>
+        <MemoryRouter initialEntries={['/map/new']}>
           <Routes>
             <Route path="/map/:id" element={<MapEditor />} />
           </Routes>
@@ -107,12 +101,10 @@ describe('App Components Error Handling', () => {
       </GoogleOAuthProvider>
     );
 
-    // Wait for map to load
     await waitFor(() => {
       expect(screen.getByText(/Synced/i)).toBeInTheDocument();
     });
 
-    // Trigger auto-save by changing map name
     const moreBtn = screen.getByLabelText(/more options/i);
     fireEvent.click(moreBtn);
 
@@ -129,18 +121,131 @@ describe('App Components Error Handling', () => {
         fireEvent.click(saveBtn);
       });
 
-      // Fast-forward past the 2000ms auto-save debounce
       await act(async () => {
-        vi.advanceTimersByTime(2500);
+        vi.advanceTimersByTime(1500);
       });
     } finally {
       vi.useRealTimers();
     }
 
-    // Wait for the save rejection to display
     await waitFor(() => {
       expect(screen.getByText(/NOT Synced/i)).toBeInTheDocument();
     });
+  });
+
+  it('does not create or replace an existing map over HTTP when the name changes', async () => {
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner'
+    });
+    (apiService.createMap as any).mockResolvedValue({ id: 'map-1' });
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Synced/i)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+    fireEvent.click(screen.getByText(/Rename Map/i));
+    fireEvent.change(screen.getByLabelText(/New Map Name/i), { target: { value: 'Renamed' } });
+    fireEvent.click(screen.getByText('Save'));
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        vi.advanceTimersByTime(1500);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(apiService.createMap).not.toHaveBeenCalled();
+    expect(mockSocket.emit).toHaveBeenCalledWith('map-name-update', expect.objectContaining({
+      mapId: 'map-1',
+      name: 'Renamed'
+    }));
+  });
+
+  it('adds imported pins to an existing map and emits create deltas', async () => {
+    mockSocket.connected = true;
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [{ id: 'pin-1', lat: 1, lng: 2, label: 'Existing Pin', position: 0 }],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    let fileInput: HTMLInputElement | null = null;
+    const realCreateElement = document.createElement.bind(document);
+    const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tagName: string, options?: any) => {
+      const el = realCreateElement(tagName, options);
+      if (tagName === 'input') fileInput = el as HTMLInputElement;
+      return el;
+    });
+
+    try {
+      render(
+        <GoogleOAuthProvider clientId="test-client-id">
+          <MemoryRouter initialEntries={['/map/map-1']}>
+            <Routes>
+              <Route path="/map/:id" element={<MapEditor />} />
+            </Routes>
+          </MemoryRouter>
+        </GoogleOAuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Existing Pin')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByLabelText(/more options/i));
+      fireEvent.click(screen.getByText('Import'));
+      expect(fileInput).toBeTruthy();
+
+      const file = new File([JSON.stringify({
+        name: 'Should Not Replace',
+        layers: [{ id: 'old-layer', name: 'Imported Layer', position: 0 }],
+        pins: [
+          { id: 'old-pin', lat: 10, lng: 20, label: 'Imported Cafe', position: 0, layerId: 'old-layer' }
+        ]
+      })], 'map.json', { type: 'application/json' });
+
+      await act(async () => {
+        await fileInput!.onchange?.({ target: { files: [file] } } as any);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Existing Pin')).toBeInTheDocument();
+        expect(screen.getByText('Imported Cafe')).toBeInTheDocument();
+        expect(screen.getByText(/Imported Layer/)).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('Test Map')).toBeInTheDocument();
+      expect(mockSocket.emit).toHaveBeenCalledWith('layer-create', expect.objectContaining({
+        mapId: 'map-1',
+        layer: expect.objectContaining({ name: 'Imported Layer' })
+      }));
+      expect(mockSocket.emit).toHaveBeenCalledWith('pin-create', expect.objectContaining({
+        mapId: 'map-1',
+        pin: expect.objectContaining({ label: 'Imported Cafe' })
+      }));
+      expect(mockSocket.emit).not.toHaveBeenCalledWith('map-name-update', expect.anything());
+    } finally {
+      createSpy.mockRestore();
+    }
   });
 
   it('allows hovering over remaining pins immediately after deleting a pin', async () => {

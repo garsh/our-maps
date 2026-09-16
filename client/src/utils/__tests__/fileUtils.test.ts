@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { mapDataToGeoJSON, geoJSONToData } from '../fileUtils';
-import type { MapData } from '@shared/interfaces';
+import { mapDataToGeoJSON, geoJSONToData, mergeImportedMapData } from '../fileUtils';
+import type { MapData, Pin, PinLayer } from '@shared/interfaces';
 
 describe('fileUtils', () => {
   const mockMapData: MapData = {
@@ -277,5 +277,67 @@ describe('fileUtils', () => {
     const parking = result.pins!.find((pin) => pin.label === 'Parking');
     expect(parking).toBeDefined();
     expect(parking!.layerId).toBeUndefined();
+  });
+
+  describe('mergeImportedMapData', () => {
+    const existingLayers: PinLayer[] = [
+      { id: 'layer-a', name: 'Existing', position: 0 }
+    ];
+    const existingPins: Pin[] = [
+      { id: 'pin-a', lat: 1, lng: 2, label: 'Already here', position: 0, layerId: 'layer-a' },
+      { id: 'pin-b', lat: 3, lng: 4, label: 'Default pin', position: 0 }
+    ];
+
+    it('appends imported pins and layers without replacing existing ones', () => {
+      const merged = mergeImportedMapData(existingLayers, existingPins, {
+        layers: [{ id: 'old-layer', name: 'Imported Layer', position: 0 }],
+        pins: [
+          { id: 'old-pin-1', lat: 10, lng: 20, label: 'Cafe', position: 0, layerId: 'old-layer' },
+          { id: 'old-pin-2', lat: 11, lng: 21, label: 'Park', position: 0 }
+        ]
+      });
+
+      expect(merged.layers).toHaveLength(2);
+      expect(merged.layers[0].id).toBe('layer-a');
+      expect(merged.addedLayers).toHaveLength(1);
+      expect(merged.addedLayers[0].id).not.toBe('old-layer');
+      expect(merged.addedLayers[0].name).toBe('Imported Layer');
+      expect(merged.addedLayers[0].position).toBe(1);
+
+      expect(merged.pins).toHaveLength(4);
+      expect(merged.pins[0].id).toBe('pin-a');
+      expect(merged.addedPins).toHaveLength(2);
+      expect(merged.addedPins[0].id).not.toBe('old-pin-1');
+      expect(merged.addedPins[0].layerId).toBe(merged.addedLayers[0].id);
+      expect(merged.addedPins[0].position).toBe(0);
+      expect(merged.addedPins[1].layerId).toBeUndefined();
+      expect(merged.addedPins[1].position).toBe(1);
+    });
+
+    it('skips pins and layers that would exceed map size limits', () => {
+      const merged = mergeImportedMapData(
+        existingLayers,
+        existingPins,
+        {
+          layers: [
+            { id: 'l1', name: 'One', position: 0 },
+            { id: 'l2', name: 'Two', position: 1 }
+          ],
+          pins: [
+            { id: 'p1', lat: 1, lng: 1, label: 'Keep', position: 0, layerId: 'l1' },
+            { id: 'p2', lat: 2, lng: 2, label: 'Skip layer pin', position: 0, layerId: 'l2' },
+            { id: 'p3', lat: 3, lng: 3, label: 'Skip pin cap', position: 0 }
+          ]
+        },
+        { maxLayers: 2, maxPins: 3 }
+      );
+
+      expect(merged.addedLayers).toHaveLength(1);
+      expect(merged.skippedLayers).toBe(1);
+      expect(merged.addedPins).toHaveLength(1);
+      expect(merged.addedPins[0].label).toBe('Keep');
+      expect(merged.skippedPins).toBe(2);
+      expect(merged.pins).toHaveLength(3);
+    });
   });
 });
