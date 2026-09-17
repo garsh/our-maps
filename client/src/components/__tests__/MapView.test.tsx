@@ -53,6 +53,7 @@ const mockOn = vi.fn();
 const mockOff = vi.fn();
 const mockCanvasAddEventListener = vi.fn();
 const mockCanvasRemoveEventListener = vi.fn();
+const mockSetLayoutProperty = vi.fn();
 
 const mockMapInstance = {
   getMap: () => ({
@@ -86,6 +87,8 @@ const mockMapInstance = {
     on: mockOn,
     off: mockOff,
     once: vi.fn(),
+    getLayer: vi.fn((id: string) => ({ id })),
+    setLayoutProperty: mockSetLayoutProperty,
     getCenter: vi.fn(() => ({ lat: 10, lng: 20 })),
   }),
   getZoom: mockGetZoom,
@@ -104,6 +107,8 @@ vi.mock('react-map-gl/maplibre', () => {
       const { children, onLoad, ref } = props;
       if (typeof ref === 'function') {
         ref(mockMapInstance);
+      } else if (ref && 'current' in ref) {
+        ref.current = mockMapInstance;
       }
       // Trigger onLoad after render
       setTimeout(() => {
@@ -125,10 +130,33 @@ vi.mock('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url', () => ({
   default: 'blob:http://localhost/maplibre-worker',
 }));
 
-vi.mock('maplibre-gl', () => ({
-  setWorkerUrl: vi.fn(),
-  addProtocol: vi.fn(),
-}));
+vi.mock('maplibre-gl', () => {
+  class LngLat {
+    lng: number;
+    lat: number;
+    constructor(lng: number, lat: number) {
+      this.lng = Number(lng);
+      this.lat = Number(lat);
+    }
+    wrap() {
+      return this;
+    }
+    toArray() {
+      return [this.lng, this.lat];
+    }
+    static convert(input: any) {
+      if (input instanceof LngLat) return input;
+      if (Array.isArray(input)) return new LngLat(input[0], input[1]);
+      return new LngLat(input.lng, input.lat);
+    }
+  }
+
+  return {
+    setWorkerUrl: vi.fn(),
+    addProtocol: vi.fn(),
+    LngLat,
+  };
+});
 
 vi.mock('pmtiles', () => ({
   Protocol: class {
@@ -227,10 +255,13 @@ describe('syncOfflineTerrain', () => {
     const mockCameraProto = {
       _elevateCameraIfInsideTerrain: vi.fn(() => ({ pitch: 0, zoom: 16.98 })),
       _finalizeElevation: vi.fn(),
+      _afterEase: vi.fn(),
+      easeTo: vi.fn(),
       applyUpdatedTransform: vi.fn(),
     };
     const mockCamera = Object.create(mockCameraProto);
     mockCamera.elevationFreeze = true;
+    mockCamera.getCenterClampedToGround = vi.fn(() => true);
     mockCamera.terrain = {
       getElevationForLngLatZoom: vi.fn(() => 3250),
     };
@@ -289,8 +320,20 @@ describe('syncOfflineTerrain', () => {
     mockTr.centerPoint = { x: 500, y: 400, distSqr: (p: any) => (p.x - 500) ** 2 + (p.y - 400) ** 2 };
     mockCamera.transform = mockTr;
 
+    const mockTtmProto = {
+      releaseRTT: vi.fn(),
+    };
+    const mockTileManager = Object.create(mockTtmProto);
+    mockTileManager.maxzoom = 22;
+    mockTileManager._tiles = {};
+
+    const mockRttProto = {
+      prepareForRender: vi.fn(),
+    };
+    const mockRtt = Object.create(mockRttProto);
+
     const mockTerrain = {
-      tileManager: { maxzoom: 22 },
+      tileManager: mockTileManager,
       _getOverscaledTileIDFromLngLatZoom: vi.fn((_lnglat: any, z: number) => ({ tileID: { canonical: { z } } })),
       getElevationForLngLatZoom: vi.fn(() => 3250),
     };
@@ -302,12 +345,21 @@ describe('syncOfflineTerrain', () => {
       _camera: mockCamera,
       _handlers: mockHandlers,
       transform: mockTr,
+      painter: {
+        renderToTexture: mockRtt,
+      },
       triggerRepaint: vi.fn(),
     };
+    mockTileManager.map = mockMap;
 
     syncOfflineTerrain(mockMap, true);
     expect(mockCameraProto._stableElevateCameraIfInsideTerrain).toBeDefined();
     expect(mockCameraProto._stableApplyUpdatedTransform).toBeDefined();
+    expect(mockCameraProto._stableFinalizeElevation).toBeDefined();
+    expect(mockCameraProto._stableAfterEase).toBeDefined();
+    expect(mockCameraProto._stableEaseTo).toBeDefined();
+    expect(mockTtmProto._stableReleaseRTT).toBeDefined();
+    expect(mockRttProto._stablePrepareForRender).toBeDefined();
     expect(mockTrProto._stableRecalculateZoomAndCenter).toBeDefined();
     expect(mockTrProto._stableSetElevation).toBeDefined();
     expect(mockHelperProto._stableRecalculateZoomAndCenter).toBeDefined();
@@ -362,14 +414,66 @@ describe('syncOfflineTerrain', () => {
     mockHandlers._updateMapTransform({ zoomDelta: 0.2 }, { zoom: true }, {});
     expect(mockHandlersProto._stableUpdateMapTransform).toHaveBeenCalledWith({ zoomDelta: 0.2 }, { zoom: true }, {});
 
-    // 5. _finalizeElevation clears elevationFreeze without calling recalculateZoomAndCenter when pitch < 60
+    // 5. _finalizeElevation updates elevation safely and triggers repaint when pitch < 60
     expect(mockCameraProto._stableFinalizeElevation).toBeDefined();
+    mockMap.triggerRepaint.mockClear();
     mockCamera.elevationFreeze = true;
+    const spyRecalc = vi.spyOn(mockTr, 'recalculateZoomAndCenter');
     mockCamera._finalizeElevation();
     expect(mockCamera.elevationFreeze).toBe(false);
     expect(mockCameraProto._stableFinalizeElevation).not.toHaveBeenCalled();
+    expect(spyRecalc).toHaveBeenCalledWith(mockCamera.terrain);
+    expect(mockMap.triggerRepaint).toHaveBeenCalled();
+    spyRecalc.mockRestore();
 
-    // 6. _fireEvents clears _terrainMovement and elevationFreeze when finishedMoving occurs without recalculating zoom/center
+    // 6. _afterEase unfreezes elevation, recalculates elevation, and triggers repaint
+    mockMap.triggerRepaint.mockClear();
+    mockCamera.elevationFreeze = true;
+    mockCamera._afterEase();
+    expect(mockCamera.elevationFreeze).toBe(false);
+    expect(mockCameraProto._stableAfterEase).toHaveBeenCalled();
+    expect(mockMap.triggerRepaint).toHaveBeenCalled();
+
+    // 7. easeTo unfreezes freezeElevation during top-down/low-pitch inertia coast
+    mockCameraProto._stableEaseTo.mockClear();
+    mockCamera.easeTo({ freezeElevation: true, duration: 500 });
+    expect(mockCameraProto._stableEaseTo).toHaveBeenCalledWith(expect.objectContaining({ freezeElevation: false }), undefined);
+    expect(mockCamera.elevationFreeze).toBe(false);
+
+    // 8. releaseRTT invalidates overscaled terrain tiles (z >= 16) when canonical parent vector tile (z = 15) loads
+    const mockReleaseRTT = vi.fn();
+    const mockTerrainTile = {
+      tileID: {
+        wrap: 0,
+        canonical: {
+          z: 16,
+          x: 100,
+          y: 200,
+          equals: (other: any) => other.z === 16 && other.x === 100 && other.y === 200,
+          isChildOf: (other: any) => other.z === 15 && other.x === 50 && other.y === 100,
+        },
+        overscaledZ: 16,
+      },
+      releaseRTT: mockReleaseRTT,
+    };
+    mockTileManager._tiles = { '16/100/200': mockTerrainTile };
+    const vectorTileID = {
+      wrap: 0,
+      canonical: {
+        z: 15,
+        x: 50,
+        y: 100,
+        equals: () => false,
+        isChildOf: () => false,
+      },
+      overscaledZ: 16,
+    };
+    mockMap.triggerRepaint.mockClear();
+    mockTileManager.releaseRTT(vectorTileID);
+    expect(mockReleaseRTT).toHaveBeenCalledWith(mockMap.painter);
+    expect(mockMap.triggerRepaint).toHaveBeenCalled();
+
+    // 9. _fireEvents clears _terrainMovement and elevationFreeze when finishedMoving occurs without recalculating zoom/center
     expect(mockHandlersProto._stableFireEvents).toBeDefined();
     mockHandlers._terrainMovement = true;
     mockCamera.elevationFreeze = true;
@@ -380,13 +484,13 @@ describe('syncOfflineTerrain', () => {
     expect(mockHandlers._camera._requestedCameraState).toBeUndefined();
     expect(mockHandlersProto._stableFireEvents).toHaveBeenCalled();
 
-    // 7. _handleMapControls unfreezes elevation during pure zoom so elevation updates continuously
+    // 10. _handleMapControls unfreezes elevation during pure zoom so elevation updates continuously
     expect(mockHandlersProto._stableHandleMapControls).toBeDefined();
     mockCamera.elevationFreeze = true;
     mockHandlers._handleMapControls({ combinedEventsInProgress: { zoom: true, drag: false } });
     expect(mockCamera.elevationFreeze).toBe(false);
 
-    // 8. setElevation eases sudden elevation changes (> 0.05m) when idle to prevent single-frame vertical pops
+    // 11. setElevation eases sudden elevation changes (> 0.05m) when idle to prevent single-frame vertical pops
     mockHandlers._terrainMovement = false;
     mockTr._elevation = 3200;
     mockMap.triggerRepaint.mockClear();
@@ -1148,6 +1252,101 @@ describe('MapView Compass and Tilt Indicator', () => {
       getBoundingClientRect: () => ({ width: 1000, height: 800 }),
       clientWidth: 1000,
       clientHeight: 800,
+    });
+  });
+
+  it('preserves LngLat wrap method on transform.center and defends elevation sampling', () => {
+    const trProto = {
+      setCenter(this: any, c: any) {
+        this.center = c;
+      },
+    };
+    const tr: any = Object.create(trProto);
+    tr.pitch = 0;
+    tr.zoom = 12;
+    tr.center = { lng: -105, lat: 39, wrap: vi.fn() };
+    tr.recalculateZoomAndCenter = vi.fn();
+    tr.setElevation = vi.fn();
+
+    const cameraProto = {
+      applyUpdatedTransform(this: any, _tr: any) {},
+    };
+    const camera: any = Object.create(cameraProto);
+    camera.transform = tr;
+    camera._finalizeElevation = vi.fn();
+    camera._afterEase = vi.fn();
+    camera.easeTo = vi.fn();
+
+    const terrainProto = {
+      getMinTileElevationForLngLatZoom(this: any, lnglat: any) {
+        expect(typeof lnglat.wrap).toBe('function');
+        return 100;
+      },
+    };
+    const mockTerrain: any = Object.create(terrainProto);
+    mockTerrain.tileManager = { maxzoom: 22 };
+    mockTerrain.getElevationForLngLatZoom = vi.fn((lnglat: any) => 100);
+
+    const mockMap = {
+      setTerrain: vi.fn(),
+      getTerrain: vi.fn(() => null),
+      terrain: mockTerrain,
+      _camera: camera,
+      transform: tr,
+      _handlers: { _changes: [] },
+      triggerRepaint: vi.fn(),
+    };
+
+    syncOfflineTerrain(mockMap as any, true);
+
+    // 1. Calling setCenter with a plain { lng, lat } converts to LngLat with wrap method
+    tr.setCenter({ lng: -105.1, lat: 39.2 });
+    expect(typeof tr.center.wrap).toBe('function');
+
+    // 2. Calling terrain elevation methods with a plain { lng, lat } handles it safely
+    const plainCoords = { lng: -105.2, lat: 39.3 };
+    const minEle = mockMap.terrain.getMinTileElevationForLngLatZoom(plainCoords, 12);
+    expect(minEle).toBe(100);
+
+    // 3. applyUpdatedTransform idle branch does not downgrade center to plain object
+    tr.center = { lng: -105.100000001, lat: 39.200000001, wrap: vi.fn() };
+    camera.applyUpdatedTransform(tr);
+    expect(typeof tr.center.wrap).toBe('function');
+  });
+
+  it('updates hillshade and 3D buildings visibility directly without waiting for idle', async () => {
+    mockSetLayoutProperty.mockClear();
+
+    const { rerender } = render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        showHillshade={true}
+        show3DBuildings={true}
+      />
+    );
+
+    act(() => {
+      capturedMapProps.current.onLoad({ target: mockMapInstance.getMap() });
+    });
+
+    mockSetLayoutProperty.mockClear();
+
+    rerender(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        showHillshade={false}
+        show3DBuildings={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('hills', 'visibility', 'none');
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('3d-buildings', 'visibility', 'none');
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('buildings', 'visibility', 'visible');
     });
   });
 });

@@ -20,6 +20,28 @@ import { applyBundledSprites, applyBundledSpriteById, isBundledSpriteId } from '
 
 maplibregl.setWorkerUrl(workerUrl);
 
+export function toSafeLngLat(coord: any) {
+  if (coord && typeof coord.wrap === 'function') return coord;
+  const lng = Number(coord?.lng ?? coord?.[0] ?? 0);
+  const lat = Number(coord?.lat ?? coord?.[1] ?? 0);
+  if (typeof (maplibregl as any)?.LngLat === 'function') {
+    try {
+      return new (maplibregl as any).LngLat(lng, lat);
+    } catch {}
+  }
+  return {
+    lng,
+    lat,
+    wrap() {
+      const wrappedLng = ((((lng + 180) % 360) + 360) % 360) - 180;
+      return { lng: wrappedLng, lat, wrap() { return this; } };
+    },
+    toArray() {
+      return [lng, lat];
+    },
+  };
+}
+
 function attachMissingImageResolver(map: any) {
   if (!map || typeof map.setMissingStyleImageResolver !== 'function') return;
   map.setMissingStyleImageResolver(async (id: string) => {
@@ -70,6 +92,67 @@ export function syncOfflineTerrain(map: any, show3DTerrain: boolean) {
         // Allow terrain RTT generation up to zoom 22 so vector roads and linear features
         // are rendered at full screen resolution without pixelation, blur, or stair-stepping.
         map.terrain.tileManager.maxzoom = 22;
+
+        const ttmProto = Object.getPrototypeOf(map.terrain.tileManager);
+        if (ttmProto && !ttmProto._stableReleaseRTT && typeof ttmProto.releaseRTT === 'function') {
+          ttmProto._stableReleaseRTT = ttmProto.releaseRTT;
+          ttmProto.releaseRTT = function (tileID: any) {
+            let releasedCount = 0;
+            const painter = this.tileManager?.map?.painter || map.painter;
+            for (const key in this._tiles) {
+              const tile = this._tiles[key];
+              if (!tile?.tileID || !tileID) continue;
+              const tId = tile.tileID;
+              if (tId.wrap !== tileID.wrap) continue;
+
+              // Match overlapping tiles using canonical coordinates.
+              // Upstream MapLibre checks tile.tileID.equals(tileID) || tile.tileID.isChildOf(tileID) || tileID.isChildOf(tile.tileID)
+              // on OverscaledTileID, which fails when terrain tile canonical.z > 15 while vector source canonical.z = 15.
+              const canonicalMatch = (
+                (typeof tId.canonical?.equals === 'function' && tId.canonical.equals(tileID.canonical)) ||
+                (typeof tId.canonical?.isChildOf === 'function' && tId.canonical.isChildOf(tileID.canonical)) ||
+                (typeof tileID.canonical?.isChildOf === 'function' && tileID.canonical.isChildOf(tId.canonical))
+              );
+
+              if (canonicalMatch || (typeof tId.equals === 'function' && tId.equals(tileID))) {
+                tile.releaseRTT(painter);
+                releasedCount++;
+              }
+            }
+            if (releasedCount > 0) {
+              const mapInst = this.tileManager?.map || map;
+              if (typeof mapInst?.triggerRepaint === 'function') {
+                mapInst.triggerRepaint();
+              }
+            }
+          };
+        }
+      }
+
+      const painter = map.painter;
+      const rtt = painter?.renderToTexture;
+      if (rtt) {
+        const rttProto = Object.getPrototypeOf(rtt);
+        if (rttProto && !rttProto._stablePrepareForRender && typeof rttProto.prepareForRender === 'function') {
+          rttProto._stablePrepareForRender = rttProto.prepareForRender;
+          rttProto.prepareForRender = function (style: any, zoom: number) {
+            this._stablePrepareForRender.call(this, style, zoom);
+
+            // Invalidate any terrain RTT tiles that were acquired when vector coordinates were empty/loading,
+            // once vector tile coordinates or fingerprints become available.
+            if (this._renderableTiles && this._rttFingerprints) {
+              for (const tile of this._renderableTiles) {
+                for (const source in this._rttFingerprints) {
+                  const fingerprint = this._rttFingerprints[source]?.[tile.tileID?.key];
+                  const currentFp = tile.rttFingerprint?.[source];
+                  if (fingerprint && fingerprint !== currentFp) {
+                    tile.releaseRTT(this.painter);
+                  }
+                }
+              }
+            }
+          };
+        }
       }
       if (map.terrain && !map.terrain._originalGetDEMTileMatrix) {
         map.terrain._originalGetDEMTileMatrix = map.terrain._getDEMTileMatrix;
@@ -138,6 +221,15 @@ export function syncOfflineTerrain(map: any, show3DTerrain: boolean) {
         };
       }
 
+      const terrainProto = map.terrain ? Object.getPrototypeOf(map.terrain) : null;
+      if (terrainProto && terrainProto !== Object.prototype && !terrainProto._stableGetMinTileElevationForLngLatZoom && typeof terrainProto.getMinTileElevationForLngLatZoom === 'function') {
+        terrainProto._stableGetMinTileElevationForLngLatZoom = terrainProto.getMinTileElevationForLngLatZoom;
+        terrainProto.getMinTileElevationForLngLatZoom = function (lngLat: any, zoom: number) {
+          const safeLngLat = toSafeLngLat(lngLat);
+          return this._stableGetMinTileElevationForLngLatZoom.call(this, safeLngLat, zoom);
+        };
+      }
+
       // Stabilize camera against MapLibre terrain zoom jumping and pushback above zoom 16:
       const camera = (map as any)._camera;
       if (camera) {
@@ -170,15 +262,57 @@ export function syncOfflineTerrain(map: any, show3DTerrain: boolean) {
           cameraProto._finalizeElevation = function () {
             this.elevationFreeze = false;
             if ((this.transform?.pitch ?? 0) < 60) {
+              if (this.terrain && typeof this.getCenterClampedToGround === 'function' && this.getCenterClampedToGround()) {
+                this.transform.recalculateZoomAndCenter(this.terrain);
+              }
+              const mapInst = (this as any)._map || (map as any);
+              if (typeof mapInst?.triggerRepaint === 'function') {
+                mapInst.triggerRepaint();
+              }
               return;
             }
             return this._stableFinalizeElevation.call(this);
           };
         }
+        if (cameraProto && !cameraProto._stableAfterEase && typeof cameraProto._afterEase === 'function') {
+          cameraProto._stableAfterEase = cameraProto._afterEase;
+          cameraProto._afterEase = function (eventData?: any, easeId?: string) {
+            this.elevationFreeze = false;
+            const res = this._stableAfterEase.call(this, eventData, easeId);
+            if (this.terrain && (this.transform?.pitch ?? 0) < 60) {
+              if (typeof this.getCenterClampedToGround === 'function' && this.getCenterClampedToGround()) {
+                this.transform.recalculateZoomAndCenter(this.terrain);
+              }
+              const mapInst = (this as any)._map || (map as any);
+              if (typeof mapInst?.triggerRepaint === 'function') {
+                mapInst.triggerRepaint();
+              }
+            }
+            return res;
+          };
+        }
+        if (cameraProto && !cameraProto._stableEaseTo && typeof cameraProto.easeTo === 'function') {
+          cameraProto._stableEaseTo = cameraProto.easeTo;
+          cameraProto.easeTo = function (options: any, eventData: any) {
+            let nextOptions = options;
+            if (options && (this.transform?.pitch ?? 0) < 60 && options.freezeElevation) {
+              // In top-down / low pitch terrain mode (pitch < 60), don't freeze elevation during inertia coast.
+              // Update elevation continuously frame-by-frame just like scroll zooming does.
+              nextOptions = { ...options, freezeElevation: false };
+            }
+            const res = this._stableEaseTo.call(this, nextOptions, eventData);
+            if ((this.transform?.pitch ?? 0) < 60 && nextOptions && !nextOptions.freezeElevation) {
+              this.elevationFreeze = false;
+            }
+            return res;
+          };
+        }
         if (cameraProto && !cameraProto._stableApplyUpdatedTransform && typeof cameraProto.applyUpdatedTransform === 'function') {
           cameraProto._stableApplyUpdatedTransform = cameraProto.applyUpdatedTransform;
           cameraProto.applyUpdatedTransform = function (tr: any) {
-            const beforeCenter = this.transform?.center ? { lng: this.transform.center.lng, lat: this.transform.center.lat } : null;
+            const beforeCenter = this.transform?.center
+              ? toSafeLngLat(this.transform.center)
+              : null;
             const res = this._stableApplyUpdatedTransform.call(this, tr);
             if ((this.transform?.pitch ?? 0) < 60 && beforeCenter && this.transform?.center) {
               const handlers = (map as any)._handlers;
@@ -203,6 +337,13 @@ export function syncOfflineTerrain(map: any, show3DTerrain: boolean) {
       const tr = (map as any)._camera?.transform || (map as any).transform;
       if (tr) {
         const trProto = Object.getPrototypeOf(tr);
+        if (trProto && !trProto._stableSetCenter && typeof trProto.setCenter === 'function') {
+          trProto._stableSetCenter = trProto.setCenter;
+          trProto.setCenter = function (center: any) {
+            const safeCenter = toSafeLngLat(center);
+            return this._stableSetCenter.call(this, safeCenter);
+          };
+        }
         if (trProto && !trProto._stableRecalculateZoomAndCenter && typeof trProto.recalculateZoomAndCenter === 'function') {
           trProto._stableRecalculateZoomAndCenter = trProto.recalculateZoomAndCenter;
           trProto.recalculateZoomAndCenter = function (terrain?: any) {
@@ -228,7 +369,7 @@ export function syncOfflineTerrain(map: any, show3DTerrain: boolean) {
               this.setZoom(currentZoom);
             }
             if (currentCenter && this.pitch < 60) {
-              this.setCenter(currentCenter);
+              this.setCenter(toSafeLngLat(currentCenter));
             }
           };
         }
@@ -260,6 +401,13 @@ export function syncOfflineTerrain(map: any, show3DTerrain: boolean) {
       const helper = (map as any)._camera?.transform?._helper || (map as any).transform?._helper;
       if (helper) {
         const helperProto = Object.getPrototypeOf(helper);
+        if (helperProto && !helperProto._stableSetCenter && typeof helperProto.setCenter === 'function') {
+          helperProto._stableSetCenter = helperProto.setCenter;
+          helperProto.setCenter = function (center: any) {
+            const safeCenter = toSafeLngLat(center);
+            return this._stableSetCenter.call(this, safeCenter);
+          };
+        }
         if (helperProto && !helperProto._stableRecalculateZoomAndCenter && typeof helperProto.recalculateZoomAndCenter === 'function') {
           helperProto._stableRecalculateZoomAndCenter = helperProto.recalculateZoomAndCenter;
           helperProto.recalculateZoomAndCenter = function (elevation: number) {
@@ -279,10 +427,11 @@ export function syncOfflineTerrain(map: any, show3DTerrain: boolean) {
             }
             // In top-down / gentle pitch views, elevation adjustments must not shift the map center.
             if (currentCenter && this.pitch < 60) {
+              const safeCenter = toSafeLngLat(currentCenter);
               if (typeof this.setCenter === 'function') {
-                this.setCenter(currentCenter);
+                this.setCenter(safeCenter);
               } else {
-                this._center = currentCenter;
+                this._center = safeCenter;
               }
             }
           };
@@ -1628,10 +1777,10 @@ const MapView = ({
       } catch {}
     };
 
-    if (typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) {
+    if (typeof map.getLayer === 'function' && map.getLayer('esri-satellite')) {
       syncSatellite();
     } else if (typeof map.once === 'function') {
-      map.once('idle', syncSatellite);
+      map.once('styledata', syncSatellite);
     } else {
       syncSatellite();
     }
@@ -1648,15 +1797,16 @@ const MapView = ({
         if (typeof map.getLayer === 'function' && typeof map.setLayoutProperty === 'function') {
           if (map.getLayer('hills')) {
             map.setLayoutProperty('hills', 'visibility', showHillshade && !showSatellite ? 'visible' : 'none');
+            map.triggerRepaint?.();
           }
         }
       } catch {}
     };
 
-    if (typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) {
+    if (typeof map.getLayer === 'function' && map.getLayer('hills')) {
       syncHillshade();
     } else if (typeof map.once === 'function') {
-      map.once('idle', syncHillshade);
+      map.once('styledata', syncHillshade);
     } else {
       syncHillshade();
     }
@@ -1677,14 +1827,15 @@ const MapView = ({
           if (map.getLayer('buildings')) {
             map.setLayoutProperty('buildings', 'visibility', show3DBuildings ? 'none' : 'visible');
           }
+          map.triggerRepaint?.();
         }
       } catch {}
     };
 
-    if (typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) {
+    if (typeof map.getLayer === 'function' && (map.getLayer('3d-buildings') || map.getLayer('buildings'))) {
       sync3DBuildings();
     } else if (typeof map.once === 'function') {
-      map.once('idle', sync3DBuildings);
+      map.once('styledata', sync3DBuildings);
     } else {
       sync3DBuildings();
     }
