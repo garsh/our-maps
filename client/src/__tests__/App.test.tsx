@@ -1052,5 +1052,196 @@ describe('App Components Error Handling', () => {
     });
     expect(radio).toBeChecked();
   });
+
+  describe('Truncated Map Title Tooltip & Long-Press', () => {
+    it('shows tooltip on mouse hover when truncated, and hides on mouse leave', async () => {
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'map-long',
+        name: 'This is a very long map name that gets truncated by the header',
+        pins: [],
+        layers: [],
+        permissions: [],
+        userRole: 'owner',
+        isPublic: false,
+      });
+
+      render(
+        <GoogleOAuthProvider clientId="test-client-id">
+          <MemoryRouter initialEntries={['/map/map-long']}>
+            <Routes>
+              <Route path="/map/:id" element={<MapEditor />} />
+            </Routes>
+          </MemoryRouter>
+        </GoogleOAuthProvider>
+      );
+
+      const heading = await screen.findByRole('heading', { level: 1 });
+      expect(heading).toHaveTextContent('This is a very long map name that gets truncated by the header');
+
+      // Mock truncated text
+      Object.defineProperty(heading, 'scrollWidth', { configurable: true, value: 500 });
+      Object.defineProperty(heading, 'clientWidth', { configurable: true, value: 200 });
+
+      const titleContainer = heading.closest('div')!;
+
+      // Initially no tooltip
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+      // Mouse enter -> shows tooltip
+      fireEvent.mouseEnter(titleContainer);
+      const tooltip = screen.getByRole('tooltip');
+      expect(tooltip).toBeInTheDocument();
+      expect(tooltip).toHaveTextContent('This is a very long map name that gets truncated by the header');
+
+      // Mouse leave -> hides tooltip
+      fireEvent.mouseLeave(titleContainer);
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    });
+
+    it('does not show tooltip on mouse hover if the map name fits (not truncated)', async () => {
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'map-short',
+        name: 'Short',
+        pins: [],
+        layers: [],
+        permissions: [],
+        userRole: 'owner',
+        isPublic: false,
+      });
+
+      render(
+        <GoogleOAuthProvider clientId="test-client-id">
+          <MemoryRouter initialEntries={['/map/map-short']}>
+            <Routes>
+              <Route path="/map/:id" element={<MapEditor />} />
+            </Routes>
+          </MemoryRouter>
+        </GoogleOAuthProvider>
+      );
+
+      const heading = await screen.findByRole('heading', { level: 1 });
+      // Non-truncated: scrollWidth <= clientWidth
+      Object.defineProperty(heading, 'scrollWidth', { configurable: true, value: 80 });
+      Object.defineProperty(heading, 'clientWidth', { configurable: true, value: 200 });
+
+      const titleContainer = heading.closest('div')!;
+
+      fireEvent.mouseEnter(titleContainer);
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    });
+
+    it('shows tooltip on long-press when truncated and suppresses navigation click', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      try {
+        (apiService.getMap as any).mockResolvedValue({
+          id: 'map-long',
+          name: 'Long Title On Mobile',
+          pins: [],
+          layers: [],
+          permissions: [],
+          userRole: 'owner',
+          isPublic: false,
+        });
+
+        render(
+          <GoogleOAuthProvider clientId="test-client-id">
+            <MemoryRouter initialEntries={['/map/map-long']}>
+              <Routes>
+                <Route path="/map/:id" element={<MapEditor />} />
+                <Route path="/" element={<div data-testid="home-page">Home</div>} />
+              </Routes>
+            </MemoryRouter>
+          </GoogleOAuthProvider>
+        );
+
+        // Wait for map load with fake timers
+        await act(async () => {
+          vi.advanceTimersByTime(100);
+        });
+
+        const heading = screen.getByRole('heading', { level: 1 });
+        Object.defineProperty(heading, 'scrollWidth', { configurable: true, value: 500 });
+        Object.defineProperty(heading, 'clientWidth', { configurable: true, value: 150 });
+
+        const titleContainer = heading.closest('div')!;
+
+        // Long press: touch start
+        act(() => {
+          fireEvent.touchStart(titleContainer, {
+            touches: [{ clientX: 100, clientY: 20 }],
+          });
+        });
+
+        // Before 450ms, tooltip should not be visible yet
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+        // Advance to 450ms
+        act(() => {
+          vi.advanceTimersByTime(450);
+        });
+
+        expect(screen.getByRole('tooltip')).toBeInTheDocument();
+        expect(screen.getByRole('tooltip')).toHaveTextContent('Long Title On Mobile');
+
+        // Touch end and click (as happens when finger lifts)
+        act(() => {
+          fireEvent.touchEnd(titleContainer);
+          fireEvent.click(titleContainer);
+        });
+
+        // Click should NOT have navigated to home!
+        expect(screen.queryByTestId('home-page')).not.toBeInTheDocument();
+
+        // Advance timers by 3500ms -> auto-dismiss
+        act(() => {
+          vi.advanceTimersByTime(3500);
+        });
+        expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not show tooltip on long-press when map name fits, and quick tap navigates home', async () => {
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'map-short',
+        name: 'Short Title',
+        pins: [],
+        layers: [],
+        permissions: [],
+        userRole: 'owner',
+        isPublic: false,
+      });
+
+      render(
+        <GoogleOAuthProvider clientId="test-client-id">
+          <MemoryRouter initialEntries={['/map/map-short']}>
+            <Routes>
+              <Route path="/map/:id" element={<MapEditor />} />
+              <Route path="/" element={<div data-testid="home-page">Home</div>} />
+            </Routes>
+          </MemoryRouter>
+        </GoogleOAuthProvider>
+      );
+
+      const heading = await screen.findByRole('heading', { level: 1 });
+      Object.defineProperty(heading, 'scrollWidth', { configurable: true, value: 100 });
+      Object.defineProperty(heading, 'clientWidth', { configurable: true, value: 200 });
+
+      const titleContainer = heading.closest('div')!;
+
+      // Quick tap: touchStart -> touchEnd -> click
+      fireEvent.touchStart(titleContainer, {
+        touches: [{ clientX: 50, clientY: 20 }],
+      });
+      fireEvent.touchEnd(titleContainer);
+      fireEvent.click(titleContainer);
+
+      // Navigates to home
+      expect(screen.getByTestId('home-page')).toBeInTheDocument();
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    });
+  });
 });
 

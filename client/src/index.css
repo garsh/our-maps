@@ -570,6 +570,42 @@ button:active {
   }
 }
 
+/* Header Map Title Tooltip */
+.map-title-tooltip {
+  position: fixed;
+  background: var(--surface-color);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-lg);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.35;
+  max-width: min(calc(100vw - 32px), 480px);
+  word-break: break-word;
+  pointer-events: none;
+  z-index: 3000;
+  animation: mapTitleTooltipFadeIn 0.15s ease-out forwards;
+}
+
+[data-theme='dark'] .map-title-tooltip {
+  background: #252830;
+  border-color: #3b4252;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
+@keyframes mapTitleTooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .color-slider {
   -webkit-appearance: none;
   appearance: none;

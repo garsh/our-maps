@@ -77,6 +77,13 @@ export function MapEditor() {
   const [mapName, setMapName] = useState(id === 'new' ? 'Unnamed Map' : '');
   const mapNameRef = useRef(mapName);
   mapNameRef.current = mapName;
+  const [showTitleTooltip, setShowTitleTooltip] = useState(false);
+  const [titleTooltipPos, setTitleTooltipPos] = useState({ top: 0, left: 0 });
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
+  const titleLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleLongPressTriggeredRef = useRef(false);
+  const titleTooltipTriggerRef = useRef<'hover' | 'touch' | null>(null);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
   const [owner, setOwner] = useState<{ id: string, name?: string, email?: string, picture?: string } | null>(null);
   const [isMapLoading, setIsMapLoading] = useState(!!id && id !== 'new');
   const [userRole, setUserRole] = useState<'owner' | 'edit' | 'view'>('owner');
@@ -1587,6 +1594,122 @@ export function MapEditor() {
     }
   }, []);
 
+  const isTitleTruncated = useCallback(() => {
+    const el = titleRef.current;
+    if (!el) return false;
+    return el.scrollWidth > el.clientWidth;
+  }, []);
+
+  const updateTitleTooltipPosition = useCallback(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const maxTooltipWidth = Math.min(window.innerWidth - 32, 480);
+    const left = Math.max(16, Math.min(rect.left, window.innerWidth - maxTooltipWidth - 16));
+    const top = rect.bottom + 6;
+    setTitleTooltipPos({ top, left });
+  }, []);
+
+  const clearTitleLongPress = useCallback(() => {
+    if (titleLongPressTimerRef.current) {
+      clearTimeout(titleLongPressTimerRef.current);
+      titleLongPressTimerRef.current = null;
+    }
+  }, []);
+
+  const handleTitleMouseEnter = useCallback(() => {
+    if (!isTitleTruncated()) return;
+    updateTitleTooltipPosition();
+    titleTooltipTriggerRef.current = 'hover';
+    setShowTitleTooltip(true);
+  }, [isTitleTruncated, updateTitleTooltipPosition]);
+
+  const handleTitleMouseLeave = useCallback(() => {
+    if (titleTooltipTriggerRef.current === 'hover') {
+      setShowTitleTooltip(false);
+      titleTooltipTriggerRef.current = null;
+    }
+  }, []);
+
+  const handleTitleTouchStart = useCallback((e: React.TouchEvent) => {
+    clearTitleLongPress();
+    titleLongPressTriggeredRef.current = false;
+    if (!isTitleTruncated()) return;
+
+    const touch = e.touches[0];
+    if (touch) {
+      touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+    }
+
+    titleLongPressTimerRef.current = setTimeout(() => {
+      titleLongPressTriggeredRef.current = true;
+      updateTitleTooltipPosition();
+      titleTooltipTriggerRef.current = 'touch';
+      setShowTitleTooltip(true);
+    }, 450);
+  }, [clearTitleLongPress, isTitleTruncated, updateTitleTooltipPosition]);
+
+  const handleTitleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!titleLongPressTimerRef.current || !touchStartPosRef.current) return;
+    const touch = e.touches[0];
+    if (touch) {
+      const dx = touch.clientX - touchStartPosRef.current.x;
+      const dy = touch.clientY - touchStartPosRef.current.y;
+      if (Math.hypot(dx, dy) > 10) {
+        clearTitleLongPress();
+      }
+    }
+  }, [clearTitleLongPress]);
+
+  const handleTitleTouchEnd = useCallback(() => {
+    clearTitleLongPress();
+  }, [clearTitleLongPress]);
+
+  const handleTitleClick = useCallback(() => {
+    if (titleLongPressTriggeredRef.current) {
+      titleLongPressTriggeredRef.current = false;
+      return;
+    }
+    navigate('/');
+  }, [navigate]);
+
+  useEffect(() => {
+    if (!showTitleTooltip) return;
+
+    let autoDismissTimer: ReturnType<typeof setTimeout> | null = null;
+    if (titleTooltipTriggerRef.current === 'touch') {
+      autoDismissTimer = setTimeout(() => {
+        setShowTitleTooltip(false);
+        titleTooltipTriggerRef.current = null;
+      }, 3500);
+    }
+
+    const handleDismiss = (e: Event) => {
+      if (titleTooltipTriggerRef.current === 'hover' && e.type !== 'scroll') {
+        return;
+      }
+      setShowTitleTooltip(false);
+      titleTooltipTriggerRef.current = null;
+    };
+
+    window.addEventListener('pointerdown', handleDismiss);
+    window.addEventListener('scroll', handleDismiss, true);
+    window.addEventListener('resize', handleDismiss);
+
+    return () => {
+      if (autoDismissTimer) clearTimeout(autoDismissTimer);
+      window.removeEventListener('pointerdown', handleDismiss);
+      window.removeEventListener('scroll', handleDismiss, true);
+      window.removeEventListener('resize', handleDismiss);
+    };
+  }, [showTitleTooltip]);
+
+  useEffect(() => {
+    return () => {
+      clearTitleLongPress();
+    };
+  }, [clearTitleLongPress]);
+
   if (isMapLoading) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100dvh', background: 'var(--bg-color)', userSelect: 'none', WebkitUserSelect: 'none' }}>
@@ -1620,12 +1743,44 @@ export function MapEditor() {
         zIndex: 2500,
         flexShrink: 0
       }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', minWidth: 0, flexShrink: 1, userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} onClick={() => navigate('/')}>
+      <div 
+        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', minWidth: 0, flexShrink: 1, userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} 
+        onClick={handleTitleClick}
+        onMouseEnter={handleTitleMouseEnter}
+        onMouseLeave={handleTitleMouseLeave}
+        onTouchStart={handleTitleTouchStart}
+        onTouchEnd={handleTitleTouchEnd}
+        onTouchCancel={handleTitleTouchEnd}
+        onTouchMove={handleTitleTouchMove}
+        onContextMenu={(e) => {
+          if (titleLongPressTriggeredRef.current) {
+            e.preventDefault();
+          }
+        }}
+      >
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <MapIcon size={18} color={mapTheme === 'dark' ? '#cbd5e1' : 'white'} />
         </div>
-        <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1, color: mapTheme === 'dark' ? '#cbd5e1' : 'white' }}>{mapName || 'Untitled Map'}</h1>
+        <h1 
+          ref={titleRef}
+          style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1, color: mapTheme === 'dark' ? '#cbd5e1' : 'white' }}
+        >
+          {mapName || 'Untitled Map'}
+        </h1>
       </div>
+
+      {showTitleTooltip && (
+        <div 
+          className="map-title-tooltip"
+          role="tooltip"
+          style={{
+            top: `${titleTooltipPos.top}px`,
+            left: `${titleTooltipPos.left}px`,
+          }}
+        >
+          {mapName || 'Untitled Map'}
+        </div>
+      )}
       
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
         <div id="download-pill-container" style={{ display: 'flex', alignItems: 'center' }}></div>
