@@ -225,8 +225,7 @@ router.get('/:id/permissions', optionalAuthMiddleware, async (req: AuthRequest, 
 async function getExistingIds(
   db: any,
   table: 'pins' | 'pin_layers',
-  ids: (string | undefined | null)[],
-  mapIdFilter?: { mapId: string; notEqual: boolean }
+  ids: (string | undefined | null)[]
 ): Promise<Set<string>> {
   const validIds = ids.filter((id): id is string => Boolean(id));
   if (validIds.length === 0) return new Set();
@@ -237,15 +236,10 @@ async function getExistingIds(
   for (let i = 0; i < validIds.length; i += chunkSize) {
     const chunk = validIds.slice(i, i + chunkSize);
     const placeholders = chunk.map(() => '?').join(',');
-    let query = `SELECT id FROM ${table} WHERE id IN (${placeholders})`;
-    const params: any[] = [...chunk];
-
-    if (mapIdFilter) {
-      query += mapIdFilter.notEqual ? ' AND map_id != ?' : ' AND map_id = ?';
-      params.push(mapIdFilter.mapId);
-    }
-
-    const rows = await db.all(query, ...params);
+    const rows = await db.all(
+      `SELECT id FROM ${table} WHERE id IN (${placeholders})`,
+      ...chunk
+    );
     for (const row of rows) {
       existingSet.add(row.id);
     }
@@ -266,19 +260,14 @@ export async function syncMapLayersAndPins(
   db: any,
   mapId: string,
   layers?: MapSyncLayerInput[],
-  pins?: MapSyncPinInput[],
-  options?: { isNewMap?: boolean }
+  pins?: MapSyncPinInput[]
 ): Promise<SyncEntitiesResult> {
-  const isNew = options?.isNewMap ?? false;
-  const layerMapFilter = isNew ? undefined : { mapId, notEqual: true };
-  const pinMapFilter = isNew ? undefined : { mapId, notEqual: true };
-
   const finalLayers: PinLayer[] = [];
   const layerIdMap = new Map<string, string>();
 
   if (layers !== undefined && layers.length > 0) {
     const processedLayerIds = new Set<string>();
-    const conflictingLayerIds = await getExistingIds(db, 'pin_layers', layers.map(l => l.id), layerMapFilter);
+    const conflictingLayerIds = await getExistingIds(db, 'pin_layers', layers.map(l => l.id));
 
     for (const layer of layers) {
       let layerId = layer.id;
@@ -313,7 +302,7 @@ export async function syncMapLayersAndPins(
   const finalPins: Pin[] = [];
   if (pins !== undefined && pins.length > 0) {
     const processedPinIds = new Set<string>();
-    const conflictingPinIds = await getExistingIds(db, 'pins', pins.map(p => p.id), pinMapFilter);
+    const conflictingPinIds = await getExistingIds(db, 'pins', pins.map(p => p.id));
 
     for (const pin of pins) {
       let pinId = pin.id;
@@ -404,8 +393,7 @@ router.post('/', authMiddleware, async (req: AuthRequest, res) => {
         db,
         id,
         layers,
-        pins,
-        { isNewMap: true }
+        pins
       );
 
       // Update access time for creator
