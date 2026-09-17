@@ -91,7 +91,7 @@ describe('Realtime Delta Handlers', () => {
     await realtime.handlePinCreate({ mapId, pin: { id: 'p1', lat: 0, lng: 0, label: 'P1', position: 0 } });
     await realtime.handlePinCreate({ mapId, pin: { id: 'p2', lat: 1, lng: 1, label: 'P2', position: 1 } });
 
-    await realtime.handlePinsReorder({ mapId, pinOrder: ['p2', 'p1'] });
+    await realtime.handlePinsReorder({ mapId, pinIds: ['p2'], insertIndex: 0 });
     const p1 = await db.get('SELECT position FROM pins WHERE id = ?', 'p1');
     const p2 = await db.get('SELECT position FROM pins WHERE id = ?', 'p2');
     expect(p2.position).toBe(0);
@@ -135,9 +135,7 @@ describe('Realtime Delta Handlers', () => {
       mapId,
       pinIds: ['p-src-1'],
       targetLayerId: 'layer-dst',
-      destPinOrder: ['p-dst-1', 'p-src-1'],
-      sourceLayerId: 'layer-src',
-      sourcePinOrder: ['p-src-2']
+      destInsertIndex: 1,
     });
 
     const movedPin = await db.get('SELECT layer_id, position FROM pins WHERE id = ?', 'p-src-1');

@@ -1,4 +1,5 @@
 import type { Pin, PinLayer } from '@shared/interfaces';
+import { insertIdsAt, insertIndexAfterMove } from '@shared/pinOrder';
 
 export function isSameLayer(l1?: string | null, l2?: string | null): boolean {
   if (!l1 && !l2) return true;
@@ -125,6 +126,76 @@ export function reorderLayers(
     return result.map((item, index) => ({ ...item, position: index }));
 }
 
+export function applyRemotePinsReorder(
+  pins: Pin[],
+  layerId: string | undefined,
+  pinIds: string[],
+  insertIndex: number
+): Pin[] {
+  const layerPins = pins.filter((p) => isSameLayer(p.layerId, layerId)).sort(comparePinPositions);
+  const others = pins.filter((p) => !isSameLayer(p.layerId, layerId));
+  const layerIdSet = new Set(layerPins.map((p) => p.id));
+  const moved = pinIds.filter((id) => layerIdSet.has(id));
+  const newOrder = insertIdsAt(layerPins.map((p) => p.id), moved, insertIndex);
+  const pinMap = new Map(layerPins.map((p) => [p.id, p]));
+  const reordered = newOrder.map((id, idx) => ({ ...pinMap.get(id)!, position: idx }));
+  return [...others, ...reordered];
+}
+
+export function applyRemotePinMoveLayer(
+  pins: Pin[],
+  pinIds: string[],
+  targetLayerId: string | undefined,
+  destInsertIndex: number
+): Pin[] {
+  const movedSet = new Set(pinIds);
+  const sourceLayerIds = new Set(
+    pins.filter((p) => movedSet.has(p.id)).map((p) => p.layerId)
+  );
+
+  const destExisting = pins
+    .filter((p) => !movedSet.has(p.id) && isSameLayer(p.layerId, targetLayerId))
+    .sort(comparePinPositions);
+  const movedPins = pinIds
+    .map((id) => pins.find((p) => p.id === id))
+    .filter((p): p is Pin => !!p)
+    .map((p) => ({ ...p, layerId: targetLayerId }));
+  const destOrder = insertIdsAt(destExisting.map((p) => p.id), movedPins.map((p) => p.id), destInsertIndex);
+  const destMap = new Map<string, Pin>([
+    ...destExisting.map((p) => [p.id, p] as const),
+    ...movedPins.map((p) => [p.id, p] as const),
+  ]);
+  const destReordered = destOrder.map((id, idx) => ({
+    ...destMap.get(id)!,
+    layerId: targetLayerId,
+    position: idx,
+  }));
+  const destIdSet = new Set(destOrder);
+
+  const rest: Pin[] = [];
+  const bySource = new Map<string | undefined, Pin[]>();
+  for (const p of pins) {
+    if (destIdSet.has(p.id) || movedSet.has(p.id)) continue;
+    if (sourceLayerIds.has(p.layerId) && !isSameLayer(p.layerId, targetLayerId)) {
+      const list = bySource.get(p.layerId) || [];
+      list.push(p);
+      bySource.set(p.layerId, list);
+    } else {
+      rest.push(p);
+    }
+  }
+
+  const reindexedSources: Pin[] = [];
+  bySource.forEach((list) => {
+    list.sort(comparePinPositions);
+    list.forEach((p, idx) => {
+      reindexedSources.push({ ...p, position: idx });
+    });
+  });
+
+  return [...rest, ...destReordered, ...reindexedSources];
+}
+
 /**
  * Dispatches socket events for moving pins between layers or reordering within a layer.
  */
@@ -135,7 +206,7 @@ export function emitPinMoveOrReorderEvents(
   movedPinIds: string[],
   startLayersMap: Map<string, string | undefined>,
   targetLayerId: string | undefined,
-  preferredPrimarySourceLayer?: string | undefined
+  _preferredPrimarySourceLayer?: string | undefined
 ) {
   if (!socket || !mapId || movedPinIds.length === 0) return;
 
@@ -145,55 +216,27 @@ export function emitPinMoveOrReorderEvents(
   const destLayerPins = allPins
     .filter((p) => isSameLayer(p.layerId, targetLayerId))
     .sort(comparePinPositions);
+  const destIds = destLayerPins.map((p) => p.id);
 
   if (changedLayerPins.length > 0) {
-    // Identify all distinct source layers that lost pins
-    const sourceLayers = new Set<string | undefined>();
-    movedPinIds.forEach((pId) => {
-      const srcLayer = startLayersMap.get(pId);
-      if (!isSameLayer(srcLayer, targetLayerId)) {
-        sourceLayers.add(srcLayer);
-      }
-    });
-
-    const primarySourceLayer =
-      preferredPrimarySourceLayer !== undefined && sourceLayers.has(preferredPrimarySourceLayer)
-        ? preferredPrimarySourceLayer
-        : (sourceLayers.values().next().value as string | undefined);
-
-    const primarySourcePins =
-      primarySourceLayer !== undefined && !isSameLayer(primarySourceLayer, targetLayerId)
-        ? allPins.filter((p) => isSameLayer(p.layerId, primarySourceLayer)).sort(comparePinPositions)
-        : undefined;
-
+    const movedSet = new Set(changedLayerPins);
+    const compactIds = destIds.filter((id) => movedSet.has(id));
+    if (compactIds.length === 0) return;
     socket.emit('pin-move-layer', {
       mapId,
-      pinIds: changedLayerPins,
+      pinIds: compactIds,
       targetLayerId: targetLayerId === undefined ? null : targetLayerId,
-      destPinOrder: destLayerPins.map((p) => p.id),
-      sourceLayerId: primarySourceLayer === undefined ? null : primarySourceLayer,
-      sourcePinOrder: primarySourcePins?.map((p) => p.id),
-    });
-
-    // If pins were moved from multiple distinct source layers, emit pins-reorder for the other source layers
-    sourceLayers.forEach((srcLayer) => {
-      if (srcLayer !== primarySourceLayer) {
-        const remainingPins = allPins
-          .filter((p) => isSameLayer(p.layerId, srcLayer))
-          .sort(comparePinPositions);
-        socket.emit('pins-reorder', {
-          mapId,
-          layerId: srcLayer === undefined ? null : srcLayer,
-          pinOrder: remainingPins.map((p) => p.id),
-        });
-      }
+      destInsertIndex: insertIndexAfterMove(destIds, compactIds),
     });
   } else {
-    // Same-layer reorder only
+    const movedSet = new Set(movedPinIds);
+    const compactIds = destIds.filter((id) => movedSet.has(id));
+    if (compactIds.length === 0) return;
     socket.emit('pins-reorder', {
       mapId,
       layerId: targetLayerId === undefined ? null : targetLayerId,
-      pinOrder: destLayerPins.map((p) => p.id),
+      pinIds: compactIds,
+      insertIndex: insertIndexAfterMove(destIds, compactIds),
     });
   }
 }

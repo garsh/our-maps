@@ -20,16 +20,15 @@ export interface PinDeletePayload {
 export interface PinsReorderPayload {
   mapId: string;
   layerId?: string | null;
-  pinOrder: string[];
+  pinIds: string[];
+  insertIndex: number;
 }
 
 export interface PinMoveLayerPayload {
   mapId: string;
   pinIds: string[];
   targetLayerId?: string | null;
-  destPinOrder?: string[];
-  sourceLayerId?: string | null;
-  sourcePinOrder?: string[];
+  destInsertIndex: number;
 }
 
 export interface LayerCreatePayload {

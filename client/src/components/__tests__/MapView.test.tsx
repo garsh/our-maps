@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as maplibregl from 'maplibre-gl';
-import MapView, { isPinInPaddedViewport, syncOfflineTerrain } from '../MapView';
+import MapView, { isPinInPaddedViewport, syncOfflineTerrain, resetDEMInflightForTests } from '../MapView';
 import { getHoveredPinId, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
 import { getMapViewportBounds, resetMapViewportBoundsForTests } from '../../utils/mapViewport';
 
@@ -386,6 +386,11 @@ describe('syncOfflineTerrain', () => {
 });
 
 describe('dem protocol handler', () => {
+  afterEach(() => {
+    resetDEMInflightForTests();
+    vi.unstubAllGlobals();
+  });
+
   it('registers dem protocol and throws 404 for uncached offline tiles and z > 15 to allow parent overzooming', async () => {
     const demCall = (maplibregl.addProtocol as any).mock.calls.find((call: any[]) => call[0] === 'dem');
     expect(demCall).toBeDefined();
@@ -404,6 +409,35 @@ describe('dem protocol handler', () => {
     abortedController.abort();
     await expect(handler({ url: 'dem://https://s3.amazonaws.com/elevation-tiles-prod/terrarium/15/6562/12582.png' }, abortedController))
       .rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('coalesces in-flight DEM fetches for the same URL', async () => {
+    const demCall = (maplibregl.addProtocol as any).mock.calls.find((call: any[]) => call[0] === 'dem');
+    const handler = demCall[1];
+    const url = 'dem://https://s3.amazonaws.com/elevation-tiles-prod/terrarium/15/1/2.png';
+
+    let resolveFetch: (value: any) => void;
+    const fetchPromise = new Promise((resolve) => { resolveFetch = resolve; });
+    const fetchMock = vi.fn(() => fetchPromise);
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('navigator', { ...navigator, onLine: true });
+
+    const p1 = handler({ url }, new AbortController());
+    const p2 = handler({ url }, new AbortController());
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const body = new ArrayBuffer(8);
+    resolveFetch!({
+      ok: true,
+      clone: () => ({ }),
+      arrayBuffer: async () => body,
+    });
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+    expect(r1.data).toBe(body);
+    expect(r2.data).toBe(body);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

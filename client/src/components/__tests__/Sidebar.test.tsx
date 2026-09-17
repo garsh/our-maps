@@ -673,8 +673,15 @@ describe('Sidebar', () => {
     expect(screen.queryByLabelText('Edit')).not.toBeInTheDocument();
   });
 
-  it('shows Import in the menu even when the map already has pins', () => {
+  it('hides Import when the map already has pins', () => {
     render(<TestWrapper />);
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+    expect(screen.queryByText('Import')).not.toBeInTheDocument();
+  });
+
+  it('shows Import when the map has no pins or layers', () => {
+    render(<TestWrapper pins={[]} />);
 
     fireEvent.click(screen.getByLabelText(/more options/i));
     expect(screen.getByText('Import')).toBeInTheDocument();

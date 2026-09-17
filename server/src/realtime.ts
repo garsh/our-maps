@@ -13,6 +13,7 @@ import type {
   MapNameUpdatePayload,
   CustomColorsUpdatePayload
 } from '@shared/interfaces';
+import { insertIdsAt } from '../../shared/pinOrder';
 
 export async function handlePinCreate(data: PinCreatePayload): Promise<boolean | void> {
   const db = await getDb();
@@ -147,14 +148,35 @@ async function updateEntityPositions(
   }
 }
 
+async function loadLayerPinIds(db: any, mapId: string, layerId: string | null): Promise<string[]> {
+  const rows = layerId
+    ? await db.all(
+        'SELECT id FROM pins WHERE map_id = ? AND layer_id = ? ORDER BY position ASC, id ASC',
+        mapId,
+        layerId
+      )
+    : await db.all(
+        'SELECT id FROM pins WHERE map_id = ? AND layer_id IS NULL ORDER BY position ASC, id ASC',
+        mapId
+      );
+  return rows.map((r: { id: string }) => r.id);
+}
+
 export async function handlePinsReorder(data: PinsReorderPayload) {
   const db = await getDb();
-  const { mapId, pinOrder } = data;
-  if (!mapId || !Array.isArray(pinOrder)) return;
+  const { mapId, layerId, pinIds, insertIndex } = data;
+  if (!mapId || !Array.isArray(pinIds) || pinIds.length === 0) return;
 
   await db.run('BEGIN TRANSACTION');
   try {
-    await updateEntityPositions(db, 'pins', pinOrder, mapId);
+    const currentIds = await loadLayerPinIds(db, mapId, layerId || null);
+    const layerIdSet = new Set(currentIds);
+    const moved = pinIds.filter((id) => layerIdSet.has(id));
+    if (moved.length === 0) {
+      await db.run('COMMIT');
+      return;
+    }
+    await updateEntityPositions(db, 'pins', insertIdsAt(currentIds, moved, insertIndex), mapId);
     await db.run('COMMIT');
     await touchMapUpdatedAt(mapId);
   } catch (error) {
@@ -165,15 +187,32 @@ export async function handlePinsReorder(data: PinsReorderPayload) {
 
 export async function handlePinMoveLayer(data: PinMoveLayerPayload) {
   const db = await getDb();
-  const { mapId, pinIds, targetLayerId, destPinOrder, sourcePinOrder } = data;
+  const { mapId, pinIds, targetLayerId, destInsertIndex } = data;
   if (!mapId || !Array.isArray(pinIds) || pinIds.length === 0) return;
 
   await db.run('BEGIN TRANSACTION');
   try {
     const targetLayer = targetLayerId || null;
     const chunkSize = 500;
+    const existing: Array<{ id: string; layer_id: string | null }> = [];
     for (let i = 0; i < pinIds.length; i += chunkSize) {
       const chunk = pinIds.slice(i, i + chunkSize);
+      const placeholders = chunk.map(() => '?').join(', ');
+      const rows = await db.all(
+        `SELECT id, layer_id FROM pins WHERE map_id = ? AND id IN (${placeholders})`,
+        mapId,
+        ...chunk
+      );
+      existing.push(...rows);
+    }
+    if (existing.length === 0) {
+      await db.run('COMMIT');
+      return;
+    }
+
+    const existingIds = existing.map((row) => row.id);
+    for (let i = 0; i < existingIds.length; i += chunkSize) {
+      const chunk = existingIds.slice(i, i + chunkSize);
       const placeholders = chunk.map(() => '?').join(', ');
       await db.run(
         `UPDATE pins SET layer_id = ? WHERE map_id = ? AND id IN (${placeholders})`,
@@ -183,12 +222,15 @@ export async function handlePinMoveLayer(data: PinMoveLayerPayload) {
       );
     }
 
-    if (Array.isArray(destPinOrder) && destPinOrder.length > 0) {
-      await updateEntityPositions(db, 'pins', destPinOrder, mapId);
-    }
+    const destIds = await loadLayerPinIds(db, mapId, targetLayer);
+    const moved = existingIds.filter((id) => destIds.includes(id));
+    await updateEntityPositions(db, 'pins', insertIdsAt(destIds, moved, destInsertIndex), mapId);
 
-    if (Array.isArray(sourcePinOrder) && sourcePinOrder.length > 0) {
-      await updateEntityPositions(db, 'pins', sourcePinOrder, mapId);
+    const sourceLayers = new Set(existing.map((row) => row.layer_id ?? null));
+    for (const src of sourceLayers) {
+      if (src === targetLayer) continue;
+      const remaining = await loadLayerPinIds(db, mapId, src);
+      await updateEntityPositions(db, 'pins', remaining, mapId);
     }
 
     await db.run('COMMIT');

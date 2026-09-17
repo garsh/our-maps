@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { arePinsEqual, isValidPinColor, isValidPinIcon, resolvePinColorCode, getPreviewMarkerHTML, formatColorName, DEFAULT_ICON_COLORS, getDefaultColorForIcon } from '../mapUtils';
-import { bundledSpriteIconCount } from '../basemapSprites';
+import { bundledSpriteIconCount, isBundledSpriteId } from '../basemapSprites';
 import {
   getMapViewportBounds,
   setMapViewportBounds,
@@ -144,6 +144,9 @@ describe('mapUtils', () => {
     it('bundles light and dark @2x sprite atlases', () => {
       expect(bundledSpriteIconCount('light')).toBeGreaterThan(20);
       expect(bundledSpriteIconCount('dark')).toBeGreaterThan(20);
+      expect(isBundledSpriteId('park')).toBe(true);
+      expect(isBundledSpriteId('US:I-2char')).toBe(true);
+      expect(isBundledSpriteId('not-a-sprite')).toBe(false);
     });
   });
 

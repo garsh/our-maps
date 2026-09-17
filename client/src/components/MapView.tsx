@@ -16,7 +16,7 @@ import { getActiveExtractPMTiles, getExtractTileJSON, preloadExtract, setActiveO
 import { clearHoveredPin, getHoveredPinId, useHoveredPinId, hasFinePointer } from '../utils/pinHover';
 import { setMapViewportBounds } from '../utils/mapViewport';
 import { ensurePinImageByKey, ensurePinImages, getPinIconKey, clearRegisteredImages } from '../utils/pinIconSprite';
-import { applyBundledSprites } from '../utils/basemapSprites';
+import { applyBundledSprites, applyBundledSpriteById, isBundledSpriteId } from '../utils/basemapSprites';
 
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -25,6 +25,10 @@ function attachMissingImageResolver(map: any) {
   map.setMissingStyleImageResolver(async (id: string) => {
     if (typeof id === 'string' && id.startsWith('pin-')) {
       await ensurePinImageByKey(map, id);
+      return;
+    }
+    if (typeof id === 'string' && isBundledSpriteId(id)) {
+      await applyBundledSpriteById(map, id);
       return;
     }
     if (!map.hasImage(id)) {
@@ -376,6 +380,79 @@ export function syncOfflineTerrain(map: any, show3DTerrain: boolean) {
   }
 }
 
+type DemInflight = {
+  promise: Promise<ArrayBuffer | null>;
+  callers: Set<AbortController>;
+  fetchAbort: AbortController;
+};
+
+const demInflightFetches = new globalThis.Map<string, DemInflight>();
+
+export function resetDEMInflightForTests() {
+  demInflightFetches.forEach((entry) => {
+    try { entry.fetchAbort.abort(); } catch {}
+  });
+  demInflightFetches.clear();
+}
+
+function abortError(): DOMException {
+  return new DOMException('The user aborted a request.', 'AbortError');
+}
+
+function fetchDemShared(realUrl: string, callerAbort: AbortController): Promise<ArrayBuffer | null> {
+  if (callerAbort.signal.aborted) return Promise.reject(abortError());
+
+  let entry = demInflightFetches.get(realUrl);
+  if (entry?.fetchAbort.signal.aborted) {
+    demInflightFetches.delete(realUrl);
+    entry = undefined;
+  }
+  if (!entry) {
+    const fetchAbort = new AbortController();
+    const callers = new Set<AbortController>([callerAbort]);
+    const promise = (async () => {
+      try {
+        const res = await fetch(realUrl, { signal: fetchAbort.signal });
+        if (!res || !res.ok) return null;
+        const clone = res.clone();
+        const buf = await res.arrayBuffer();
+        if (typeof caches !== 'undefined') {
+          caches.open('elevation-tiles-cache').then((c) => c.put(realUrl, clone)).catch(() => {});
+        }
+        return buf;
+      } catch (fetchErr: any) {
+        if (fetchAbort.signal.aborted || fetchErr?.name === 'AbortError') {
+          throw abortError();
+        }
+        return null;
+      } finally {
+        if (demInflightFetches.get(realUrl)?.fetchAbort === fetchAbort) {
+          demInflightFetches.delete(realUrl);
+        }
+      }
+    })();
+    entry = { promise, callers, fetchAbort };
+    demInflightFetches.set(realUrl, entry);
+  } else {
+    entry.callers.add(callerAbort);
+  }
+
+  const onAbort = () => {
+    entry!.callers.delete(callerAbort);
+    if (entry!.callers.size === 0) {
+      demInflightFetches.delete(realUrl);
+      try { entry!.fetchAbort.abort(); } catch {}
+    }
+  };
+  callerAbort.signal.addEventListener('abort', onAbort, { once: true });
+
+  return entry.promise.then((buf) => {
+    callerAbort.signal.removeEventListener('abort', onAbort);
+    if (callerAbort.signal.aborted) throw abortError();
+    return buf;
+  });
+}
+
 let isDEMProtocolRegistered = false;
 function setupDEMProtocol() {
   if (!isDEMProtocolRegistered && typeof maplibregl !== 'undefined' && typeof maplibregl.addProtocol === 'function') {
@@ -409,26 +486,20 @@ function setupDEMProtocol() {
         console.warn('DEM cache check error:', err);
       }
 
-      // 2. If online, fetch from network and cache for offline 3D use
+      // 2. If online, fetch from network and cache for offline 3D use.
+      // Hillshade and 3D terrain are separate sources with the same URL template;
+      // coalesce in-flight GETs so the first pan does not download each tile twice.
       if (navigator.onLine) {
         if (abortController?.signal?.aborted) {
-          throw new DOMException('The user aborted a request.', 'AbortError');
+          throw abortError();
         }
         try {
-          const res = await fetch(realUrl, { signal: abortController.signal });
-          if (res && res.ok) {
-            const clone = res.clone();
-            const buf = await res.arrayBuffer();
-            if (typeof caches !== 'undefined') {
-              caches.open('elevation-tiles-cache').then((c) => c.put(realUrl, clone)).catch(() => {});
-            }
-            return { data: buf };
-          }
+          const buf = await fetchDemShared(realUrl, abortController);
+          if (buf) return { data: buf };
         } catch (fetchErr: any) {
           if (abortController?.signal?.aborted || fetchErr?.name === 'AbortError') {
-            throw (fetchErr?.name === 'AbortError' ? fetchErr : new DOMException('The user aborted a request.', 'AbortError'));
+            throw (fetchErr?.name === 'AbortError' ? fetchErr : abortError());
           }
-          // Network unreachable / offline / blocked in tests: fall through to 404 parent overzoom without noisy warnings
         }
       }
 
@@ -439,7 +510,7 @@ function setupDEMProtocol() {
       // terrain (e.g. Colorado at 2,500m-4,000m) tricks MapLibre into setting camera ground elevation
       // to 0m, creating a 2,500m elevation mismatch that frustum-culls all terrain and vector tiles!
       if (abortController?.signal?.aborted) {
-        throw new DOMException('The user aborted a request.', 'AbortError');
+        throw abortError();
       }
       throwTileNotFound(z, x, y);
     });
@@ -886,26 +957,6 @@ function applyThemePaintsOnMap(map: any, flavor: 'light' | 'dark') {
     try { map.triggerRepaint(); } catch {}
   }
 }
-
-function prefetchMapSprites() {
-  if (typeof window === 'undefined') return;
-  const origin = window.location.origin;
-  for (const flavor of ['light', 'dark'] as const) {
-    const base = `${origin}/maps/sprites/${flavor}`;
-    try {
-      const img = new Image();
-      img.src = `${base}.png`;
-      const img2 = new Image();
-      img2.src = `${base}@2x.png`;
-    } catch {}
-    if (typeof fetch === 'function') {
-      try {
-        Promise.resolve(fetch(`${base}.json`)).catch(() => {});
-      } catch {}
-    }
-  }
-}
-prefetchMapSprites();
 
 // Terrain flyTo freezes camera height and only calls _finalizeElevation when this is set.
 // Without it, street labels keep a mid-flight perspective scale after Find my location.

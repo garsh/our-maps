@@ -30,7 +30,7 @@ import type {
 import type { DragEndEvent } from '@dnd-kit/core'
 import { Loader2, Map as MapIcon, RotateCw } from 'lucide-react';
 import type { SearchAreaState } from './components/SearchBar';
-import { reorderPins, reorderLayers, isSameLayer, emitPinMoveOrReorderEvents } from './utils/reorderUtils';
+import { reorderPins, reorderLayers, isSameLayer, emitPinMoveOrReorderEvents, applyRemotePinsReorder, applyRemotePinMoveLayer } from './utils/reorderUtils';
 import { generateId, mergeImportedMapData } from './utils/fileUtils';
 import { getOfflineMap, isMapDownloaded, touchMapCacheAccess, saveMapToViewCache } from './utils/tileUtils';
 import { preloadExtract, setActiveOfflineMapId } from './utils/offlineExtract';
@@ -670,22 +670,7 @@ export function MapEditor() {
         if (data.mapId !== id) return;
         isRemoteUpdateRef.current = true;
         const targetLayerId = data.layerId === null ? undefined : data.layerId;
-        setPins(prev => {
-          const pinMap = new Map(prev.map(p => [p.id, p]));
-          const reordered: Pin[] = [];
-          data.pinOrder.forEach((pId, idx) => {
-            const pin = pinMap.get(pId);
-            if (pin) {
-              reordered.push({
-                ...pin,
-                layerId: targetLayerId !== undefined ? targetLayerId : pin.layerId,
-                position: idx
-              });
-              pinMap.delete(pId);
-            }
-          });
-          return [...reordered, ...Array.from(pinMap.values())];
-        });
+        setPins(prev => applyRemotePinsReorder(prev, targetLayerId, data.pinIds || [], data.insertIndex));
         setIsDirty(false);
       });
 
@@ -693,40 +678,7 @@ export function MapEditor() {
         if (data.mapId !== id) return;
         isRemoteUpdateRef.current = true;
         const targetLayerId = data.targetLayerId === null ? undefined : data.targetLayerId;
-        const sourceLayerId = data.sourceLayerId === null ? undefined : data.sourceLayerId;
-
-        setPins(prev => {
-          const pinMap = new Map(prev.map(p => [p.id, p]));
-          // 1. Move the pins
-          data.pinIds.forEach(pId => {
-            const pin = pinMap.get(pId);
-            if (pin) {
-              pinMap.set(pId, { ...pin, layerId: targetLayerId });
-            }
-          });
-
-          // 2. Apply destination ordering
-          if (Array.isArray(data.destPinOrder)) {
-            data.destPinOrder.forEach((pId, idx) => {
-              const pin = pinMap.get(pId);
-              if (pin) {
-                pinMap.set(pId, { ...pin, layerId: targetLayerId, position: idx });
-              }
-            });
-          }
-
-          // 3. Apply source ordering
-          if (Array.isArray(data.sourcePinOrder)) {
-            data.sourcePinOrder.forEach((pId, idx) => {
-              const pin = pinMap.get(pId);
-              if (pin) {
-                pinMap.set(pId, { ...pin, layerId: sourceLayerId, position: idx });
-              }
-            });
-          }
-
-          return Array.from(pinMap.values());
-        });
+        setPins(prev => applyRemotePinMoveLayer(prev, data.pinIds || [], targetLayerId, data.destInsertIndex));
         setIsDirty(false);
       });
 
@@ -1680,6 +1632,7 @@ export function MapEditor() {
 
   const handleImport = useCallback((data: Partial<MapData>) => {
     if (!editModeRef.current || isOfflineRef.current) return;
+    if (pinsRef.current.length > 0 || layersRef.current.length > 0) return;
 
     const merged = mergeImportedMapData(layersRef.current, pinsRef.current, data);
     if (merged.addedLayers.length === 0 && merged.addedPins.length === 0) {

@@ -703,7 +703,7 @@ export default function LandingPage() {
             </h3>
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '2rem' }}>
               {maps.find(m => m.id === deleteConfirm)?.ownerId === user?.id 
-                ? <>Are you sure you want to delete <strong>{maps.find(m => m.id === deleteConfirm)?.name}</strong>? This action is permanent and cannot be reversed. Collaborators will lose access to the map.  Consider giving someone else Onwership instead.</>
+                ? <>Are you sure you want to delete <strong>{maps.find(m => m.id === deleteConfirm)?.name}</strong>? This action is permanent and cannot be reversed. Collaborators will lose access to the map.  Consider giving someone else Ownership instead.</>
                 : <>Are you sure you want to leave <strong>{maps.find(m => m.id === deleteConfirm)?.name}</strong>? You will be removed as a collaborator and it will no longer appear in your list of maps.</>
               }
             </p>

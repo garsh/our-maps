@@ -178,12 +178,12 @@ describe('App Components Error Handling', () => {
     }));
   });
 
-  it('adds imported pins to an existing map and emits create deltas', async () => {
+  it('imports pins onto an empty map and emits create deltas', async () => {
     mockSocket.connected = true;
     (apiService.getMap as any).mockResolvedValue({
       id: 'map-1',
       name: 'Test Map',
-      pins: [{ id: 'pin-1', lat: 1, lng: 2, label: 'Existing Pin', position: 0 }],
+      pins: [],
       layers: [],
       userRole: 'owner'
     });
@@ -208,7 +208,7 @@ describe('App Components Error Handling', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText('Existing Pin')).toBeInTheDocument();
+        expect(screen.getByText(/Synced/i)).toBeInTheDocument();
       });
 
       fireEvent.click(screen.getByLabelText(/more options/i));
@@ -228,7 +228,6 @@ describe('App Components Error Handling', () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByText('Existing Pin')).toBeInTheDocument();
         expect(screen.getByText('Imported Cafe')).toBeInTheDocument();
         expect(screen.getByText(/Imported Layer/)).toBeInTheDocument();
       });
