@@ -37,9 +37,17 @@ export async function login(page: Page) {
   await expect(page.getByRole('button', { name: /New Map/i })).toBeVisible({ timeout: 10000 });
 }
 
-// Helper to wait for auto-save: waits dynamically for the "Synced" badge rather than a fixed sleep
+// Helper to wait for auto-save: waits dynamically for the "Synced" badge and editable mode rather than a fixed sleep
 export async function waitForAutoSave(page: Page) {
-  await expect(page.locator('header').getByText('Synced')).toBeVisible({ timeout: 10000 });
+  const syncStatus = page.locator('[data-testid="sync-status"]');
+  // If initiated from /map/new, wait for the map creation to persist and route to /map/:id
+  if (page.url().includes('/map/new')) {
+    await page.waitForURL(url => url.pathname !== '/map/new' && url.pathname.includes('/map/'), { timeout: 15000 });
+  }
+  // Wait for the sync status to reach 'synced' (all REST and socket deltas committed to SQLite)
+  await expect(syncStatus).toHaveAttribute('data-status', 'synced', { timeout: 15000 });
+  // Ensure the map has fully transitioned into editable state (socket connected, ready for further actions)
+  await expect(syncStatus).toHaveAttribute('data-edit-mode', 'true', { timeout: 15000 });
 }
 
 // Helper to delete map created in test

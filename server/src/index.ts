@@ -199,11 +199,12 @@ io.on('connection', (socket: Socket) => {
   };
 
   for (const [eventName, handler] of Object.entries(deltaHandlers)) {
-    socket.on(eventName, async (data: any) => {
+    socket.on(eventName, async (data: any, callback?: (res: any) => void) => {
       try {
         const parsed = socketPayloadSchemas[eventName as keyof typeof socketPayloadSchemas].safeParse(data);
         if (!parsed.success) {
           socket.emit('write-error', { mapId: data?.mapId, error: 'Validation failed' });
+          if (typeof callback === 'function') callback({ error: 'Validation failed' });
           return;
         }
         const payload = parsed.data;
@@ -219,16 +220,22 @@ io.on('connection', (socket: Socket) => {
         }
         if (!canEditMap(role as any)) {
           socket.emit('write-error', { mapId, error: 'Write access denied' });
+          if (typeof callback === 'function') callback({ error: 'Write access denied' });
           return;
         }
 
         const applied = await handler(payload);
-        if (applied === false) return;
+        if (applied === false) {
+          if (typeof callback === 'function') callback({ error: 'Handler rejected' });
+          return;
+        }
 
         socket.to(`map:${mapId}`).emit(eventName, payload);
         if (process.env.NODE_ENV !== 'production') console.log(`[SOCKET] ${eventName} on map:${mapId} by ${socket.id}`);
+        if (typeof callback === 'function') callback({ success: true });
       } catch (err) {
         console.error(`[SOCKET] ERROR ${eventName}:`, err);
+        if (typeof callback === 'function') callback({ error: 'Internal server error' });
       }
     });
   }

@@ -174,7 +174,7 @@ describe('App Components Error Handling', () => {
     expect(mockSocket.emit).toHaveBeenCalledWith('map-name-update', expect.objectContaining({
       mapId: 'map-1',
       name: 'Renamed'
-    }));
+    }), expect.any(Function));
   });
 
   it('imports pins onto an empty map and emits create deltas', async () => {
@@ -235,11 +235,11 @@ describe('App Components Error Handling', () => {
       expect(mockSocket.emit).toHaveBeenCalledWith('layer-create', expect.objectContaining({
         mapId: 'map-1',
         layer: expect.objectContaining({ name: 'Imported Layer' })
-      }));
+      }), expect.any(Function));
       expect(mockSocket.emit).toHaveBeenCalledWith('pin-create', expect.objectContaining({
         mapId: 'map-1',
         pin: expect.objectContaining({ label: 'Imported Cafe' })
-      }));
+      }), expect.any(Function));
       expect(mockSocket.emit).not.toHaveBeenCalledWith('map-name-update', expect.anything());
     } finally {
       createSpy.mockRestore();

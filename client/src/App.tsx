@@ -94,6 +94,7 @@ export function MapEditor() {
   
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const inFlightDeltaCountRef = useRef(0);
   const [isSharing, setIsSharing] = useState(false);
   const [targetPinId, setTargetPinId] = useState<string | null>(null);
   const [boundsToFit, setBoundsToFit] = useState<[[number, number], [number, number]] | null>(null);
@@ -162,7 +163,8 @@ export function MapEditor() {
   const [isSyncing, setIsSyncing] = useState(
     () => id !== 'new' && !((typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY))
   );
-  const editMode = canEditMap && !isOffline && searchParams.get('mode') !== 'view';
+  const [isInitialCreating, setIsInitialCreating] = useState(false);
+  const editMode = canEditMap && !isOffline && searchParams.get('mode') !== 'view' && !isInitialCreating;
 
   const applyOffline = useCallback((offline: boolean, immediate = false) => {
     if (pendingTransitionTimerRef.current) {
@@ -437,6 +439,76 @@ export function MapEditor() {
   const editingPinIdRef = useRef(editingPinId);
   editingPinIdRef.current = editingPinId;
 
+  const emitDelta = useCallback((eventName: string, payload: any) => {
+    if (!socketRef.current) return;
+    inFlightDeltaCountRef.current++;
+    setIsSaving(true);
+    let resolved = false;
+
+    const ackTimeout = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      inFlightDeltaCountRef.current = Math.max(0, inFlightDeltaCountRef.current - 1);
+      if (inFlightDeltaCountRef.current === 0) {
+        setIsSaving(false);
+      }
+    }, 10000);
+
+    socketRef.current.emit(eventName, payload, (res?: any) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(ackTimeout);
+      inFlightDeltaCountRef.current = Math.max(0, inFlightDeltaCountRef.current - 1);
+      if (inFlightDeltaCountRef.current === 0) {
+        setIsSaving(false);
+      }
+      if (res?.error) {
+        console.error(`[SOCKET] Error acknowledging ${eventName}:`, res.error);
+        setError('Sync error');
+      }
+    });
+  }, []);
+
+  const emitReorderDelta = useCallback((
+    targetPins: Pin[],
+    targetIds: string[],
+    startMap: Map<string, string | undefined>,
+    targetLayerId: string | undefined
+  ) => {
+    const currentMapId = mapIdRef.current;
+    if (!currentMapId || !socketRef.current) return;
+
+    inFlightDeltaCountRef.current++;
+    setIsSaving(true);
+    let resolved = false;
+    const ackTimeout = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      inFlightDeltaCountRef.current = Math.max(0, inFlightDeltaCountRef.current - 1);
+      if (inFlightDeltaCountRef.current === 0) setIsSaving(false);
+    }, 10000);
+
+    emitPinMoveOrReorderEvents(
+      socketRef.current,
+      currentMapId,
+      targetPins,
+      targetIds,
+      startMap,
+      targetLayerId,
+      (res?: any) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(ackTimeout);
+        inFlightDeltaCountRef.current = Math.max(0, inFlightDeltaCountRef.current - 1);
+        if (inFlightDeltaCountRef.current === 0) setIsSaving(false);
+        if (res?.error) {
+          console.error(`[SOCKET] Error acknowledging pin reorder:`, res.error);
+          setError('Sync error');
+        }
+      }
+    );
+  }, []);
+
   // Debounced POST /api/maps for brand-new maps that do not have an id yet
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createInFlightRef = useRef(false);
@@ -506,8 +578,8 @@ export function MapEditor() {
       if (prev.some(c => c.toLowerCase() === normalized)) return prev;
       const next = [normalized, ...prev].slice(0, 10);
       const currentMapId = mapIdRef.current;
-      if (currentMapId && socketRef.current?.connected && userRoleRef.current !== 'view') {
-        socketRef.current.emit('custom-colors-update', { mapId: currentMapId, customColors: next });
+      if (currentMapId && userRoleRef.current !== 'view') {
+        emitDelta('custom-colors-update', { mapId: currentMapId, customColors: next });
       }
       if (currentMapId) {
         getOfflineMap(currentMapId).then(cached => {
@@ -518,7 +590,7 @@ export function MapEditor() {
       }
       return next;
     });
-  }, []);
+  }, [emitDelta]);
 
   const handleToggleNavId = useCallback((id: string) => {
     setSelectedNavIds(prev => {
@@ -594,11 +666,14 @@ export function MapEditor() {
 
       // Reconnect re-sync handler
       socket.on('connect', () => {
+        setIsInitialCreating(false);
+        setIsSaving(false);
         applyOffline(false, true);
         if (id) {
           socket.emit('join-map', id);
           if (isInitialConnect) {
             isInitialConnect = false;
+            setIsSyncing(false);
             return;
           }
           reconcileOnReconnect(id);
@@ -831,10 +906,11 @@ export function MapEditor() {
 
     setIsDirty(true);
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    const debounceDuration = (pins.length > 0 || layers.length > 0) ? 50 : 1000;
     autoSaveTimerRef.current = setTimeout(() => {
       autoSaveTimerRef.current = null;
       handleSave();
-    }, 1000);
+    }, debounceDuration);
 
     return () => {
       if (autoSaveTimerRef.current) {
@@ -1018,6 +1094,7 @@ export function MapEditor() {
     if (createInFlightRef.current) return;
 
     createInFlightRef.current = true;
+    setIsInitialCreating(true);
     setIsSaving(true);
     setError(null);
 
@@ -1035,12 +1112,17 @@ export function MapEditor() {
       setIsDirty(false);
       setMapId(newId);
       navigate(`/map/${newId}`, { replace: true });
+      setTimeout(() => {
+        setIsInitialCreating(false);
+        setIsSaving(false);
+      }, 3000);
     } catch (err: any) {
       console.error('Failed to save map', err);
       setError('NOT Synced');
+      setIsInitialCreating(false);
+      setIsSaving(false);
     } finally {
       createInFlightRef.current = false;
-      setIsSaving(false);
     }
   };
 
@@ -1224,9 +1306,9 @@ export function MapEditor() {
     }
 
     if (mapId) {
-      socketRef.current?.emit('pin-create', { mapId, layerId: newPin.layerId === undefined ? null : newPin.layerId, pin: newPin });
+      emitDelta('pin-create', { mapId, layerId: newPin.layerId === undefined ? null : newPin.layerId, pin: newPin });
     }
-  }, [editMode, isOffline, mapId, handleEditPin, handlePinSelect]);
+  }, [editMode, isOffline, mapId, handleEditPin, handlePinSelect, emitDelta]);
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
     if (Date.now() < ignoreMapClickUntil.current || !editMode || isOffline) return;
@@ -1253,9 +1335,9 @@ export function MapEditor() {
     });
 
     if (mapId) {
-      socketRef.current?.emit('pin-delete', { mapId, pinId: targetId });
+      emitDelta('pin-delete', { mapId, pinId: targetId });
     }
-  }, [editMode, isOffline, mapId]);
+  }, [editMode, isOffline, mapId, emitDelta]);
 
   const updatePin = useCallback((targetId: string, updates: Partial<Pin>) => {
     if (!editMode || isOffline) return;
@@ -1279,19 +1361,12 @@ export function MapEditor() {
         const targetLayerId = updates.layerId;
         const updatedPins = currentPins.map(p => p.id === targetId ? { ...p, ...computedUpdates } : p);
         const startMap = new Map<string, string | undefined>([[targetId, originalLayerId]]);
-        emitPinMoveOrReorderEvents(
-          socketRef.current,
-          mapId,
-          updatedPins,
-          [targetId],
-          startMap,
-          targetLayerId
-        );
+        emitReorderDelta(updatedPins, [targetId], startMap, targetLayerId);
       } else {
-        socketRef.current?.emit('pin-update', { mapId, pinId: targetId, updates: computedUpdates });
+        emitDelta('pin-update', { mapId, pinId: targetId, updates: computedUpdates });
       }
     }
-  }, [editMode, isOffline, mapId]);
+  }, [editMode, isOffline, mapId, emitDelta, emitReorderDelta]);
 
   const movePinsToLayer = useCallback((pinIds: string[], targetLayerId?: string) => {
     if (!editMode || isOffline || pinIds.length === 0) return;
@@ -1318,16 +1393,14 @@ export function MapEditor() {
     setPins(updatedPins);
 
     if (mapId) {
-      emitPinMoveOrReorderEvents(
-        socketRef.current,
-        mapId,
-        updatedPins,
+      emitReorderDelta(
+        currentPins,
         pinIds,
         startLayersMap,
         targetLayerId
       );
     }
-  }, [editMode, isOffline, mapId]);
+  }, [editMode, isOffline, mapId, emitReorderDelta]);
 
   const addLayer = useCallback((): PinLayer | undefined => {
     if (!editMode || isOffline) return;
@@ -1338,10 +1411,10 @@ export function MapEditor() {
     };
     setLayers(prev => [...prev, newGroup]);
     if (mapId) {
-      socketRef.current?.emit('layer-create', { mapId, layer: newGroup });
+      emitDelta('layer-create', { mapId, layer: newGroup });
     }
     return newGroup;
-  }, [editMode, isOffline, layers.length, mapId]);
+  }, [editMode, isOffline, layers.length, mapId, emitDelta]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1368,9 +1441,9 @@ export function MapEditor() {
     setLayers(prev => prev.map(g => g.id === targetId ? { ...g, ...updates } : g));
     const currentMapId = mapIdRef.current;
     if (currentMapId) {
-      socketRef.current?.emit('layer-update', { mapId: currentMapId, layerId: targetId, updates });
+      emitDelta('layer-update', { mapId: currentMapId, layerId: targetId, updates });
     }
-  }, []);
+  }, [emitDelta]);
 
   const removeLayer = useCallback((targetId: string) => {
     if (!editModeRef.current || isOfflineRef.current) return;
@@ -1393,18 +1466,18 @@ export function MapEditor() {
 
     const currentMapId = mapIdRef.current;
     if (currentMapId) {
-      socketRef.current?.emit('layer-delete', { mapId: currentMapId, layerId: targetId });
+      emitDelta('layer-delete', { mapId: currentMapId, layerId: targetId });
     }
-  }, []);
+  }, [emitDelta]);
 
   const handleMapNameChange = useCallback((newName: string) => {
     if (!editModeRef.current || isOfflineRef.current) return;
     setMapName(newName);
     const currentMapId = mapIdRef.current;
     if (currentMapId) {
-      socketRef.current?.emit('map-name-update', { mapId: currentMapId, name: newName });
+      emitDelta('map-name-update', { mapId: currentMapId, name: newName });
     }
-  }, []);
+  }, [emitDelta]);
 
   const handleDragStart = useCallback((event: any) => {
     if (!editModeRef.current || isOfflineRef.current) return;
@@ -1455,7 +1528,7 @@ export function MapEditor() {
         const next = reorderLayers(prev, active.id as string, targetLayerId);
         const currentMapId = mapIdRef.current;
         if (currentMapId) {
-          socketRef.current?.emit('layers-reorder', { mapId: currentMapId, layerOrder: next.map(l => l.id) });
+          emitDelta('layers-reorder', { mapId: currentMapId, layerOrder: next.map(l => l.id) });
         }
         return next;
       });
@@ -1490,9 +1563,7 @@ export function MapEditor() {
       setPins(next);
 
       if (currentMapId) {
-        emitPinMoveOrReorderEvents(
-          socketRef.current,
-          currentMapId,
+        emitReorderDelta(
           next,
           pinsToMoveIds,
           startLayersMap,
@@ -1500,7 +1571,7 @@ export function MapEditor() {
         );
       }
     }
-  }, []);
+  }, [emitDelta, emitReorderDelta]);
 
 
   const handleImport = useCallback((data: Partial<MapData>) => {
@@ -1525,15 +1596,14 @@ export function MapEditor() {
 
     const currentMapId = mapIdRef.current;
     if (currentMapId) {
-      const socket = socketRef.current;
       if (data.name && currentName === 'Unnamed Map') {
-        socket?.emit('map-name-update', { mapId: currentMapId, name: data.name });
+        emitDelta('map-name-update', { mapId: currentMapId, name: data.name });
       }
       merged.addedLayers.forEach(layer => {
-        socket?.emit('layer-create', { mapId: currentMapId, layer });
+        emitDelta('layer-create', { mapId: currentMapId, layer });
       });
       merged.addedPins.forEach(pin => {
-        socket?.emit('pin-create', {
+        emitDelta('pin-create', {
           mapId: currentMapId,
           layerId: pin.layerId === undefined ? null : pin.layerId,
           pin,
@@ -1554,7 +1624,7 @@ export function MapEditor() {
     if (merged.skippedPins > 0 || merged.skippedLayers > 0) {
       alert(`Imported ${merged.addedPins.length} pin(s). ${merged.skippedPins} pin(s) and ${merged.skippedLayers} layer(s) were skipped because of map size limits.`);
     }
-  }, [triggerBoundsToFit]);
+  }, [triggerBoundsToFit, emitDelta]);
 
   const sidebarWidthRef = useRef(sidebarWidth);
   sidebarWidthRef.current = sidebarWidth;
@@ -1784,35 +1854,69 @@ export function MapEditor() {
       
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
         <div id="download-pill-container" style={{ display: 'flex', alignItems: 'center' }}></div>
-        {Boolean(user) && (
-          <button 
-            onClick={() => {
-              if (editMode && error && !isOffline) {
-                handleSave();
-              }
-            }}
-            style={{ 
-              background: 'rgba(255,255,255,0.1)', 
-              padding: '3px 8px', 
-              borderRadius: '50px',
-              border: '1px solid rgba(255,255,255,0.2)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              color: (isOffline || error) ? '#ffbdad' : (mapTheme === 'dark' ? '#cbd5e1' : 'white'),
-              fontWeight: '600',
-              whiteSpace: 'nowrap',
-              cursor: (editMode && error && !isOffline) ? 'pointer' : 'default',
-              outline: 'none',
-              fontFamily: 'inherit',
-              fontSize: '0.65rem'
-            }}>
-            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: (isOffline || error) ? '#ff4d4f' : (isSyncing || (editMode && (isSaving || isDirty)) ? '#ffcc00' : '#4ade80'), flexShrink: 0 }} />
-            <span>
-              {error ? error : (isOffline ? 'Offline' : (isSyncing ? 'Syncing' : (editMode && isSaving ? 'Saving' : (editMode && isDirty ? 'Pending' : 'Synced'))))}
-            </span>
-          </button>
-        )}
+        {Boolean(user) && (() => {
+          const isDirtyOnNewMap = !mapId && (isDirty || pins.length > 0 || layers.length > 0 || (mapName && mapName !== 'Unnamed Map'));
+          const syncStatus = error
+            ? 'error'
+            : isOffline
+            ? 'offline'
+            : (isSaving || isInitialCreating)
+            ? 'saving'
+            : isSyncing
+            ? 'syncing'
+            : isDirtyOnNewMap
+            ? 'pending'
+            : 'synced';
+
+          const syncLabel = error
+            ? error
+            : isOffline
+            ? 'Offline'
+            : (isSaving || isInitialCreating)
+            ? 'Saving'
+            : isSyncing
+            ? 'Syncing'
+            : isDirtyOnNewMap
+            ? 'Pending'
+            : 'Synced';
+
+          const dotColor = (isOffline || error)
+            ? '#ff4d4f'
+            : (syncStatus === 'saving' || syncStatus === 'syncing' || syncStatus === 'pending')
+            ? '#ffcc00'
+            : '#4ade80';
+
+          return (
+            <button 
+              data-testid="sync-status"
+              data-status={syncStatus}
+              data-edit-mode={editMode ? 'true' : 'false'}
+              onClick={() => {
+                if (editMode && error && !isOffline) {
+                  handleSave();
+                }
+              }}
+              style={{ 
+                background: 'rgba(255,255,255,0.1)', 
+                padding: '3px 8px', 
+                borderRadius: '50px',
+                border: '1px solid rgba(255,255,255,0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                color: (isOffline || error) ? '#ffbdad' : (mapTheme === 'dark' ? '#cbd5e1' : 'white'),
+                fontWeight: '600',
+                whiteSpace: 'nowrap',
+                cursor: (editMode && error && !isOffline) ? 'pointer' : 'default',
+                outline: 'none',
+                fontFamily: 'inherit',
+                fontSize: '0.65rem'
+              }}>
+              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
+              <span>{syncLabel}</span>
+            </button>
+          );
+        })()}
         <div id="mobile-header-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '26px', minHeight: '26px', flexShrink: 0 }}></div>
       </div>
     </header>

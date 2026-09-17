@@ -424,6 +424,7 @@ interface PinEditFormProps {
   allLayers: PinLayer[];
   customColors?: string[];
   onAddCustomColor?: (color: string) => void;
+  readOnly?: boolean;
 }
 
 const PinEditForm = memo(({
@@ -431,7 +432,8 @@ const PinEditForm = memo(({
   onUpdatePin,
   allLayers,
   customColors,
-  onAddCustomColor
+  onAddCustomColor,
+  readOnly = false
 }: PinEditFormProps) => {
   const [localLabel, setLocalLabel] = useState(pin.label || '');
   const [localAddress, setLocalAddress] = useState(pin.address || '');
@@ -543,6 +545,7 @@ const PinEditForm = memo(({
         <input 
           id={`label-${pin.id}`}
           type="text" 
+          disabled={readOnly}
           value={localLabel} 
           onFocus={() => { focusedFieldRef.current = 'label'; }}
           onChange={(e) => handleFieldChange('label', e.target.value)}
@@ -559,6 +562,7 @@ const PinEditForm = memo(({
           id={`address-${pin.id}`}
           ref={addressTextareaRef}
           rows={1}
+          disabled={readOnly}
           value={localAddress} 
           onFocus={() => { focusedFieldRef.current = 'address'; }}
           onChange={(e) => handleFieldChange('address', e.target.value)}
@@ -573,6 +577,7 @@ const PinEditForm = memo(({
         <label style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Layer</label>
         <select 
             value={pin.layerId || ''} 
+            disabled={readOnly}
             onChange={(e) => onUpdatePin(pin.id, { layerId: e.target.value || undefined })}
             className="input-field"
             style={{ padding: '2px 4px 2px 1px', fontSize: '0.6rem', fontFamily: 'inherit', background: 'var(--surface-color)', color: 'var(--text-primary)' }}
@@ -673,6 +678,7 @@ const PinEditForm = memo(({
           id={`desc-${pin.id}`}
           ref={descriptionTextareaRef}
           rows={1}
+          disabled={readOnly}
           value={localDescription} 
           onFocus={() => { focusedFieldRef.current = 'description'; }}
           onChange={(e) => handleFieldChange('description', e.target.value)}
@@ -928,13 +934,14 @@ const SortablePin = memo(({
         </div>
       )}
 
-      {isEditing && !readOnly && (
+      {isEditing && (
         <PinEditForm
           pin={pin}
           onUpdatePin={onUpdatePin}
           allLayers={allLayers}
           customColors={customColors}
           onAddCustomColor={onAddCustomColor}
+          readOnly={readOnly}
         />
       )}
       {isDropTarget && <DropIndicator />}
@@ -1329,7 +1336,7 @@ const SortableLayer = memo(({
         </div>
 
         {/* Quick inline editing input */}
-        {isEditingName && !readOnly && (
+        {isEditingName && (
           <div style={{ padding: '0.2rem 0.4rem 0.3rem 0.4rem', borderTop: '1px solid var(--border-color)', background: 'var(--surface-color)', borderRadius: '0 0 var(--radius-sm) var(--radius-sm)' }}>
             <div style={{ marginBottom: '2px' }}>
               <label htmlFor={`label-${layer.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>NAME</label>
@@ -1338,6 +1345,7 @@ const SortableLayer = memo(({
                   ref={layerNameInputRef}
                   id={`label-${layer.id}`}
                   type="text" 
+                  disabled={readOnly}
                   value={localLayerName}
                   placeholder="Layer name..."
                   onChange={(e) => {
@@ -2730,9 +2738,9 @@ const Sidebar = ({
             : menuContent;
         })()}
 
-        {(!readOnly || selectedPins.length > 0) && (
+        {(canEdit || !readOnly || selectedPins.length > 0) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px', height: '28px' }}>
-            {!readOnly && (
+            {canEdit && (
               <div style={{ flex: 1, minWidth: 0, height: '28px' }}>
                 <SearchBar 
                   onAddPin={onAddPin}

@@ -200,14 +200,18 @@ export function applyRemotePinMoveLayer(
  * Dispatches socket events for moving pins between layers or reordering within a layer.
  */
 export function emitPinMoveOrReorderEvents(
-  socket: { emit: (event: string, data: any) => void } | null | undefined,
+  socket: { emit: (event: string, data: any, callback?: any) => void } | null | undefined,
   mapId: string,
   allPins: Pin[],
   movedPinIds: string[],
   startLayersMap: Map<string, string | undefined>,
-  targetLayerId: string | undefined
+  targetLayerId: string | undefined,
+  callback?: (res: any) => void
 ) {
-  if (!socket || !mapId || movedPinIds.length === 0) return;
+  if (!socket || !mapId || movedPinIds.length === 0) {
+    if (callback) callback({ success: true });
+    return;
+  }
 
   const changedLayerPins = movedPinIds.filter(
     (pId) => !isSameLayer(startLayersMap.get(pId), targetLayerId)
@@ -220,23 +224,29 @@ export function emitPinMoveOrReorderEvents(
   if (changedLayerPins.length > 0) {
     const movedSet = new Set(changedLayerPins);
     const compactIds = destIds.filter((id) => movedSet.has(id));
-    if (compactIds.length === 0) return;
+    if (compactIds.length === 0) {
+      if (callback) callback({ success: true });
+      return;
+    }
     socket.emit('pin-move-layer', {
       mapId,
       pinIds: compactIds,
       targetLayerId: targetLayerId === undefined ? null : targetLayerId,
       destInsertIndex: insertIndexAfterMove(destIds, compactIds),
-    });
+    }, callback);
   } else {
     const movedSet = new Set(movedPinIds);
     const compactIds = destIds.filter((id) => movedSet.has(id));
-    if (compactIds.length === 0) return;
+    if (compactIds.length === 0) {
+      if (callback) callback({ success: true });
+      return;
+    }
     socket.emit('pins-reorder', {
       mapId,
       layerId: targetLayerId === undefined ? null : targetLayerId,
       pinIds: compactIds,
       insertIndex: insertIndexAfterMove(destIds, compactIds),
-    });
+    }, callback);
   }
 }
 
