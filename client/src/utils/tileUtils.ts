@@ -269,7 +269,7 @@ async function listOfflineMaps(): Promise<MapData[]> {
     }
 }
 
-export interface CachedMapSummary {
+interface CachedMapSummary {
     id: string;
     name: string;
     ownerId?: string;

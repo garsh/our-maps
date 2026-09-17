@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
-export interface HSV {
+interface HSV {
   h: number; // 0 - 360
   s: number; // 0 - 100
   v: number; // 0 - 100
