@@ -59,7 +59,7 @@ import { exportMap, importMapFile } from '../utils/fileUtils';
 import { 
   countTiles,
   getPinsBoundingBox,
-  getManifestStats,
+  getDownloadStats,
   saveMapOffline,
   MAX_EXTRACT_TILES,
   type BoundingBox,
@@ -1884,7 +1884,7 @@ const Sidebar = ({
         }
 
         const [stats, resume, extractFile] = await Promise.all([
-          getManifestStats(mapId),
+          getDownloadStats(mapId),
           getExtractResumeInfo(mapId),
           getExtractFile(mapId),
         ]);

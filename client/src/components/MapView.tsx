@@ -870,7 +870,7 @@ const PinMarker = memo(({
       style={{ zIndex: showHighlight ? 1000 : 1 }}
     >
       <div
-        className={`leaflet-marker-icon custom-pin-modern ${showHighlight ? 'hovered' : ''}`}
+        className={`custom-pin-modern ${showHighlight ? 'hovered' : ''}`}
         style={{
           position: 'relative',
           width: '20px',
@@ -1163,7 +1163,7 @@ export function getVisibleViewportLngLat(
   }
 }
 
-export function chromeViewportPadding(leftPadding: number, bottomPadding: number) {
+function chromeViewportPadding(leftPadding: number, bottomPadding: number) {
   return { top: 0, right: 0, left: leftPadding, bottom: bottomPadding };
 }
 

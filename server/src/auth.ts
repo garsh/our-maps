@@ -428,22 +428,6 @@ function sharedCollaboratorParams(email: string, userId: string) {
   return [email, userId, userId];
 }
 
-export async function sharedContactsHandler(req: AuthRequest, res: Response) {
-  try {
-    const currentUserEmail = req.user?.email || '';
-    const currentUserId = req.user?.id || '';
-    const db = await getDb();
-    const rows = await db.all(
-      `SELECT email ${SHARED_COLLABORATORS_FROM} ORDER BY name ASC, email ASC LIMIT 200`,
-      ...sharedCollaboratorParams(currentUserEmail, currentUserId)
-    );
-    return res.json({ emails: rows.map((r) => r.email.toLowerCase()) });
-  } catch (err: any) {
-    console.error('Failed to list shared contacts', err);
-    res.status(500).json({ error: 'Failed to list shared contacts' });
-  }
-}
-
 export async function searchUsersHandler(req: AuthRequest, res: Response) {
   try {
     const q = (req.query.q as string) || '';

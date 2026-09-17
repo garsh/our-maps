@@ -239,13 +239,6 @@ export const apiService = {
     return handleResponse<{ existingEmails: string[] }>(res, this._logoutCallback, 'Failed to filter contacts');
   },
 
-  async sharedContacts(): Promise<{ emails: string[] }> {
-    const res = await fetchWithRetry(`${API_BASE}/auth/shared-contacts`, {
-      headers: getHeaders(),
-    });
-    return handleResponse<{ emails: string[] }>(res, this._logoutCallback, 'Failed to load shared contacts');
-  },
-
   async searchUsers(query: string, signal?: AbortSignal): Promise<{ users: any[] }> {
     const res = await fetchWithRetry(`${API_BASE}/auth/search-users?q=${encodeURIComponent(query)}`, {
       headers: getHeaders(),

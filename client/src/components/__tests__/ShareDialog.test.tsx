@@ -9,7 +9,6 @@ vi.mock('@react-oauth/google', () => ({
 vi.mock('../../services/api', () => ({
   apiService: {
     searchUsers: vi.fn().mockResolvedValue({ users: [] }),
-    sharedContacts: vi.fn().mockResolvedValue({ emails: [] }),
     filterContacts: vi.fn().mockResolvedValue({ existingEmails: [] }),
   },
 }));

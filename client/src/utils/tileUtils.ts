@@ -322,9 +322,6 @@ export async function getDownloadStats(mapId: string): Promise<{ total: number, 
     return { total, completed: map.completedTiles || 0 };
 }
 
-/** @deprecated Use getDownloadStats. Kept so existing callers keep compiling. */
-export const getManifestStats = getDownloadStats;
-
 export async function getMapDownloadStatuses(mapIds?: string[]): Promise<Map<string, MapDownloadStatus>> {
     const resultMap = new Map<string, MapDownloadStatus>();
     const maps = await listOfflineMaps();

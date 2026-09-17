@@ -258,7 +258,7 @@ describe('Sidebar', () => {
 
   it('shows Remove Download option in the menu when map is downloaded', async () => {
     const tileUtilsModule = await import('../../utils/tileUtils');
-    vi.spyOn(tileUtilsModule, 'getManifestStats').mockResolvedValue({ total: 10, completed: 10 });
+    vi.spyOn(tileUtilsModule, 'getDownloadStats').mockResolvedValue({ total: 10, completed: 10 });
 
     render(<TestWrapper handlers={{ mapId: 'test-map-1' }} />);
     
@@ -273,7 +273,7 @@ describe('Sidebar', () => {
 
   it('shows Remove Download option when map is partially downloaded', async () => {
     const tileUtilsModule = await import('../../utils/tileUtils');
-    vi.spyOn(tileUtilsModule, 'getManifestStats').mockResolvedValue({ total: 10, completed: 4 });
+    vi.spyOn(tileUtilsModule, 'getDownloadStats').mockResolvedValue({ total: 10, completed: 4 });
 
     render(<TestWrapper handlers={{ mapId: 'test-map-1' }} />);
     
