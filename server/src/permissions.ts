@@ -60,25 +60,6 @@ export async function getMapRole(userId: string | undefined | null, mapId: strin
   return resolveMapAccess(userId, row).role;
 }
 
-/** Owner or an explicit share row — not implicit public-link view. */
-export async function canSeeMapCollaborators(
-  userId: string | undefined | null,
-  mapId: string
-): Promise<boolean> {
-  if (!userId || !mapId) return false;
-
-  const db = await getDb();
-  const row = await db.get(
-    `SELECT m.owner_id, m.is_public, mp.role as permission_role
-     FROM maps m
-     LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
-     WHERE m.id = ?`,
-    userId,
-    mapId
-  );
-  return resolveMapAccess(userId, row).canSeeCollaborators;
-}
-
 /**
  * When a logged-in user accesses a map that is shared via link, add that user
  * as having view permissions for the map (unless they are owner or already have a permission).

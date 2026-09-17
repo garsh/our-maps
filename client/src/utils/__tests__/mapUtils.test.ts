@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { arePinsEqual, isValidPinColor, isValidPinIcon, resolvePinColorCode, getPreviewMarkerHTML, formatColorName, DEFAULT_ICON_COLORS, getDefaultColorForIcon } from '../mapUtils';
+import { isValidPinColor, isValidPinIcon, resolvePinColorCode, getPreviewMarkerHTML, formatColorName, DEFAULT_ICON_COLORS } from '../mapUtils';
 import { bundledSpriteIconCount, isBundledSpriteId } from '../basemapSprites';
 import {
   getMapViewportBounds,
@@ -8,75 +8,8 @@ import {
   resetMapViewportBoundsForTests,
 } from '../mapViewport';
 import { reverseGeocode, clearGeocodeCacheForTests } from '../geocoding';
-import type { Pin } from '@shared/interfaces';
 
 describe('mapUtils', () => {
-  describe('arePinsEqual', () => {
-    const basePin: Pin = {
-      id: 'p1',
-      lat: 40.7128,
-      lng: -74.0060,
-      label: 'Coffee Shop',
-      description: 'Best espresso',
-      address: '123 Main St',
-      color: 'blue',
-      icon: 'restaurant',
-      position: 0,
-      layerId: 'layer-1'
-    };
-
-    it('returns true for identical pins', () => {
-      const copy = { ...basePin };
-      expect(arePinsEqual(basePin, copy)).toBe(true);
-    });
-
-    it('returns true when both are null/undefined', () => {
-      expect(arePinsEqual(null, null)).toBe(true);
-      expect(arePinsEqual(undefined, undefined)).toBe(true);
-    });
-
-    it('returns false when one is null/undefined', () => {
-      expect(arePinsEqual(basePin, null)).toBe(false);
-      expect(arePinsEqual(undefined, basePin)).toBe(false);
-    });
-
-    it('handles default values consistently', () => {
-      const pinWithDefaults: Pin = {
-        id: 'p2',
-        lat: 10,
-        lng: 20,
-        position: 0
-      };
-      const pinWithExplicitDefaults: Pin = {
-        id: 'p2',
-        lat: 10,
-        lng: 20,
-        label: '',
-        description: '',
-        address: '',
-        color: 'blue',
-        icon: 'default',
-        position: 0,
-        layerId: undefined
-      };
-      expect(arePinsEqual(pinWithDefaults, pinWithExplicitDefaults)).toBe(true);
-    });
-
-    it('detects coordinate changes', () => {
-      const movedPin = { ...basePin, lat: 40.7129 };
-      expect(arePinsEqual(basePin, movedPin)).toBe(false);
-    });
-
-    it('detects layer moves', () => {
-      const movedLayerPin = { ...basePin, layerId: 'layer-2' };
-      expect(arePinsEqual(basePin, movedLayerPin)).toBe(false);
-    });
-
-    it('detects position changes', () => {
-      const reorderedPin = { ...basePin, position: 5 };
-      expect(arePinsEqual(basePin, reorderedPin)).toBe(false);
-    });
-  });
 
   describe('getPreviewMarkerHTML', () => {
     it('uses the same 20x28 pin box as map markers so the tip sits on the coordinate', () => {
@@ -129,14 +62,6 @@ describe('mapUtils', () => {
       expect(DEFAULT_ICON_COLORS.gas).toBe('brown');
       expect(DEFAULT_ICON_COLORS.charging).toBe('brown');
       expect(DEFAULT_ICON_COLORS.shopping).toBe('pink');
-
-      expect(getDefaultColorForIcon('hotel')).toBe('violet');
-      expect(getDefaultColorForIcon('restaurant')).toBe('green');
-      expect(getDefaultColorForIcon('airport')).toBe('black');
-      expect(getDefaultColorForIcon('gas')).toBe('brown');
-      expect(getDefaultColorForIcon('shopping')).toBe('pink');
-      expect(getDefaultColorForIcon('default')).toBe('blue');
-      expect(getDefaultColorForIcon(undefined)).toBe('blue');
     });
   });
 

@@ -253,10 +253,10 @@ interface SyncEntitiesResult {
   pins: Pin[];
 }
 
-export type MapSyncPinInput = z.infer<typeof PinSchema>;
-export type MapSyncLayerInput = z.infer<typeof LayerSchema>;
+type MapSyncPinInput = z.infer<typeof PinSchema>;
+type MapSyncLayerInput = z.infer<typeof LayerSchema>;
 
-export async function syncMapLayersAndPins(
+async function syncMapLayersAndPins(
   db: any,
   mapId: string,
   layers?: MapSyncLayerInput[],

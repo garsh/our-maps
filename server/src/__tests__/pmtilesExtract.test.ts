@@ -9,7 +9,6 @@ import {
   rangeIntersectsWanted,
   reencodeEntries,
   relevantEntries,
-  buildExtractBuffer,
   planExtract,
   getXRanges,
   streamPlannedExtract,
@@ -153,7 +152,12 @@ describe('pmtilesExtract integration', () => {
   it('extracts a bbox into a smaller archive that still serves the same tiles', async () => {
     const pmt = new PMTiles(new FileSource(filePath));
     const bbox = { north: 2, south: -2, east: 2, west: -2 };
-    const extracted = await buildExtractBuffer(pmt, filePath, bbox, 1, 5);
+    const plan = await planExtract(pmt, bbox, 1, 5);
+    const chunks: Buffer[] = [];
+    await streamPlannedExtract(filePath, plan, async (chunk) => {
+      chunks.push(Buffer.from(chunk));
+    }, () => false);
+    const extracted = Buffer.concat(chunks);
     expect(extracted.length).toBeLessThan(fs.statSync(filePath).size);
 
     const out = new PMTiles(new FileSource(
@@ -178,7 +182,6 @@ describe('pmtilesExtract integration', () => {
     expect(z5).toBeDefined();
     expect(Array.from(new Uint8Array(z5!.data))).toEqual([5, 16, 16]);
 
-    const plan = await planExtract(pmt, bbox, 1, 5);
     expect(plan.totalBytes).toBe(extracted.length);
     expect(plan.addressedTiles).toBe(header.numAddressedTiles);
   });
@@ -207,7 +210,12 @@ describe('pmtilesExtract integration', () => {
   it('keeps full-world coverage at zooms 1-4 even for a tiny bbox', async () => {
     const pmt = new PMTiles(new FileSource(filePath));
     const bbox = { north: 1, south: 0, east: 1, west: 0 };
-    const extracted = await buildExtractBuffer(pmt, filePath, bbox, 1, 4);
+    const plan = await planExtract(pmt, bbox, 1, 4);
+    const chunks: Buffer[] = [];
+    await streamPlannedExtract(filePath, plan, async (chunk) => {
+      chunks.push(Buffer.from(chunk));
+    }, () => false);
+    const extracted = Buffer.concat(chunks);
     const outPath = path.join(dir, 'lowzoom.pmtiles');
     fs.writeFileSync(outPath, extracted);
     const out = new PMTiles(new FileSource(outPath));

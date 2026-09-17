@@ -2,7 +2,7 @@
  * Storage Utilities for Web
  */
 
-export interface StorageEstimate {
+interface StorageEstimate {
     quota: number;     // Total bytes available
     usage: number;     // Current usage in bytes
     remaining: number; // Bytes left
@@ -11,7 +11,7 @@ export interface StorageEstimate {
 /** Chrome reports usage+10GiB from estimate() unless the origin has unlimited storage. */
 export const CHROME_PRIVACY_QUOTA_HEADROOM = 10 * 1024 * 1024 * 1024;
 
-export function isPrivacyCappedRemaining(remaining: number): boolean {
+function isPrivacyCappedRemaining(remaining: number): boolean {
     if (remaining <= 0) return false;
     return Math.abs(remaining - CHROME_PRIVACY_QUOTA_HEADROOM) / CHROME_PRIVACY_QUOTA_HEADROOM < 0.02;
 }
@@ -21,7 +21,7 @@ export function isPrivacyCappedRemaining(remaining: number): boolean {
  * Requests persistent storage first so Chrome may report the real origin quota
  * (~60% of disk) instead of the 10 GiB privacy cap.
  */
-export async function getStorageEstimate(): Promise<StorageEstimate> {
+async function getStorageEstimate(): Promise<StorageEstimate> {
     if (navigator.storage && navigator.storage.estimate) {
         try {
             await navigator.storage.persist?.();

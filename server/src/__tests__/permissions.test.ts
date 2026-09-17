@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { getDb, setDbName, closeDb } from '../db';
-import { getMapRole, canEditMap, canViewMap, canSeeMapCollaborators, addMapViewerIfLinkShared, resolveMapAccess } from '../permissions';
+import { getMapRole, canEditMap, canViewMap, addMapViewerIfLinkShared, resolveMapAccess } from '../permissions';
 
 describe('map role checks', () => {
   beforeAll(async () => {
@@ -97,15 +97,15 @@ describe('map role checks', () => {
     expect(canEditMap(role as any)).toBe(canEdit);
   });
 
-  it('hides collaborators from public-link viewers but not explicit shares', async () => {
-    expect(await canSeeMapCollaborators(ownerId, mapId)).toBe(true);
-    expect(await canSeeMapCollaborators(editorId, mapId)).toBe(true);
-    expect(await canSeeMapCollaborators(viewerId, mapId)).toBe(true);
-    expect(await canSeeMapCollaborators(strangerId, mapId)).toBe(false);
-    expect(await canSeeMapCollaborators(strangerId, 'public-map')).toBe(false);
-    expect(await canSeeMapCollaborators(undefined, 'public-map')).toBe(false);
-    expect(await canSeeMapCollaborators(editorId, 'public-map')).toBe(true);
-    expect(await canSeeMapCollaborators(ownerId, 'public-map')).toBe(true);
+  it('hides collaborators from public-link viewers but not explicit shares', () => {
+    expect(resolveMapAccess(ownerId, { owner_id: ownerId, is_public: 0, permission_role: null }).canSeeCollaborators).toBe(true);
+    expect(resolveMapAccess(editorId, { owner_id: ownerId, is_public: 0, permission_role: 'edit' }).canSeeCollaborators).toBe(true);
+    expect(resolveMapAccess(viewerId, { owner_id: ownerId, is_public: 0, permission_role: 'view' }).canSeeCollaborators).toBe(true);
+    expect(resolveMapAccess(strangerId, { owner_id: ownerId, is_public: 0, permission_role: null }).canSeeCollaborators).toBe(false);
+    expect(resolveMapAccess(strangerId, { owner_id: ownerId, is_public: 1, permission_role: null }).canSeeCollaborators).toBe(false);
+    expect(resolveMapAccess(undefined, { owner_id: ownerId, is_public: 1, permission_role: null }).canSeeCollaborators).toBe(false);
+    expect(resolveMapAccess(editorId, { owner_id: ownerId, is_public: 1, permission_role: 'edit' }).canSeeCollaborators).toBe(true);
+    expect(resolveMapAccess(ownerId, { owner_id: ownerId, is_public: 1, permission_role: null }).canSeeCollaborators).toBe(true);
   });
 
   it('addMapViewerIfLinkShared grants view permission to logged-in users accessing link-shared maps', async () => {
@@ -129,7 +129,6 @@ describe('map role checks', () => {
     expect(await addMapViewerIfLinkShared(strangerId, 'public-map')).toBe(true);
     const perm = await db.get('SELECT * FROM map_permissions WHERE map_id = ? AND user_id = ?', 'public-map', strangerId);
     expect(perm).toEqual({ map_id: 'public-map', user_id: strangerId, role: 'view' });
-    expect(await canSeeMapCollaborators(strangerId, 'public-map')).toBe(true);
 
     // 5. Subsequent access is idempotent and returns false
     expect(await addMapViewerIfLinkShared(strangerId, 'public-map')).toBe(false);

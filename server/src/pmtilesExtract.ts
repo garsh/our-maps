@@ -380,28 +380,6 @@ export async function planExtract(
   };
 }
 
-export async function buildExtractBuffer(
-  pmt: PMTiles,
-  filePath: string,
-  bbox: BoundingBox,
-  minZoom: number,
-  maxZoom: number
-): Promise<Buffer> {
-  const plan = await planExtract(pmt, bbox, minZoom, maxZoom);
-  const parts: Buffer[] = [plan.headerBytes, plan.rootBytes, plan.metadataBytes, plan.leavesBytes];
-  const fd = fs.openSync(filePath, 'r');
-  try {
-    for (const range of plan.ranges) {
-      const buf = Buffer.allocUnsafe(range.length);
-      fs.readSync(fd, buf, 0, range.length, plan.sourceTileDataOffset + range.srcOffset);
-      parts.push(buf);
-    }
-  } finally {
-    fs.closeSync(fd);
-  }
-  return Buffer.concat(parts);
-}
-
 const COPY_CHUNK = 1024 * 1024;
 
 export async function streamPlannedExtract(

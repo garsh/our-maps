@@ -129,7 +129,7 @@ const extractMapNameFromKML = (doc: Document): string | undefined => {
 /**
  * Downloads a string as a file
  */
-export const downloadFile = (content: string, fileName: string, contentType: string) => {
+const downloadFile = (content: string, fileName: string, contentType: string) => {
   const a = document.createElement('a');
   const file = new Blob([content], { type: contentType });
   a.href = URL.createObjectURL(file);

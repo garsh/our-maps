@@ -67,8 +67,8 @@ class SimpleLRUCache<T> {
   }
 }
 
-export const searchCache = new SimpleLRUCache<any[]>(500, 60 * 60 * 1000);
-export const reverseGeocodeCache = new SimpleLRUCache<{ address: string | null }>(1000, 24 * 60 * 60 * 1000);
+const searchCache = new SimpleLRUCache<any[]>(500, 60 * 60 * 1000);
+const reverseGeocodeCache = new SimpleLRUCache<{ address: string | null }>(1000, 24 * 60 * 60 * 1000);
 
 export function clearPlacesCacheForTests(): void {
   searchCache.clear();

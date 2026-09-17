@@ -253,7 +253,7 @@ export async function pruneViewCache(): Promise<void> {
     }
 }
 
-export async function listOfflineMaps(): Promise<MapData[]> {
+async function listOfflineMaps(): Promise<MapData[]> {
     if (typeof indexedDB === 'undefined') return [];
     try {
         const db = await openDB();
