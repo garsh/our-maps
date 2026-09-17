@@ -3,9 +3,11 @@ import {
   MapCreateSchema,
   MAX_LAYERS_PER_MAP,
   MAX_PINS_PER_MAP,
-  PinCreatePayloadSchema,
-  PinUpdatePayloadSchema,
+  socketPayloadSchemas,
 } from '../schemas';
+
+const PinCreatePayloadSchema = socketPayloadSchemas['pin-create'];
+const PinUpdatePayloadSchema = socketPayloadSchemas['pin-update'];
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
 

@@ -39,7 +39,7 @@ export function buildCandidateMapsDirs(options?: {
   return Array.from(new Set(dirs));
 }
 
-export type FileRangeResult =
+type FileRangeResult =
   | { ok: true; start: number; end: number }
   | { ok: false; status: 400 | 416; error: string };
 

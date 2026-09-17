@@ -199,7 +199,7 @@ export function buildDirectories(
   }
 }
 
-export interface BuiltTile {
+interface BuiltTile {
   z: number;
   x: number;
   y: number;

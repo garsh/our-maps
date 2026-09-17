@@ -1,4 +1,4 @@
-export type LeftoverKind = 'indexeddb' | 'opfs' | 'cache' | 'localStorage';
+type LeftoverKind = 'indexeddb' | 'opfs' | 'cache' | 'localStorage';
 
 export interface LeftoverStorageItem {
   id: string;

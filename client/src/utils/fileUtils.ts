@@ -232,7 +232,7 @@ export const importMapFile = async (file: File): Promise<Partial<MapData>> => {
   throw new Error('Unsupported file extension');
 };
 
-export interface MergedImport {
+interface MergedImport {
   layers: PinLayer[];
   pins: Pin[];
   addedLayers: PinLayer[];

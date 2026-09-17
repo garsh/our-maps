@@ -15,10 +15,6 @@ vi.mock('../extractStore', () => ({
         partBytes: mockPartSizes.get(id) || 0,
         totalBytes: mockMetaBytes.get(id) || 0,
     }),
-    readExtractMeta: async (id: string) => {
-        const totalBytes = mockMetaBytes.get(id) || 0;
-        return totalBytes > 0 ? { totalBytes } : null;
-    },
     writeExtractMeta: async (id: string, meta: { totalBytes: number }) => {
         mockMetaBytes.set(id, meta.totalBytes);
     },

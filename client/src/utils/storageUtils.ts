@@ -72,7 +72,7 @@ export function formatDownloadBytes(bytes: number): string {
     return `${n} B`;
 }
 
-export interface DownloadFit {
+interface DownloadFit {
     ok: boolean;
     warn: boolean;
     message?: string;

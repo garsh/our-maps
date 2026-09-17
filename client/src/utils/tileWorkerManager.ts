@@ -3,12 +3,12 @@ import { extractExists, getExtractResumeInfo, getPartFileSize } from './extractS
 import { invalidateExtractPMTiles } from './offlineExtract';
 import type { Pin } from '@shared/interfaces';
 
-export interface DownloadByteStats {
+interface DownloadByteStats {
   received: number;
   total: number;
 }
 
-export interface DownloadProgressState {
+interface DownloadProgressState {
   mapId: string;
   isDownloading: boolean;
   isRemoving: boolean;
@@ -20,7 +20,7 @@ export interface DownloadProgressState {
   error?: string | null;
 }
 
-export interface StartDownloadParams {
+interface StartDownloadParams {
   bbox?: BoundingBox | null;
   pins?: Pin[];
   totalTiles?: number;

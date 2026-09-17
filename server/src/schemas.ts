@@ -49,13 +49,13 @@ export const MapCreateSchema = z.object({
   pins: z.array(PinSchema).max(MAX_PINS_PER_MAP).optional(),
 });
 
-export const PinCreatePayloadSchema = z.object({
+const PinCreatePayloadSchema = z.object({
   mapId: UuidSchema,
   layerId: UuidSchema.optional().nullable(),
   pin: PinSchema,
 });
 
-export const PinUpdatePayloadSchema = z.object({
+const PinUpdatePayloadSchema = z.object({
   mapId: UuidSchema,
   pinId: UuidSchema,
   updates: z.object({

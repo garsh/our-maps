@@ -105,7 +105,7 @@ export async function writeExtractMeta(mapId: string, meta: { totalBytes: number
   await writable.close();
 }
 
-export async function readExtractMeta(mapId: string): Promise<{ totalBytes: number } | null> {
+async function readExtractMeta(mapId: string): Promise<{ totalBytes: number } | null> {
   if (!mapId) return null;
   try {
     const dir = await getExtractDirectory(false);
