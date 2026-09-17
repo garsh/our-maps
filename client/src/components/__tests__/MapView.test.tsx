@@ -920,4 +920,42 @@ describe('MapView Compass and Tilt Indicator', () => {
     expect(pinsSource).toBeDefined();
     expect(pinsSource.maxzoom).toBe(24);
   });
+
+  it('remounts the map on orientation change when 3D terrain is on after a pan', () => {
+    render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        show3DTerrain={true}
+      />
+    );
+
+    expect(capturedMapProps.current?.id).toBe('map-session-0');
+
+    act(() => {
+      capturedMapProps.current.onMove({
+        viewState: {
+          longitude: -107.89,
+          latitude: 38.49,
+          zoom: 12.4,
+          pitch: 0,
+          bearing: 15,
+        },
+      });
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event('orientationchange'));
+    });
+
+    expect(capturedMapProps.current?.id).toBe('map-session-1');
+    expect(capturedMapProps.current.initialViewState).toEqual({
+      longitude: -107.89,
+      latitude: 38.49,
+      zoom: 12.4,
+      pitch: 0,
+      bearing: 15,
+    });
+  });
 });

@@ -1088,6 +1088,10 @@ const MapView = ({
     pitch: number;
     bearing: number;
   } | null>(null);
+  const lastOrientationRef = useRef<'portrait' | 'landscape'>(
+    typeof window !== 'undefined' && window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
+  );
+  const lastOrientationRemountAtRef = useRef(0);
 
   const [isMapLoaded, setIsMapLoaded] = useState(false);
 
@@ -1237,6 +1241,38 @@ const MapView = ({
         mapCleanupRef.current();
         mapCleanupRef.current = null;
       }
+    };
+  }, [triggerMapRemount]);
+
+  // After a pan, MapLibre's terrain camera cannot survive a portrait↔landscape
+  // canvas resize (stop() finalizes elevation from a stale depth FBO). Remounting
+  // is the same path that already works if the user rotates before panning.
+  useEffect(() => {
+    const remountForOrientation = () => {
+      if (!show3DTerrainRef.current) return;
+      const now = Date.now();
+      if (now - lastOrientationRemountAtRef.current < 800) return;
+      lastOrientationRemountAtRef.current = now;
+      triggerMapRemount();
+    };
+
+    const handleResizeEvent = (event?: Event) => {
+      const orientationNow: 'portrait' | 'landscape' =
+        window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+      const flipped = orientationNow !== lastOrientationRef.current;
+      if (flipped) lastOrientationRef.current = orientationNow;
+      const isOrientationEvent = event?.type === 'orientationchange' || event?.type === 'change';
+      if (isOrientationEvent || flipped) remountForOrientation();
+    };
+
+    window.addEventListener('resize', handleResizeEvent);
+    window.addEventListener('orientationchange', handleResizeEvent);
+    window.screen?.orientation?.addEventListener?.('change', handleResizeEvent);
+
+    return () => {
+      window.removeEventListener('resize', handleResizeEvent);
+      window.removeEventListener('orientationchange', handleResizeEvent);
+      window.screen?.orientation?.removeEventListener?.('change', handleResizeEvent);
     };
   }, [triggerMapRemount]);
   const lastTargetPinId = useRef<string | null>(null);
