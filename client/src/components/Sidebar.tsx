@@ -1434,7 +1434,7 @@ const SortableLayer = memo(({
   );
 });
 
-export interface CollisionCache {
+interface CollisionCache {
   activeId: string | number | null;
   isLayerDrag: boolean;
   scrollTop: number;

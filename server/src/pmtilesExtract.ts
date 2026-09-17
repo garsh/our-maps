@@ -15,7 +15,7 @@ export interface BoundingBox {
   west: number;
 }
 
-export interface SrcDstRange {
+interface SrcDstRange {
   srcOffset: number;
   dstOffset: number;
   length: number;

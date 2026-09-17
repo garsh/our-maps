@@ -1,8 +1,8 @@
 import { getDb } from './db';
 
-export type MapRole = 'owner' | 'edit' | 'view';
+type MapRole = 'owner' | 'edit' | 'view';
 
-export interface MapAccessRow {
+interface MapAccessRow {
   owner_id?: string | null;
   is_public?: number | boolean | null;
   permission_role?: string | null;

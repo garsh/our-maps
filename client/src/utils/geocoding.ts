@@ -5,7 +5,7 @@ const geoCache = new Map<string, string>();
 const geoInflight = new Map<string, Promise<string | null>>();
 
 /** Same rounding as the server reverse-geocode cache (`lat.toFixed(4)`). */
-export function geocodeCacheKey(lat: number, lng: number): string {
+function geocodeCacheKey(lat: number, lng: number): string {
   return `${Number(lat).toFixed(4)},${Number(lng).toFixed(4)}`;
 }
 

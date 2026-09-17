@@ -111,7 +111,7 @@ export function isValidHex(hex: string): boolean {
   return /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(hex.trim());
 }
 
-export interface CustomColorPickerProps {
+interface CustomColorPickerProps {
   isOpen: boolean;
   initialColor?: string;
   onClose: () => void;

@@ -3,7 +3,7 @@ import type { PinColor, PinIcon } from '@shared/interfaces';
 export const DEFAULT_PIN_COLOR: PinColor = 'blue';
 export const DEFAULT_PIN_ICON: PinIcon = 'default';
 
-export const COLOR_CODES: Record<string, string> = {
+const COLOR_CODES: Record<string, string> = {
   red: '#CB2B3E',
   orange: '#CB8427',
   gold: '#FFD700',
@@ -28,7 +28,7 @@ export function formatColorName(colorNameOrHex: string): string {
     .replace(/\b\w/g, c => c.toUpperCase());
 }
 
-export const VALID_PIN_ICONS: readonly PinIcon[] = [
+const VALID_PIN_ICONS: readonly PinIcon[] = [
   'default',
   'hotel',
   'restaurant',

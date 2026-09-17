@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const MAX_PINS_PER_MAP = 5000;
 export const MAX_LAYERS_PER_MAP = 100;
 
-export const PIN_COLOR_NAMES = [
+const PIN_COLOR_NAMES = [
   'red',
   'orange',
   'gold',
@@ -17,8 +17,8 @@ export const PIN_COLOR_NAMES = [
   'black',
 ] as const;
 
-export const HexColorSchema = z.string().regex(/^#[0-9a-fA-F]{3,8}$/);
-export const PinColorSchema = z.union([z.enum(PIN_COLOR_NAMES), HexColorSchema]);
+const HexColorSchema = z.string().regex(/^#[0-9a-fA-F]{3,8}$/);
+const PinColorSchema = z.union([z.enum(PIN_COLOR_NAMES), HexColorSchema]);
 
 const UuidSchema = z.string().uuid();
 
@@ -71,31 +71,31 @@ export const PinUpdatePayloadSchema = z.object({
   }),
 });
 
-export const PinDeletePayloadSchema = z.object({
+const PinDeletePayloadSchema = z.object({
   mapId: UuidSchema,
   pinId: UuidSchema,
 });
 
-export const PinsReorderPayloadSchema = z.object({
+const PinsReorderPayloadSchema = z.object({
   mapId: UuidSchema,
   layerId: UuidSchema.optional().nullable(),
   pinIds: z.array(UuidSchema).min(1).max(MAX_PINS_PER_MAP),
   insertIndex: z.number().int().nonnegative(),
 });
 
-export const PinMoveLayerPayloadSchema = z.object({
+const PinMoveLayerPayloadSchema = z.object({
   mapId: UuidSchema,
   pinIds: z.array(UuidSchema).min(1).max(MAX_PINS_PER_MAP),
   targetLayerId: UuidSchema.optional().nullable(),
   destInsertIndex: z.number().int().nonnegative(),
 });
 
-export const LayerCreatePayloadSchema = z.object({
+const LayerCreatePayloadSchema = z.object({
   mapId: UuidSchema,
   layer: LayerSchema,
 });
 
-export const LayerUpdatePayloadSchema = z.object({
+const LayerUpdatePayloadSchema = z.object({
   mapId: UuidSchema,
   layerId: UuidSchema,
   updates: z.object({
@@ -104,22 +104,22 @@ export const LayerUpdatePayloadSchema = z.object({
   }),
 });
 
-export const LayerDeletePayloadSchema = z.object({
+const LayerDeletePayloadSchema = z.object({
   mapId: UuidSchema,
   layerId: UuidSchema,
 });
 
-export const LayersReorderPayloadSchema = z.object({
+const LayersReorderPayloadSchema = z.object({
   mapId: UuidSchema,
   layerOrder: z.array(UuidSchema).max(MAX_LAYERS_PER_MAP),
 });
 
-export const MapNameUpdatePayloadSchema = z.object({
+const MapNameUpdatePayloadSchema = z.object({
   mapId: UuidSchema,
   name: z.string().min(1).max(1000),
 });
 
-export const CustomColorsUpdatePayloadSchema = z.object({
+const CustomColorsUpdatePayloadSchema = z.object({
   mapId: UuidSchema,
   customColors: z.array(HexColorSchema).max(50),
 });
