@@ -109,7 +109,7 @@ function stripCountrySuffix(address?: string | null): string {
   return address.replace(/,\s*(USA|United States|United States of America)$/i, '').trim();
 }
 
-export function formatNominatimAddress(item: any): { title: string; address: string } {
+function formatNominatimAddress(item: any): { title: string; address: string } {
   let title = '';
   let address = item.display_name || '';
 

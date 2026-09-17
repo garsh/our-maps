@@ -107,7 +107,7 @@ const fetchGoogleContacts = async (accessToken: string): Promise<Contact[]> => {
   return contacts;
 };
 
-export const mergeGoogleContactsWithOurMapsUsers = (
+const mergeGoogleContactsWithOurMapsUsers = (
   googleContacts: Contact[],
   existingEmails: string[],
   ourMapsUsers: Contact[]

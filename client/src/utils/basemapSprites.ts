@@ -40,7 +40,7 @@ function ensureSprites(theme: 'light' | 'dark'): Promise<ExtractedSprite[]> {
 }
 
 /** Decode bundled atlases immediately so style.load can register icons before tiles ask for them. */
-export function prefetchBundledSprites() {
+function prefetchBundledSprites() {
   void ensureSprites('light');
   void ensureSprites('dark');
 }

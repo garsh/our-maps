@@ -53,7 +53,7 @@ self.onmessage = async (e) => {
             };
 
             let offset = await getPartFileSize(mapId);
-            let knownTotal = Number(knownTotalBytes) || 0;
+            const knownTotal = Number(knownTotalBytes) || 0;
             console.log(`[TILE_STREAM_CLIENT][worker] Starting download for map ${mapId}: initial partFileSize=${offset}, knownTotalBytes=${knownTotal}`);
 
             if (offset > 0 && knownTotal > 0) {

@@ -254,7 +254,7 @@ describe('syncOfflineTerrain', () => {
     mockHelper.setZoom = vi.fn(function (this: any, z: number) { this.zoom = z; });
 
     const mockTrProto = {
-      recalculateZoomAndCenter: vi.fn(function (this: any, terrain?: any) {
+      recalculateZoomAndCenter: vi.fn(function (this: any, _terrain?: any) {
         this.elevation = 3250;
         this.zoom = 16.98;
         this.center = { lng: -107.0, lat: 38.0 };
@@ -275,7 +275,7 @@ describe('syncOfflineTerrain', () => {
 
     const mockTerrain = {
       tileManager: { maxzoom: 22 },
-      _getOverscaledTileIDFromLngLatZoom: vi.fn((lnglat: any, z: number) => ({ tileID: { canonical: { z } } })),
+      _getOverscaledTileIDFromLngLatZoom: vi.fn((_lnglat: any, z: number) => ({ tileID: { canonical: { z } } })),
       getElevationForLngLatZoom: vi.fn(() => 3250),
     };
 

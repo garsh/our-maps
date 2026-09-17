@@ -72,11 +72,11 @@ function sessionCookieOptions(maxAge?: number) {
   };
 }
 
-export function setSessionCookie(res: Response, sessionId: string) {
+function setSessionCookie(res: Response, sessionId: string) {
   res.cookie(SESSION_COOKIE, sessionId, sessionCookieOptions(SESSION_MAX_AGE_MS));
 }
 
-export function clearSessionCookie(res: Response) {
+function clearSessionCookie(res: Response) {
   res.clearCookie(SESSION_COOKIE, sessionCookieOptions());
 }
 
@@ -92,7 +92,7 @@ function decodeBase64User(token: string): User | null {
   }
 }
 
-export async function createSession(userId: string): Promise<string> {
+async function createSession(userId: string): Promise<string> {
   const db = await getDb();
   const id = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_MS).toISOString();
@@ -177,13 +177,13 @@ export async function getUserForSession(sessionId: string): Promise<User> {
   return user;
 }
 
-export async function deleteSession(sessionId: string) {
+async function deleteSession(sessionId: string) {
   sessionCache.delete(sessionId);
   const db = await getDb();
   await db.run('DELETE FROM sessions WHERE id = ?', sessionId);
 }
 
-export async function deleteAllSessionsForUser(userId: string) {
+async function deleteAllSessionsForUser(userId: string) {
   for (const [sId, entry] of sessionCache.entries()) {
     if (entry.user.id === userId) {
       sessionCache.delete(sId);
@@ -193,7 +193,7 @@ export async function deleteAllSessionsForUser(userId: string) {
   await db.run('DELETE FROM sessions WHERE user_id = ?', userId);
 }
 
-export async function authenticateRequest(req: Request): Promise<User> {
+async function authenticateRequest(req: Request): Promise<User> {
   const sessionId = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   if (sessionId) {
     try {

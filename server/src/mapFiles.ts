@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-export const ALLOWED_MAP_EXTENSIONS = new Set(['.pmtiles', '.pbf', '.png', '.json']);
+const ALLOWED_MAP_EXTENSIONS = new Set(['.pmtiles', '.pbf', '.png', '.json']);
 
 export const PMTILES_MAX_RANGE_BYTES = 8 * 1024 * 1024;
 
@@ -181,7 +181,7 @@ export function resolveSafeMapFile(filename: string, dirs: string[]): string | n
   return null;
 }
 
-export const ALLOWED_FONTSTACKS = new Set([
+const ALLOWED_FONTSTACKS = new Set([
   'Noto Sans Regular',
   'Noto Sans Medium',
   'Noto Sans Italic',

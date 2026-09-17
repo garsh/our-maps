@@ -8,7 +8,7 @@ export interface HSV {
   v: number; // 0 - 100
 }
 
-export function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
+function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
   const sNorm = Math.max(0, Math.min(100, s)) / 100;
   const vNorm = Math.max(0, Math.min(100, v)) / 100;
   const c = vNorm * sNorm;
@@ -41,7 +41,7 @@ export function hsvToRgb(h: number, s: number, v: number): [number, number, numb
   ];
 }
 
-export function rgbToHex(r: number, g: number, b: number): string {
+function rgbToHex(r: number, g: number, b: number): string {
   const toHex = (val: number) => Math.max(0, Math.min(255, Math.round(val))).toString(16).padStart(2, '0');
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
 }
@@ -101,7 +101,7 @@ export function rgbToHsv(r: number, g: number, b: number): HSV {
   };
 }
 
-export function hexToHsv(hex: string): HSV | null {
+function hexToHsv(hex: string): HSV | null {
   const rgb = hexToRgb(hex);
   if (!rgb) return null;
   return rgbToHsv(rgb[0], rgb[1], rgb[2]);

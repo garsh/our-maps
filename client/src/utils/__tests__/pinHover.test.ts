@@ -6,7 +6,6 @@ import {
   setHoveredPin,
   clearHoveredPin,
   subscribeHoveredPin,
-  useIsPinHovered,
   useHoveredPinId,
   resetPinHoverForTests,
   hasFinePointer,
@@ -76,22 +75,6 @@ describe('pinHover', () => {
 
     clearHoveredPin();
     expect(rowB.classList.contains(PIN_HOVER_CLASS)).toBe(false);
-  });
-
-  it('only re-renders a pin hook when that pin is the hovered one', () => {
-    const { result: pinA } = renderHook(() => useIsPinHovered('pin-a'));
-    const { result: pinB } = renderHook(() => useIsPinHovered('pin-b'));
-
-    expect(pinA.current).toBe(false);
-    expect(pinB.current).toBe(false);
-
-    act(() => setHoveredPin('pin-a'));
-    expect(pinA.current).toBe(true);
-    expect(pinB.current).toBe(false);
-
-    act(() => setHoveredPin('pin-b'));
-    expect(pinA.current).toBe(false);
-    expect(pinB.current).toBe(true);
   });
 
   it('subscribes and updates useHoveredPinId correctly', () => {

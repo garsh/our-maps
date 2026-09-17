@@ -102,26 +102,12 @@ export function useHoveredPinId(): string | null {
   const [currentHoveredId, setCurrentHoveredId] = useState<string | null>(() => hoveredId);
 
   useEffect(() => {
-    setCurrentHoveredId(hoveredId);
     return subscribeHoveredPin((id) => {
       setCurrentHoveredId(id);
     });
   }, []);
 
   return currentHoveredId;
-}
-
-export function useIsPinHovered(pinId: string): boolean {
-  const [isHovered, setIsHovered] = useState(() => hoveredId === pinId);
-
-  useEffect(() => {
-    setIsHovered(hoveredId === pinId);
-    return subscribeHoveredPin((id) => {
-      setIsHovered(id === pinId);
-    });
-  }, [pinId]);
-
-  return isHovered;
 }
 
 export function resetPinHoverForTests() {
