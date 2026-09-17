@@ -1,7 +1,14 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as maplibregl from 'maplibre-gl';
-import MapView, { isPinInPaddedViewport, syncOfflineTerrain, resetDEMInflightForTests } from '../MapView';
+import MapView, {
+  isPinInPaddedViewport,
+  syncOfflineTerrain,
+  resetDEMInflightForTests,
+  visibleViewportCenterPx,
+  getVisibleViewportLngLat,
+  jumpToVisibleViewportCenter,
+} from '../MapView';
 import { getHoveredPinId, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
 import { getMapViewportBounds, resetMapViewportBoundsForTests } from '../../utils/mapViewport';
 
@@ -35,6 +42,12 @@ const mockGetBounds = vi.fn(() => ({
 
 const mockResize = vi.fn();
 const mockTriggerRepaint = vi.fn();
+const mockJumpTo = vi.fn();
+const mockPanBy = vi.fn();
+const mockUnproject = vi.fn((point: [number, number]) => ({
+  lng: -80 + (point[0] / 1000) * 10,
+  lat: 40 - (point[1] / 800) * 10,
+}));
 const mockIsWebGLContextLost = vi.fn(() => false);
 const mockOn = vi.fn();
 const mockOff = vi.fn();
@@ -57,6 +70,9 @@ const mockMapInstance = {
     }),
     easeTo: mockEaseTo,
     flyTo: mockFlyTo,
+    jumpTo: mockJumpTo,
+    panBy: mockPanBy,
+    unproject: mockUnproject,
     fitBounds: mockFitBounds,
     setTerrain: vi.fn(),
     triggerRepaint: mockTriggerRepaint,
@@ -453,6 +469,45 @@ describe('isPinInPaddedViewport', () => {
     };
     expect(isPinInPaddedViewport(map, { lat: 10, lng: 20 }, 400, 0)).toBe(false);
     expect(isPinInPaddedViewport({ ...map, project: () => ({ x: 700, y: 400 }) }, { lat: 10, lng: 20 }, 400, 0)).toBe(true);
+  });
+});
+
+describe('visible viewport center', () => {
+  it('places the unobscured center above a bottom sheet and to the right of a sidebar', () => {
+    expect(visibleViewportCenterPx(1000, 800, 0, 350)).toEqual({ x: 500, y: 225 });
+    expect(visibleViewportCenterPx(1000, 800, 400, 0)).toEqual({ x: 700, y: 400 });
+  });
+
+  it('unprojects the chrome-free viewport center', () => {
+    const unproject = vi.fn(() => ({ lng: -107.9, lat: 38.5 }));
+    const map = {
+      unproject,
+      getContainer: () => ({ clientWidth: 1000, clientHeight: 800 }),
+    };
+    expect(getVisibleViewportLngLat(map, 0, 350)).toEqual({ lng: -107.9, lat: 38.5 });
+    expect(unproject).toHaveBeenCalledWith([500, 225]);
+  });
+
+  it('jumps so the target lng/lat sits at the unobscured viewport center', () => {
+    const jumpTo = vi.fn();
+    const map = {
+      jumpTo,
+      getContainer: () => ({ clientWidth: 1000, clientHeight: 800 }),
+    };
+    expect(jumpToVisibleViewportCenter(
+      map,
+      { lng: -107.9, lat: 38.5 },
+      { zoom: 12, pitch: 0, bearing: 15 },
+      400,
+      0
+    )).toBe(true);
+    expect(jumpTo).toHaveBeenCalledWith({
+      center: [-107.9, 38.5],
+      zoom: 12,
+      pitch: 0,
+      bearing: 15,
+      padding: { top: 0, right: 0, left: 400, bottom: 0 },
+    });
   });
 });
 
@@ -922,12 +977,17 @@ describe('MapView Compass and Tilt Indicator', () => {
   });
 
   it('remounts the map on orientation change when 3D terrain is on after a pan', () => {
+    mockGetZoom.mockReturnValue(12.4);
+    mockGetPitch.mockReturnValue(0);
+    mockGetBearing.mockReturnValue(15);
+
     render(
       <MapView
         pins={[]}
         onMapClick={vi.fn()}
         onUpdatePin={vi.fn()}
         show3DTerrain={true}
+        bottomPadding={350}
       />
     );
 
@@ -951,11 +1011,143 @@ describe('MapView Compass and Tilt Indicator', () => {
 
     expect(capturedMapProps.current?.id).toBe('map-session-1');
     expect(capturedMapProps.current.initialViewState).toEqual({
-      longitude: -107.89,
-      latitude: 38.49,
+      longitude: -75,
+      latitude: 37.1875,
       zoom: 12.4,
       pitch: 0,
       bearing: 15,
+    });
+  });
+
+  it('does not re-run the initial fit-all-pins camera after an orientation remount', async () => {
+    const pins = [
+      { id: 'a', lat: 38, lng: -107, title: 'A', color: 'red' },
+      { id: 'b', lat: 39, lng: -106, title: 'B', color: 'blue' },
+    ] as any;
+
+    render(
+      <MapView
+        pins={pins}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        show3DTerrain={true}
+        bottomPadding={350}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockFitBounds.mock.calls.length + mockFlyTo.mock.calls.length).toBeGreaterThan(0);
+    });
+
+    mockFlyTo.mockClear();
+    mockFitBounds.mockClear();
+
+    act(() => {
+      capturedMapProps.current.onMove({
+        viewState: { longitude: -107.5, latitude: 38.5, zoom: 11, pitch: 0, bearing: 0 },
+      });
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event('orientationchange'));
+    });
+
+    await waitFor(() => {
+      expect(capturedMapProps.current?.id).toBe('map-session-1');
+    });
+
+    expect(mockFlyTo).not.toHaveBeenCalled();
+    expect(mockFitBounds).not.toHaveBeenCalled();
+  });
+
+  it('pans so the remembered visible center sits in the new unobscured area after layout chrome changes', async () => {
+    const { rerender } = render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        show3DTerrain={true}
+        bottomPadding={350}
+        leftPadding={0}
+      />
+    );
+
+    act(() => {
+      capturedMapProps.current.onMove({
+        viewState: { longitude: -107.5, latitude: 38.5, zoom: 12, pitch: 0, bearing: 0 },
+      });
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event('orientationchange'));
+    });
+
+    mockJumpTo.mockClear();
+    mockPanBy.mockClear();
+
+    rerender(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        show3DTerrain={true}
+        bottomPadding={0}
+        leftPadding={400}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockJumpTo).toHaveBeenCalledWith(expect.objectContaining({
+        center: [-75, 37.1875],
+        padding: { top: 0, right: 0, left: 400, bottom: 0 },
+      }));
+    });
+  });
+
+  it('keeps the unobscured center when the desktop window is resized without remounting', async () => {
+    render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        show3DTerrain={true}
+        leftPadding={400}
+        bottomPadding={0}
+      />
+    );
+
+    act(() => {
+      capturedMapProps.current.onMove({
+        viewState: { longitude: -107.5, latitude: 38.5, zoom: 12, pitch: 0, bearing: 0 },
+      });
+    });
+
+    expect(capturedMapProps.current?.id).toBe('map-session-0');
+
+    mockGetContainer.mockReturnValue({
+      getBoundingClientRect: () => ({ width: 1600, height: 900 }),
+      clientWidth: 1600,
+      clientHeight: 900,
+    });
+    mockJumpTo.mockClear();
+    mockPanBy.mockClear();
+
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    await waitFor(() => {
+      expect(mockJumpTo).toHaveBeenCalledWith(expect.objectContaining({
+        center: [-73, 35],
+        padding: { top: 0, right: 0, left: 400, bottom: 0 },
+      }));
+    });
+    expect(capturedMapProps.current?.id).toBe('map-session-0');
+
+    mockGetContainer.mockReturnValue({
+      getBoundingClientRect: () => ({ width: 1000, height: 800 }),
+      clientWidth: 1000,
+      clientHeight: 800,
     });
   });
 });
