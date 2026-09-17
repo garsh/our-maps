@@ -50,6 +50,7 @@ describe('ShareDialog Dark Mode & Styling', () => {
     // Unselected state should use var(--surface-color), not 'white'
     expect(viewerBtn.style.background).toBe('var(--surface-color)');
     expect(viewerBtn.style.border).toBe('1px solid var(--border-color)');
+    expect(ownerBtn.style.background).toBe('var(--surface-color)');
 
     // Select Viewer
     fireEvent.click(viewerBtn);

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getTilesForArea, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, saveMapToViewCache, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB, stripMapCachePii, unionCachedMapsWithDownloads } from '../tileUtils';
+import { getYRange, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, saveMapToViewCache, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB, stripMapCachePii, unionCachedMapsWithDownloads } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 const { mockExtracts, mockPartSizes, mockMetaBytes } = vi.hoisted(() => ({
@@ -48,7 +48,7 @@ describe('tileUtils', () => {
                 result: {
                     objectStoreNames: { contains: (name: string) => name === 'maps' || name === 'tiles' || name === 'manifest' || stores.has(name) },
                     deleteObjectStore: (name: string) => { deletedStores.push(name); },
-                    transaction: (_names?: string | string[]) => {
+                    transaction: () => {
                         const tx: any = {
                             objectStore: (name: string) => {
                                 const txStore = getStore(name);
@@ -119,20 +119,18 @@ describe('tileUtils', () => {
     });
 
     it('should correctly wrap longitude for tile coordinates', () => {
-        const tiles = getTilesForArea({ north: 10, south: 9, east: -179.9, west: 179.9 }, 1, 1);
-        expect(tiles.length).toBeGreaterThan(0);
-        tiles.forEach(t => {
-            expect(t.x).toBeGreaterThanOrEqual(0);
-            expect(t.x).toBeLessThan(2);
+        const ranges = getXRanges(179.9, -179.9, 1);
+        expect(ranges.length).toBeGreaterThan(0);
+        ranges.forEach(([start, end]) => {
+            expect(start).toBeGreaterThanOrEqual(0);
+            expect(end).toBeLessThan(2);
         });
     });
 
     it('should clamp latitude for tile coordinates', () => {
-        const tiles = getTilesForArea({ north: 89, south: 84, east: 10, west: 9 }, 5, 5);
-        tiles.forEach(t => {
-            expect(t.y).toBeGreaterThanOrEqual(0);
-            expect(t.y).toBeLessThan(32);
-        });
+        const [yStart, yEnd] = getYRange(89, 84, 5);
+        expect(yStart).toBeGreaterThanOrEqual(0);
+        expect(yEnd).toBeLessThan(32);
     });
 
     it('should calculate bounding box for multiple pins with correct buffer', () => {
@@ -170,14 +168,13 @@ describe('tileUtils', () => {
         expect(count).toBe(zoom1to10 + zoom11to15);
     });
 
-    it('should generate all tiles for area across zoom levels 1 to 15 without gaps', () => {
+    it('should calculate positive tile count for area across zoom levels 1 to 15 without gaps', () => {
         const bbox = { north: 40.75, south: 40.70, east: -73.95, west: -74.00 };
-        const tiles = getTilesForArea(bbox, 1, 15);
-        expect(tiles.length).toBe(countTiles(bbox, 1, 15));
+        const count = countTiles(bbox, 1, 15);
+        expect(count).toBeGreaterThan(0);
 
-        const zoomsPresent = new Set(tiles.map(t => t.z));
         for (let z = 1; z <= 15; z++) {
-            expect(zoomsPresent.has(z)).toBe(true);
+            expect(countTiles(bbox, z, z)).toBeGreaterThan(0);
         }
     });
 
@@ -189,17 +186,14 @@ describe('tileUtils', () => {
         const bbox = getPinsBoundingBox(pins)!;
 
         const count = countTiles(bbox, 1, 15);
-        const tiles = getTilesForArea(bbox, 1, 15);
-
-        expect(tiles.length).toBe(count);
         expect(count).toBeGreaterThan(0);
 
         const z15Count = countTiles(bbox, 15, 15);
-        const z15Tiles = tiles.filter(t => t.z === 15);
-        expect(z15Tiles.length).toBe(z15Count);
+        expect(z15Count).toBeGreaterThan(0);
+        expect(count).toBeGreaterThan(z15Count);
     });
 
-    it('should correctly handle antimeridian crossing in getXRanges and tile generation', () => {
+    it('should correctly handle antimeridian crossing in getXRanges and tile count', () => {
         const ranges = getXRanges(179, -179, 3);
         expect(ranges.length).toBe(2);
         expect(ranges[0][0]).toBe(7);
@@ -208,17 +202,15 @@ describe('tileUtils', () => {
         expect(ranges[1][1]).toBe(0);
 
         const bboxCross = { north: 10, south: -10, west: 179, east: -179 };
-        const tilesCross = getTilesForArea(bboxCross, 2, 2);
-        expect(tilesCross.length).toBe(countTiles(bboxCross, 2, 2));
-        expect(tilesCross.length).toBeGreaterThan(0);
+        expect(countTiles(bboxCross, 2, 2)).toBeGreaterThan(0);
     });
 
     it('should include contextual buffer around bounding box at intermediate zoom levels 5 to 9', () => {
         const bbox = { north: 40.75, south: 40.74, east: -73.98, west: -73.99 };
-        expect(getTilesForArea(bbox, 6, 6).length).toBe(25);
-        expect(getTilesForArea(bbox, 7, 7).length).toBe(25);
-        expect(getTilesForArea(bbox, 8, 8).length).toBe(25);
-        expect(getTilesForArea(bbox, 9, 9).length).toBe(9);
+        expect(countTiles(bbox, 6, 6)).toBe(25);
+        expect(countTiles(bbox, 7, 7)).toBe(25);
+        expect(countTiles(bbox, 8, 8)).toBe(25);
+        expect(countTiles(bbox, 9, 9)).toBe(9);
     });
 
     it('should save, retrieve, and remove offline map metadata', async () => {

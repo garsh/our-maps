@@ -2,12 +2,9 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import {
   CustomColorPicker,
-  hsvToRgb,
-  rgbToHex,
   hsvToHex,
   hexToRgb,
   rgbToHsv,
-  hexToHsv,
   isValidHex
 } from '../CustomColorPicker';
 

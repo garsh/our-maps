@@ -464,17 +464,3 @@ export async function streamPlannedExtract(
     fs.closeSync(fd);
   }
 }
-
-export async function streamExtract(
-  pmt: PMTiles,
-  filePath: string,
-  bbox: BoundingBox,
-  minZoom: number,
-  maxZoom: number,
-  write: (chunk: Buffer) => Promise<void>,
-  isAborted: () => boolean
-): Promise<ExtractPlan> {
-  const plan = await planExtract(pmt, bbox, minZoom, maxZoom);
-  await streamPlannedExtract(filePath, plan, write, isAborted);
-  return plan;
-}

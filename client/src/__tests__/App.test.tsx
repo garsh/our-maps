@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { MapEditor, clampSidebarWidth } from '../App';
 import { PIN_HOVER_CLASS, getHoveredPinId, setLastPointerTypeForTests } from '../utils/pinHover';
-import LandingPage from '../pages/LandingPage';
 import { apiService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getOfflineMap } from '../utils/tileUtils';
@@ -498,7 +497,7 @@ describe('App Components Error Handling', () => {
 
     setLastPointerTypeForTests('touch');
 
-    const { container } = render(
+    render(
       <GoogleOAuthProvider clientId="test-client-id">
         <MemoryRouter initialEntries={['/map/map-1']}>
           <Routes>
@@ -894,7 +893,6 @@ describe('App Components Error Handling', () => {
 
   it('redirects with No Data when attempting to open an incompletely downloaded map while offline', async () => {
     sessionStorage.setItem('ourmaps_offline', '1');
-    const { isMapDownloaded } = await vi.importActual<typeof import('../utils/tileUtils')>('../utils/tileUtils');
     (getOfflineMap as any).mockResolvedValue({
       id: 'map-partial',
       name: 'Partial Download Map',

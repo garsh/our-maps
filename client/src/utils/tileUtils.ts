@@ -8,13 +8,6 @@ export interface BoundingBox {
     west: number;
 }
 
-export interface TileInfo {
-    x: number;
-    y: number;
-    z: number;
-    url: string;
-}
-
 const DB_NAME = 'MapTilesDB_v2';
 const MANIFEST_STORE = 'manifest';
 const TILE_STORE = 'tiles';
@@ -481,10 +474,6 @@ export function countTiles(box: BoundingBox, minZoom: number, maxZoom: number): 
     return count;
 }
 
-export function estimateSizeMB(tileCount: number): number {
-    return (tileCount * 20.0) / 1024.0;
-}
-
 function longToX(lon: number, zoom: number): number {
     if (lon >= 180.0) return (1 << zoom) - 1;
     const x = Math.floor(((lon + 180.0) / 360.0) * (1 << zoom));
@@ -495,45 +484,6 @@ function latToY(lat: number, zoom: number): number {
     const latRad = lat * Math.PI / 180.0;
     const y = Math.floor(((1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0) * (1 << zoom));
     return Math.max(0, Math.min((1 << zoom) - 1, y));
-}
-
-export function getTilesForArea(box: BoundingBox, minZoom: number, maxZoom: number): TileInfo[] {
-    const totalCount = countTiles(box, minZoom, maxZoom);
-    const tiles: TileInfo[] = new Array(totalCount);
-    let index = 0;
-    const origin = typeof window !== 'undefined'
-        ? window.location.origin
-        : (typeof self !== 'undefined' && self.location ? self.location.origin : '');
-
-    for (let z = minZoom; z <= maxZoom; z++) {
-        if (z <= 4) {
-            const maxTile = (1 << z) - 1;
-            for (let x = 0; x <= maxTile; x++) {
-                for (let y = 0; y <= maxTile; y++) {
-                    tiles[index++] = {
-                        x, y, z,
-                        url: `${origin}/maps/tile/${z}/${x}/${y}.mvt`
-                    };
-                }
-            }
-        } else {
-            const buffer = (z >= 5 && z <= 8) ? 2 : (z === 9 ? 1 : 0);
-            const [yStart, yEnd] = getYRange(box.north, box.south, z, buffer);
-            const xRanges = getXRanges(box.west, box.east, z, buffer);
-
-            for (const [xStart, xEnd] of xRanges) {
-                for (let x = xStart; x <= xEnd; x++) {
-                    for (let y = yStart; y <= yEnd; y++) {
-                        tiles[index++] = {
-                            x, y, z,
-                            url: `${origin}/maps/tile/${z}/${x}/${y}.mvt`
-                        };
-                    }
-                }
-            }
-        }
-    }
-    return tiles;
 }
 
 export function getPinsBoundingBox(pins: Pin[]): BoundingBox | null {

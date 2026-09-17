@@ -205,8 +205,7 @@ export function emitPinMoveOrReorderEvents(
   allPins: Pin[],
   movedPinIds: string[],
   startLayersMap: Map<string, string | undefined>,
-  targetLayerId: string | undefined,
-  _preferredPrimarySourceLayer?: string | undefined
+  targetLayerId: string | undefined
 ) {
   if (!socket || !mapId || movedPinIds.length === 0) return;
 

@@ -64,26 +64,6 @@ async function readExtractHandle(dir: FileSystemDirectoryHandle, name: string): 
   }
 }
 
-export async function listExtractNames(): Promise<string[]> {
-  try {
-    const dir = await getExtractDirectory(false);
-    if (!dir) return [];
-    const names: string[] = [];
-    const iterable = dir as FileSystemDirectoryHandle & {
-      keys?: () => AsyncIterable<string>;
-      entries?: () => AsyncIterable<[string, FileSystemHandle]>;
-    };
-    if (typeof iterable.keys === 'function') {
-      for await (const name of iterable.keys()) names.push(name);
-    } else if (typeof iterable.entries === 'function') {
-      for await (const [name] of iterable.entries()) names.push(name);
-    }
-    return names;
-  } catch {
-    return [];
-  }
-}
-
 export async function getExtractFile(mapId: string): Promise<File | null> {
   if (!mapId) return null;
   if (extractCache.has(mapId)) return extractCache.get(mapId) ?? null;

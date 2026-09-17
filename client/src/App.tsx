@@ -1278,8 +1278,7 @@ export function MapEditor() {
           updatedPins,
           [targetId],
           startMap,
-          targetLayerId,
-          originalLayerId
+          targetLayerId
         );
       } else {
         socketRef.current?.emit('pin-update', { mapId, pinId: targetId, updates: computedUpdates });
@@ -1465,8 +1464,6 @@ export function MapEditor() {
       const startLayersMap = dragStartLayersRef.current;
       dragStartLayersRef.current = new Map();
 
-      const originalLayerId = startLayersMap.get(activeId);
-
       const selected = selectedNavIdsRef.current;
       const pinsToMoveIds = selected.has(activeId) 
         ? Array.from(selected) 
@@ -1492,8 +1489,7 @@ export function MapEditor() {
           next,
           pinsToMoveIds,
           startLayersMap,
-          overLayerId,
-          originalLayerId
+          overLayerId
         );
       }
     }

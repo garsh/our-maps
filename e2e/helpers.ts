@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 
 // Helper to suppress noisy/benign browser console errors
-export function setupConsoleFilter(page: Page) {
+function setupConsoleFilter(page: Page) {
   page.on('console', (msg) => {
     const text = msg.text();
     if (
@@ -60,32 +60,5 @@ export async function deleteCurrentMap(page: Page) {
     }
   } catch {
     // Ignore teardown cleanup errors
-  }
-}
-
-// Helper to clean up any leftover mock test maps
-export async function cleanupTestMaps(page: Page) {
-  try {
-    await page.evaluate(async () => {
-      const res = await fetch('/api/maps', {
-        credentials: 'include'
-      });
-      if (res.ok) {
-        const maps = await res.json();
-        for (const m of maps) {
-          const isTestMap = ['Metadata City', 'Test City', 'Group City', 'Updated Map Name', 'Initial Location', 'New Location', 'Interactivity City'].some(name => 
-            (m.name || '').includes(name) || (m.pins || []).some((p: any) => (p.label || '').includes(name))
-          );
-          if (isTestMap) {
-            await fetch(`/api/maps/${m.id}`, {
-              method: 'DELETE',
-              credentials: 'include'
-            });
-          }
-        }
-      }
-    });
-  } catch {
-    // Ignore cleanup failures
   }
 }

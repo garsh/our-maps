@@ -66,16 +66,6 @@ class BufferWriter {
   }
 }
 
-export function writeVarint(value: number, out: number[]): void {
-  let v = value;
-  if (!Number.isFinite(v) || v < 0) v = 0;
-  while (v >= 0x80) {
-    out.push((v & 0x7f) | 0x80);
-    v = Math.floor(v / 128);
-  }
-  out.push(v);
-}
-
 function setUint64LE(view: DataView, offset: number, value: number): void {
   const low = value % 0x100000000;
   const high = Math.floor(value / 0x100000000);

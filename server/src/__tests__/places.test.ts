@@ -183,7 +183,7 @@ describe('Places API Proxy Endpoints', () => {
       ]
     };
 
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options) => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, options) => {
       const body = JSON.parse(options?.body as string);
       expect(body.textQuery).toBe('tower');
       // Must not restrict or bias to tiny box

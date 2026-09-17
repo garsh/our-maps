@@ -161,7 +161,7 @@ describe('reorderUtils', () => {
                 { id: '2', label: 'P2', layerId: 'L1', position: 0, lat: 0, lng: 0 },
             ];
             const startMap = new Map<string, string | undefined>([['1', 'L1']]);
-            emitPinMoveOrReorderEvents(mockSocket, 'map1', currentPins, ['1'], startMap, 'L2', 'L1');
+            emitPinMoveOrReorderEvents(mockSocket, 'map1', currentPins, ['1'], startMap, 'L2');
 
             expect(emitted.some(e => e.event === 'pin-move-layer')).toBe(true);
             const moveEvent = emitted.find(e => e.event === 'pin-move-layer')!;
