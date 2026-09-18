@@ -24,6 +24,7 @@ if (!fs.existsSync(clientPublicMapsDir)) {
 const clientMapsFontsDir = path.join(clientPublicMapsDir, 'fonts');
 
 const isForce = process.argv.includes('--force');
+const ifMissing = process.argv.includes('--if-missing');
 
 const FONTSTACKS = [
   'Noto Sans Regular',
@@ -110,6 +111,15 @@ async function pool(items, concurrency, fn) {
 }
 
 async function setupFonts() {
+  // Fast path: all font dirs and symlinks already exist; skip expensive fs.stat scan.
+  if (ifMissing && !isForce && fs.existsSync(serverMapsFontsDir) && fs.existsSync(clientMapsFontsDir)) {
+    const allPresent = FONTSTACKS.every(fontstack => fs.existsSync(path.join(dataFontsDir, fontstack)));
+    if (allPresent) {
+      console.log('Fonts already present, skipping setup.');
+      return;
+    }
+  }
+
   const tasks = [];
 
   for (const fontstack of FONTSTACKS) {

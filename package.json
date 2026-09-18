@@ -11,7 +11,8 @@
     "setup:sprites": "node scripts/download-sprites.mjs",
     "setup:maps": "node scripts/download-map.js --sample && node scripts/download-sprites.mjs && node scripts/download-fonts.mjs",
     "setup:maps:full": "node scripts/download-map.js --full && node scripts/download-sprites.mjs && node scripts/download-fonts.mjs",
-    "build": "npm run setup:sprites && npm run setup:fonts && cd client && npm run build && cd ../server && npm run build",
+    "build": "npm run setup:sprites -- --if-missing && npm run setup:fonts -- --if-missing && concurrently --kill-others-on-fail \"npm --prefix client run build\" \"npm --prefix server run build\"",
+    "build:fast": "npm run setup:sprites -- --if-missing && npm run setup:fonts -- --if-missing && concurrently --kill-others-on-fail \"VITE_NO_PWA=true npm --prefix client run build:fast\" \"npm --prefix server run build\" \"npm --prefix client run typecheck\"",
     "start": "cd server && npm run start"
   },
   "devDependencies": {

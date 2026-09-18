@@ -24,6 +24,7 @@ if (!fs.existsSync(clientPublicMapsDir)) {
 const clientMapsSpritesDir = path.join(clientPublicMapsDir, 'sprites');
 
 const isForce = process.argv.includes('--force');
+const ifMissing = process.argv.includes('--if-missing');
 
 const FLAVORS = ['light', 'dark'];
 
@@ -91,6 +92,11 @@ function ensureSymlink(targetDir, linkPath, verbose = true) {
 async function setupSprites() {
   const missingFiles = SPRITE_FILES.filter(f => !fs.existsSync(path.join(dataSpritesDir, f)) || fs.statSync(path.join(dataSpritesDir, f)).size === 0);
   const alreadyExisted = missingFiles.length === 0 && !isForce;
+
+  if (ifMissing && alreadyExisted && fs.existsSync(serverMapsSpritesDir) && fs.existsSync(clientMapsSpritesDir)) {
+    console.log('Sprites already present, skipping setup.');
+    return;
+  }
 
   if (!alreadyExisted) {
     console.log(`Downloading Protomaps sprite assets to ${dataSpritesDir}...`);

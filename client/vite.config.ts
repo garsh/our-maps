@@ -57,6 +57,8 @@ export default blobURL;`
   }
 }
 
+const noPWA = process.env.VITE_NO_PWA === 'true';
+
 // https://vite.dev/config/
 export default defineConfig({
   customLogger: logger,
@@ -69,6 +71,7 @@ export default defineConfig({
     inlineMaplibreWorker(),
     react(),
     VitePWA({
+      disable: noPWA,
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'pwa-icon.svg'],
       manifest: {
@@ -184,6 +187,7 @@ export default defineConfig({
   ],
   build: {
     chunkSizeWarningLimit: 1200,
+    minify: noPWA ? false : 'esbuild',
     rollupOptions: {
       output: {
         manualChunks(id) {
