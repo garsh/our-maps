@@ -1,5 +1,11 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
+import { ReadableStream as NodeReadableStream } from 'node:stream/web';
+
+// vmThreads VM context does not inherit jsdom globals like ReadableStream
+if (typeof ReadableStream === 'undefined') {
+  (global as any).ReadableStream = NodeReadableStream;
+}
 
 // Mock fetch
 global.fetch = vi.fn();
