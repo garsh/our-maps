@@ -248,6 +248,8 @@ export async function ensureOnDemandFontFile(
     try {
       await fs.promises.writeFile(tempPath, buffer);
       await fs.promises.rename(tempPath, safeTarget.targetPath);
+      // Invalidate stale size cache entry so the next getSafeMapFileSize re-stats.
+      resolvedMapFileSizeCache.delete(safeTarget.targetPath);
     } catch (err) {
       try {
         await fs.promises.unlink(tempPath);

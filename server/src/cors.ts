@@ -5,7 +5,7 @@ function configuredOrigins(): string[] {
   const fallback = process.env.NODE_ENV === 'production' ? 'https://ourmaps.mooo.com' : '*';
   return (process.env.CORS_ORIGIN || fallback)
     .split(',')
-    .map((value) => value.trim())
+    .map((v) => v.trim())
     .filter(Boolean);
 }
 

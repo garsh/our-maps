@@ -10,14 +10,19 @@ export function setDbName(name: string) {
   db = null; // Reset current connection
 }
 
+/**
+ * Run incremental schema migrations that cannot be expressed in CREATE TABLE IF NOT EXISTS.
+ *
+ * HOW TO ADD A MIGRATION:
+ *   1. Add a PRAGMA table_info / ALTER TABLE block below.
+ *   2. Include a comment with the date one week after the change is deployed to production
+ *      (e.g. "// Safe to remove after 2026-10-01"). Once that date passes and all known
+ *      databases have been updated, delete the block.
+ *
+ * Current migrations: none (all historical migrations have been applied to every known database).
+ */
 async function migrate(_db: Database) {
-  const mapCols = await _db.all("PRAGMA table_info(maps)");
-  if (!mapCols.some((col: any) => col.name === 'custom_colors')) {
-    await _db.run("ALTER TABLE maps ADD COLUMN custom_colors TEXT DEFAULT '[]'");
-  }
-  if (!mapCols.some((col: any) => col.name === 'is_public')) {
-    await _db.run("ALTER TABLE maps ADD COLUMN is_public INTEGER DEFAULT 0");
-  }
+  // Add future migrations here.
 }
 
 export async function getDb() {

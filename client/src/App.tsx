@@ -47,6 +47,15 @@ export function clampSidebarWidth(width: number, viewportWidth: number, min = 20
   return Math.max(min, Math.min(viewportWidth - maxMargin, width));
 }
 
+/** Returns the next available position value for a pin in the given layer. Single-pass, no spread. */
+function getNextPinPosition(allPins: Pin[], targetLayerId?: string): number {
+  let max = -1;
+  for (const p of allPins) {
+    if (isSameLayer(p.layerId, targetLayerId) && p.position > max) max = p.position;
+  }
+  return max + 1;
+}
+
 export function MapEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -795,9 +804,7 @@ export function MapEditor() {
         });
         setPins(prev => {
           const defaultPins = prev.filter(p => isSameLayer(p.layerId, undefined));
-          let currentMaxPos = defaultPins.length > 0
-            ? Math.max(...defaultPins.map(p => p.position))
-            : -1;
+          let currentMaxPos = defaultPins.reduce((m, p) => p.position > m ? p.position : m, -1);
           return prev.map(p => {
             if (p.layerId === data.layerId) {
               currentMaxPos += 1;
@@ -1015,13 +1022,14 @@ export function MapEditor() {
           setIsPublic(Boolean(cached.isPublic));
           if (cached.pins && cached.pins.length > 0) {
             if (!silent) {
-              const lats = cached.pins.map(p => p.lat);
-              const lngs = cached.pins.map(p => p.lng);
-              const bounds: [[number, number], [number, number]] = [
-                [Math.min(...lats), Math.min(...lngs)],
-                [Math.max(...lats), Math.max(...lngs)]
-              ];
-              triggerBoundsToFit(bounds, 3000);
+              let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+              for (const p of cached.pins) {
+                if (p.lat < minLat) minLat = p.lat;
+                if (p.lat > maxLat) maxLat = p.lat;
+                if (p.lng < minLng) minLng = p.lng;
+                if (p.lng > maxLng) maxLng = p.lng;
+              }
+              triggerBoundsToFit([[minLat, minLng], [maxLat, maxLng]], 3000);
             }
           }
           setIsMapLoading(false);
@@ -1053,13 +1061,14 @@ export function MapEditor() {
       setCustomColors(data.customColors || []);
       if (data.pins && data.pins.length > 0) {
         if (!hasHydratedLocally && !silent) {
-          const lats = data.pins.map(p => p.lat);
-          const lngs = data.pins.map(p => p.lng);
-          const bounds: [[number, number], [number, number]] = [
-            [Math.min(...lats), Math.min(...lngs)],
-            [Math.max(...lats), Math.max(...lngs)]
-          ];
-          triggerBoundsToFit(bounds, 3000);
+          let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+          for (const p of data.pins) {
+            if (p.lat < minLat) minLat = p.lat;
+            if (p.lat > maxLat) maxLat = p.lat;
+            if (p.lng < minLng) minLng = p.lng;
+            if (p.lng > maxLng) maxLng = p.lng;
+          }
+          triggerBoundsToFit([[minLat, minLng], [maxLat, maxLng]], 3000);
         }
       }
       setUserRole(data.userRole || 'view');
@@ -1284,11 +1293,6 @@ export function MapEditor() {
     }
   }, [canEditMap, isOffline, setSearchParams]);
 
-  const getNextPinPosition = (allPins: Pin[], targetLayerId?: string): number => {
-    const layerPins = allPins.filter(p => isSameLayer(p.layerId, targetLayerId));
-    return layerPins.length > 0 ? Math.max(...layerPins.map(p => p.position)) + 1 : 0;
-  };
-
   const addPinAtLocation = useCallback((lat: number, lng: number, label?: string, address?: string, autoEdit = false) => {
     if (!editMode || isOffline) return;
     const currentPins = pinsRef.current;
@@ -1456,9 +1460,7 @@ export function MapEditor() {
 
     setPins(prev => {
       const defaultPins = prev.filter(p => isSameLayer(p.layerId, undefined));
-      let currentMaxPos = defaultPins.length > 0
-        ? Math.max(...defaultPins.map(p => p.position))
-        : -1;
+      let currentMaxPos = defaultPins.reduce((m, p) => p.position > m ? p.position : m, -1);
 
       return prev.map(p => {
         if (p.layerId === targetId) {
@@ -1617,13 +1619,14 @@ export function MapEditor() {
     }
 
     if (merged.addedPins.length > 0) {
-      const lats = merged.addedPins.map(p => p.lat);
-      const lngs = merged.addedPins.map(p => p.lng);
-      const bounds: [[number, number], [number, number]] = [
-        [Math.min(...lats), Math.min(...lngs)],
-        [Math.max(...lats), Math.max(...lngs)]
-      ];
-      triggerBoundsToFit(bounds, 1000);
+      let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+      for (const p of merged.addedPins) {
+        if (p.lat < minLat) minLat = p.lat;
+        if (p.lat > maxLat) maxLat = p.lat;
+        if (p.lng < minLng) minLng = p.lng;
+        if (p.lng > maxLng) maxLng = p.lng;
+      }
+      triggerBoundsToFit([[minLat, minLng], [maxLat, maxLng]], 1000);
     }
 
     if (merged.skippedPins > 0 || merged.skippedLayers > 0) {

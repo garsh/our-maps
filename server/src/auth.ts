@@ -167,8 +167,11 @@ export async function getUserForSession(sessionId: string): Promise<User> {
     name: row.name,
     picture: row.picture
   };
+  // Stay under the cap with a single O(1) eviction rather than a full expiry sweep.
+  // The hourly setInterval in index.ts runs cleanupSessionCache() to purge expired entries.
   if (sessionCache.size >= MAX_SESSION_CACHE_ENTRIES) {
-    cleanupSessionCache();
+    const oldest = sessionCache.keys().next().value;
+    if (oldest !== undefined) sessionCache.delete(oldest);
   }
   sessionCache.set(sessionId, {
     user,

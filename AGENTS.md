@@ -66,6 +66,7 @@ The application is deployed using Docker Compose, which builds both the frontend
   9. **Vector Overscaling & Pin Maxzoom**:
      - `<Map zoomLevelsToOverscale={4}>`: Slices vector tiles to zoom 18 ($22 - 4$) and overscales to 22. Clamping vector slicing to zoom 18 prevents 50 RTT tile explosions and GPU driver timeout `CONTEXT_LOST_WEBGL` at zoom 22.
      - `<Source id="pins-source" maxzoom={24}>`: Slices pin GeoJSON up to zoom 24, preventing `@maplibre/geojson-vt` from silently dropping all pin markers above its default `maxzoom: 18`.
+- **Pin Count Scale**: The system supports up to 5,000 pins and 100 layers per map, but the vast majority of real maps have fewer than 100 pins across a handful of layers. When evaluating algorithmic tradeoffs (e.g. whether to use a `Set` instead of an array scan), prefer the solution that performs better at the ≤100-pin scale. Do not over-engineer for the 5,000-pin worst case if it degrades the common case or adds meaningful complexity.
 - **Handling Investigations**: If the user askes you to locate bugs or inefficiencies in the code, and you find several, then list them in an implementation plan (identified by capital letters).  Include a description, example user scenarios to trigger it (understandable to an end-user, in addition to any more technical description), and the best fix.  Also include a status for each item (planned, implemented, skipped).  Estimate a complexity of each fix (how likely it is to introduce new bugs).
 
 

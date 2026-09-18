@@ -301,29 +301,24 @@ export async function handleLayerDelete(data: LayerDeletePayload) {
 
   await db.run('BEGIN TRANSACTION');
   try {
-    // Get max position of existing Default Layer pins
-    const maxRow = await db.get('SELECT MAX(position) as maxPos FROM pins WHERE (layer_id IS NULL OR layer_id = \'\') AND map_id = ?', mapId);
-    let currentPos = (maxRow && maxRow.maxPos !== null && maxRow.maxPos !== undefined) ? maxRow.maxPos + 1 : 0;
+    // Find where to append the moved pins (after last existing default-layer pin).
+    const maxRow = await db.get(
+      'SELECT MAX(position) as maxPos FROM pins WHERE (layer_id IS NULL OR layer_id = \'\') AND map_id = ?',
+      mapId
+    );
+    let nextPos: number = (maxRow?.maxPos ?? -1) + 1;
 
-    const pinsToMove = await db.all('SELECT id FROM pins WHERE layer_id = ? AND map_id = ? ORDER BY position ASC, id ASC', layerId, mapId);
-
-    if (pinsToMove.length > 0) {
-      const pinIds = pinsToMove.map(p => p.id);
-      const chunkSize = 500;
-      for (let chunkStart = 0; chunkStart < pinIds.length; chunkStart += chunkSize) {
-        const chunk = pinIds.slice(chunkStart, chunkStart + chunkSize);
-        const whenClauses = chunk.map(() => 'WHEN ? THEN ?').join(' ');
-        const inPlaceholders = chunk.map(() => '?').join(', ');
-        const params: any[] = [];
-        chunk.forEach((id, idx) => {
-          params.push(id, currentPos + chunkStart + idx);
-        });
-        params.push(mapId, ...chunk);
-        await db.run(
-          `UPDATE pins SET layer_id = NULL, position = CASE id ${whenClauses} END WHERE map_id = ? AND id IN (${inPlaceholders})`,
-          ...params
-        );
-      }
+    // Move each pin to the default layer, appended in their existing order.
+    // Individual UPDATEs are fine at ≤100 pins per map (see AGENTS.md Pin Count Scale).
+    const pinsToMove = await db.all(
+      'SELECT id FROM pins WHERE layer_id = ? AND map_id = ? ORDER BY position ASC, id ASC',
+      layerId, mapId
+    );
+    for (const { id } of pinsToMove) {
+      await db.run(
+        'UPDATE pins SET layer_id = NULL, position = ? WHERE id = ? AND map_id = ?',
+        nextPos++, id, mapId
+      );
     }
 
     await db.run('DELETE FROM pin_layers WHERE id = ? AND map_id = ?', layerId, mapId);
