@@ -32,7 +32,7 @@ import { Loader2, Map as MapIcon, RotateCw } from 'lucide-react';
 import type { SearchAreaState } from './components/SearchBar';
 import { reorderPins, reorderLayers, isSameLayer, emitPinMoveOrReorderEvents, applyRemotePinsReorder, applyRemotePinMoveLayer } from './utils/reorderUtils';
 import { generateId, mergeImportedMapData } from './utils/fileUtils';
-import { getOfflineMap, isMapDownloaded, touchMapCacheAccess, saveMapToViewCache } from './utils/tileUtils';
+import { getOfflineMap, isMapDownloaded, touchMapCacheAccess, saveMapToViewCache, clearMapMetadataCache } from './utils/tileUtils';
 import { preloadExtract, setActiveOfflineMapId } from './utils/offlineExtract';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
 import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
@@ -201,6 +201,8 @@ export function MapEditor() {
         }, { replace: true });
         return;
       }
+      // Cache only needed offline — clear on going online to keep memory bounded.
+      clearMapMetadataCache();
       if (!readSessionFlag(AUTO_VIEW_SESSION_KEY)) return;
       writeSessionFlag(AUTO_VIEW_SESSION_KEY, false);
       setSearchParams((prev) => {
@@ -993,7 +995,11 @@ export function MapEditor() {
     hasLoadedRef.current = true;
     setSelectedNavIds(new Set());
     setActiveOfflineMapId(mapId);
-    void preloadExtract(mapId);
+    // Await preloadExtract before the Promise.all below so that extractCache is populated
+    // before isMapDownloaded calls getExtractFile. Without this, isMapDownloaded and the
+    // useLayoutEffect's preloadExtract both hit OPFS simultaneously (getExtractFile has no
+    // inflight dedup), potentially delaying PMTiles readiness and causing zoom stutter.
+    await preloadExtract(mapId);
 
     // CRITICAL FOR OFFLINE MODE:
     // 1. Instant Offline Hydration: If an offline version of this map exists in IndexedDB,
@@ -1002,43 +1008,43 @@ export function MapEditor() {
     // interactive map rendering on frame 1 even if the network is disconnected or server is offline.
     let hasHydratedLocally = false;
     try {
-      const cached = await getOfflineMap(mapId);
+      // Compute offline status before the async fan-out so both branches see the same snapshot.
+      const currentlyOffline = isOfflineRef.current || (typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY);
+      // Fetch cached map metadata and OPFS extract status in parallel — they are independent.
+      const [cached, downloaded] = await Promise.all([
+        getOfflineMap(mapId),
+        isMapDownloaded(mapId),
+      ]);
       if (epoch !== loadEpochRef.current) return;
-      if (cached) {
-        // If offline, only allow opening if the map is completely downloaded
-        const currentlyOffline = isOfflineRef.current || (typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY);
-        const downloaded = await isMapDownloaded(mapId);
-        if (epoch !== loadEpochRef.current) return;
 
-        if (!currentlyOffline || downloaded) {
-          hasHydratedLocally = true;
-          isInitialLoadRef.current = true;
-          setMapId(cached.id);
-          setMapName(cached.name || 'Unnamed Map');
-          setLayers(cached.layers || []);
-          setPins(cached.pins || []);
-          setCustomColors(cached.customColors || []);
-          setUserRole(cached.userRole || 'view');
-          setIsPublic(Boolean(cached.isPublic));
-          if (cached.pins && cached.pins.length > 0) {
-            if (!silent) {
-              let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
-              for (const p of cached.pins) {
-                if (p.lat < minLat) minLat = p.lat;
-                if (p.lat > maxLat) maxLat = p.lat;
-                if (p.lng < minLng) minLng = p.lng;
-                if (p.lng > maxLng) maxLng = p.lng;
-              }
-              triggerBoundsToFit([[minLat, minLng], [maxLat, maxLng]], 3000);
+      if (cached && (!currentlyOffline || downloaded)) {
+        hasHydratedLocally = true;
+        isInitialLoadRef.current = true;
+        setMapId(cached.id);
+        setMapName(cached.name || 'Unnamed Map');
+        setLayers(cached.layers || []);
+        setPins(cached.pins || []);
+        setCustomColors(cached.customColors || []);
+        setUserRole(cached.userRole || 'view');
+        setIsPublic(Boolean(cached.isPublic));
+        if (cached.pins && cached.pins.length > 0) {
+          if (!silent) {
+            let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+            for (const p of cached.pins) {
+              if (p.lat < minLat) minLat = p.lat;
+              if (p.lat > maxLat) maxLat = p.lat;
+              if (p.lng < minLng) minLng = p.lng;
+              if (p.lng > maxLng) maxLng = p.lng;
             }
+            triggerBoundsToFit([[minLat, minLng], [maxLat, maxLng]], 3000);
           }
-          setIsMapLoading(false);
-          if (!isOfflineRef.current) {
-            setIsSyncing(true);
-          }
-          // Update LRU timestamp so this map isn't evicted from view cache prematurely
-          touchMapCacheAccess(mapId).catch(() => {});
         }
+        setIsMapLoading(false);
+        if (!isOfflineRef.current) {
+          setIsSyncing(true);
+        }
+        // Update LRU timestamp so this map isn't evicted from view cache prematurely
+        touchMapCacheAccess(mapId).catch(() => {});
       }
     } catch (cacheErr) {
       console.warn('[APP] Instant offline cache hydration check error:', cacheErr);

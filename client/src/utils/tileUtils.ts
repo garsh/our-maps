@@ -16,6 +16,21 @@ const DB_VERSION = 7;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+/** In-memory cache for map metadata read from IndexedDB. Eliminates repeated IDB round-trips
+ *  during offline hydration. Cleared entirely when going back online (see applyOffline in App.tsx)
+ *  and invalidated per-entry on any IDB write that touches a map record. */
+const mapMetadataCache = new Map<string, MapData>();
+
+/** Invalidate a single entry — call after any write to a specific map record. */
+export function invalidateMapMetadataCache(mapId: string): void {
+  mapMetadataCache.delete(mapId);
+}
+
+/** Clear the entire cache — called when transitioning back online. */
+export function clearMapMetadataCache(): void {
+  mapMetadataCache.clear();
+}
+
 export function resetDBForTesting(): void {
     dbPromise = null;
 }
@@ -86,6 +101,7 @@ export function stripMapCachePii(mapData: MapData): MapData {
 
 export async function saveMapOffline(mapData: MapData): Promise<void> {
     if (typeof indexedDB === 'undefined') return;
+    invalidateMapMetadataCache(mapData.id);
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(MAP_STORE, 'readwrite');
@@ -103,13 +119,19 @@ export async function saveMapOffline(mapData: MapData): Promise<void> {
 
 export async function getOfflineMap(mapId: string): Promise<MapData | null> {
     if (!mapId || typeof indexedDB === 'undefined') return null;
+    const cached = mapMetadataCache.get(mapId);
+    if (cached) return cached;
     try {
         const db = await openDB();
         return new Promise((resolve, reject) => {
             const transaction = db.transaction(MAP_STORE, 'readonly');
             const store = transaction.objectStore(MAP_STORE);
             const request = store.get(mapId);
-            request.onsuccess = () => resolve(request.result || null);
+            request.onsuccess = () => {
+                const result: MapData | null = request.result || null;
+                if (result) mapMetadataCache.set(mapId, result);
+                resolve(result);
+            };
             request.onerror = () => reject(request.error);
         });
     } catch {
@@ -128,6 +150,7 @@ const VIEW_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  */
 export async function saveMapToViewCache(mapData: MapData, etag?: string): Promise<void> {
     if (typeof indexedDB === 'undefined') return;
+    invalidateMapMetadataCache(mapData.id);
     try {
         const db = await openDB();
         await new Promise<void>((resolve, reject) => {
@@ -245,7 +268,10 @@ export async function pruneViewCache(): Promise<void> {
             const tx = db.transaction(MAP_STORE, 'readwrite');
             const store = tx.objectStore(MAP_STORE);
             for (const id of toDelete) store.delete(id);
-            tx.oncomplete = () => resolve();
+            tx.oncomplete = () => {
+                for (const id of toDelete) invalidateMapMetadataCache(id);
+                resolve();
+            };
             tx.onerror = () => reject(tx.error);
         });
     } catch {
@@ -404,6 +430,7 @@ export async function removeAllDownloads(): Promise<void> {
 
 export async function removeMapDownload(mapId: string): Promise<void> {
     if (!mapId) return;
+    invalidateMapMetadataCache(mapId);
     await removeExtract(mapId);
     if (typeof indexedDB === 'undefined') return;
 

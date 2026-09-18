@@ -6,7 +6,7 @@ const pmtCache = new Map<string, PMTiles>();
 const pmtInflight = new Map<string, Promise<PMTiles | null>>();
 
 export function setActiveOfflineMapId(mapId: string | null): void {
-  activeMapId = mapId;
+  if (activeMapId !== mapId) activeMapId = mapId;
 }
 
 export async function preloadExtract(mapId: string): Promise<PMTiles | null> {
