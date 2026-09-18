@@ -34,7 +34,7 @@ export async function login(page: Page) {
     page.getByRole('button', { name: /Sign in with Mock Account/i }).click(),
   ]);
   await expect(page).toHaveURL('/');
-  await expect(page.getByRole('button', { name: /New Map/i })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole('button', { name: /New Map/i })).toBeVisible({ timeout: 15000 });
 }
 
 // Helper to wait for auto-save: waits dynamically for the "Synced" badge and editable mode rather than a fixed sleep

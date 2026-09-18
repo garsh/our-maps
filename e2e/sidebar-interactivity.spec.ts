@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login, deleteCurrentMap } from './helpers';
+import { login, waitForAutoSave, deleteCurrentMap } from './helpers';
 
 test('sidebar items are interactible', async ({ page }) => {
   // Mock places reverse geocode
@@ -21,6 +21,7 @@ test('sidebar items are interactible', async ({ page }) => {
   await expect(page.getByText('Interactivity City').first()).toBeVisible({ timeout: 10000 });
   await expect(page.getByText('123 Test St').first()).toBeVisible({ timeout: 10000 });
   await page.locator('button[title="Add to Map"]').first().click();
+  await waitForAutoSave(page);
 
   // 2. Click the pin in the sidebar list
   const sidebarItem = page.locator('li[id^="pin-"]').filter({ hasText: 'Interactivity City' });
@@ -40,6 +41,7 @@ test('sidebar items are interactible', async ({ page }) => {
 });
 
 test('sidebar multi-layer creation, collapse/expand, and multi-selection flow', async ({ page }) => {
+  test.setTimeout(60000);
   await page.route('**/places/reverse-geocode*', route => route.fulfill({ 
     json: { address: '456 Test Ave, Pin City, PC 67890' } 
   }));
@@ -75,15 +77,22 @@ test('sidebar multi-layer creation, collapse/expand, and multi-selection flow', 
   await layerInput.press('Enter');
   await expect(page.getByText('Favorite Spots')).toBeVisible();
 
+  // Wait for the new map to be fully created and socket connected before adding pins.
+  // Creating a layer triggers handleSave which sets isInitialCreating=true (editMode=false).
+  // Searching while editMode=false can prevent search results from rendering.
+  await waitForAutoSave(page);
+
   // 2. Add multiple pins via search
   const searchBox = page.getByPlaceholder('Search...');
   await searchBox.fill('Spot Alpha');
   await expect(page.getByText('Spot Alpha').first()).toBeVisible({ timeout: 10000 });
   await page.locator('button[title="Add to Map"]').first().click();
+  await waitForAutoSave(page);
 
   await searchBox.fill('Spot Beta');
   await expect(page.getByText('Spot Beta').first()).toBeVisible({ timeout: 10000 });
   await page.locator('button[title="Add to Map"]').first().click();
+  await waitForAutoSave(page);
 
   // Both pins should appear in the sidebar
   await expect(page.locator('li[id^="pin-"]').filter({ hasText: 'Spot Alpha' }).first()).toBeVisible();

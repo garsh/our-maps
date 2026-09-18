@@ -116,7 +116,7 @@ export const apiService = {
 
   async getMaps(): Promise<any[]> {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
       const res = await fetchWithRetry(`${API_BASE}/maps`, { headers: getHeaders(), signal: controller.signal, cache: 'no-store' }, 0);
       return handleResponse<any[]>(res, this._logoutCallback, `Server error: ${res.status}`);

@@ -452,7 +452,7 @@ export function MapEditor() {
       if (inFlightDeltaCountRef.current === 0) {
         setIsSaving(false);
       }
-    }, 10000);
+    }, 3000);
 
     socketRef.current.emit(eventName, payload, (res?: any) => {
       if (resolved) return;
@@ -486,7 +486,7 @@ export function MapEditor() {
       resolved = true;
       inFlightDeltaCountRef.current = Math.max(0, inFlightDeltaCountRef.current - 1);
       if (inFlightDeltaCountRef.current === 0) setIsSaving(false);
-    }, 10000);
+    }, 3000);
 
     emitPinMoveOrReorderEvents(
       socketRef.current,
@@ -666,6 +666,11 @@ export function MapEditor() {
 
       // Reconnect re-sync handler
       socket.on('connect', () => {
+        // Reset the in-flight delta counter: any deltas emitted before this
+        // connect (or during a prior disconnected period) will never receive
+        // their server acks, so the counter must be zeroed to prevent
+        // isSaving from getting stuck true indefinitely.
+        inFlightDeltaCountRef.current = 0;
         setIsInitialCreating(false);
         setIsSaving(false);
         applyOffline(false, true);

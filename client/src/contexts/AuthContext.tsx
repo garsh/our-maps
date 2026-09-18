@@ -70,13 +70,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const loadSession = async () => {
       try {
         const data = await apiService.me();
-        if (data?.user) {
-          setUser(data.user);
-        } else {
-          setUser(null);
-        }
+        setUser(prev => prev ?? (data?.user || null));
       } catch {
-        setUser(null);
+        setUser(prev => prev ?? null);
       } finally {
         setIsLoading(false);
       }

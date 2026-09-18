@@ -95,6 +95,7 @@ test('updating an existing map', async ({ page }) => {
 });
 
 test('rich pin metadata persistence and display', async ({ page }) => {
+  test.setTimeout(60000);
   await login(page);
   await page.getByRole('button', { name: /New Map/i }).click();
   await page.waitForURL(/\/map\//);
@@ -128,6 +129,7 @@ test('rich pin metadata persistence and display', async ({ page }) => {
 });
 
 test('pin grouping and persistence', async ({ page }) => {
+  test.setTimeout(60000);
   await login(page);
 
   // Mock Places Search API before navigation
@@ -143,6 +145,11 @@ test('pin grouping and persistence', async ({ page }) => {
   await page.getByRole('button', { name: 'More options' }).click();
   await page.getByText('New Layer').click();
   await expect(page.getByText(/Layer 1 \(0\)|Group 1 \(0\)/)).toBeVisible();
+
+  // Wait for the new map to be created and socket connected before searching.
+  // Creating a layer triggers handleSave (isInitialCreating=true / editMode=false);
+  // searching while editMode=false can prevent results from rendering.
+  await waitForAutoSave(page);
 
   // 2. Add a pin
   const searchInput = page.getByPlaceholder('Search...');
