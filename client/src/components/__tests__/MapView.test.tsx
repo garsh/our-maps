@@ -274,6 +274,7 @@ describe('syncOfflineTerrain', () => {
 
     const mockHandlersProto = {
       _updateMapTransform: vi.fn(),
+      _terrainGestureElevation: vi.fn(() => 3250),
       _handleMapControls: vi.fn(),
       _fireEvents: vi.fn(),
     };
@@ -365,6 +366,7 @@ describe('syncOfflineTerrain', () => {
     expect(mockHelperProto._stableRecalculateZoomAndCenter).toBeDefined();
     expect(mockCameraHelperProto._stableHandleMapControlsPan).toBeDefined();
     expect(mockHandlersProto._stableUpdateMapTransform).toBeDefined();
+    expect(mockHandlersProto._stableTerrainGestureElevation).toBeDefined();
     expect(mockHandlersProto._stableHandleMapControls).toBeDefined();
     expect((mockTerrain as any)._originalGetOverscaledTileIDFromLngLatZoom).toBeDefined();
 
@@ -406,7 +408,9 @@ describe('syncOfflineTerrain', () => {
     mockCameraHelper.handleMapControlsPan({ zoomDelta: 0.1, around: { x: 600, y: 400, distSqr: () => 10000 } }, mockTr, {});
     expect(mockCameraHelperProto._stableHandleMapControlsPan).toHaveBeenCalled();
 
-    // 4. _updateMapTransform does not mutate camera when no deltas exist, but fires events directly
+    // 4. _updateMapTransform does not mutate camera when no deltas exist, but fires events directly.
+    // The terrain&&_terrainMovement passthrough from upstream is intentionally NOT restored —
+    // on zero-delta terrain frames, passing through would call _camera.stop(true) and kill inertia.
     mockHandlers._updateMapTransform({}, { zoom: false }, {});
     expect(mockHandlersProto._stableUpdateMapTransform).not.toHaveBeenCalled();
     expect(mockHandlersProto._stableFireEvents).toHaveBeenCalledWith({ zoom: false }, {}, true);
@@ -484,11 +488,22 @@ describe('syncOfflineTerrain', () => {
     expect(mockHandlers._camera._requestedCameraState).toBeUndefined();
     expect(mockHandlersProto._stableFireEvents).toHaveBeenCalled();
 
-    // 10. _handleMapControls unfreezes elevation during pure zoom so elevation updates continuously
+    // 10. _terrainGestureElevation bypasses ray-plane solve for pitch < 60 pure zoom to prevent lateral jitter
+    expect(mockHandlersProto._stableTerrainGestureElevation).toBeDefined();
+    expect(mockHandlers._terrainGestureElevation(mockTerrain, { x: 600, y: 400 }, true, mockTr, { zoom: true, drag: false })).toBeUndefined();
+    expect(mockHandlersProto._stableTerrainGestureElevation).not.toHaveBeenCalled();
+
+    // At pitch >= 60, it delegates to stable terrain gesture elevation
+    const mockTrPitched = { ...mockTr, pitch: 70 };
+    mockHandlers._terrainGestureElevation(mockTerrain, { x: 600, y: 400 }, true, mockTrPitched, { zoom: true, drag: false });
+    expect(mockHandlersProto._stableTerrainGestureElevation).toHaveBeenCalled();
+
+    // _handleMapControls unfreezes elevation during pure zoom so elevation updates continuously
     expect(mockHandlersProto._stableHandleMapControls).toBeDefined();
     mockCamera.elevationFreeze = true;
     mockHandlers._handleMapControls({ combinedEventsInProgress: { zoom: true, drag: false } });
     expect(mockCamera.elevationFreeze).toBe(false);
+
 
     // 11. setElevation eases sudden elevation changes (> 0.05m) when idle to prevent single-frame vertical pops
     mockHandlers._terrainMovement = false;

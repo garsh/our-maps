@@ -80,7 +80,9 @@ function throwTileNotFound(z: string | number, x: string | number, y: string | n
   throw err;
 }
 
-export function syncOfflineTerrain(map: any, show3DTerrain: boolean) {
+export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
+  if (!mapInput) return;
+  const map = typeof mapInput.getMap === 'function' ? mapInput.getMap() : mapInput;
   if (!map || typeof map.setTerrain !== 'function') return;
   try {
     const hasTerrain = typeof map.getTerrain === 'function' ? !!map.getTerrain() : false;
@@ -316,15 +318,18 @@ export function syncOfflineTerrain(map: any, show3DTerrain: boolean) {
             const res = this._stableApplyUpdatedTransform.call(this, tr);
             if ((this.transform?.pitch ?? 0) < 60 && beforeCenter && this.transform?.center) {
               const handlers = (map as any)._handlers;
-              const hasActiveDeltas = handlers?._changes?.some?.(([c]: any) => (
-                (c?.panDelta?.mag?.() ?? 0) > 0.05 ||
-                Math.abs(c?.zoomDelta ?? 0) > 1e-4
-              ));
-              // When idle (e.g. gesture finalize / finish frame), prevent tiny center drift
-              if (!hasActiveDeltas && !handlers?._terrainMovement) {
+              const isMoving = (
+                handlers?.isMoving?.() ||
+                handlers?.isZooming?.() ||
+                (map as any)?.scrollZoom?.isZooming?.() ||
+                handlers?._terrainMovement
+              );
+              // Only when genuinely idle (after gesture is completely finished), prevent tiny sub-millimeter noise drift.
+              // Never revert macroscopic deltas (> 1e-7 deg ~ 1cm), as those are legitimate camera movements.
+              if (!isMoving) {
                 const dLng = this.transform.center.lng - beforeCenter.lng;
                 const dLat = this.transform.center.lat - beforeCenter.lat;
-                if (Math.hypot(dLng, dLat) > 1e-9 && Math.hypot(dLng, dLat) < 1e-4) {
+                if (Math.hypot(dLng, dLat) > 1e-11 && Math.hypot(dLng, dLat) < 1e-7) {
                   this.transform.setCenter(beforeCenter);
                 }
               }
@@ -472,11 +477,31 @@ export function syncOfflineTerrain(map: any, show3DTerrain: boolean) {
               Math.abs(combinedResult?.pitchDelta ?? 0) > 1e-4 ||
               Math.abs(combinedResult?.rollDelta ?? 0) > 1e-4
             );
+            // Guard against zero-delta frames calling _camera.stop(true) inside
+            // _stableUpdateMapTransform, which would kill ongoing inertia easing.
+            // NOTE: The upstream terrain&&_terrainMovement passthrough is intentionally
+            // NOT restored here — on zero-delta terrain frames the anchor re-application
+            // in _handleMapControls is a no-op anyway (around defaults to centerPoint,
+            // both handleMapControlsPan guards return early), so skipping it is safe.
             if (!hasDelta) {
               this._fireEvents(combinedEventsInProgress, deactivatedHandlers, true);
               return;
             }
             return this._stableUpdateMapTransform.call(this, combinedResult, combinedEventsInProgress, deactivatedHandlers);
+          };
+
+        }
+        if (handlersProto && !handlersProto._stableTerrainGestureElevation && typeof handlersProto._terrainGestureElevation === 'function') {
+          handlersProto._stableTerrainGestureElevation = handlersProto._terrainGestureElevation;
+          handlersProto._terrainGestureElevation = function (terrain: any, around: any, aroundOnSurface: any, tr: any, combinedEventsInProgress: any) {
+            // For top-down / low pitch (pitch < 60), pure zoom gestures should anchor to the
+            // ground plane (undefined aroundElevation -> z=0 relative to tr.elevation in setLocationAtPoint).
+            // This guarantees zero lateral jitter and eliminates gl.readPixels stalls and missing-tile
+            // coords framebuffer null flickers that plague offline ancestor overscaled DEM tiles.
+            if ((tr?.pitch ?? 0) < 60 && combinedEventsInProgress?.zoom && !combinedEventsInProgress?.drag) {
+              return undefined;
+            }
+            return this._stableTerrainGestureElevation.call(this, terrain, around, aroundOnSurface, tr, combinedEventsInProgress);
           };
         }
         if (handlersProto && !handlersProto._stableHandleMapControls && typeof handlersProto._handleMapControls === 'function') {
@@ -497,20 +522,32 @@ export function syncOfflineTerrain(map: any, show3DTerrain: boolean) {
         if (handlersProto && !handlersProto._stableFireEvents && typeof handlersProto._fireEvents === 'function') {
           handlersProto._stableFireEvents = handlersProto._fireEvents;
           handlersProto._fireEvents = function (newEventsInProgress: any, deactivatedHandlers: any, allowEndAnimation: any) {
-            const wasMoving = !!(this._eventsInProgress?.zoom || this._eventsInProgress?.drag || this._eventsInProgress?.roll || this._eventsInProgress?.pitch || this._eventsInProgress?.rotate);
-            const nowMoving = !!(newEventsInProgress?.zoom || newEventsInProgress?.drag || newEventsInProgress?.roll || newEventsInProgress?.pitch || newEventsInProgress?.rotate);
-            const nextEvents = { ...newEventsInProgress };
-            for (const name in this._eventsInProgress) {
-              const { handlerName } = this._eventsInProgress[name] || {};
-              if (handlerName && !this._handlersById?.[handlerName]?.isActive?.()) {
-                delete nextEvents[name];
+            const isHandlerStillActive = () => {
+              if (typeof this.isZooming === 'function' && this.isZooming()) return true;
+              const mapInst = (this as any)._map || map;
+              if (mapInst?.scrollZoom?.isZooming?.()) return true;
+              if (typeof this.isMoving === 'function' && this.isMoving()) return true;
+              for (const name in this._eventsInProgress) {
+                const { handlerName } = this._eventsInProgress[name] || {};
+                if (!handlerName || this._handlersById?.[handlerName]?.isActive?.()) {
+                  return true;
+                }
               }
-            }
-            const stillMoving = !!(nextEvents?.zoom || nextEvents?.drag || nextEvents?.roll || nextEvents?.pitch || nextEvents?.rotate);
-            const finishedMoving = (wasMoving || nowMoving) && !stillMoving;
-            const hasDeactivated = deactivatedHandlers && Object.keys(deactivatedHandlers).length > 0;
+              for (const name in newEventsInProgress) {
+                const { handlerName } = newEventsInProgress[name] || {};
+                if (!handlerName || this._handlersById?.[handlerName]?.isActive?.()) {
+                  return true;
+                }
+              }
+              return false;
+            };
 
-            if ((finishedMoving || hasDeactivated) && this._terrainMovement && (this._camera?.transform?.pitch ?? 0) < 60) {
+            const stillMoving = isHandlerStillActive();
+
+            // Only finalize terrain gesture state when all movement has truly ended.
+            // Wheel-scroll animations and intermediate notch steps must not clear _terrainMovement
+            // or delete _requestedCameraState while scrolling is in progress.
+            if (!stillMoving && this._terrainMovement && (this._camera?.transform?.pitch ?? 0) < 60) {
               this._camera.elevationFreeze = false;
               this._terrainMovement = false;
               this._terrainGestureAnchorElevation = null;
