@@ -72,7 +72,7 @@ import { tileWorkerManager } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
 import { comparePinPositions } from '../utils/reorderUtils';
 import { getMapViewportBounds } from '../utils/mapViewport';
-import { PIN_COLORS, resolvePinColorCode, formatColorName, DEFAULT_ICON_COLORS } from '../utils/mapUtils';
+import { PIN_COLORS, resolvePinColorCode, formatColorName, DEFAULT_ICON_COLORS, getCoLocatedPinIds } from '../utils/mapUtils';
 import { CustomColorPicker } from './CustomColorPicker';
 
 class MouseSensor extends PointerSensor {
@@ -776,7 +776,7 @@ const SortablePin = memo(({
   return (
     <li 
       id={`pin-${pin.id}`}
-      className={`pin-list-item${isEditing ? ' pin-editing' : ''}${isDropTarget ? ' pin-drop-target' : ''}`}
+      className={`pin-list-item${isEditing ? ' pin-editing' : ''}${isDropTarget ? ' pin-drop-target' : ''}${isTarget ? ' pin-target' : ''}`}
       ref={setNodeRef} 
       style={{ 
         ...style, 
@@ -784,9 +784,8 @@ const SortablePin = memo(({
         marginBottom: '0px',
         scrollMarginTop: '24px',
         borderRadius: 'var(--radius-sm)',
-        background: isTarget ? 'rgba(72, 61, 139, 0.05)' : (isEditing ? 'var(--bg-color)' : undefined),
+        background: isEditing && !isTarget ? 'var(--bg-color)' : undefined,
         border: isEditing ? '1px solid var(--primary-color)' : '1px solid transparent',
-        boxShadow: isTarget ? '0 0 0 1px var(--primary-color)' : undefined,
         transition: 'all 0.1s ease',
         cursor: 'default',
         contentVisibility: isDropTarget ? 'visible' : undefined,
@@ -1085,7 +1084,7 @@ const SortableLayer = memo(({
   editingLayerId,
   onSetEditingLayerId,
   readOnly,
-  targetPinId,
+  targetPinIds,
   onHoverPin,
   customColors,
   onAddCustomColor,
@@ -1114,7 +1113,7 @@ const SortableLayer = memo(({
   editingLayerId?: string | null,
   onSetEditingLayerId?: (id: string | null) => void,
   readOnly: boolean,
-  targetPinId?: string | null,
+  targetPinIds?: Set<string>,
   onHoverPin?: (id: string | null, leavingPinId?: string) => void,
   customColors?: string[],
   onAddCustomColor?: (color: string) => void,
@@ -1420,7 +1419,7 @@ const SortableLayer = memo(({
                   onRemovePin={onRemovePin}
                   onUpdatePin={onUpdatePin}
                   isEditing={editingPinId === pin.id}
-                  isTarget={targetPinId === pin.id}
+                  isTarget={!!targetPinIds?.has(pin.id)}
                   setEditingPinId={onSetEditingPinId}
                   readOnly={readOnly}
                   onHoverPin={onHoverPin}
@@ -1448,6 +1447,60 @@ interface CollisionCache {
   scrollTop: number;
   containerCount: number;
   containerRectMap: Map<string, { top: number; bottom: number; left: number; right: number; height: number }>;
+}
+
+export const PIN_LIST_STICKY_HEADER_OFFSET = 38;
+
+export function isPinRowVisibleInList(
+  el: HTMLElement,
+  container: HTMLElement,
+  stickyHeaderOffset = PIN_LIST_STICKY_HEADER_OFFSET,
+): boolean {
+  const containerRect = container.getBoundingClientRect();
+  const elRect = el.getBoundingClientRect();
+  const scale = (container.offsetHeight > 0 ? containerRect.height / container.offsetHeight : 1) || 1;
+  const relativeVisualTop = (elRect.top - containerRect.top) / scale;
+  return relativeVisualTop >= stickyHeaderOffset
+    && relativeVisualTop + el.offsetHeight <= container.clientHeight - 8;
+}
+
+export function getPinListScrollElement(
+  container: HTMLElement,
+  pinIds: string[],
+  preferredId?: string | null,
+): HTMLElement | null {
+  const elements: HTMLElement[] = [];
+  for (const id of pinIds) {
+    const el = document.getElementById(`pin-${id}`);
+    if (el) elements.push(el);
+  }
+  if (elements.length === 0) return null;
+  if (elements.some(el => isPinRowVisibleInList(el, container))) return null;
+  if (preferredId) {
+    const preferred = document.getElementById(`pin-${preferredId}`);
+    if (preferred) return preferred;
+  }
+  return elements[0];
+}
+
+function scrollPinRowIntoList(
+  el: HTMLElement,
+  container: HTMLElement,
+  stickyHeaderOffset = PIN_LIST_STICKY_HEADER_OFFSET,
+) {
+  const containerRect = container.getBoundingClientRect();
+  const elRect = el.getBoundingClientRect();
+  const scale = (container.offsetHeight > 0 ? containerRect.height / container.offsetHeight : 1) || 1;
+  const relativeVisualTop = (elRect.top - containerRect.top) / scale;
+  const currentScroll = container.scrollTop;
+
+  if (relativeVisualTop < stickyHeaderOffset) {
+    const targetScrollTop = currentScroll + relativeVisualTop - stickyHeaderOffset - 4;
+    container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+  } else if (relativeVisualTop + el.offsetHeight > container.clientHeight - 8) {
+    const targetScrollTop = currentScroll + (relativeVisualTop + el.offsetHeight) - container.clientHeight + 24;
+    container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+  }
 }
 
 export function computeCustomCollisionDetection(
@@ -1769,38 +1822,31 @@ const Sidebar = ({
     return () => window.removeEventListener('ourmaps:edit-layer', handleEditLayerEvent as EventListener);
   }, []);
 
-  // Auto-scroll the sidebar list to keep the active/editing pin in view
+  const targetPinIds = useMemo(
+    () => new Set(getCoLocatedPinIds(pins, targetPinId)),
+    [pins, targetPinId],
+  );
+  const targetPinIdsKey = Array.from(targetPinIds).join(',');
+  const targetPinIdsRef = useRef(targetPinIds);
+  targetPinIdsRef.current = targetPinIds;
+
+  // Auto-scroll the sidebar list to keep the active/editing pin in view.
+  // Co-located pins (same exact lat/lng) are all highlighted; skip scrolling
+  // if any one of those rows is already visible.
   useEffect(() => {
-    const targetId = editingPinId || targetPinId;
-    if (!targetId) return;
+    const primaryId = editingPinId || targetPinId;
+    if (!primaryId) return;
+    const ids = editingPinId ? [editingPinId] : Array.from(targetPinIdsRef.current);
 
     const timer = setTimeout(() => {
-      const el = document.getElementById(`pin-${targetId}`);
       const container = scrollContainerRef.current;
-      if (el && container) {
-        const containerRect = container.getBoundingClientRect();
-        const elRect = el.getBoundingClientRect();
-        const scale = (container.offsetHeight > 0 ? containerRect.height / container.offsetHeight : 1) || 1;
-        
-        // Relative visual position of pin element from the top of the container viewport
-        const relativeVisualTop = (elRect.top - containerRect.top) / scale;
-        const currentScroll = container.scrollTop;
-        const stickyHeaderOffset = 38; // Account for sticky layer headers
-
-        if (relativeVisualTop < stickyHeaderOffset) {
-          // Pin is above or behind sticky header: scroll up to place it below header
-          const targetScrollTop = currentScroll + relativeVisualTop - stickyHeaderOffset - 4;
-          container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
-        } else if (relativeVisualTop + el.offsetHeight > container.clientHeight - 8) {
-          // Pin is below visible viewport: scroll down to bring it fully into view
-          const targetScrollTop = currentScroll + (relativeVisualTop + el.offsetHeight) - container.clientHeight + 24;
-          container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
-        }
-      }
+      if (!container) return;
+      const el = getPinListScrollElement(container, ids, primaryId);
+      if (el) scrollPinRowIntoList(el, container);
     }, 80);
 
     return () => clearTimeout(timer);
-  }, [targetPinId, editingPinId, pins.length]);
+  }, [targetPinId, editingPinId, pins.length, targetPinIdsKey]);
   // PWA Install State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
@@ -2814,7 +2860,7 @@ const Sidebar = ({
                 editingLayerId={editingLayerId}
                 onSetEditingLayerId={setEditingLayerId}
                 readOnly={readOnly}
-                targetPinId={targetPinId}
+                targetPinIds={targetPinIds}
                 onHoverPin={onHoverPin}
                 customColors={customColors}
                 onAddCustomColor={onAddCustomColor}
@@ -2859,7 +2905,7 @@ const Sidebar = ({
                         onRemovePin={onRemovePin}
                         onUpdatePin={onUpdatePin}
                         isEditing={editingPinId === pin.id}
-                        isTarget={targetPinId === pin.id}
+                        isTarget={!!targetPinIds?.has(pin.id)}
                         setEditingPinId={onSetEditingPinId}
                         readOnly={readOnly}
                         onHoverPin={onHoverPin}

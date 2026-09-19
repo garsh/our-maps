@@ -342,11 +342,13 @@ button:active {
 }
 
 .pin-list-item.pin-editing,
-.pin-list-item.pin-drop-target {
+.pin-list-item.pin-drop-target,
+.pin-list-item.pin-target {
   content-visibility: visible;
 }
 
-.pin-list-item.pin-hovered {
+.pin-list-item.pin-hovered,
+.pin-list-item.pin-target {
   background: rgba(72, 61, 139, 0.05);
   box-shadow: 0 0 0 1px var(--primary-color);
 }
@@ -354,6 +356,11 @@ button:active {
 .pin-list.pin-drag-active .pin-list-item.pin-hovered {
   background: transparent;
   box-shadow: none;
+}
+
+.pin-list.pin-drag-active .pin-list-item.pin-target {
+  background: rgba(72, 61, 139, 0.05);
+  box-shadow: 0 0 0 1px var(--primary-color);
 }
 
 @keyframes rainbowMove {

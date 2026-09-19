@@ -38,7 +38,7 @@ import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from
 import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
 
 import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer } from './utils/pinHover';
-import { PIN_COLORS } from './utils/mapUtils';
+import { PIN_COLORS, nextTargetPinIdAfterClick } from './utils/mapUtils';
 import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
@@ -1206,7 +1206,7 @@ export function MapEditor() {
     setIsPublic(Boolean(res.isPublic));
   };
 
-  const handlePinSelect = useCallback((pinId: string) => {
+  const handlePinSelect = useCallback((pinId: string, options?: { toggleSameLocation?: boolean }) => {
     if (Date.now() < ignoreMapClickUntil.current) return;
     // Clear stuck hover states on mobile/touch, or if a different pin was clicked
     clearHoveredPin();
@@ -1226,18 +1226,18 @@ export function MapEditor() {
     }
 
     setTargetPinId(prev => {
-      if (prev === pinId) {
+      const next = nextTargetPinIdAfterClick(prev, pinId, pinsRef.current, options);
+      if (next === null && prev !== null) {
         if (!isHoverBlockedRef.current && hasFinePointer()) {
           setHoveredPin(pinId);
         }
-        return null;
       }
-      return pinId;
+      return next;
     });
   }, []);
 
   const handlePinClick = useCallback((pin: Pin) => {
-    handlePinSelect(pin.id);
+    handlePinSelect(pin.id, { toggleSameLocation: true });
   }, [handlePinSelect]);
 
   const handleSetEditingPinId = useCallback((id: string | null) => {

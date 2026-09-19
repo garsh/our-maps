@@ -147,3 +147,35 @@ export function getPreviewMarkerHTML() {
 
   return { html, className: 'custom-pin-modern hovered', width, height };
 }
+
+export function pinsShareExactLocation(
+  a?: { lat: number; lng: number } | null,
+  b?: { lat: number; lng: number } | null,
+): boolean {
+  return !!a && !!b && a.lat === b.lat && a.lng === b.lng;
+}
+
+export function getCoLocatedPinIds(
+  pins: Array<{ id: string; lat: number; lng: number }>,
+  pinId: string | null | undefined,
+): string[] {
+  if (!pinId) return [];
+  const pin = pins.find(p => p.id === pinId);
+  if (!pin) return [pinId];
+  return pins.filter(p => p.lat === pin.lat && p.lng === pin.lng).map(p => p.id);
+}
+
+export function nextTargetPinIdAfterClick(
+  currentTargetId: string | null,
+  clickedPinId: string,
+  pins: Array<{ id: string; lat: number; lng: number }>,
+  options?: { toggleSameLocation?: boolean },
+): string | null {
+  if (currentTargetId === clickedPinId) return null;
+  if (options?.toggleSameLocation && currentTargetId) {
+    const current = pins.find(p => p.id === currentTargetId);
+    const clicked = pins.find(p => p.id === clickedPinId);
+    if (pinsShareExactLocation(current, clicked)) return null;
+  }
+  return clickedPinId;
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { isValidPinColor, isValidPinIcon, resolvePinColorCode, getPreviewMarkerHTML, formatColorName, DEFAULT_ICON_COLORS } from '../mapUtils';
+import { isValidPinColor, isValidPinIcon, resolvePinColorCode, getPreviewMarkerHTML, formatColorName, DEFAULT_ICON_COLORS, pinsShareExactLocation, getCoLocatedPinIds, nextTargetPinIdAfterClick } from '../mapUtils';
 import { bundledSpriteIconCount, isBundledSpriteId } from '../basemapSprites';
 import {
   getMapViewportBounds,
@@ -62,6 +62,34 @@ describe('mapUtils', () => {
       expect(DEFAULT_ICON_COLORS.gas).toBe('brown');
       expect(DEFAULT_ICON_COLORS.charging).toBe('brown');
       expect(DEFAULT_ICON_COLORS.shopping).toBe('pink');
+    });
+  });
+
+  describe('co-located pins', () => {
+    const pins = [
+      { id: 'h1', lat: 40.0, lng: -105.0 },
+      { id: 'h2', lat: 40.0, lng: -105.0 },
+      { id: 'cafe', lat: 40.1, lng: -105.1 },
+    ];
+
+    it('treats identical coordinates as the same location', () => {
+      expect(pinsShareExactLocation(pins[0], pins[1])).toBe(true);
+      expect(pinsShareExactLocation(pins[0], pins[2])).toBe(false);
+      expect(pinsShareExactLocation(null, pins[0])).toBe(false);
+    });
+
+    it('returns every pin id at the same exact location as the target', () => {
+      expect(getCoLocatedPinIds(pins, 'h1')).toEqual(['h1', 'h2']);
+      expect(getCoLocatedPinIds(pins, 'cafe')).toEqual(['cafe']);
+      expect(getCoLocatedPinIds(pins, null)).toEqual([]);
+      expect(getCoLocatedPinIds(pins, 'missing')).toEqual(['missing']);
+    });
+
+    it('toggles the whole co-located group off when any instance is clicked', () => {
+      expect(nextTargetPinIdAfterClick('h1', 'h1', pins, { toggleSameLocation: true })).toBeNull();
+      expect(nextTargetPinIdAfterClick('h1', 'h2', pins, { toggleSameLocation: true })).toBeNull();
+      expect(nextTargetPinIdAfterClick('h1', 'cafe', pins, { toggleSameLocation: true })).toBe('cafe');
+      expect(nextTargetPinIdAfterClick(null, 'h1', pins, { toggleSameLocation: true })).toBe('h1');
     });
   });
 

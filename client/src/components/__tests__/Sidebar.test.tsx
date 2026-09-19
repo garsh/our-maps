@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import Sidebar, { computeCustomCollisionDetection } from '../Sidebar';
+import Sidebar, { computeCustomCollisionDetection, isPinRowVisibleInList, getPinListScrollElement } from '../Sidebar';
 import { useState } from 'react';
 import * as dndSortable from '@dnd-kit/sortable';
 import * as dndCore from '@dnd-kit/core';
@@ -1164,5 +1164,133 @@ describe('Sidebar', () => {
 
     fireEvent.click(signInBtn);
     expect(onSignIn).toHaveBeenCalled();
+  });
+
+  it('highlights every pin at the same exact location when one is targeted', () => {
+    const layers = [
+      { id: 'day-1', name: 'Day 1', position: 0 },
+      { id: 'day-2', name: 'Day 2', position: 1 },
+    ];
+    const pins = [
+      { id: 'h1', lat: 40.0, lng: -105.0, label: 'Hotel Night 1', layerId: 'day-1', position: 0 },
+      { id: 'h2', lat: 40.0, lng: -105.0, label: 'Hotel Night 2', layerId: 'day-2', position: 0 },
+      { id: 'cafe', lat: 40.1, lng: -105.1, label: 'Cafe', layerId: 'day-1', position: 1 },
+    ];
+
+    render(
+      <TestWrapper
+        pins={pins}
+        handlers={{ layers, targetPinId: 'h1' }}
+      />
+    );
+
+    expect(screen.getByText('Hotel Night 1').closest('li')).toHaveClass('pin-target');
+    expect(screen.getByText('Hotel Night 2').closest('li')).toHaveClass('pin-target');
+    expect(screen.getByText('Cafe').closest('li')).not.toHaveClass('pin-target');
+  });
+
+  it('does not highlight a co-located pin whose layer is collapsed', () => {
+    const layers = [
+      { id: 'day-1', name: 'Day 1', position: 0 },
+      { id: 'day-2', name: 'Day 2', position: 1 },
+    ];
+    const pins = [
+      { id: 'h1', lat: 40.0, lng: -105.0, label: 'Hotel Night 1', layerId: 'day-1', position: 0 },
+      { id: 'h2', lat: 40.0, lng: -105.0, label: 'Hotel Night 2', layerId: 'day-2', position: 0 },
+    ];
+
+    render(
+      <TestWrapper
+        pins={pins}
+        handlers={{ layers, targetPinId: 'h1', collapsedLayerIds: new Set(['day-2']) }}
+      />
+    );
+
+    expect(screen.getByText('Hotel Night 1').closest('li')).toHaveClass('pin-target');
+    expect(screen.queryByText('Hotel Night 2')).not.toBeInTheDocument();
+  });
+
+  it('highlights co-located pins in the default layer', () => {
+    const pins = [
+      { id: 'h1', lat: 40.0, lng: -105.0, label: 'Hotel A', position: 0 },
+      { id: 'h2', lat: 40.0, lng: -105.0, label: 'Hotel B', position: 1 },
+    ];
+
+    render(<TestWrapper pins={pins} handlers={{ targetPinId: 'h2' }} />);
+
+    expect(screen.getByText('Hotel A').closest('li')).toHaveClass('pin-target');
+    expect(screen.getByText('Hotel B').closest('li')).toHaveClass('pin-target');
+  });
+});
+
+describe('pin list scroll targeting', () => {
+  const mockRect = (el: HTMLElement, rect: { top: number; height: number }) => {
+    Object.defineProperty(el, 'offsetHeight', { value: rect.height, configurable: true });
+    el.getBoundingClientRect = () => ({
+      x: 0,
+      y: rect.top,
+      width: 300,
+      height: rect.height,
+      top: rect.top,
+      left: 0,
+      bottom: rect.top + rect.height,
+      right: 300,
+      toJSON() { return {}; },
+    });
+  };
+
+  const makeContainer = (clientHeight: number) => {
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'clientHeight', { value: clientHeight, configurable: true });
+    Object.defineProperty(container, 'offsetHeight', { value: clientHeight, configurable: true });
+    mockRect(container, { top: 0, height: clientHeight });
+    document.body.appendChild(container);
+    return container;
+  };
+
+  const makePinRow = (id: string, top: number, height = 24) => {
+    const el = document.createElement('li');
+    el.id = `pin-${id}`;
+    mockRect(el, { top, height });
+    document.body.appendChild(el);
+    return el;
+  };
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('treats a row behind the sticky header or below the viewport as not visible', () => {
+    const container = makeContainer(200);
+    const behindHeader = makePinRow('a', 20);
+    const inView = makePinRow('b', 50);
+    const belowFold = makePinRow('c', 180);
+
+    expect(isPinRowVisibleInList(behindHeader, container)).toBe(false);
+    expect(isPinRowVisibleInList(inView, container)).toBe(true);
+    expect(isPinRowVisibleInList(belowFold, container)).toBe(false);
+  });
+
+  it('does not request a scroll target when any co-located pin is already visible', () => {
+    const container = makeContainer(200);
+    makePinRow('h1', 250);
+    makePinRow('h2', 50);
+
+    expect(getPinListScrollElement(container, ['h1', 'h2'], 'h1')).toBeNull();
+  });
+
+  it('scrolls to the preferred pin when none of the co-located pins are visible', () => {
+    const container = makeContainer(200);
+    const preferred = makePinRow('h1', 250);
+    makePinRow('h2', 280);
+
+    expect(getPinListScrollElement(container, ['h1', 'h2'], 'h1')).toBe(preferred);
+  });
+
+  it('does not scroll when the preferred pin is missing but a sibling is in view', () => {
+    const container = makeContainer(200);
+    makePinRow('h2', 50);
+
+    expect(getPinListScrollElement(container, ['h1', 'h2'], 'h1')).toBeNull();
   });
 });
