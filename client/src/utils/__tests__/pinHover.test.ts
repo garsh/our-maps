@@ -10,6 +10,8 @@ import {
   resetPinHoverForTests,
   hasFinePointer,
   setLastPointerTypeForTests,
+  syncCoLocatedPins,
+  refreshHoveredPinListClasses,
 } from '../pinHover';
 
 describe('pinHover', () => {
@@ -75,6 +77,53 @@ describe('pinHover', () => {
 
     clearHoveredPin();
     expect(rowB.classList.contains(PIN_HOVER_CLASS)).toBe(false);
+  });
+
+  it('applies the list hover class to every pin at the same exact location', () => {
+    const rowA = document.createElement('li');
+    rowA.id = 'pin-a';
+    const rowB = document.createElement('li');
+    rowB.id = 'pin-b';
+    const rowC = document.createElement('li');
+    rowC.id = 'pin-c';
+    document.body.append(rowA, rowB, rowC);
+
+    syncCoLocatedPins([
+      { id: 'a', lat: 40, lng: -105 },
+      { id: 'b', lat: 40, lng: -105 },
+      { id: 'c', lat: 41, lng: -105 },
+    ]);
+
+    setHoveredPin('a');
+    expect(rowA.classList.contains(PIN_HOVER_CLASS)).toBe(true);
+    expect(rowB.classList.contains(PIN_HOVER_CLASS)).toBe(true);
+    expect(rowC.classList.contains(PIN_HOVER_CLASS)).toBe(false);
+
+    setHoveredPin('c');
+    expect(rowA.classList.contains(PIN_HOVER_CLASS)).toBe(false);
+    expect(rowB.classList.contains(PIN_HOVER_CLASS)).toBe(false);
+    expect(rowC.classList.contains(PIN_HOVER_CLASS)).toBe(true);
+  });
+
+  it('picks up a newly mounted co-located row on refresh', () => {
+    const rowA = document.createElement('li');
+    rowA.id = 'pin-a';
+    document.body.append(rowA);
+
+    syncCoLocatedPins([
+      { id: 'a', lat: 40, lng: -105 },
+      { id: 'b', lat: 40, lng: -105 },
+    ]);
+    setHoveredPin('a');
+    expect(rowA.classList.contains(PIN_HOVER_CLASS)).toBe(true);
+
+    const rowB = document.createElement('li');
+    rowB.id = 'pin-b';
+    document.body.append(rowB);
+    expect(rowB.classList.contains(PIN_HOVER_CLASS)).toBe(false);
+
+    refreshHoveredPinListClasses();
+    expect(rowB.classList.contains(PIN_HOVER_CLASS)).toBe(true);
   });
 
   it('subscribes and updates useHoveredPinId correctly', () => {

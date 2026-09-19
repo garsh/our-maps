@@ -4,7 +4,7 @@ import Sidebar, { computeCustomCollisionDetection, isPinRowVisibleInList, getPin
 import { useState } from 'react';
 import * as dndSortable from '@dnd-kit/sortable';
 import * as dndCore from '@dnd-kit/core';
-import { PIN_HOVER_CLASS, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
+import { PIN_HOVER_CLASS, setHoveredPin, resetPinHoverForTests, syncCoLocatedPins } from '../../utils/pinHover';
 
 describe('Sidebar', () => {
   beforeEach(() => {
@@ -244,6 +244,25 @@ describe('Sidebar', () => {
 
     setHoveredPin('1');
     expect(pinRow).toHaveClass(PIN_HOVER_CLASS);
+  });
+
+  it('applies hover class to every co-located pin row', () => {
+    const layers = [
+      { id: 'day-1', name: 'Day 1', position: 0 },
+      { id: 'day-2', name: 'Day 2', position: 1 },
+    ];
+    const pins = [
+      { id: 'h1', lat: 40.0, lng: -105.0, label: 'Hotel Night 1', layerId: 'day-1', position: 0 },
+      { id: 'h2', lat: 40.0, lng: -105.0, label: 'Hotel Night 2', layerId: 'day-2', position: 0 },
+      { id: 'cafe', lat: 40.1, lng: -105.1, label: 'Cafe', layerId: 'day-1', position: 1 },
+    ];
+    syncCoLocatedPins(pins);
+    render(<TestWrapper pins={pins} handlers={{ layers }} />);
+
+    setHoveredPin('h2');
+    expect(screen.getByText('Hotel Night 1').closest('li')).toHaveClass(PIN_HOVER_CLASS);
+    expect(screen.getByText('Hotel Night 2').closest('li')).toHaveClass(PIN_HOVER_CLASS);
+    expect(screen.getByText('Cafe').closest('li')).not.toHaveClass(PIN_HOVER_CLASS);
   });
 
   it('shows the Download for Offline option in the menu when map is not downloaded', async () => {

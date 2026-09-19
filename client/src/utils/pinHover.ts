@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 export const PIN_HOVER_CLASS = 'pin-hovered';
 
 let hoveredId: string | null = null;
-let lastHoveredEl: HTMLElement | null = null;
+let lastHoveredEls: HTMLElement[] = [];
+let coLocatedById = new Map<string, string[]>();
 let lastPointerType: string = 'mouse';
 const listeners = new Set<(id: string | null) => void>();
 
@@ -55,19 +56,43 @@ export function getHoveredPinId(): string | null {
   return hoveredId;
 }
 
+export function syncCoLocatedPins(pins: Array<{ id: string; lat: number; lng: number }>) {
+  const groups = new Map<string, string[]>();
+  for (const pin of pins) {
+    const key = `${pin.lat},${pin.lng}`;
+    const group = groups.get(key);
+    if (group) group.push(pin.id);
+    else groups.set(key, [pin.id]);
+  }
+  const next = new Map<string, string[]>();
+  for (const group of groups.values()) {
+    for (const id of group) next.set(id, group);
+  }
+  coLocatedById = next;
+}
+
+function hoverGroupIds(id: string): string[] {
+  return coLocatedById.get(id) ?? [id];
+}
+
 function applyListHoverClass(id: string | null) {
   if (typeof document === 'undefined') return;
-  if (lastHoveredEl) {
-    lastHoveredEl.classList.remove(PIN_HOVER_CLASS);
-    lastHoveredEl = null;
+  for (const el of lastHoveredEls) {
+    el.classList.remove(PIN_HOVER_CLASS);
   }
-  if (id) {
-    const el = document.getElementById(`pin-${id}`);
+  lastHoveredEls = [];
+  if (!id) return;
+  for (const hoverId of hoverGroupIds(id)) {
+    const el = document.getElementById(`pin-${hoverId}`);
     if (el) {
       el.classList.add(PIN_HOVER_CLASS);
-      lastHoveredEl = el;
+      lastHoveredEls.push(el);
     }
   }
+}
+
+export function refreshHoveredPinListClasses() {
+  applyListHoverClass(hoveredId);
 }
 
 function notify(id: string | null) {
@@ -112,7 +137,8 @@ export function useHoveredPinId(): string | null {
 
 export function resetPinHoverForTests() {
   hoveredId = null;
-  lastHoveredEl = null;
+  lastHoveredEls = [];
+  coLocatedById = new Map();
   lastPointerType = 'mouse';
   finePointerMedia = null;
   listeners.clear();

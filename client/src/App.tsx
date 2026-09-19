@@ -37,7 +37,7 @@ import { preloadExtract, setActiveOfflineMapId } from './utils/offlineExtract';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
 import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
 
-import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer } from './utils/pinHover';
+import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer, syncCoLocatedPins } from './utils/pinHover';
 import { PIN_COLORS, nextTargetPinIdAfterClick } from './utils/mapUtils';
 import { io, Socket } from 'socket.io-client';
 
@@ -66,6 +66,7 @@ export function MapEditor() {
   const [pins, setPins] = useState<Pin[]>([])
   const pinsRef = useRef(pins);
   pinsRef.current = pins;
+  syncCoLocatedPins(pins);
   const [layers, setLayers] = useState<PinLayer[]>([])
   const layersRef = useRef(layers);
   layersRef.current = layers;

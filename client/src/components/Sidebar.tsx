@@ -2,6 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from 'react-dom';
 import SearchBar, { type SearchAreaState } from './SearchBar';
 import { reverseGeocode } from '../utils/geocoding';
+import { refreshHoveredPinListClasses } from '../utils/pinHover';
 import type { Pin, PinIcon, PinLayer } from '@shared/interfaces';
 import { 
   Bed, 
@@ -1826,6 +1827,10 @@ const Sidebar = ({
     () => new Set(getCoLocatedPinIds(pins, targetPinId)),
     [pins, targetPinId],
   );
+
+  useLayoutEffect(() => {
+    refreshHoveredPinListClasses();
+  }, [pins, collapsedLayerIds]);
   const targetPinIdsKey = Array.from(targetPinIds).join(',');
   const targetPinIdsRef = useRef(targetPinIds);
   targetPinIdsRef.current = targetPinIds;
