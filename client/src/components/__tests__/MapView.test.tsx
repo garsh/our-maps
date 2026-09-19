@@ -1107,13 +1107,13 @@ describe('MapView Compass and Tilt Indicator', () => {
     });
 
     expect(capturedMapProps.current?.id).toBe('map-session-1');
-    expect(capturedMapProps.current.initialViewState).toEqual({
+    expect(capturedMapProps.current.initialViewState).toEqual(expect.objectContaining({
       longitude: -75,
       latitude: 37.1875,
       zoom: 12.4,
       pitch: 0,
       bearing: 15,
-    });
+    }));
   });
 
   it('does not re-run the initial fit-all-pins camera after an orientation remount', async () => {
@@ -1199,6 +1199,122 @@ describe('MapView Compass and Tilt Indicator', () => {
         padding: { top: 0, right: 0, left: 400, bottom: 0 },
       }));
     });
+  });
+
+  it('does not recapture the visible center from a map whose canvas has already resized', async () => {
+    const { rerender } = render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        show3DTerrain={true}
+        bottomPadding={350}
+        leftPadding={0}
+      />
+    );
+
+    act(() => {
+      capturedMapProps.current.onMove({
+        viewState: { longitude: -107.5, latitude: 38.5, zoom: 12, pitch: 0, bearing: 0 },
+      });
+    });
+
+    // Android MapLibre often emits move with the new canvas size before
+    // orientationchange/resize, while chrome padding is still stale.
+    mockGetContainer.mockReturnValue({
+      getBoundingClientRect: () => ({ width: 1100, height: 800 }),
+      clientWidth: 1100,
+      clientHeight: 800,
+    });
+
+    act(() => {
+      capturedMapProps.current.onMove({
+        viewState: { longitude: -100, latitude: 30, zoom: 12, pitch: 0, bearing: 0 },
+      });
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event('orientationchange'));
+    });
+
+    mockJumpTo.mockClear();
+
+    rerender(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        show3DTerrain={true}
+        bottomPadding={0}
+        leftPadding={400}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockJumpTo).toHaveBeenCalledWith(expect.objectContaining({
+        center: [-75, 37.1875],
+        padding: { top: 0, right: 0, left: 400, bottom: 0 },
+      }));
+    });
+
+    mockGetContainer.mockReturnValue({
+      getBoundingClientRect: () => ({ width: 1000, height: 800 }),
+      clientWidth: 1000,
+      clientHeight: 800,
+    });
+  });
+
+  it('does not remount again or drop sidebar padding after the visible center is restored', async () => {
+    const { rerender } = render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        show3DTerrain={true}
+        bottomPadding={350}
+        leftPadding={0}
+      />
+    );
+
+    act(() => {
+      capturedMapProps.current.onMove({
+        viewState: { longitude: -107.5, latitude: 38.5, zoom: 12, pitch: 0, bearing: 0 },
+      });
+    });
+
+    act(() => {
+      window.dispatchEvent(new Event('orientationchange'));
+    });
+
+    rerender(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        show3DTerrain={true}
+        bottomPadding={0}
+        leftPadding={400}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockJumpTo).toHaveBeenCalledWith(expect.objectContaining({
+        center: [-75, 37.1875],
+        padding: { top: 0, right: 0, left: 400, bottom: 0 },
+      }));
+    });
+
+    const sessionId = capturedMapProps.current?.id;
+    mockJumpTo.mockClear();
+
+    act(() => {
+      window.dispatchEvent(new Event('resize'));
+      window.dispatchEvent(new Event('orientationchange'));
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    expect(capturedMapProps.current?.id).toBe(sessionId);
+    expect(mockJumpTo).not.toHaveBeenCalled();
   });
 
   it('keeps the unobscured center when the desktop window is resized without remounting', async () => {

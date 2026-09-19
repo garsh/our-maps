@@ -47,6 +47,21 @@ export function clampSidebarWidth(width: number, viewportWidth: number, min = 20
   return Math.max(min, Math.min(viewportWidth - maxMargin, width));
 }
 
+const MOBILE_LAYOUT_MAX_WIDTH = 768;
+
+function viewportIsMobile() {
+  return window.innerWidth <= MOBILE_LAYOUT_MAX_WIDTH;
+}
+
+function viewportOrientation(): 'portrait' | 'landscape' {
+  return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+}
+
+function standardSheetHeight() {
+  if (typeof window === 'undefined') return 300;
+  return Math.min(350, Math.round(window.innerHeight * 0.45));
+}
+
 /** Returns the next available position value for a pin in the given layer. Single-pass, no spread. */
 function getNextPinPosition(allPins: Pin[], targetLayerId?: string): number {
   let max = -1;
@@ -156,7 +171,7 @@ export function MapEditor() {
   }, []);
 
   // Mobile layout states
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [isMobile, setIsMobile] = useState(viewportIsMobile);
 
   // Dynamic mobile scale: calibrated so DPR ~2.75 gives scale 1.5.
   const computeMobileScale = () => {
@@ -224,13 +239,26 @@ export function MapEditor() {
 
   useEffect(() => {
     let resizeRaf: number | null = null;
+    let lastOrientation = viewportOrientation();
+    const syncViewportLayout = () => {
+      const mobile = viewportIsMobile();
+      const orientation = viewportOrientation();
+      setIsMobile(mobile);
+      setMobileScale(computeMobileScale());
+      if (orientation !== lastOrientation) {
+        lastOrientation = orientation;
+        if (mobile) setSheetHeight(standardSheetHeight());
+      }
+    };
     const handleResize = () => {
       if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
       resizeRaf = requestAnimationFrame(() => {
-        setIsMobile(window.innerWidth <= 768);
-        setMobileScale(computeMobileScale());
+        syncViewportLayout();
         resizeRaf = null;
       });
+    };
+    const handleOrientation = () => {
+      syncViewportLayout();
     };
     const handleOnline = () => applyOffline(false, true);
     const handleOffline = () => applyOffline(true, true);
@@ -254,6 +282,8 @@ export function MapEditor() {
     };
 
     window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleOrientation);
+    window.screen?.orientation?.addEventListener?.('change', handleOrientation);
     window.visualViewport?.addEventListener('resize', handleResize);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -266,6 +296,8 @@ export function MapEditor() {
         pendingTransitionTimerRef.current = null;
       }
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleOrientation);
+      window.screen?.orientation?.removeEventListener?.('change', handleOrientation);
       window.visualViewport?.removeEventListener('resize', handleResize);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
@@ -273,12 +305,9 @@ export function MapEditor() {
     };
   }, [applyOffline]);
 
-  const getStandardSheetHeight = () => {
-    if (typeof window === 'undefined') return 300;
-    return Math.min(350, Math.round(window.innerHeight * 0.45));
-  };
+  const getStandardSheetHeight = standardSheetHeight;
 
-  const [sheetHeight, setSheetHeight] = useState(getStandardSheetHeight);
+  const [sheetHeight, setSheetHeight] = useState(standardSheetHeight);
   const [isDraggingSheet, setIsDraggingSheet] = useState(false);
   const [isHoverBlocked, setIsHoverBlocked] = useState(false);
   const isHoverBlockedRef = useRef(false);

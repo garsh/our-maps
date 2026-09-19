@@ -446,6 +446,59 @@ describe('App Components Error Handling', () => {
     expect(pinList?.classList.contains('pin-hover-blocked')).toBe(true);
   });
 
+  it('switches from the portrait bottom sheet to a landscape sidebar and back', async () => {
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    window.innerWidth = 400;
+    window.innerHeight = 800;
+
+    const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Synced/i)).toBeInTheDocument();
+    });
+
+    const portraitSheet = container.querySelector('.mobile-bottom-sheet') as HTMLElement;
+    expect(portraitSheet).toBeTruthy();
+    expect(portraitSheet.style.height).toBe('350px');
+
+    await act(async () => {
+      window.innerWidth = 900;
+      window.innerHeight = 400;
+      window.dispatchEvent(new Event('orientationchange'));
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('.mobile-bottom-sheet')).toBeFalsy();
+    });
+
+    await act(async () => {
+      window.innerWidth = 400;
+      window.innerHeight = 800;
+      window.dispatchEvent(new Event('orientationchange'));
+    });
+
+    await waitFor(() => {
+      const sheet = container.querySelector('.mobile-bottom-sheet') as HTMLElement;
+      expect(sheet).toBeTruthy();
+      expect(sheet.style.height).toBe('350px');
+    });
+  });
+
   it('restores hover state when deselecting a pin by clicking it with fine pointer', async () => {
     (apiService.getMap as any).mockResolvedValue({
       id: 'map-1',
