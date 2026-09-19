@@ -1468,6 +1468,12 @@ const MapView = ({
       mapInstance.once('load', () => {
         setIsMapLoaded(true);
         syncOfflineTerrain(mapInstance, show3DTerrainRef.current);
+        // Ensure the attribution/version dialog starts collapsed — MapLibre's
+        // AttributionControl adds maplibregl-compact-show on init which expands
+        // it automatically. We always want it closed until the user taps it.
+        mapInstance.getContainer()
+          .querySelectorAll<HTMLElement>('.maplibregl-compact-show')
+          .forEach(el => el.classList.remove('maplibregl-compact-show'));
         mapInstance.triggerRepaint();
       });
       mapInstance.once('idle', () => {
