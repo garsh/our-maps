@@ -357,10 +357,6 @@ describe('syncOfflineTerrain', () => {
     expect(mockCameraProto._stableElevateCameraIfInsideTerrain).toBeDefined();
     expect(mockCameraProto._stableApplyUpdatedTransform).toBeDefined();
     expect(mockCameraProto._stableFinalizeElevation).toBeDefined();
-    expect(mockCameraProto._stableAfterEase).toBeDefined();
-    expect(mockCameraProto._stableEaseTo).toBeDefined();
-    expect(mockTtmProto._stableReleaseRTT).toBeDefined();
-    expect(mockRttProto._stablePrepareForRender).toBeDefined();
     expect(mockTrProto._stableRecalculateZoomAndCenter).toBeDefined();
     expect(mockTrProto._stableSetElevation).toBeDefined();
     expect(mockHelperProto._stableRecalculateZoomAndCenter).toBeDefined();
@@ -418,66 +414,14 @@ describe('syncOfflineTerrain', () => {
     mockHandlers._updateMapTransform({ zoomDelta: 0.2 }, { zoom: true }, {});
     expect(mockHandlersProto._stableUpdateMapTransform).toHaveBeenCalledWith({ zoomDelta: 0.2 }, { zoom: true }, {});
 
-    // 5. _finalizeElevation updates elevation safely and triggers repaint when pitch < 60
+    // 5. _finalizeElevation clears elevationFreeze without calling recalculateZoomAndCenter when pitch < 60
     expect(mockCameraProto._stableFinalizeElevation).toBeDefined();
-    mockMap.triggerRepaint.mockClear();
     mockCamera.elevationFreeze = true;
-    const spyRecalc = vi.spyOn(mockTr, 'recalculateZoomAndCenter');
     mockCamera._finalizeElevation();
     expect(mockCamera.elevationFreeze).toBe(false);
     expect(mockCameraProto._stableFinalizeElevation).not.toHaveBeenCalled();
-    expect(spyRecalc).toHaveBeenCalledWith(mockCamera.terrain);
-    expect(mockMap.triggerRepaint).toHaveBeenCalled();
-    spyRecalc.mockRestore();
 
-    // 6. _afterEase unfreezes elevation, recalculates elevation, and triggers repaint
-    mockMap.triggerRepaint.mockClear();
-    mockCamera.elevationFreeze = true;
-    mockCamera._afterEase();
-    expect(mockCamera.elevationFreeze).toBe(false);
-    expect(mockCameraProto._stableAfterEase).toHaveBeenCalled();
-    expect(mockMap.triggerRepaint).toHaveBeenCalled();
-
-    // 7. easeTo unfreezes freezeElevation during top-down/low-pitch inertia coast
-    mockCameraProto._stableEaseTo.mockClear();
-    mockCamera.easeTo({ freezeElevation: true, duration: 500 });
-    expect(mockCameraProto._stableEaseTo).toHaveBeenCalledWith(expect.objectContaining({ freezeElevation: false }), undefined);
-    expect(mockCamera.elevationFreeze).toBe(false);
-
-    // 8. releaseRTT invalidates overscaled terrain tiles (z >= 16) when canonical parent vector tile (z = 15) loads
-    const mockReleaseRTT = vi.fn();
-    const mockTerrainTile = {
-      tileID: {
-        wrap: 0,
-        canonical: {
-          z: 16,
-          x: 100,
-          y: 200,
-          equals: (other: any) => other.z === 16 && other.x === 100 && other.y === 200,
-          isChildOf: (other: any) => other.z === 15 && other.x === 50 && other.y === 100,
-        },
-        overscaledZ: 16,
-      },
-      releaseRTT: mockReleaseRTT,
-    };
-    mockTileManager._tiles = { '16/100/200': mockTerrainTile };
-    const vectorTileID = {
-      wrap: 0,
-      canonical: {
-        z: 15,
-        x: 50,
-        y: 100,
-        equals: () => false,
-        isChildOf: () => false,
-      },
-      overscaledZ: 16,
-    };
-    mockMap.triggerRepaint.mockClear();
-    mockTileManager.releaseRTT(vectorTileID);
-    expect(mockReleaseRTT).toHaveBeenCalledWith(mockMap.painter);
-    expect(mockMap.triggerRepaint).toHaveBeenCalled();
-
-    // 9. _fireEvents clears _terrainMovement and elevationFreeze when finishedMoving occurs without recalculating zoom/center
+    // 6. _fireEvents clears _terrainMovement and elevationFreeze when finishedMoving occurs without recalculating zoom/center
     expect(mockHandlersProto._stableFireEvents).toBeDefined();
     mockHandlers._terrainMovement = true;
     mockCamera.elevationFreeze = true;
@@ -488,7 +432,7 @@ describe('syncOfflineTerrain', () => {
     expect(mockHandlers._camera._requestedCameraState).toBeUndefined();
     expect(mockHandlersProto._stableFireEvents).toHaveBeenCalled();
 
-    // 10. _terrainGestureElevation bypasses ray-plane solve for pitch < 60 pure zoom to prevent lateral jitter
+    // 7. _terrainGestureElevation bypasses ray-plane solve for pitch < 60 pure zoom to prevent lateral jitter
     expect(mockHandlersProto._stableTerrainGestureElevation).toBeDefined();
     expect(mockHandlers._terrainGestureElevation(mockTerrain, { x: 600, y: 400 }, true, mockTr, { zoom: true, drag: false })).toBeUndefined();
     expect(mockHandlersProto._stableTerrainGestureElevation).not.toHaveBeenCalled();
@@ -498,14 +442,13 @@ describe('syncOfflineTerrain', () => {
     mockHandlers._terrainGestureElevation(mockTerrain, { x: 600, y: 400 }, true, mockTrPitched, { zoom: true, drag: false });
     expect(mockHandlersProto._stableTerrainGestureElevation).toHaveBeenCalled();
 
-    // _handleMapControls unfreezes elevation during pure zoom so elevation updates continuously
+    // 8. _handleMapControls unfreezes elevation during pure zoom so elevation updates continuously
     expect(mockHandlersProto._stableHandleMapControls).toBeDefined();
     mockCamera.elevationFreeze = true;
     mockHandlers._handleMapControls({ combinedEventsInProgress: { zoom: true, drag: false } });
     expect(mockCamera.elevationFreeze).toBe(false);
 
-
-    // 11. setElevation eases sudden elevation changes (> 0.05m) when idle to prevent single-frame vertical pops
+    // 9. setElevation eases sudden elevation changes (> 0.05m) when idle to prevent single-frame vertical pops
     mockHandlers._terrainMovement = false;
     mockTr._elevation = 3200;
     mockMap.triggerRepaint.mockClear();
@@ -1289,8 +1232,6 @@ describe('MapView Compass and Tilt Indicator', () => {
     const camera: any = Object.create(cameraProto);
     camera.transform = tr;
     camera._finalizeElevation = vi.fn();
-    camera._afterEase = vi.fn();
-    camera.easeTo = vi.fn();
 
     const terrainProto = {
       getMinTileElevationForLngLatZoom(this: any, lnglat: any) {

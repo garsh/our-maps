@@ -9,8 +9,9 @@ COPY client/package.json client/package-lock.json ./client/
 COPY server/package.json server/package-lock.json ./server/
 
 # Install client (Vite build) and server (tsc) dependencies.
-# Root deps (Playwright, concurrently, wait-on) are not used in this image.
+# Root deps (Playwright, wait-on) are not used in this image, but concurrently is needed for build.
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+RUN npm install -g concurrently@8.2.2
 RUN cd client && npm ci --no-audit --no-fund
 RUN cd server && npm ci --no-audit --no-fund
 
