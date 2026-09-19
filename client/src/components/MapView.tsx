@@ -94,6 +94,67 @@ export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
         // Allow terrain RTT generation up to zoom 22 so vector roads and linear features
         // are rendered at full screen resolution without pixelation, blur, or stair-stepping.
         map.terrain.tileManager.maxzoom = 22;
+
+        const ttmProto = Object.getPrototypeOf(map.terrain.tileManager);
+        if (ttmProto && !ttmProto._stableReleaseRTT && typeof ttmProto.releaseRTT === 'function') {
+          ttmProto._stableReleaseRTT = ttmProto.releaseRTT;
+          ttmProto.releaseRTT = function (tileID: any) {
+            let releasedCount = 0;
+            const painter = this.tileManager?.map?.painter || map.painter;
+            for (const key in this._tiles) {
+              const tile = this._tiles[key];
+              if (!tile?.tileID || !tileID) continue;
+              const tId = tile.tileID;
+              if (tId.wrap !== tileID.wrap) continue;
+
+              // Match overlapping tiles using canonical coordinates.
+              // Upstream MapLibre checks tile.tileID.equals(tileID) || tile.tileID.isChildOf(tileID) || tileID.isChildOf(tile.tileID)
+              // on OverscaledTileID, which fails when terrain tile canonical.z > 15 while vector source canonical.z = 15.
+              const canonicalMatch = (
+                (typeof tId.canonical?.equals === 'function' && tId.canonical.equals(tileID.canonical)) ||
+                (typeof tId.canonical?.isChildOf === 'function' && tId.canonical.isChildOf(tileID.canonical)) ||
+                (typeof tileID.canonical?.isChildOf === 'function' && tileID.canonical.isChildOf(tId.canonical))
+              );
+
+              if (canonicalMatch || (typeof tId.equals === 'function' && tId.equals(tileID))) {
+                tile.releaseRTT(painter);
+                releasedCount++;
+              }
+            }
+            if (releasedCount > 0) {
+              const mapInst = this.tileManager?.map || map;
+              if (typeof mapInst?.triggerRepaint === 'function') {
+                mapInst.triggerRepaint();
+              }
+            }
+          };
+        }
+      }
+
+      const painter = map.painter;
+      const rtt = painter?.renderToTexture;
+      if (rtt) {
+        const rttProto = Object.getPrototypeOf(rtt);
+        if (rttProto && !rttProto._stablePrepareForRender && typeof rttProto.prepareForRender === 'function') {
+          rttProto._stablePrepareForRender = rttProto.prepareForRender;
+          rttProto.prepareForRender = function (style: any, zoom: number) {
+            this._stablePrepareForRender.call(this, style, zoom);
+
+            // Invalidate any terrain RTT tiles that were acquired when vector coordinates were empty/loading,
+            // once vector tile coordinates or fingerprints become available.
+            if (this._renderableTiles && this._rttFingerprints) {
+              for (const tile of this._renderableTiles) {
+                for (const source in this._rttFingerprints) {
+                  const fingerprint = this._rttFingerprints[source]?.[tile.tileID?.key];
+                  const currentFp = tile.rttFingerprint?.[source];
+                  if (fingerprint && fingerprint !== currentFp) {
+                    tile.releaseRTT(this.painter);
+                  }
+                }
+              }
+            }
+          };
+        }
       }
       if (map.terrain && !map.terrain._originalGetDEMTileMatrix) {
         map.terrain._originalGetDEMTileMatrix = map.terrain._getDEMTileMatrix;
@@ -1717,10 +1778,10 @@ const MapView = ({
       } catch {}
     };
 
-    if (typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) {
+    if (typeof map.getLayer === 'function' && map.getLayer('esri-satellite')) {
       syncSatellite();
     } else if (typeof map.once === 'function') {
-      map.once('idle', syncSatellite);
+      map.once('styledata', syncSatellite);
     } else {
       syncSatellite();
     }
@@ -1746,10 +1807,10 @@ const MapView = ({
       } catch {}
     };
 
-    if (typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) {
+    if (typeof map.getLayer === 'function' && map.getLayer('hills')) {
       syncHillshade();
     } else if (typeof map.once === 'function') {
-      map.once('idle', syncHillshade);
+      map.once('styledata', syncHillshade);
     } else {
       syncHillshade();
     }
@@ -1782,10 +1843,10 @@ const MapView = ({
       } catch {}
     };
 
-    if (typeof map.isStyleLoaded === 'function' && map.isStyleLoaded()) {
+    if (typeof map.getLayer === 'function' && (map.getLayer('3d-buildings') || map.getLayer('buildings'))) {
       sync3DBuildings();
     } else if (typeof map.once === 'function') {
-      map.once('idle', sync3DBuildings);
+      map.once('styledata', sync3DBuildings);
     } else {
       sync3DBuildings();
     }
