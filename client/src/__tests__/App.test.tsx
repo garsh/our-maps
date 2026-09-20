@@ -336,12 +336,12 @@ describe('App Components Error Handling', () => {
     expect(resizer).toBeTruthy();
     const sidebar = resizer.parentElement as HTMLElement;
 
-    fireEvent.mouseDown(resizer, { clientX: 400 });
+    fireEvent.pointerDown(resizer, { clientX: 400, pointerId: 1 });
     expect(sidebar.classList.contains('sidebar-resizing')).toBe(true);
-    fireEvent.mouseMove(window, { clientX: 520 });
+    fireEvent.pointerMove(window, { clientX: 520, pointerId: 1 });
     expect(sidebar.style.width).toBe('520px');
 
-    fireEvent.mouseUp(window);
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 520 });
     expect(sidebar.style.width).toBe('520px');
   });
 

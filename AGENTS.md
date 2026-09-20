@@ -13,7 +13,7 @@ Only run these tests when the user requests it.
 If you think a test would be useful to confirm a particular change, ask the user to run it and print out the command to be run.
 - **Client Tests**: `npm --prefix client run test`
 - **Server Tests**: `npm --prefix server run test`
-- **E2E Tests**: `npx playwright test`
+- **E2E Tests**: `npx playwright test --reporter=list` (Pass `--reporter=list` or `PLAYWRIGHT_HTML_REPORT=never` so Playwright exits immediately on failure instead of opening a web server for HTML reports. If running via `run_command`, check STDOUT/STDERR while running and kill if an error is reported).
 
 ## Deployment Workflow
 The application is deployed using Docker Compose, which builds both the frontend and backend into a single image (`our-maps`) alongside a `caddy-proxy` container for TLS/SSL.

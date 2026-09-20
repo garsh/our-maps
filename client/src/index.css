@@ -322,6 +322,24 @@ button:active {
   pointer-events: auto !important;
 }
 
+/* Smooth collapse/expand animation (suppressed during active drag) */
+.sidebar-width-transition {
+  transition: width 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Touch devices: enlarge handle to match portrait pill tap target */
+@media (pointer: coarse) {
+  .resizer-handle {
+    width: 28px;
+    height: 100px;
+    right: -28px;
+    border-radius: 0 14px 14px 0;
+  }
+  .drag-pill-vertical {
+    height: 20px;
+  }
+}
+
 
 @keyframes colorCycle {
   0% { color: #3b82f6; transform: translateY(0); }

@@ -131,6 +131,8 @@ export function MapEditor() {
   const [isResizing, setIsResizing] = useState(false);
   const isResizerDraggingRef = useRef(false);
   const resizerStartXRef = useRef(0);
+  const resizerStartWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH);
+  const resizerDragStartRef = useRef<{ x: number; width: number; time: number; moved: boolean }>({ x: 0, width: DEFAULT_SIDEBAR_WIDTH, time: 0, moved: false });
 
   const { theme: mapTheme, setTheme: handleThemeChange } = useTheme();
 
@@ -1673,38 +1675,85 @@ export function MapEditor() {
   const sidebarWidthRef = useRef(sidebarWidth);
   sidebarWidthRef.current = sidebarWidth;
 
-  const handleResize = useCallback((e: MouseEvent) => {
-    if (Math.abs(e.clientX - resizerStartXRef.current) > 3) {
+  const handleResize = useCallback((e: PointerEvent) => {
+    const deltaX = e.clientX - resizerStartXRef.current;
+    if (Math.abs(deltaX) > 3) {
       isResizerDraggingRef.current = true;
+      resizerDragStartRef.current.moved = true;
     }
-    const newWidth = clampSidebarWidth(e.clientX, window.innerWidth);
+    // Delta-based: no jump regardless of where on the handle the user grabbed
+    const newWidth = clampSidebarWidth(resizerStartWidthRef.current + deltaX, window.innerWidth, 0);
     sidebarWidthRef.current = newWidth;
     if (sheetRef.current) {
       sheetRef.current.style.width = `${newWidth}px`;
     }
   }, []);
 
-  const stopResize = useCallback(() => {
+  const stopResize = useCallback((e?: PointerEvent) => {
     sheetRef.current?.classList.remove('sidebar-resizing');
-    setSidebarWidth(sidebarWidthRef.current);
+
+    const { x: startX, time: startTime, moved } = resizerDragStartRef.current;
+    const endX = e?.clientX ?? startX;
+    const elapsed = Math.max(1, Date.now() - startTime);
+    const totalDeltaX = endX - startX; // positive = dragged RIGHT (wider), negative = dragged LEFT (narrower)
+    const velocity = totalDeltaX / elapsed; // px per ms
+
+    const maxW = clampSidebarWidth(window.innerWidth - 50, window.innerWidth, 0);
+
+    let finalWidth: number;
+    if (!moved || (elapsed < 200 && Math.abs(totalDeltaX) < 5)) {
+      // Tap — handled by handleResizerClick; just keep current width
+      finalWidth = sidebarWidthRef.current;
+    } else if (elapsed >= 50 && velocity > 0.4) {
+      // Fast flick RIGHT → maximize to fill available space
+      finalWidth = maxW;
+    } else if (elapsed >= 50 && velocity < -0.4) {
+      // Fast flick LEFT → collapse completely
+      finalWidth = 0;
+    } else if (sidebarWidthRef.current < 60) {
+      // Dragged to near-zero: snap closed
+      finalWidth = 0;
+    } else {
+      finalWidth = sidebarWidthRef.current;
+    }
+
+    sidebarWidthRef.current = finalWidth;
+    if (sheetRef.current) {
+      sheetRef.current.style.width = `${finalWidth}px`;
+    }
+    setSidebarWidth(finalWidth);
     setIsResizing(false);
-    window.removeEventListener('mousemove', handleResize);
-    window.removeEventListener('mouseup', stopResize);
+    window.removeEventListener('pointermove', handleResize);
+    window.removeEventListener('pointerup', stopResize);
   }, [handleResize]);
 
-  const startResize = useCallback((e: React.MouseEvent) => {
+  const startResize = useCallback((e: React.PointerEvent) => {
     isResizerDraggingRef.current = false;
     resizerStartXRef.current = e.clientX;
+    resizerStartWidthRef.current = sidebarWidthRef.current;
+    resizerDragStartRef.current = { x: e.clientX, width: sidebarWidthRef.current, time: Date.now(), moved: false };
     clearHoveredPin();
     sheetRef.current?.classList.add('sidebar-resizing');
     setIsResizing(true);
-    window.addEventListener('mousemove', handleResize);
-    window.addEventListener('mouseup', stopResize);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore in environments where pointer capture is unsupported
+    }
+    window.addEventListener('pointermove', handleResize);
+    window.addEventListener('pointerup', stopResize);
   }, [handleResize, stopResize]);
 
   const handleResizerClick = useCallback(() => {
     if (!isResizerDraggingRef.current) {
-      setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
+      // Mirror portrait tap logic: collapse only if already at default width, else restore
+      const isAtDefault = Math.abs(sidebarWidthRef.current - DEFAULT_SIDEBAR_WIDTH) <= 5;
+      const newWidth = isAtDefault ? 0 : DEFAULT_SIDEBAR_WIDTH;
+      sidebarWidthRef.current = newWidth;
+      if (sheetRef.current) {
+        sheetRef.current.style.width = `${newWidth}px`;
+      }
+      setSidebarWidth(newWidth);
     }
   }, []);
 
@@ -1858,7 +1907,7 @@ export function MapEditor() {
         flexShrink: 0
       }}>
       <div 
-        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', minWidth: 0, flexShrink: 1, userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} 
+        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', minWidth: 0, flexShrink: 1, overflow: 'hidden', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }} 
         onClick={handleTitleClick}
         onMouseEnter={handleTitleMouseEnter}
         onMouseLeave={handleTitleMouseLeave}
@@ -1896,71 +1945,75 @@ export function MapEditor() {
         </div>
       )}
       
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
-        <div id="download-pill-container" style={{ display: 'flex', alignItems: 'center' }}></div>
-        {Boolean(user) && (() => {
-          const isDirtyOnNewMap = !mapId && (isDirty || pins.length > 0 || layers.length > 0 || (mapName && mapName !== 'Unnamed Map'));
-          const syncStatus = error
-            ? 'error'
-            : isOffline
-            ? 'offline'
-            : (isSaving || isInitialCreating)
-            ? 'saving'
-            : isSyncing
-            ? 'syncing'
-            : isDirtyOnNewMap
-            ? 'pending'
-            : 'synced';
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 2, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 2, minWidth: 0, overflow: 'hidden' }}>
+          <div id="download-pill-container" style={{ display: 'flex', alignItems: 'center', flexShrink: 1, minWidth: 0, overflow: 'hidden' }}></div>
+          {Boolean(user) && (() => {
+            const isDirtyOnNewMap = !mapId && (isDirty || pins.length > 0 || layers.length > 0 || (mapName && mapName !== 'Unnamed Map'));
+            const syncStatus = error
+              ? 'error'
+              : isOffline
+              ? 'offline'
+              : (isSaving || isInitialCreating)
+              ? 'saving'
+              : isSyncing
+              ? 'syncing'
+              : isDirtyOnNewMap
+              ? 'pending'
+              : 'synced';
 
-          const syncLabel = error
-            ? error
-            : isOffline
-            ? 'Offline'
-            : (isSaving || isInitialCreating)
-            ? 'Saving'
-            : isSyncing
-            ? 'Syncing'
-            : isDirtyOnNewMap
-            ? 'Pending'
-            : 'Synced';
+            const syncLabel = error
+              ? error
+              : isOffline
+              ? 'Offline'
+              : (isSaving || isInitialCreating)
+              ? 'Saving'
+              : isSyncing
+              ? 'Syncing'
+              : isDirtyOnNewMap
+              ? 'Pending'
+              : 'Synced';
 
-          const dotColor = (isOffline || error)
-            ? '#ff4d4f'
-            : (syncStatus === 'saving' || syncStatus === 'syncing' || syncStatus === 'pending')
-            ? '#ffcc00'
-            : '#4ade80';
+            const dotColor = (isOffline || error)
+              ? '#ff4d4f'
+              : (syncStatus === 'saving' || syncStatus === 'syncing' || syncStatus === 'pending')
+              ? '#ffcc00'
+              : '#4ade80';
 
-          return (
-            <button 
-              data-testid="sync-status"
-              data-status={syncStatus}
-              data-edit-mode={editMode ? 'true' : 'false'}
-              onClick={() => {
-                if (editMode && error && !isOffline) {
-                  handleSave();
-                }
-              }}
-              style={{ 
-                background: 'rgba(255,255,255,0.1)', 
-                padding: '3px 8px', 
-                borderRadius: '50px',
-                border: '1px solid rgba(255,255,255,0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                color: (isOffline || error) ? '#ffbdad' : (mapTheme === 'dark' ? '#cbd5e1' : 'white'),
-                fontWeight: '600',
-                whiteSpace: 'nowrap',
-                cursor: (editMode && error && !isOffline) ? 'pointer' : 'default',
-                outline: 'none',
-                fontFamily: 'inherit',
-                fontSize: '0.65rem'
-              }}>
-              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
-              <span>{syncLabel}</span>
-            </button>
-          );
-        })()}
+            return (
+              <div style={{ flexShrink: 2, minWidth: 0, overflow: 'hidden' }}>
+                <button 
+                  data-testid="sync-status"
+                  data-status={syncStatus}
+                  data-edit-mode={editMode ? 'true' : 'false'}
+                  onClick={() => {
+                    if (editMode && error && !isOffline) {
+                      handleSave();
+                    }
+                  }}
+                  style={{ 
+                    background: 'rgba(255,255,255,0.1)', 
+                    padding: '3px 8px', 
+                    borderRadius: '50px',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    color: (isOffline || error) ? '#ffbdad' : (mapTheme === 'dark' ? '#cbd5e1' : 'white'),
+                    fontWeight: '600',
+                    whiteSpace: 'nowrap',
+                    cursor: (editMode && error && !isOffline) ? 'pointer' : 'default',
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                    fontSize: '0.65rem'
+                  }}>
+                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
+                  <span>{syncLabel}</span>
+                </button>
+              </div>
+            );
+          })()}
+        </div>
         <div id="mobile-header-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '26px', minHeight: '26px', flexShrink: 0 }}></div>
       </div>
     </header>
@@ -1972,7 +2025,7 @@ export function MapEditor() {
 
       <div 
         ref={sheetRef}
-        className={`${isMobile ? `mobile-bottom-sheet ${isDraggingSheet ? 'dragging' : ''}` : ''}${!isMobile && isResizing ? ' sidebar-resizing' : ''}`.trim()}
+        className={`${isMobile ? `mobile-bottom-sheet ${isDraggingSheet ? 'dragging' : ''}` : `${isResizing ? 'sidebar-resizing' : 'sidebar-width-transition'}`}`.trim()}
         style={isMobile ? { 
           height: `${sheetHeight}px`,
           background: 'var(--bg-color)',
@@ -2007,12 +2060,11 @@ export function MapEditor() {
           />
         )}
 
-        {!isMobile && appHeader}
-
+        {/* Desktop: resizer handle protrudes at any sidebar width via position:absolute */}
         {!isMobile && (
           <div
             className={`resizer-handle ${isResizing ? 'resizing' : ''}`}
-            onMouseDown={startResize}
+            onPointerDown={startResize}
             onClick={handleResizerClick}
             title="Drag to resize, click to reset"
           >
@@ -2020,21 +2072,20 @@ export function MapEditor() {
           </div>
         )}
 
-        <div style={{ 
-          flex: 1, 
-          minHeight: 0, 
-          display: 'flex', 
-          flexDirection: 'column', 
-          overflow: 'hidden' 
-        }}>
-          <div style={(isMobile ? {
+        {/* Desktop: header is a direct flex-column child of sheetRef; its width = sidebarWidth,
+            so overflow:hidden clips all content automatically when sidebar collapses to 0 */}
+        {!isMobile && appHeader}
+
+        {/* Sidebar content */}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={isMobile ? ({
             zoom: mobileScale,
             flex: 1,
             minHeight: 0,
             height: `${(1 / mobileScale) * 100}%`,
             display: 'flex',
             flexDirection: 'column'
-          } : {
+          } as React.CSSProperties) : ({
             transform: 'scale(1.25)',
             transformOrigin: 'top left',
             width: `${(1 / 1.25) * 100}%`,
@@ -2042,67 +2093,66 @@ export function MapEditor() {
             flex: 'none',
             display: 'flex',
             flexDirection: 'column'
-          }) as React.CSSProperties}>
+          } as React.CSSProperties)}>
             <Sidebar 
               isMobile={isMobile}
               mobileScale={mobileScale}
               isHoverBlocked={isHoverBlocked}
               isOffline={isOffline}
-            mapId={mapId}
-            mapName={mapName}
-            onMapNameChange={handleMapNameChange}
-            layers={layers}
-            onAddLayer={addLayer}
-            onUpdateLayer={updateLayer}
-            onRemoveLayer={removeLayer}
-            pins={pins}
-            onAddPin={addPinAtLocation}
-            onRemovePin={removePin}
-            onPinClick={handlePinClick}
-            onUpdatePin={updatePin}
-            onMovePinsToLayer={movePinsToLayer}
-            onDragEnd={handleDragEnd}
-            onDragCancel={handleDragCancel}
-            onDragStart={handleDragStart}
-            userRole={userRole}
-            isAuthenticated={Boolean(user)}
-            onSignIn={() => navigate('/login')}
-            editMode={editMode}
-            onToggleEditMode={handleToggleEditMode}
-            onShare={handleOpenShare}
-            onImport={handleImport}
-            editingPinId={editingPinId}
-            onSetEditingPinId={handleSetEditingPinId}
-            onHoverPin={handleHoverPin}
-            targetPinId={targetPinId}
-            customColors={customColors}
-            onAddCustomColor={addCustomColor}
-            selectedNavIds={selectedNavIds}
-            isTrackingLocation={isTrackingLocation}
-            onToggleNavId={handleToggleNavId}
-            onToggleNavIds={handleToggleNavIds}
-            hiddenLayerIds={hiddenLayerIds}
-            onToggleLayerVisibility={handleToggleLayerVisibility}
-            collapsedLayerIds={collapsedLayerIds}
-            onToggleExpand={handleToggleExpand}
-            onHoverSearchResult={handleHoverSearchResult}
-            mapTheme={mapTheme}
-            onThemeChange={handleThemeChange}
-            showSatellite={showSatellite}
-            onToggleSatellite={handleToggleSatellite}
-            showHillshade={showHillshade}
-            onToggleHillshade={handleToggleHillshade}
-            show3DTerrain={show3DTerrain}
-            onToggle3DTerrain={handleToggle3DTerrain}
-            show3DBuildings={show3DBuildings}
-            onToggle3DBuildings={handleToggle3DBuildings}
-            onSearchAreaStateChange={setSearchAreaState}
-          />
+              mapId={mapId}
+              mapName={mapName}
+              onMapNameChange={handleMapNameChange}
+              layers={layers}
+              onAddLayer={addLayer}
+              onUpdateLayer={updateLayer}
+              onRemoveLayer={removeLayer}
+              pins={pins}
+              onAddPin={addPinAtLocation}
+              onRemovePin={removePin}
+              onPinClick={handlePinClick}
+              onUpdatePin={updatePin}
+              onMovePinsToLayer={movePinsToLayer}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
+              onDragStart={handleDragStart}
+              userRole={userRole}
+              isAuthenticated={Boolean(user)}
+              onSignIn={() => navigate('/login')}
+              editMode={editMode}
+              onToggleEditMode={handleToggleEditMode}
+              onShare={handleOpenShare}
+              onImport={handleImport}
+              editingPinId={editingPinId}
+              onSetEditingPinId={handleSetEditingPinId}
+              onHoverPin={handleHoverPin}
+              targetPinId={targetPinId}
+              customColors={customColors}
+              onAddCustomColor={addCustomColor}
+              selectedNavIds={selectedNavIds}
+              isTrackingLocation={isTrackingLocation}
+              onToggleNavId={handleToggleNavId}
+              onToggleNavIds={handleToggleNavIds}
+              hiddenLayerIds={hiddenLayerIds}
+              onToggleLayerVisibility={handleToggleLayerVisibility}
+              collapsedLayerIds={collapsedLayerIds}
+              onToggleExpand={handleToggleExpand}
+              onHoverSearchResult={handleHoverSearchResult}
+              mapTheme={mapTheme}
+              onThemeChange={handleThemeChange}
+              showSatellite={showSatellite}
+              onToggleSatellite={handleToggleSatellite}
+              showHillshade={showHillshade}
+              onToggleHillshade={handleToggleHillshade}
+              show3DTerrain={show3DTerrain}
+              onToggle3DTerrain={handleToggle3DTerrain}
+              show3DBuildings={show3DBuildings}
+              onToggle3DBuildings={handleToggle3DBuildings}
+              onSearchAreaStateChange={setSearchAreaState}
+            />
+          </div>
         </div>
-      </div>
-    </div>
 
-
+      </div>{/* end sheetRef */}
 
       <main style={{ flex: 1, position: 'relative', overflow: 'hidden', zIndex: 1 }}>
         <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '100vw', minWidth: '100%' }}>
