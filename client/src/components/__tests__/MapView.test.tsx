@@ -860,6 +860,53 @@ describe('MapView Compass and Tilt Indicator', () => {
     expect(onLocationTrackingChange).toHaveBeenLastCalledWith(false);
   });
 
+  it('centers find-my-location on the padded visible map, not under the pin panel', () => {
+    let watchSuccessCb: ((pos: any) => void) | null = null;
+    Object.defineProperty(global.navigator, 'geolocation', {
+      value: {
+        watchPosition: vi.fn().mockImplementation((success) => {
+          watchSuccessCb = success;
+          return 12345;
+        }),
+        clearWatch: vi.fn(),
+      },
+      writable: true,
+      configurable: true,
+    });
+
+    render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        onBoundsChange={vi.fn()}
+        leftPadding={400}
+        bottomPadding={350}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Find my location/i }));
+
+    act(() => {
+      watchSuccessCb?.({
+        coords: { latitude: 37.7749, longitude: -122.4194 },
+      });
+    });
+
+    expect(mockFlyTo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        center: [-122.4194, 37.7749],
+        zoom: 16,
+        padding: {
+          top: 80,
+          left: 480,
+          right: 80,
+          bottom: 430,
+        },
+      })
+    );
+  });
+
   it('points the vector source at pmtiles tile templates and skips remote sprite/glyph URLs', () => {
     render(
       <MapView

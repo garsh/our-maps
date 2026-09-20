@@ -2400,6 +2400,7 @@ const MapView = ({
               center: [lng, lat],
               zoom: 16,
               duration: 1500,
+              padding: paddedMapView(leftPaddingRef.current, bottomPaddingRef.current),
               ...FLY_TO_TERRAIN,
             });
           }
