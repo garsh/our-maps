@@ -2135,9 +2135,24 @@ export function MapEditor() {
           </div>
         )}
 
-        {/* Desktop: header is a direct flex-column child of sheetRef; its width = sidebarWidth,
-            so overflow:hidden clips all content automatically when sidebar collapses to 0 */}
-        {!isMobile && appHeader}
+        {/* Clip header to sheet width. Header padding cannot shrink below ~32px, so clip
+            here — not on the header — while the sheet stays overflow:visible for the resizer. */}
+        {!isMobile && (
+          <div
+            className="sidebar-header-clip"
+            style={{
+              minWidth: 0,
+              maxWidth: '100%',
+              width: '100%',
+              overflow: 'hidden',
+              flexShrink: 0,
+              position: 'relative',
+              zIndex: 2500,
+            }}
+          >
+            {appHeader}
+          </div>
+        )}
 
         {/* Sidebar content */}
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>

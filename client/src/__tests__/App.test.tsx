@@ -591,6 +591,55 @@ describe('App Components Error Handling', () => {
 
     expect((resizer.parentElement as HTMLElement).style.width).toBe('0px');
     expect(input).toHaveValue('');
+
+    const header = container.querySelector('header') as HTMLElement;
+    const headerClip = container.querySelector('.sidebar-header-clip') as HTMLElement;
+    expect(headerClip).toHaveStyle({ overflow: 'hidden', minWidth: '0px', width: '100%', maxWidth: '100%' });
+    expect(headerClip).toContainElement(header);
+    expect(headerClip.contains(resizer)).toBe(false);
+    expect(header).toContainElement(screen.getByLabelText('More options'));
+    expect(resizer.parentElement).toContainElement(headerClip);
+  });
+
+  it('clips header chrome when a landscape-phone sidebar is minimized', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 900 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 400 });
+
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('More options')).toBeInTheDocument();
+    });
+
+    const resizer = container.querySelector('.resizer-handle') as HTMLElement;
+    fireEvent.click(resizer);
+
+    const sheet = resizer.parentElement as HTMLElement;
+    expect(sheet.style.width).toBe('0px');
+    expect(sheet.querySelector('.bottom-sheet-drag-handle')).toBeNull();
+
+    const header = container.querySelector('header') as HTMLElement;
+    const headerClip = container.querySelector('.sidebar-header-clip') as HTMLElement;
+    expect(headerClip).toHaveStyle({ overflow: 'hidden', minWidth: '0px', width: '100%', maxWidth: '100%' });
+    expect(headerClip).toContainElement(header);
+    expect(headerClip.contains(resizer)).toBe(false);
+    expect(header).toContainElement(screen.getByLabelText('More options'));
   });
 
   it('opens the minimized mobile panel to default size and highlights the tapped pin', async () => {
