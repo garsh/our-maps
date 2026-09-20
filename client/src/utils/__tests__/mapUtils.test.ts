@@ -91,6 +91,12 @@ describe('mapUtils', () => {
       expect(nextTargetPinIdAfterClick('h1', 'cafe', pins, { toggleSameLocation: true })).toBe('cafe');
       expect(nextTargetPinIdAfterClick(null, 'h1', pins, { toggleSameLocation: true })).toBe('h1');
     });
+
+    it('keeps the clicked pin selected when forceSelect is set', () => {
+      expect(nextTargetPinIdAfterClick('h1', 'h1', pins, { forceSelect: true })).toBe('h1');
+      expect(nextTargetPinIdAfterClick('h1', 'h2', pins, { forceSelect: true, toggleSameLocation: true })).toBe('h2');
+      expect(nextTargetPinIdAfterClick(null, 'cafe', pins, { forceSelect: true })).toBe('cafe');
+    });
   });
 
   describe('basemapSprites', () => {

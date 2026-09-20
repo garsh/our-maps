@@ -69,18 +69,22 @@ test('sidebar multi-layer creation, collapse/expand, and multi-selection flow', 
   // 1. Create a custom layer
   await page.getByRole('button', { name: /more options/i }).click();
   await page.getByText(/New Layer/i).click();
+  await expect(page.getByText(/Layer 1 \(0\)/)).toBeVisible();
 
-  // Rename the new layer
+  // Creating a layer on /map/new triggers handleSave (isInitialCreating=true / editMode=false),
+  // which disables the layer-name input so Enter cannot commit. Wait until the map exists
+  // and editing is re-enabled, then rename.
+  await waitForAutoSave(page);
+
   const layerInput = page.getByLabel('NAME', { exact: true });
+  if (!(await layerInput.isVisible())) {
+    await page.getByTitle('Edit layer name').click();
+  }
   await expect(layerInput).toBeVisible();
+  await expect(layerInput).toBeEnabled();
   await layerInput.fill('Favorite Spots');
   await layerInput.press('Enter');
   await expect(page.getByText('Favorite Spots')).toBeVisible();
-
-  // Wait for the new map to be fully created and socket connected before adding pins.
-  // Creating a layer triggers handleSave which sets isInitialCreating=true (editMode=false).
-  // Searching while editMode=false can prevent search results from rendering.
-  await waitForAutoSave(page);
 
   // 2. Add multiple pins via search
   const searchBox = page.getByPlaceholder('Search...');

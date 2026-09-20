@@ -23,7 +23,24 @@ vi.mock('../components/MapView', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../components/MapView')>();
   return {
     ...actual,
-    default: () => <div data-testid="map-view" />,
+    default: ({
+      onPinClick,
+      pins,
+    }: {
+      onPinClick?: (pin: { id: string; lat: number; lng: number; label?: string }) => void;
+      pins?: Array<{ id: string; lat: number; lng: number; label?: string }>;
+    }) => (
+      <div data-testid="map-view">
+        {(pins ?? []).map((pin) => (
+          <button
+            key={pin.id}
+            type="button"
+            data-testid={`map-pin-${pin.id}`}
+            onClick={() => onPinClick?.(pin)}
+          />
+        ))}
+      </div>
+    ),
   };
 });
 const { mockSocket, socketCallbacks } = vi.hoisted(() => {
@@ -574,6 +591,125 @@ describe('App Components Error Handling', () => {
 
     expect((resizer.parentElement as HTMLElement).style.width).toBe('0px');
     expect(input).toHaveValue('');
+  });
+
+  it('opens the minimized mobile panel to default size and highlights the tapped pin', async () => {
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [{ id: 'pin-1', lat: 10, lng: 20, label: 'Pin 1', position: 0 }],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    window.innerWidth = 375;
+    window.innerHeight = 800;
+
+    const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Pin 1')).toBeInTheDocument();
+    });
+
+    const handle = container.querySelector('.bottom-sheet-drag-handle') as HTMLElement;
+    const sheet = container.querySelector('.mobile-bottom-sheet') as HTMLElement;
+    fireEvent.pointerDown(handle, { clientY: 450, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientY: 450, pointerId: 1 });
+    expect(sheet.style.height).toBe('0px');
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+
+    fireEvent.click(screen.getByTestId('map-pin-pin-1'));
+
+    expect(sheet.style.height).toBe('350px');
+    expect(screen.getByText('Pin 1').closest('li')).toHaveClass('pin-target');
+  });
+
+  it('opens the minimized desktop sidebar to default size and highlights the clicked pin', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1280 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 });
+
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [{ id: 'pin-1', lat: 10, lng: 20, label: 'Pin 1', position: 0 }],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Pin 1')).toBeInTheDocument();
+    });
+
+    const resizer = container.querySelector('.resizer-handle') as HTMLElement;
+    fireEvent.click(screen.getByTestId('map-pin-pin-1'));
+    expect(screen.getByText('Pin 1').closest('li')).toHaveClass('pin-target');
+
+    fireEvent.click(resizer);
+    expect((resizer.parentElement as HTMLElement).style.width).toBe('0px');
+
+    fireEvent.click(screen.getByTestId('map-pin-pin-1'));
+
+    expect((resizer.parentElement as HTMLElement).style.width).toBe('400px');
+    expect(screen.getByText('Pin 1').closest('li')).toHaveClass('pin-target');
+  });
+
+  it('keeps a custom desktop sidebar width when clicking a pin', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1280 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 });
+
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [{ id: 'pin-1', lat: 10, lng: 20, label: 'Pin 1', position: 0 }],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Pin 1')).toBeInTheDocument();
+    });
+
+    const resizer = container.querySelector('.resizer-handle') as HTMLElement;
+    fireEvent.pointerDown(resizer, { clientX: 400, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 520, pointerId: 1 });
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 520 });
+    expect((resizer.parentElement as HTMLElement).style.width).toBe('520px');
+
+    fireEvent.click(screen.getByTestId('map-pin-pin-1'));
+
+    expect((resizer.parentElement as HTMLElement).style.width).toBe('520px');
+    expect(screen.getByText('Pin 1').closest('li')).toHaveClass('pin-target');
   });
 
   it('switches from the portrait bottom sheet to a landscape sidebar and back', async () => {

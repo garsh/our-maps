@@ -1452,6 +1452,9 @@ interface CollisionCache {
 }
 
 export const PIN_LIST_STICKY_HEADER_OFFSET = 38;
+export const PIN_LIST_SCROLL_DELAY_MS = 80;
+// Keep in sync with the 0.25s sheet/sidebar size transition in index.css.
+export const PIN_LIST_SCROLL_AFTER_PANEL_OPEN_MS = 300;
 
 export function isPinRowVisibleInList(
   el: HTMLElement,
@@ -1489,6 +1492,7 @@ function scrollPinRowIntoList(
   el: HTMLElement,
   container: HTMLElement,
   stickyHeaderOffset = PIN_LIST_STICKY_HEADER_OFFSET,
+  behavior: ScrollBehavior = 'smooth',
 ) {
   const containerRect = container.getBoundingClientRect();
   const elRect = el.getBoundingClientRect();
@@ -1496,12 +1500,15 @@ function scrollPinRowIntoList(
   const relativeVisualTop = (elRect.top - containerRect.top) / scale;
   const currentScroll = container.scrollTop;
 
+  const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+  const scrollToTop = (top: number) => {
+    container.scrollTo({ top: Math.min(maxScroll, Math.max(0, top)), behavior });
+  };
+
   if (relativeVisualTop < stickyHeaderOffset) {
-    const targetScrollTop = currentScroll + relativeVisualTop - stickyHeaderOffset - 4;
-    container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+    scrollToTop(currentScroll + relativeVisualTop - stickyHeaderOffset - 4);
   } else if (relativeVisualTop + el.offsetHeight > container.clientHeight - 8) {
-    const targetScrollTop = currentScroll + (relativeVisualTop + el.offsetHeight) - container.clientHeight + 24;
-    container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+    scrollToTop(currentScroll + (relativeVisualTop + el.offsetHeight) - container.clientHeight + 24);
   }
 }
 
@@ -1836,11 +1843,15 @@ const Sidebar = ({
   const targetPinIdsKey = Array.from(targetPinIds).join(',');
   const targetPinIdsRef = useRef(targetPinIds);
   targetPinIdsRef.current = targetPinIds;
+  const prevPanelMinimizedRef = useRef(isPanelMinimized);
 
   // Auto-scroll the sidebar list to keep the active/editing pin in view.
   // Co-located pins (same exact lat/lng) are all highlighted; skip scrolling
   // if any one of those rows is already visible.
   useEffect(() => {
+    const openedFromMinimized = prevPanelMinimizedRef.current && !isPanelMinimized;
+    prevPanelMinimizedRef.current = isPanelMinimized;
+    if (isPanelMinimized) return;
     const primaryId = editingPinId || targetPinId;
     if (!primaryId) return;
     const ids = editingPinId ? [editingPinId] : Array.from(targetPinIdsRef.current);
@@ -1849,11 +1860,18 @@ const Sidebar = ({
       const container = scrollContainerRef.current;
       if (!container) return;
       const el = getPinListScrollElement(container, ids, primaryId);
-      if (el) scrollPinRowIntoList(el, container);
-    }, 80);
+      if (el) {
+        scrollPinRowIntoList(
+          el,
+          container,
+          PIN_LIST_STICKY_HEADER_OFFSET,
+          openedFromMinimized ? 'auto' : 'smooth',
+        );
+      }
+    }, openedFromMinimized ? PIN_LIST_SCROLL_AFTER_PANEL_OPEN_MS : PIN_LIST_SCROLL_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [targetPinId, editingPinId, pins.length, targetPinIdsKey]);
+  }, [targetPinId, editingPinId, pins.length, targetPinIdsKey, isPanelMinimized]);
   // PWA Install State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 

@@ -167,6 +167,8 @@ export function MapEditor() {
 
   // Mobile layout states
   const [isMobile, setIsMobile] = useState(viewportIsMobile);
+  const isMobileRef = useRef(isMobile);
+  isMobileRef.current = isMobile;
   const [mapReloadKey, setMapReloadKey] = useState(0);
 
   // Dynamic mobile scale: calibrated so DPR ~2.75 gives scale 1.5.
@@ -328,6 +330,8 @@ export function MapEditor() {
   const getStandardSheetHeight = standardSheetHeight;
 
   const [sheetHeight, setSheetHeight] = useState(standardSheetHeight);
+  const sheetHeightRef = useRef(sheetHeight);
+  sheetHeightRef.current = sheetHeight;
   const [isDraggingSheet, setIsDraggingSheet] = useState(false);
   const [isHoverBlocked, setIsHoverBlocked] = useState(false);
   const isHoverBlockedRef = useRef(false);
@@ -1264,7 +1268,27 @@ export function MapEditor() {
     setIsPublic(Boolean(res.isPublic));
   };
 
-  const handlePinSelect = useCallback((pinId: string, options?: { toggleSameLocation?: boolean }) => {
+  const restorePanelIfMinimized = useCallback((): boolean => {
+    if (isMobileRef.current) {
+      if (sheetHeightRef.current > 0) return false;
+      const defaultSheet = standardSheetHeight();
+      if (sheetRef.current) {
+        sheetRef.current.style.height = `${defaultSheet}px`;
+      }
+      setSheetHeight(defaultSheet);
+      return true;
+    }
+    if (sidebarWidthRef.current > 0) return false;
+    const defaultWidth = DEFAULT_SIDEBAR_WIDTH;
+    sidebarWidthRef.current = defaultWidth;
+    if (sheetRef.current) {
+      sheetRef.current.style.width = `${defaultWidth}px`;
+    }
+    setSidebarWidth(defaultWidth);
+    return true;
+  }, []);
+
+  const handlePinSelect = useCallback((pinId: string, options?: { toggleSameLocation?: boolean; forceSelect?: boolean }) => {
     if (Date.now() < ignoreMapClickUntil.current) return;
     // Clear stuck hover states on mobile/touch, or if a different pin was clicked
     clearHoveredPin();
@@ -1295,8 +1319,13 @@ export function MapEditor() {
   }, []);
 
   const handlePinClick = useCallback((pin: Pin) => {
-    handlePinSelect(pin.id, { toggleSameLocation: true });
-  }, [handlePinSelect]);
+    if (Date.now() < ignoreMapClickUntil.current) return;
+    // Opening a minimized panel should reveal the tapped pin, not toggle it off.
+    const restored = restorePanelIfMinimized();
+    handlePinSelect(pin.id, restored
+      ? { forceSelect: true }
+      : { toggleSameLocation: true });
+  }, [handlePinSelect, restorePanelIfMinimized]);
 
   const handleSetEditingPinId = useCallback((id: string | null) => {
     setEditingPinId(id);

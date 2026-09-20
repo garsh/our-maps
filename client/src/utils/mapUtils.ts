@@ -169,8 +169,9 @@ export function nextTargetPinIdAfterClick(
   currentTargetId: string | null,
   clickedPinId: string,
   pins: Array<{ id: string; lat: number; lng: number }>,
-  options?: { toggleSameLocation?: boolean },
+  options?: { toggleSameLocation?: boolean; forceSelect?: boolean },
 ): string | null {
+  if (options?.forceSelect) return clickedPinId;
   if (currentTargetId === clickedPinId) return null;
   if (options?.toggleSameLocation && currentTargetId) {
     const current = pins.find(p => p.id === currentTargetId);

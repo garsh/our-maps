@@ -1,6 +1,6 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import Sidebar, { computeCustomCollisionDetection, isPinRowVisibleInList, getPinListScrollElement } from '../Sidebar';
+import Sidebar, { computeCustomCollisionDetection, isPinRowVisibleInList, getPinListScrollElement, PIN_LIST_SCROLL_DELAY_MS, PIN_LIST_SCROLL_AFTER_PANEL_OPEN_MS } from '../Sidebar';
 import { useState } from 'react';
 import * as dndSortable from '@dnd-kit/sortable';
 import * as dndCore from '@dnd-kit/core';
@@ -1239,6 +1239,36 @@ describe('Sidebar', () => {
 
     expect(screen.getByText('Hotel A').closest('li')).toHaveClass('pin-target');
     expect(screen.getByText('Hotel B').closest('li')).toHaveClass('pin-target');
+  });
+
+  it('does not scroll the pin list during the panel-open animation', () => {
+    vi.useFakeTimers();
+
+    try {
+      const { rerender, container } = render(
+        <TestWrapper handlers={{ targetPinId: '1', isPanelMinimized: true }} />
+      );
+
+      rerender(
+        <TestWrapper handlers={{ targetPinId: '1', isPanelMinimized: false }} />
+      );
+
+      const pinList = container.querySelector('.pin-list') as HTMLElement;
+      const scrollTo = vi.fn();
+      pinList.scrollTo = scrollTo;
+
+      act(() => {
+        vi.advanceTimersByTime(PIN_LIST_SCROLL_DELAY_MS);
+      });
+      expect(scrollTo).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.advanceTimersByTime(PIN_LIST_SCROLL_AFTER_PANEL_OPEN_MS - PIN_LIST_SCROLL_DELAY_MS);
+      });
+      expect(scrollTo).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
