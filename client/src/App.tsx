@@ -39,27 +39,18 @@ import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, readSessionFlag, writeSessi
 
 import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer, syncCoLocatedPins } from './utils/pinHover';
 import { PIN_COLORS, nextTargetPinIdAfterClick } from './utils/mapUtils';
+import {
+  DEFAULT_SIDEBAR_WIDTH,
+  layoutOrientation,
+  viewportIsMobile,
+  standardSheetHeight,
+} from './utils/layoutChrome';
 import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
 
 export function clampSidebarWidth(width: number, viewportWidth: number, min = 200, maxMargin = 50): number {
   return Math.max(min, Math.min(viewportWidth - maxMargin, width));
-}
-
-const MOBILE_LAYOUT_MAX_WIDTH = 768;
-
-function viewportIsMobile() {
-  return window.innerWidth <= MOBILE_LAYOUT_MAX_WIDTH;
-}
-
-function viewportOrientation(): 'portrait' | 'landscape' {
-  return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
-}
-
-function standardSheetHeight() {
-  if (typeof window === 'undefined') return 300;
-  return Math.min(350, Math.round(window.innerHeight * 0.45));
 }
 
 /** Returns the next available position value for a pin in the given layer. Single-pass, no spread. */
@@ -126,8 +117,10 @@ export function MapEditor() {
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
 
   const [previewLocation, setPreviewLocation] = useState<{lat: number, lng: number} | null>(null);
-  const DEFAULT_SIDEBAR_WIDTH = 400;
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const sidebarWidthRef = useRef(sidebarWidth);
+  sidebarWidthRef.current = sidebarWidth;
+  const [snapChrome, setSnapChrome] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const isResizerDraggingRef = useRef(false);
   const resizerStartXRef = useRef(0);
@@ -174,6 +167,7 @@ export function MapEditor() {
 
   // Mobile layout states
   const [isMobile, setIsMobile] = useState(viewportIsMobile);
+  const [mapReloadKey, setMapReloadKey] = useState(0);
 
   // Dynamic mobile scale: calibrated so DPR ~2.75 gives scale 1.5.
   const computeMobileScale = () => {
@@ -241,15 +235,31 @@ export function MapEditor() {
 
   useEffect(() => {
     let resizeRaf: number | null = null;
-    let lastOrientation = viewportOrientation();
+    let mapReloadTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastOrientation = layoutOrientation();
     const syncViewportLayout = () => {
       const mobile = viewportIsMobile();
-      const orientation = viewportOrientation();
+      const orientation = layoutOrientation();
       setIsMobile(mobile);
       setMobileScale(computeMobileScale());
       if (orientation !== lastOrientation) {
         lastOrientation = orientation;
-        if (mobile) setSheetHeight(standardSheetHeight());
+        const defaultWidth = DEFAULT_SIDEBAR_WIDTH;
+        const defaultSheet = standardSheetHeight();
+        sidebarWidthRef.current = defaultWidth;
+        setSidebarWidth(defaultWidth);
+        setSheetHeight(defaultSheet);
+        setSnapChrome(true);
+        const sheet = sheetRef.current;
+        if (sheet) {
+          if (mobile) {
+            sheet.style.height = `${defaultSheet}px`;
+            sheet.style.width = '';
+          } else {
+            sheet.style.width = `${defaultWidth}px`;
+            sheet.style.height = '';
+          }
+        }
       }
     };
     const handleResize = () => {
@@ -261,6 +271,13 @@ export function MapEditor() {
     };
     const handleOrientation = () => {
       syncViewportLayout();
+      // Reload the map like a fresh open after chrome has switched. Debounce
+      // so a fast portrait↔landscape flip is a single load.
+      if (mapReloadTimer) clearTimeout(mapReloadTimer);
+      mapReloadTimer = setTimeout(() => {
+        mapReloadTimer = null;
+        setMapReloadKey((k) => k + 1);
+      }, 250);
     };
     const handleOnline = () => applyOffline(false, true);
     const handleOffline = () => applyOffline(true, true);
@@ -293,6 +310,7 @@ export function MapEditor() {
 
     return () => {
       if (resizeRaf !== null) cancelAnimationFrame(resizeRaf);
+      if (mapReloadTimer) clearTimeout(mapReloadTimer);
       if (pendingTransitionTimerRef.current) {
         clearTimeout(pendingTransitionTimerRef.current);
         pendingTransitionTimerRef.current = null;
@@ -316,6 +334,14 @@ export function MapEditor() {
   isHoverBlockedRef.current = isHoverBlocked;
   const sheetRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
+
+  useLayoutEffect(() => {
+    if (!snapChrome) return;
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => setSnapChrome(false));
+    });
+    return () => cancelAnimationFrame(id);
+  }, [snapChrome]);
   const sheetBoundsRef = useRef<{ minH: number; maxH: number }>({ minH: 0, maxH: 600 });
   const sheetDragStart = useRef<{ y: number; height: number; time: number; moved: boolean }>({ y: 0, height: 300, time: 0, moved: false });
   const currentDragHeight = useRef<number>(300);
@@ -1672,9 +1698,6 @@ export function MapEditor() {
     }
   }, [triggerBoundsToFit, emitDelta]);
 
-  const sidebarWidthRef = useRef(sidebarWidth);
-  sidebarWidthRef.current = sidebarWidth;
-
   const handleResize = useCallback((e: PointerEvent) => {
     const deltaX = e.clientX - resizerStartXRef.current;
     if (Math.abs(deltaX) > 3) {
@@ -2020,12 +2043,23 @@ export function MapEditor() {
   );
 
   return (
-    <div style={{ display: 'flex', height: '100dvh', width: '100vw', overflow: 'hidden', fontFamily: 'inherit', userSelect: isResizing ? 'none' : 'auto' }} className="app-container">
+    <div
+      style={{
+        display: 'flex',
+        width: '100dvw',
+        height: '100dvh',
+        overflow: 'hidden',
+        fontFamily: 'inherit',
+        userSelect: isResizing ? 'none' : 'auto',
+      }}
+      className={`app-container ${isMobile ? 'is-mobile-layout' : 'is-desktop-layout'}`}
+      data-map-reload={mapReloadKey}
+    >
       {isMobile && appHeader}
 
       <div 
         ref={sheetRef}
-        className={`${isMobile ? `mobile-bottom-sheet ${isDraggingSheet ? 'dragging' : ''}` : `${isResizing ? 'sidebar-resizing' : 'sidebar-width-transition'}`}`.trim()}
+        className={`${isMobile ? `mobile-bottom-sheet ${isDraggingSheet ? 'dragging' : ''}` : `${isResizing ? 'sidebar-resizing' : snapChrome ? '' : 'sidebar-width-transition'}`} ${snapChrome ? 'orientation-chrome-snap' : ''}`.trim()}
         style={isMobile ? { 
           height: `${sheetHeight}px`,
           background: 'var(--bg-color)',
@@ -2155,13 +2189,20 @@ export function MapEditor() {
       </div>{/* end sheetRef */}
 
       <main style={{ flex: 1, position: 'relative', overflow: 'hidden', zIndex: 1 }}>
-        <div style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '100vw', minWidth: '100%' }}>
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: '100dvw',
+          minWidth: '100%',
+        }}>
         {searchAreaState?.showPill && (
           <div
             style={{
               position: 'absolute',
               top: '16px',
-              left: isMobile ? '50%' : `calc(${sidebarWidth}px + (100vw - ${sidebarWidth}px) / 2)`,
+              left: isMobile ? '50%' : `calc(${sidebarWidth}px + (100dvw - ${sidebarWidth}px) / 2)`,
               transform: 'translateX(-50%)',
               zIndex: 1100,
               pointerEvents: 'auto',
@@ -2196,6 +2237,7 @@ export function MapEditor() {
           </div>
         )}
         <MapView 
+            key={`${mapId ?? 'new'}-${mapReloadKey}`}
             mapId={mapId}
             pins={pins} 
             onMapClick={handleMapClick} 

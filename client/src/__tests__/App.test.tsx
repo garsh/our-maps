@@ -345,6 +345,61 @@ describe('App Components Error Handling', () => {
     expect(sidebar.style.width).toBe('520px');
   });
 
+  it('resets a resized sidebar to the default width when rotating to landscape', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1280 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 });
+
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Synced/i)).toBeInTheDocument();
+    });
+
+    const resizer = container.querySelector('.resizer-handle') as HTMLElement;
+    fireEvent.pointerDown(resizer, { clientX: 400, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 520, pointerId: 1 });
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 520 });
+    expect((resizer.parentElement as HTMLElement).style.width).toBe('520px');
+
+    await act(async () => {
+      window.innerWidth = 400;
+      window.innerHeight = 800;
+      window.dispatchEvent(new Event('orientationchange'));
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('.mobile-bottom-sheet')).toBeTruthy();
+    });
+
+    await act(async () => {
+      window.innerWidth = 900;
+      window.innerHeight = 400;
+      window.dispatchEvent(new Event('orientationchange'));
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('.mobile-bottom-sheet')).toBeFalsy();
+    });
+    const sidebar = container.querySelector('.app-container > div') as HTMLElement;
+    expect(sidebar.style.width).toBe('400px');
+  });
+
   it('keeps More options button available when resizing window from desktop to mobile', async () => {
     (apiService.getMap as any).mockResolvedValue({
       id: 'map-1',
@@ -484,6 +539,11 @@ describe('App Components Error Handling', () => {
 
     await waitFor(() => {
       expect(container.querySelector('.mobile-bottom-sheet')).toBeFalsy();
+    });
+    const landscapeSidebar = container.querySelector('.app-container > div') as HTMLElement;
+    expect(landscapeSidebar.style.width).toBe('400px');
+    await waitFor(() => {
+      expect(container.querySelector('.app-container')?.getAttribute('data-map-reload')).toBe('1');
     });
 
     await act(async () => {

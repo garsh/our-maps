@@ -175,50 +175,55 @@ button:active {
 }
 
 .app-container {
+  width: 100vw;
+  width: 100dvw;
   height: 100vh;
   height: 100dvh;
 }
 
-/* Mobile Layout */
-@media (max-width: 768px) {
-  .app-container {
-    flex-direction: column !important;
-    height: 100vh;
-    height: 100dvh;
-  }
-  
-  .mobile-bottom-sheet {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    width: 100% !important;
-    max-width: none !important;
-    min-width: 0 !important;
-    z-index: 2000 !important;
-    border-radius: 16px 16px 0 0;
-    border-top: 1px solid var(--border-color);
-    border-right: none !important;
-    box-shadow: 0 -4px 12px rgba(0,0,0,0.15) !important;
-    touch-action: pan-y;
-    will-change: height;
-  }
+.app-container.is-desktop-layout {
+  flex-direction: row !important;
+}
 
-  .mobile-bottom-sheet.dragging {
-    transition: none !important;
-  }
+/* Mobile layout is driven by React (isMobile), not max-width media, so a
+   stale CSS viewport after rotate cannot fight the JS layout. */
+.app-container.is-mobile-layout {
+  flex-direction: column !important;
+  height: 100vh;
+  height: 100dvh;
+}
 
-  .mobile-bottom-sheet:not(.dragging) {
-    transition: height 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
+.app-container.is-mobile-layout .mobile-bottom-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  z-index: 2000 !important;
+  border-radius: 16px 16px 0 0;
+  border-top: 1px solid var(--border-color);
+  border-right: none !important;
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.15) !important;
+  touch-action: pan-y;
+  will-change: height;
+}
 
-  .resizer-handle {
-    display: none !important;
-  }
+.app-container.is-mobile-layout .mobile-bottom-sheet.dragging {
+  transition: none !important;
+}
 
-  .maplibregl-ctrl-zoom {
-    display: none !important;
-  }
+.app-container.is-mobile-layout .mobile-bottom-sheet:not(.dragging) {
+  transition: height 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.app-container.is-mobile-layout .resizer-handle {
+  display: none !important;
+}
+
+.app-container.is-mobile-layout .maplibregl-ctrl-zoom {
+  display: none !important;
 }
 
 
@@ -325,6 +330,12 @@ button:active {
 /* Smooth collapse/expand animation (suppressed during active drag) */
 .sidebar-width-transition {
   transition: width 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Instant default chrome after rotate — do not animate from the previous orientation's size */
+.orientation-chrome-snap,
+.orientation-chrome-snap.mobile-bottom-sheet:not(.dragging) {
+  transition: none !important;
 }
 
 /* Touch devices: enlarge handle to match portrait pill tap target */

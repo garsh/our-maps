@@ -1118,134 +1118,6 @@ export function paddedMapView(leftPadding: number, bottomPadding: number) {
   };
 }
 
-/** Screen pixel of the chrome-free map area (sidebar / bottom sheet excluded). */
-export function visibleViewportCenterPx(
-  width: number,
-  height: number,
-  leftPadding: number,
-  bottomPadding: number
-): { x: number; y: number } {
-  return {
-    x: (leftPadding + width) / 2,
-    y: (height - bottomPadding) / 2,
-  };
-}
-
-function mapContainerSize(map: { getContainer?: () => { clientWidth?: number; clientHeight?: number } | null } | null | undefined): { width: number; height: number } {
-  const el = typeof map?.getContainer === 'function' ? map.getContainer() : null;
-  return {
-    width: el?.clientWidth || 0,
-    height: el?.clientHeight || 0,
-  };
-}
-
-export function getVisibleViewportLngLat(
-  map: {
-    unproject?: (point: [number, number]) => { lng: number; lat: number };
-    getContainer?: () => { clientWidth?: number; clientHeight?: number } | null;
-  } | null | undefined,
-  leftPadding: number,
-  bottomPadding: number
-): { lng: number; lat: number } | null {
-  if (!map || typeof map.unproject !== 'function') return null;
-  const { width, height } = mapContainerSize(map);
-  if (width < 2 || height < 2) return null;
-  const { x, y } = visibleViewportCenterPx(width, height, leftPadding, bottomPadding);
-  try {
-    const ll = map.unproject([x, y]);
-    if (!ll || !Number.isFinite(ll.lng) || !Number.isFinite(ll.lat)) return null;
-    return { lng: ll.lng, lat: ll.lat };
-  } catch {
-    return null;
-  }
-}
-
-function chromeViewportPadding(leftPadding: number, bottomPadding: number) {
-  return { top: 0, right: 0, left: leftPadding, bottom: bottomPadding };
-}
-
-export function jumpToVisibleViewportCenter(
-  map: {
-    jumpTo?: (opts: Record<string, unknown>) => void;
-    getContainer?: () => { clientWidth?: number; clientHeight?: number } | null;
-  } | null | undefined,
-  lngLat: { lng: number; lat: number },
-  view: { zoom: number; pitch: number; bearing: number },
-  leftPadding: number,
-  bottomPadding: number
-): boolean {
-  if (!map || typeof map.jumpTo !== 'function') return false;
-  const { width, height } = mapContainerSize(map);
-  if (width < 2 || height < 2) return false;
-
-  try {
-    // One camera update: MapLibre treats `center` as the padded-viewport center,
-    // so this both recenters and keeps that point stable across further resizes.
-    map.jumpTo({
-      center: [lngLat.lng, lngLat.lat],
-      zoom: view.zoom,
-      pitch: view.pitch,
-      bearing: view.bearing,
-      padding: chromeViewportPadding(leftPadding, bottomPadding),
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-type VisibleCameraSnapshot = {
-  lng: number;
-  lat: number;
-  zoom: number;
-  pitch: number;
-  bearing: number;
-  width: number;
-  height: number;
-  leftPadding: number;
-  bottomPadding: number;
-  session: number;
-  requiresRemount: boolean;
-};
-
-function layoutOrientation(): 'portrait' | 'landscape' {
-  return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
-}
-
-function screenOrientation(): 'portrait' | 'landscape' {
-  const type = window.screen?.orientation?.type;
-  if (typeof type === 'string') {
-    if (type.startsWith('landscape')) return 'landscape';
-    if (type.startsWith('portrait')) return 'portrait';
-  }
-  return layoutOrientation();
-}
-
-function snapshotVisibleCameraView(
-  map: any,
-  leftPadding: number,
-  bottomPadding: number,
-  session: number
-): VisibleCameraSnapshot | null {
-  if (!map) return null;
-  const { width, height } = mapContainerSize(map);
-  const visible = getVisibleViewportLngLat(map, leftPadding, bottomPadding);
-  if (!visible || width < 2 || height < 2) return null;
-  return {
-    lng: visible.lng,
-    lat: visible.lat,
-    zoom: typeof map.getZoom === 'function' ? map.getZoom() : 10,
-    pitch: typeof map.getPitch === 'function' ? map.getPitch() : 0,
-    bearing: typeof map.getBearing === 'function' ? map.getBearing() : 0,
-    width,
-    height,
-    leftPadding,
-    bottomPadding,
-    session,
-    requiresRemount: false,
-  };
-}
-
 export function isPinInPaddedViewport(
   map: {
     project?: (lngLat: [number, number]) => { x: number; y: number };
@@ -1363,29 +1235,7 @@ const MapView = ({
     bearing: number;
     padding?: { top: number; right: number; left: number; bottom: number };
   } | null>(null);
-  const lastOrientationRef = useRef<'portrait' | 'landscape'>(
-    typeof window !== 'undefined' ? layoutOrientation() : 'portrait'
-  );
-  const lastScreenOrientationRef = useRef<'portrait' | 'landscape'>(
-    typeof window !== 'undefined' ? screenOrientation() : 'portrait'
-  );
-  const lastOrientationRemountAtRef = useRef(0);
   const mapSessionKeyRef = useRef(0);
-  const pendingVisibleCenterRef = useRef<VisibleCameraSnapshot | null>(null);
-  const lastVisibleCenterRef = useRef<VisibleCameraSnapshot | null>(null);
-  const orientationRestoreUntilRef = useRef(0);
-  const visibleCenterApplyTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const visibleCenterApplyRafRef = useRef<number | null>(null);
-  const applyPendingVisibleCenterRef = useRef<() => void>(() => {});
-
-  const clearVisibleCenterTimers = useCallback(() => {
-    visibleCenterApplyTimersRef.current.forEach((id) => clearTimeout(id));
-    visibleCenterApplyTimersRef.current = [];
-    if (visibleCenterApplyRafRef.current !== null) {
-      cancelAnimationFrame(visibleCenterApplyRafRef.current);
-      visibleCenterApplyRafRef.current = null;
-    }
-  }, []);
 
   const [isMapLoaded, setIsMapLoaded] = useState(false);
   mapSessionKeyRef.current = mapSessionKey;
@@ -1437,15 +1287,29 @@ const MapView = ({
     };
 
     const onMapResize = () => {
-      if (pendingVisibleCenterRef.current) applyPendingVisibleCenterRef.current();
+      try { mapInstance.triggerRepaint(); } catch {}
     };
 
     let canvas: HTMLCanvasElement | null = null;
+    let containerResizeObserver: ResizeObserver | null = null;
 
     if (mapInstance && typeof mapInstance.on === 'function') {
       mapInstance.on('webglcontextlost', onContextLost);
       mapInstance.on('webglcontextrestored', onContextRestored);
       mapInstance.on('resize', onMapResize);
+
+      try {
+        const container = typeof mapInstance.getContainer === 'function' ? mapInstance.getContainer() : null;
+        if (container && typeof ResizeObserver !== 'undefined') {
+          containerResizeObserver = new ResizeObserver(() => {
+            try {
+              if (typeof mapInstance.resize === 'function') mapInstance.resize();
+            } catch {}
+            onMapResize();
+          });
+          containerResizeObserver.observe(container);
+        }
+      } catch {}
 
       try {
         canvas = typeof mapInstance.getCanvas === 'function' ? mapInstance.getCanvas() : null;
@@ -1496,15 +1360,13 @@ const MapView = ({
           canvas.removeEventListener('webglcontextrestored', onContextRestored);
         } catch {}
       }
+      try { containerResizeObserver?.disconnect(); } catch {}
     };
 
     // Immediately enable map load and trigger initial frame render
     setIsMapLoaded(true);
     if (mapInstance) {
       mapInstance.triggerRepaint();
-    }
-    if (pendingVisibleCenterRef.current) {
-      applyPendingVisibleCenterRef.current();
     }
   }, [mapTheme, triggerMapRemount]);
 
@@ -1554,155 +1416,6 @@ const MapView = ({
     };
   }, [triggerMapRemount]);
 
-  const applyPendingVisibleCenter = useCallback(() => {
-    const pending = pendingVisibleCenterRef.current;
-    if (!pending) return;
-    const map = mapRef.current?.getMap?.();
-    if (!map) return;
-    const { width, height } = mapContainerSize(map);
-    if (width < 2 || height < 2) return;
-    if (pending.requiresRemount && mapSessionKeyRef.current === pending.session) return;
-
-    const sizeChanged = width !== pending.width || height !== pending.height;
-    const paddingChanged =
-      leftPaddingRef.current !== pending.leftPadding ||
-      bottomPaddingRef.current !== pending.bottomPadding;
-    if (!sizeChanged && !paddingChanged) return;
-
-    const containerOrient: 'portrait' | 'landscape' = width > height ? 'landscape' : 'portrait';
-    if (containerOrient !== layoutOrientation()) return;
-    const expectMobile = window.innerWidth <= 768;
-    if (expectMobile && leftPaddingRef.current !== 0) return;
-    if (!expectMobile && bottomPaddingRef.current !== 0) return;
-
-    const padding = chromeViewportPadding(leftPaddingRef.current, bottomPaddingRef.current);
-    const applied = jumpToVisibleViewportCenter(
-      map,
-      { lng: pending.lng, lat: pending.lat },
-      { zoom: pending.zoom, pitch: pending.pitch, bearing: pending.bearing },
-      leftPaddingRef.current,
-      bottomPaddingRef.current
-    );
-    if (!applied) return;
-
-    currentViewStateRef.current = {
-      longitude: pending.lng,
-      latitude: pending.lat,
-      zoom: pending.zoom,
-      pitch: pending.pitch,
-      bearing: pending.bearing,
-      padding,
-    };
-    const snap = snapshotVisibleCameraView(
-      map,
-      leftPaddingRef.current,
-      bottomPaddingRef.current,
-      mapSessionKeyRef.current
-    );
-    if (snap) lastVisibleCenterRef.current = snap;
-    const wasOrientationRestore = pending.requiresRemount;
-    pendingVisibleCenterRef.current = null;
-    if (wasOrientationRestore) {
-      orientationRestoreUntilRef.current = Math.max(orientationRestoreUntilRef.current, Date.now() + 1000);
-    }
-    clearVisibleCenterTimers();
-  }, [clearVisibleCenterTimers]);
-  applyPendingVisibleCenterRef.current = applyPendingVisibleCenter;
-
-  // Keep the unobscured geographic center (right of the sidebar / above the
-  // bottom sheet) when the viewport changes. 3D terrain on a phone also remounts
-  // on portrait↔landscape because MapLibre's terrain camera cannot survive that
-  // canvas resize.
-  useEffect(() => {
-    const remountForOrientation = () => {
-      const pending = pendingVisibleCenterRef.current;
-      if (!pending?.requiresRemount) return;
-      if (mapSessionKeyRef.current !== pending.session) return;
-      const now = Date.now();
-      if (now - lastOrientationRemountAtRef.current < 800) return;
-      lastOrientationRemountAtRef.current = now;
-      orientationRestoreUntilRef.current = now + 2500;
-      triggerMapRemount();
-    };
-
-    const captureVisibleCenter = (requiresRemount: boolean) => {
-      const map = mapRef.current?.getMap?.();
-      const snap =
-        lastVisibleCenterRef.current
-        || snapshotVisibleCameraView(map, leftPaddingRef.current, bottomPaddingRef.current, mapSessionKeyRef.current);
-      if (!snap) return;
-      pendingVisibleCenterRef.current = {
-        ...snap,
-        session: mapSessionKeyRef.current,
-        requiresRemount,
-      };
-      currentViewStateRef.current = {
-        longitude: snap.lng,
-        latitude: snap.lat,
-        zoom: snap.zoom,
-        pitch: snap.pitch,
-        bearing: snap.bearing,
-        padding: chromeViewportPadding(leftPaddingRef.current, bottomPaddingRef.current),
-      };
-    };
-
-    const scheduleApplyVisibleCenter = () => {
-      if (visibleCenterApplyTimersRef.current.length > 0 || visibleCenterApplyRafRef.current !== null) return;
-      visibleCenterApplyRafRef.current = requestAnimationFrame(() => {
-        visibleCenterApplyRafRef.current = null;
-        applyPendingVisibleCenter();
-      });
-      visibleCenterApplyTimersRef.current = [
-        setTimeout(() => applyPendingVisibleCenter(), 100),
-        setTimeout(() => applyPendingVisibleCenter(), 400),
-      ];
-    };
-
-    const handleResizeEvent = (event?: Event) => {
-      const layoutNow = layoutOrientation();
-      const screenNow = screenOrientation();
-      const flipped =
-        layoutNow !== lastOrientationRef.current ||
-        screenNow !== lastScreenOrientationRef.current;
-      const isOrientationEvent = event?.type === 'orientationchange' || event?.type === 'change';
-      if (layoutNow !== lastOrientationRef.current) lastOrientationRef.current = layoutNow;
-      lastScreenOrientationRef.current = screenNow;
-
-      const restoring =
-        !!pendingVisibleCenterRef.current || Date.now() < orientationRestoreUntilRef.current;
-      const startOrientation = flipped || (isOrientationEvent && !restoring);
-
-      if (startOrientation) {
-        if (!pendingVisibleCenterRef.current) {
-          captureVisibleCenter(show3DTerrainRef.current);
-        } else if (show3DTerrainRef.current) {
-          pendingVisibleCenterRef.current.requiresRemount = true;
-        }
-        remountForOrientation();
-        scheduleApplyVisibleCenter();
-        return;
-      }
-
-      if (restoring) {
-        if (pendingVisibleCenterRef.current) applyPendingVisibleCenter();
-        return;
-      }
-
-      if (!pendingVisibleCenterRef.current) captureVisibleCenter(false);
-      scheduleApplyVisibleCenter();
-    };
-
-    window.addEventListener('resize', handleResizeEvent);
-    window.addEventListener('orientationchange', handleResizeEvent);
-    window.screen?.orientation?.addEventListener?.('change', handleResizeEvent);
-
-    return () => {
-      window.removeEventListener('resize', handleResizeEvent);
-      window.removeEventListener('orientationchange', handleResizeEvent);
-      window.screen?.orientation?.removeEventListener?.('change', handleResizeEvent);
-      clearVisibleCenterTimers();
-    };
-  }, [triggerMapRemount, applyPendingVisibleCenter, clearVisibleCenterTimers]);
   const lastTargetPinId = useRef<string | null>(null);
   const compassSvgRef = useRef<SVGSVGElement | null>(null);
   const compassGroupRef = useRef<SVGGElement | null>(null);
@@ -2437,8 +2150,7 @@ const MapView = ({
 
   useEffect(() => {
     updateBounds();
-    applyPendingVisibleCenter();
-  }, [leftPadding, bottomPadding, updateBounds, applyPendingVisibleCenter]);
+  }, [leftPadding, bottomPadding, updateBounds]);
 
   const handlePinClickStable = useCallback((clickedPin: Pin) => {
     setPendingContextLocation(null);
@@ -2513,34 +2225,6 @@ const MapView = ({
     }
     updateCompassDirect();
     clearHoverDuringPan();
-    if (pendingVisibleCenterRef.current || Date.now() < orientationRestoreUntilRef.current) return;
-    const map = mapRef.current?.getMap?.();
-    const { width, height } = mapContainerSize(map);
-    const last = lastVisibleCenterRef.current;
-    if (last && width > 1 && height > 1 && (last.width !== width || last.height !== height)) {
-      const orientationFlipped = (last.width > last.height) !== (width > height);
-      pendingVisibleCenterRef.current = {
-        ...last,
-        session: mapSessionKeyRef.current,
-        requiresRemount: show3DTerrainRef.current && orientationFlipped,
-      };
-      currentViewStateRef.current = {
-        longitude: last.lng,
-        latitude: last.lat,
-        zoom: last.zoom,
-        pitch: last.pitch,
-        bearing: last.bearing,
-        padding: chromeViewportPadding(last.leftPadding, last.bottomPadding),
-      };
-      return;
-    }
-    const snap = snapshotVisibleCameraView(
-      map,
-      leftPaddingRef.current,
-      bottomPaddingRef.current,
-      mapSessionKeyRef.current
-    );
-    if (snap) lastVisibleCenterRef.current = snap;
   }, [updateCompassDirect, clearHoverDuringPan]);
 
   const handleMapLoad = useCallback((e: any) => {
@@ -2548,8 +2232,7 @@ const MapView = ({
     const map = e.target || mapRef.current?.getMap();
     attachMissingImageResolver(map);
     updateBounds();
-    applyPendingVisibleCenter();
-  }, [updateBounds, applyPendingVisibleCenter]);
+  }, [updateBounds]);
 
   const applyBoundsToFit = useCallback(
     (bounds: [[number, number], [number, number]] | null, animate = true) => {
@@ -2562,6 +2245,7 @@ const MapView = ({
       const maxLng = Math.max(first[1], second[1]);
 
       const duration = animate ? 1200 : 0;
+      const padding = paddedMapView(leftPadding, bottomPadding);
 
       if (Math.abs(maxLat - minLat) < 0.0001 && Math.abs(maxLng - minLng) < 0.0001) {
         mapRef.current.flyTo({
@@ -2570,7 +2254,7 @@ const MapView = ({
           bearing: 0,
           pitch: 0,
           duration,
-          padding: paddedMapView(leftPadding, bottomPadding),
+          padding,
           ...FLY_TO_TERRAIN,
         });
       } else {
@@ -2580,7 +2264,7 @@ const MapView = ({
             [maxLng, maxLat],
           ],
           {
-            padding: paddedMapView(leftPadding, bottomPadding),
+            padding,
             maxZoom: 13,
             bearing: 0,
             pitch: 0,
@@ -2652,7 +2336,6 @@ const MapView = ({
   // Camera movements for boundsToFit or initial pins focus
   useEffect(() => {
     if (!isMapLoaded) return;
-    if (pendingVisibleCenterRef.current || Date.now() < orientationRestoreUntilRef.current) return;
 
     let targetBounds = boundsToFit;
     if ((!targetBounds || !Array.isArray(targetBounds) || targetBounds.length !== 2) && !hasFitInitialBoundsRef.current) {
