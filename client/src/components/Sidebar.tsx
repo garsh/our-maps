@@ -147,6 +147,7 @@ interface SidebarProps {
   isOffline?: boolean;
   isHoverBlocked?: boolean;
   onSearchAreaStateChange?: (state: SearchAreaState | null) => void;
+  isPanelMinimized?: boolean;
 }
 
 
@@ -1783,7 +1784,8 @@ const Sidebar = ({
   onToggle3DBuildings,
   isOffline = false,
   isHoverBlocked = false,
-  onSearchAreaStateChange
+  onSearchAreaStateChange,
+  isPanelMinimized = false
 }: SidebarProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -2800,6 +2802,7 @@ const Sidebar = ({
                   onHoverSearchResult={onHoverSearchResult}
                   onHoverPin={onHoverPin}
                   onSearchAreaStateChange={onSearchAreaStateChange}
+                  isPanelMinimized={isPanelMinimized}
                 />
               </div>
             )}

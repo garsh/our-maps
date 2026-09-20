@@ -501,6 +501,81 @@ describe('App Components Error Handling', () => {
     expect(pinList?.classList.contains('pin-hover-blocked')).toBe(true);
   });
 
+  it('clears search text when the mobile panel is minimized', async () => {
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    window.innerWidth = 375;
+    window.innerHeight = 800;
+
+    const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/Search.../i)).toBeInTheDocument();
+    });
+
+    const input = screen.getByPlaceholderText(/Search.../i);
+    fireEvent.change(input, { target: { value: 'Coffee' } });
+    expect(input).toHaveValue('Coffee');
+
+    const handle = container.querySelector('.bottom-sheet-drag-handle') as HTMLElement;
+    fireEvent.pointerDown(handle, { clientY: 450, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientY: 450, pointerId: 1 });
+
+    expect(container.querySelector('.mobile-bottom-sheet')).toHaveStyle({ height: '0px' });
+    expect(input).toHaveValue('');
+  });
+
+  it('clears search text when the desktop sidebar is minimized', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1280 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 });
+
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/Search.../i)).toBeInTheDocument();
+    });
+
+    const input = screen.getByPlaceholderText(/Search.../i);
+    fireEvent.change(input, { target: { value: 'Coffee' } });
+    expect(input).toHaveValue('Coffee');
+
+    const resizer = container.querySelector('.resizer-handle') as HTMLElement;
+    fireEvent.click(resizer);
+
+    expect((resizer.parentElement as HTMLElement).style.width).toBe('0px');
+    expect(input).toHaveValue('');
+  });
+
   it('switches from the portrait bottom sheet to a landscape sidebar and back', async () => {
     (apiService.getMap as any).mockResolvedValue({
       id: 'map-1',

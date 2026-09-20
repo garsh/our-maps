@@ -31,6 +31,7 @@ interface SearchBarProps {
   onHoverSearchResult?: (lat: number | null, lng: number | null) => void;
   onHoverPin?: (id: string | null, leavingPinId?: string) => void;
   onSearchAreaStateChange?: (state: SearchAreaState | null) => void;
+  isPanelMinimized?: boolean;
 }
 
 const renderAddressParts = (title: string, address: string = '') => {
@@ -60,7 +61,7 @@ const renderAddressParts = (title: string, address: string = '') => {
   );
 };
 
-const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHoverSearchResult, onHoverPin, onSearchAreaStateChange }: SearchBarProps) => {
+const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHoverSearchResult, onHoverPin, onSearchAreaStateChange, isPanelMinimized = false }: SearchBarProps) => {
   const [query, setQuery] = useState('');
   const [globalResults, setResults] = useState<SearchResult[]>([]);
   const [localResults, setLocalResults] = useState<SearchResult[]>([]);
@@ -72,6 +73,20 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
   mapBoundsRef.current = effectiveBounds;
   const abortControllerRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const onHoverSearchResultRef = useRef(onHoverSearchResult);
+  onHoverSearchResultRef.current = onHoverSearchResult;
+  const onHoverPinRef = useRef(onHoverPin);
+  onHoverPinRef.current = onHoverPin;
+  const prevQueryRef = useRef(query);
+
+  if (isPanelMinimized && query !== '') {
+    setQuery('');
+    setLocalResults([]);
+    setResults([]);
+    setLastSearchedBounds(null);
+    setIsSearching(false);
+    prevQueryRef.current = '';
+  }
 
   const handleClear = () => {
     setQuery('');
@@ -83,6 +98,13 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     prevQueryRef.current = '';
     inputRef.current?.focus();
   };
+
+  useEffect(() => {
+    if (!isPanelMinimized) return;
+    abortControllerRef.current?.abort();
+    onHoverSearchResultRef.current?.(null, null);
+    onHoverPinRef.current?.(null);
+  }, [isPanelMinimized]);
 
   useEffect(() => {
     return () => {
@@ -205,7 +227,6 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
   }, []);
 
   // Debounced global search triggered solely on query text changes
-  const prevQueryRef = useRef(query);
   useEffect(() => {
     if (prevQueryRef.current === query) return;
     prevQueryRef.current = query;

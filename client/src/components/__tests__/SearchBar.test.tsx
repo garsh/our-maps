@@ -329,5 +329,42 @@ describe('SearchBar', () => {
     expect(input).toHaveValue('');
     expect(input).toHaveFocus();
   });
+
+  it('clears search text and results when the panel is minimized', async () => {
+    const mockOnHoverPin = vi.fn();
+    const mockOnHoverSearchResult = vi.fn();
+    const { rerender } = render(
+      <SearchBar
+        onAddPin={mockOnAddPin}
+        onHoverPin={mockOnHoverPin}
+        onHoverSearchResult={mockOnHoverSearchResult}
+        pins={mockPins}
+      />
+    );
+
+    const input = screen.getByPlaceholderText(/Search.../i);
+    fireEvent.change(input, { target: { value: 'Coffee' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Local Coffee')).toBeInTheDocument();
+    });
+    expect(input).toHaveValue('Coffee');
+
+    rerender(
+      <SearchBar
+        onAddPin={mockOnAddPin}
+        onHoverPin={mockOnHoverPin}
+        onHoverSearchResult={mockOnHoverSearchResult}
+        pins={mockPins}
+        isPanelMinimized
+      />
+    );
+
+    expect(input).toHaveValue('');
+    expect(screen.queryByText('Local Coffee')).not.toBeInTheDocument();
+    expect(mockOnHoverSearchResult).toHaveBeenCalledWith(null, null);
+    expect(mockOnHoverPin).toHaveBeenCalledWith(null);
+    expect(input).not.toHaveFocus();
+  });
 });
 

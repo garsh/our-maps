@@ -2182,6 +2182,7 @@ export function MapEditor() {
               show3DBuildings={show3DBuildings}
               onToggle3DBuildings={handleToggle3DBuildings}
               onSearchAreaStateChange={setSearchAreaState}
+              isPanelMinimized={isMobile ? sheetHeight <= 0 : sidebarWidth <= 0}
             />
           </div>
         </div>
