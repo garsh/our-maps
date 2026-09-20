@@ -503,13 +503,13 @@ describe('App Components Error Handling', () => {
     fireEvent.pointerUp(handle, { clientY: 800, pointerId: 1 });
     expect(sheet.style.height).toBe('350px');
 
-    // 3. Fast flick UP raises all the way to max height (772px)
+    // 3. Drag keeps the released height (no flick maximize)
     fireEvent.pointerDown(handle, { clientY: 450, pointerId: 1 });
     fireEvent.pointerMove(handle, { clientY: 200, pointerId: 1 });
     fireEvent.pointerUp(handle, { clientY: 200, pointerId: 1 });
-    expect(sheet.style.height).toBe('772px');
+    expect(sheet.style.height).toBe('600px');
 
-    // 4. Tapping when at max/non-standard height (772px) should resize to standard height (350px)
+    // 4. Tapping when at a custom height should resize to standard height (350px)
     fireEvent.pointerDown(handle, { clientY: 200, pointerId: 1 });
     fireEvent.pointerUp(handle, { clientY: 200, pointerId: 1 });
     expect(sheet.style.height).toBe('350px');

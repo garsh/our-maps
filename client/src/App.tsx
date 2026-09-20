@@ -125,7 +125,7 @@ export function MapEditor() {
   const isResizerDraggingRef = useRef(false);
   const resizerStartXRef = useRef(0);
   const resizerStartWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH);
-  const resizerDragStartRef = useRef<{ x: number; width: number; time: number; moved: boolean }>({ x: 0, width: DEFAULT_SIDEBAR_WIDTH, time: 0, moved: false });
+  const resizerDragStartRef = useRef<{ x: number; time: number; moved: boolean }>({ x: 0, time: 0, moved: false });
 
   const { theme: mapTheme, setTheme: handleThemeChange } = useTheme();
 
@@ -412,7 +412,6 @@ export function MapEditor() {
 
     const totalDeltaY = sheetDragStart.current.y - e.clientY; // positive = dragged UP, negative = dragged DOWN
     const elapsed = Math.max(1, Date.now() - sheetDragStart.current.time);
-    const velocity = totalDeltaY / elapsed; // px per ms
 
     const { minH, maxH } = sheetBoundsRef.current;
     const standardHeight = getStandardSheetHeight();
@@ -448,14 +447,8 @@ export function MapEditor() {
       } else {
         finalH = standardHeight;
       }
-    } else if (velocity > 0.4) {
-      // Fast flick UP -> raise all the way so handle touches title bar
-      finalH = maxH;
-    } else if (velocity < -0.4) {
-      // Fast flick DOWN -> hide panel completely
-      finalH = minH;
     } else {
-      // Normal drag release: keep exact custom height where user released
+      // Drag release: keep exact custom height where user released
       finalH = Math.max(minH, Math.min(maxH, currentDragHeight.current));
     }
 
@@ -1748,20 +1741,11 @@ export function MapEditor() {
     const endX = e?.clientX ?? startX;
     const elapsed = Math.max(1, Date.now() - startTime);
     const totalDeltaX = endX - startX; // positive = dragged RIGHT (wider), negative = dragged LEFT (narrower)
-    const velocity = totalDeltaX / elapsed; // px per ms
-
-    const maxW = clampSidebarWidth(window.innerWidth - 50, window.innerWidth, 0);
 
     let finalWidth: number;
     if (!moved || (elapsed < 200 && Math.abs(totalDeltaX) < 5)) {
       // Tap — handled by handleResizerClick; just keep current width
       finalWidth = sidebarWidthRef.current;
-    } else if (elapsed >= 50 && velocity > 0.4) {
-      // Fast flick RIGHT → maximize to fill available space
-      finalWidth = maxW;
-    } else if (elapsed >= 50 && velocity < -0.4) {
-      // Fast flick LEFT → collapse completely
-      finalWidth = 0;
     } else if (sidebarWidthRef.current < 60) {
       // Dragged to near-zero: snap closed
       finalWidth = 0;
@@ -1783,7 +1767,7 @@ export function MapEditor() {
     isResizerDraggingRef.current = false;
     resizerStartXRef.current = e.clientX;
     resizerStartWidthRef.current = sidebarWidthRef.current;
-    resizerDragStartRef.current = { x: e.clientX, width: sidebarWidthRef.current, time: Date.now(), moved: false };
+    resizerDragStartRef.current = { x: e.clientX, time: Date.now(), moved: false };
     clearHoveredPin();
     sheetRef.current?.classList.add('sidebar-resizing');
     setIsResizing(true);
