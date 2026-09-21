@@ -88,6 +88,7 @@ class MouseSensor extends PointerSensor {
 }
 
 const MOUSE_SENSOR_OPTIONS = { activationConstraint: { distance: 5 } };
+const MAP_OPTIONS_MENU_WIDTH = 220;
 const TOUCH_SENSOR_OPTIONS = { activationConstraint: { delay: 250, tolerance: 5 } };
 const KEYBOARD_SENSOR_OPTIONS = { coordinateGetter: sortableKeyboardCoordinates };
 
@@ -1795,7 +1796,10 @@ const Sidebar = ({
   isPanelMinimized = false
 }: SidebarProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [menuCoords, setMenuCoords] = useState({ top: 0, left: 0 });
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuDropdownRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const canEdit = userRole !== 'view';
@@ -2100,13 +2104,34 @@ const Sidebar = ({
       if (!document.body.contains(event.target as Node)) {
         return;
       }
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setIsMenuOpen(false);
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || menuDropdownRef.current?.contains(target)) {
+        return;
       }
+      setIsMenuOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!isMenuOpen) return;
+    const updateMenuCoords = () => {
+      const btn = menuButtonRef.current;
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const margin = 8;
+      const left = Math.max(margin, Math.min(rect.right - MAP_OPTIONS_MENU_WIDTH, window.innerWidth - MAP_OPTIONS_MENU_WIDTH - margin));
+      setMenuCoords({ top: rect.bottom, left });
+    };
+    updateMenuCoords();
+    window.addEventListener('resize', updateMenuCoords);
+    window.addEventListener('scroll', updateMenuCoords, true);
+    return () => {
+      window.removeEventListener('resize', updateMenuCoords);
+      window.removeEventListener('scroll', updateMenuCoords, true);
+    };
+  }, [isMenuOpen]);
 
   const handleExportClick = () => {
     setExportFileName(`${mapName.replace(/\s+/g, '_')}_export.json`);
@@ -2295,6 +2320,7 @@ const Sidebar = ({
           const menuContent = (
             <div style={{ position: 'relative' }} ref={menuRef}>
               <button 
+                ref={menuButtonRef}
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                 aria-label="More options"
                 style={{
@@ -2311,8 +2337,12 @@ const Sidebar = ({
                 <MoreVertical size={20} />
               </button>
               
-              {isMenuOpen && (
-                <div style={{ position: 'absolute', top: '100%', right: 0, width: '220px', background: 'var(--surface-color)', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 3000, maxHeight: 'min(80vh, 640px)', overflowY: 'auto' }}>
+              {isMenuOpen && typeof document !== 'undefined' && createPortal(
+                <div
+                  ref={menuDropdownRef}
+                  data-testid="map-options-menu"
+                  style={{ position: 'fixed', top: menuCoords.top, left: menuCoords.left, width: MAP_OPTIONS_MENU_WIDTH, background: 'var(--surface-color)', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 4000, maxHeight: 'min(80vh, 640px)', overflowY: 'auto' }}
+                >
                   {!isAuthenticated && (
                     <div 
                       style={{ 
@@ -2799,7 +2829,8 @@ const Sidebar = ({
                       />
                     </div>
                   </div>
-                </div>
+                </div>,
+                document.body
               )}
             </div>
           );

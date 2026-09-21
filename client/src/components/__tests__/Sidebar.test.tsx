@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Sidebar, { computeCustomCollisionDetection, isPinRowVisibleInList, getPinListScrollElement, PIN_LIST_SCROLL_DELAY_MS, PIN_LIST_SCROLL_AFTER_PANEL_OPEN_MS } from '../Sidebar';
 import { useState } from 'react';
@@ -1036,10 +1036,9 @@ describe('Sidebar', () => {
     );
 
     fireEvent.click(screen.getByLabelText(/more options/i));
-    expect(screen.getByText('MOVE SELECTED TO...')).toBeInTheDocument();
-    const layerOptions = screen.getAllByText('Custom Layer');
-    // Click the menu option (first match in dropdown)
-    fireEvent.click(layerOptions[0]);
+    const menu = screen.getByTestId('map-options-menu');
+    expect(within(menu).getByText('MOVE SELECTED TO...')).toBeInTheDocument();
+    fireEvent.click(within(menu).getByText('Custom Layer'));
 
     expect(onMovePinsToLayer).toHaveBeenCalledWith(['1', '2'], 'layer-1');
   });

@@ -628,6 +628,43 @@ describe('App Components Error Handling', () => {
     expect(header).toContainElement(screen.getByLabelText('More options'));
   });
 
+  it('renders the map options menu outside the desktop header clip', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1280 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 });
+
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('More options')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText('More options'));
+
+    const menu = await screen.findByTestId('map-options-menu');
+    expect(menu).toHaveTextContent('Edit Mode');
+    expect(menu).toHaveTextContent('Appearance');
+    const headerClip = container.querySelector('.sidebar-header-clip') as HTMLElement;
+    expect(headerClip).toBeTruthy();
+    expect(headerClip).not.toContainElement(menu);
+    expect(document.body.contains(menu)).toBe(true);
+  });
+
   it('opens the minimized mobile panel to default size and highlights the tapped pin', async () => {
     (apiService.getMap as any).mockResolvedValue({
       id: 'map-1',
