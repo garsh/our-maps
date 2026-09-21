@@ -1,15 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { getDb, setDbName, closeDb } from '../db';
 import { getMapRole, canEditMap, canViewMap, addMapViewerIfLinkShared, resolveMapAccess } from '../permissions';
+import { setupTestDb, resetTestDb, teardownTestDb, getDb } from './testHelpers';
 
 describe('map role checks', () => {
   beforeAll(async () => {
-    process.env.NODE_ENV = 'test';
-    setDbName(':memory:');
+    await setupTestDb();
   });
 
   afterAll(async () => {
-    await closeDb();
+    await teardownTestDb();
   });
 
   const ownerId = 'owner-user';
@@ -19,13 +18,7 @@ describe('map role checks', () => {
   const mapId = 'role-map-1';
 
   beforeEach(async () => {
-    const db = await getDb();
-    await db.exec('DELETE FROM user_map_access');
-    await db.exec('DELETE FROM map_permissions');
-    await db.exec('DELETE FROM pins');
-    await db.exec('DELETE FROM pin_layers');
-    await db.exec('DELETE FROM maps');
-    await db.exec('DELETE FROM users');
+    const db = await resetTestDb();
 
     await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', ownerId, 'owner@example.com', 'Owner');
     await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', viewerId, 'viewer@example.com', 'Viewer');

@@ -6,6 +6,7 @@ import { Compression, PMTiles } from 'pmtiles';
 import { handleExtractSize, handleTileStream, parseExtractResumeOffset } from '../tileStream';
 import { buildPmtilesBuffer } from '../pmtilesArchive';
 import { clearMapFilePathCache } from '../mapFiles';
+import { BufferSource } from './testHelpers';
 
 describe('tileStream handler', () => {
   let sharedDir: string;
@@ -113,15 +114,7 @@ describe('tileStream handler', () => {
     expect(Number(headers['X-Total-Tiles'])).toBeGreaterThan(0);
     expect(body.toString('ascii', 0, 7)).toBe('PMTiles');
 
-    class BufferSource {
-      constructor(private buffer: Buffer) {}
-      getKey() { return 'out.pmtiles'; }
-      async getBytes(offset: number, length: number) {
-        const slice = this.buffer.subarray(offset, offset + length);
-        return { data: slice.buffer.slice(slice.byteOffset, slice.byteOffset + slice.byteLength) as ArrayBuffer };
-      }
-    }
-    const pmt = new PMTiles(new BufferSource(body));
+    const pmt = new PMTiles(new BufferSource(body, 'out.pmtiles'));
     const tile = await pmt.getZxy(1, 0, 0);
     expect(tile).toBeDefined();
     expect(Array.from(new Uint8Array(tile!.data))).toEqual([1, 0, 0, 99]);

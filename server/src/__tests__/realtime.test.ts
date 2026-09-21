@@ -1,24 +1,21 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { getDb, setDbName, closeDb } from '../db';
+import { getDb } from '../db';
 import * as realtime from '../realtime';
+import { setupTestDb, resetTestDb, teardownTestDb } from './testHelpers';
 
 describe('Realtime Delta Handlers', () => {
   beforeAll(async () => {
-    process.env.NODE_ENV = 'test';
-    setDbName(':memory:');
+    await setupTestDb();
   });
 
   afterAll(async () => {
-    await closeDb();
+    await teardownTestDb();
   });
 
   const mapId = 'realtime-map-1';
 
   beforeEach(async () => {
-    const db = await getDb();
-    await db.exec('DELETE FROM pins');
-    await db.exec('DELETE FROM pin_layers');
-    await db.exec('DELETE FROM maps');
+    const db = await resetTestDb();
     await db.run('INSERT INTO maps (id, name) VALUES (?, ?)', mapId, 'Test Map');
   });
 

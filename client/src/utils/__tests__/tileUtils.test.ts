@@ -162,12 +162,6 @@ describe('tileUtils', () => {
         const zoom1to10 = countTiles(bbox, 1, 10);
         const zoom11to15 = countTiles(bbox, 11, 15);
         expect(count).toBe(zoom1to10 + zoom11to15);
-    });
-
-    it('should calculate positive tile count for area across zoom levels 1 to 15 without gaps', () => {
-        const bbox = { north: 40.75, south: 40.70, east: -73.95, west: -74.00 };
-        const count = countTiles(bbox, 1, 15);
-        expect(count).toBeGreaterThan(0);
 
         for (let z = 1; z <= 15; z++) {
             expect(countTiles(bbox, z, z)).toBeGreaterThan(0);
@@ -182,8 +176,6 @@ describe('tileUtils', () => {
         const bbox = getPinsBoundingBox(pins)!;
 
         const count = countTiles(bbox, 1, 15);
-        expect(count).toBeGreaterThan(0);
-
         const z15Count = countTiles(bbox, 15, 15);
         expect(z15Count).toBeGreaterThan(0);
         expect(count).toBeGreaterThan(z15Count);

@@ -2,38 +2,25 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { app } from '../index';
-import { getDb, setDbName, closeDb, purgeExpiredSessions } from '../db';
+import { getDb, purgeExpiredSessions } from '../db';
 import * as fs from 'fs';
 import * as path from 'path';
+import { uuid, MOCK_USER, AUTH_HEADER, setupTestDb, resetTestDb, teardownTestDb } from './testHelpers';
 
 describe('API Endpoints', () => {
   beforeAll(async () => {
-    process.env.NODE_ENV = 'test';
-    setDbName(':memory:');
+    await setupTestDb();
   });
 
   afterAll(async () => {
-    await closeDb();
+    await teardownTestDb();
   });
 
-  const mockUser = {
-    id: 'test-user-id',
-    email: 'test@example.com',
-    name: 'Test User',
-    picture: ''
-  };
-
-  const authHeader = { 'x-mock-user': JSON.stringify(mockUser) };
-
-  const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`;
+  const mockUser = MOCK_USER;
+  const authHeader = AUTH_HEADER;
 
   beforeEach(async () => {
-    const db = await getDb();
-    await db.exec('DELETE FROM user_map_access');
-    await db.exec('DELETE FROM map_permissions');
-    await db.exec('DELETE FROM pins');
-    await db.exec('DELETE FROM maps');
-    await db.exec('DELETE FROM users');
+    const db = await resetTestDb();
     // Ensure test user exists for FK constraints
     await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', mockUser.id, mockUser.email, mockUser.name);
   });

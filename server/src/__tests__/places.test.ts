@@ -1,28 +1,19 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { app } from '../index';
-import { setDbName, closeDb, getDb } from '../db';
 import { clearPlacesCacheForTests } from '../routes/places';
+import { setupTestDb, teardownTestDb, AUTH_HEADER } from './testHelpers';
 
 describe('Places API Proxy Endpoints', () => {
   beforeAll(async () => {
-    process.env.NODE_ENV = 'test';
-    setDbName(':memory:');
-    await getDb();
+    await setupTestDb();
   });
 
   afterAll(async () => {
-    await closeDb();
+    await teardownTestDb();
   });
 
-  const mockUser = {
-    id: 'test-user-id-places',
-    email: 'places@example.com',
-    name: 'Places User',
-    picture: ''
-  };
-
-  const authHeader = { 'x-mock-user': JSON.stringify(mockUser) };
+  const authHeader = AUTH_HEADER;
 
   beforeEach(() => {
     vi.restoreAllMocks();

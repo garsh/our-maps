@@ -7,15 +7,7 @@ import {
   serializeEntries,
   serializeHeader,
 } from '../pmtilesArchive';
-
-class BufferSource {
-  constructor(private buffer: Buffer, private key = 'fixture.pmtiles') {}
-  getKey() { return this.key; }
-  async getBytes(offset: number, length: number) {
-    const slice = this.buffer.subarray(offset, offset + length);
-    return { data: slice.buffer.slice(slice.byteOffset, slice.byteOffset + slice.byteLength) as ArrayBuffer };
-  }
-}
+import { BufferSource } from './testHelpers';
 
 describe('pmtilesArchive', () => {
   it('round-trips a header through serializeHeader', () => {

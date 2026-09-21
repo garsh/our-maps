@@ -1,12 +1,13 @@
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { MapEditor, clampSidebarWidth } from '../App';
 import { PIN_HOVER_CLASS, getHoveredPinId, setLastPointerTypeForTests } from '../utils/pinHover';
 import { apiService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getOfflineMap } from '../utils/tileUtils';
-import { GoogleOAuthProvider } from '@react-oauth/google';
+import { renderWithProviders, MOCK_USER } from '../testHelpers';
 
 // Mock the dependencies
 vi.mock('../services/api');
@@ -62,7 +63,7 @@ vi.mock('socket.io-client', () => {
 });
 
 describe('App Components Error Handling', () => {
-  const mockUser = { id: 'user-1', email: 'test@test.com', name: 'Test User' };
+  const mockUser = MOCK_USER;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -89,15 +90,10 @@ describe('App Components Error Handling', () => {
   it('MapEditor shows error message when map fails to load', async () => {
     (apiService.getMap as any).mockRejectedValue(new Error('Not Found'));
 
-    render(
-      <GoogleOAuthProvider clientId="test-client-id">
-        <MemoryRouter initialEntries={['/map/invalid-id']}>
-          <Routes>
-            <Route path="/map/:id" element={<MapEditor />} />
-          </Routes>
-        </MemoryRouter>
-      </GoogleOAuthProvider>
-    );
+    renderWithProviders(<MapEditor />, {
+      initialEntries: ['/map/invalid-id'],
+      routePath: '/map/:id',
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/No Data/i)).toBeInTheDocument();
@@ -107,15 +103,10 @@ describe('App Components Error Handling', () => {
   it('MapEditor shows error message when creating a new map fails', async () => {
     (apiService.createMap as any).mockRejectedValue(new Error('Save Failed'));
 
-    render(
-      <GoogleOAuthProvider clientId="test-client-id">
-        <MemoryRouter initialEntries={['/map/new']}>
-          <Routes>
-            <Route path="/map/:id" element={<MapEditor />} />
-          </Routes>
-        </MemoryRouter>
-      </GoogleOAuthProvider>
-    );
+    renderWithProviders(<MapEditor />, {
+      initialEntries: ['/map/new'],
+      routePath: '/map/:id',
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/Synced/i)).toBeInTheDocument();
@@ -159,15 +150,10 @@ describe('App Components Error Handling', () => {
     });
     (apiService.createMap as any).mockResolvedValue({ id: 'map-1' });
 
-    render(
-      <GoogleOAuthProvider clientId="test-client-id">
-        <MemoryRouter initialEntries={['/map/map-1']}>
-          <Routes>
-            <Route path="/map/:id" element={<MapEditor />} />
-          </Routes>
-        </MemoryRouter>
-      </GoogleOAuthProvider>
-    );
+    renderWithProviders(<MapEditor />, {
+      initialEntries: ['/map/map-1'],
+      routePath: '/map/:id',
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/Synced/i)).toBeInTheDocument();
