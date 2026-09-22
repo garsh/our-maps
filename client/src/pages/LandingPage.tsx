@@ -116,6 +116,13 @@ export default function LandingPage() {
     setLeftoverItems([]);
   };
 
+  const checkForOldDatabase = async (): Promise<boolean> => {
+    // Implement the logic to check for the old database
+    // For example, you can check for the presence of a specific file or key in storage
+    // Return true if the old database is found, otherwise return false
+    return false; // Placeholder implementation
+  };
+
   const handleDeleteLeftovers = async () => {
     setIsRemovingLeftovers(true);
     try {
