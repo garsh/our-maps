@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-import { login, waitForAutoSave, deleteCurrentMap } from './helpers';
+import { test, expect, login, waitForAutoSave, deleteCurrentMap } from './helpers';
 
 test('full map creation flow', async ({ page }) => {
   await login(page);

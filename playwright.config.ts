@@ -1,7 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
 
-import { defineConfig, devices } from '@playwright/test';
-
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -35,11 +33,4 @@ export default defineConfig({
       },
     }
   ],
-  onError: async ({ error, test }) => {
-    if (test) {
-      // Assuming there is an API endpoint to delete a map by its ID
-      const mapId = test.title; // Replace with actual logic to get the map ID
-      await fetch(`http://127.0.0.1:3002/maps/${mapId}`, { method: 'DELETE' });
-    }
-  },
 });
