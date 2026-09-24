@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import Sidebar, { computeCustomCollisionDetection, isPinRowVisibleInList, getPinListScrollElement, PIN_LIST_SCROLL_DELAY_MS, PIN_LIST_SCROLL_AFTER_PANEL_OPEN_MS } from '../Sidebar';
+import Sidebar, { computeCustomCollisionDetection, isPinRowVisibleInList, getPinListScrollElement, scrollPinRowIntoList, PIN_LIST_STICKY_HEADER_OFFSET, PIN_LIST_SCROLL_DELAY_MS, PIN_LIST_SCROLL_AFTER_PANEL_OPEN_MS } from '../Sidebar';
 import { useState } from 'react';
 import * as dndSortable from '@dnd-kit/sortable';
 import * as dndCore from '@dnd-kit/core';
@@ -1269,6 +1269,121 @@ describe('Sidebar', () => {
       vi.useRealTimers();
     }
   });
+
+  it('scrolls the pin list when the pin being edited moves to another layer', () => {
+    vi.useFakeTimers();
+
+    try {
+      const layers = [
+        { id: 'layer-1', name: 'Restaurants', position: 0 },
+        { id: 'layer-2', name: 'Hotels', position: 1 },
+      ];
+      const pin = { id: 'p1', lat: 10, lng: 20, label: 'Restaurant 1', layerId: 'layer-1', position: 0 };
+
+      const { rerender, container } = render(
+        <TestWrapper pins={[pin]} handlers={{ layers }} />
+      );
+
+      fireEvent.click(screen.getByLabelText('Edit'));
+
+      const pinList = container.querySelector('.pin-list') as HTMLElement;
+      const scrollTo = vi.fn();
+      pinList.scrollTo = scrollTo;
+
+      act(() => {
+        vi.advanceTimersByTime(PIN_LIST_SCROLL_DELAY_MS);
+      });
+      expect(scrollTo).toHaveBeenCalled();
+      scrollTo.mockClear();
+
+      rerender(
+        <TestWrapper
+          pins={[{ ...pin, layerId: 'layer-2' }]}
+          handlers={{ layers }}
+        />
+      );
+
+      act(() => {
+        vi.advanceTimersByTime(PIN_LIST_SCROLL_DELAY_MS);
+      });
+      expect(scrollTo).toHaveBeenCalled();
+      scrollTo.mockClear();
+
+      rerender(
+        <TestWrapper
+          pins={[{ ...pin, layerId: 'layer-2', label: 'Renamed' }]}
+          handlers={{ layers }}
+        />
+      );
+
+      act(() => {
+        vi.advanceTimersByTime(PIN_LIST_SCROLL_DELAY_MS);
+      });
+      expect(scrollTo).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('scrolls once a collapsed destination layer expands around the pin being edited', () => {
+    vi.useFakeTimers();
+
+    try {
+      const layers = [
+        { id: 'layer-1', name: 'Restaurants', position: 0 },
+        { id: 'layer-2', name: 'Hotels', position: 1 },
+      ];
+      const pin = { id: 'p1', lat: 10, lng: 20, label: 'Restaurant 1', layerId: 'layer-1', position: 0 };
+
+      const Harness = ({ pins, collapsed }: { pins: typeof pin[], collapsed: Set<string | null> }) => (
+        <TestWrapper
+          pins={pins}
+          handlers={{
+            layers,
+            collapsedLayerIds: collapsed,
+            onToggleExpand: vi.fn(),
+          }}
+        />
+      );
+
+      const { rerender, container } = render(
+        <Harness pins={[pin]} collapsed={new Set<string | null>()} />
+      );
+
+      fireEvent.click(screen.getByLabelText('Edit'));
+
+      const pinList = container.querySelector('.pin-list') as HTMLElement;
+      const scrollTo = vi.fn();
+      pinList.scrollTo = scrollTo;
+
+      act(() => {
+        vi.advanceTimersByTime(PIN_LIST_SCROLL_DELAY_MS);
+      });
+      scrollTo.mockClear();
+
+      rerender(
+        <Harness pins={[{ ...pin, layerId: 'layer-2' }]} collapsed={new Set<string | null>(['layer-2'])} />
+      );
+
+      act(() => {
+        vi.advanceTimersByTime(PIN_LIST_SCROLL_DELAY_MS);
+      });
+      expect(document.getElementById('pin-p1')).toBeNull();
+      expect(scrollTo).not.toHaveBeenCalled();
+
+      rerender(
+        <Harness pins={[{ ...pin, layerId: 'layer-2' }]} collapsed={new Set<string | null>()} />
+      );
+
+      act(() => {
+        vi.advanceTimersByTime(PIN_LIST_SCROLL_DELAY_MS);
+      });
+      expect(document.getElementById('pin-p1')).not.toBeNull();
+      expect(scrollTo).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('pin list scroll targeting', () => {
@@ -1302,6 +1417,14 @@ describe('pin list scroll targeting', () => {
     mockRect(el, { top, height });
     document.body.appendChild(el);
     return el;
+  };
+
+  const makeScrollable = (container: HTMLElement, scrollTop = 0) => {
+    Object.defineProperty(container, 'scrollHeight', { value: 4000, configurable: true });
+    container.scrollTop = scrollTop;
+    const scrollTo = vi.fn();
+    container.scrollTo = scrollTo;
+    return scrollTo;
   };
 
   afterEach(() => {
@@ -1340,5 +1463,41 @@ describe('pin list scroll targeting', () => {
     makePinRow('h2', 50);
 
     expect(getPinListScrollElement(container, ['h1', 'h2'], 'h1')).toBeNull();
+  });
+
+  it('aligns a too-tall row to the top when it sits below the fold', () => {
+    const container = makeContainer(200);
+    const scrollTo = makeScrollable(container);
+    const row = makePinRow('edit', 250, 400);
+
+    scrollPinRowIntoList(row, container);
+
+    expect(scrollTo).toHaveBeenCalledWith({
+      top: 250 - PIN_LIST_STICKY_HEADER_OFFSET - 4,
+      behavior: 'smooth',
+    });
+  });
+
+  it('aligns a too-tall row to the top when it sits above the fold', () => {
+    const container = makeContainer(200);
+    const scrollTo = makeScrollable(container, 400);
+    const row = makePinRow('edit', -120, 400);
+
+    scrollPinRowIntoList(row, container);
+
+    expect(scrollTo).toHaveBeenCalledWith({
+      top: 400 - 120 - PIN_LIST_STICKY_HEADER_OFFSET - 4,
+      behavior: 'smooth',
+    });
+  });
+
+  it('brings a short row fully into view when only its bottom is clipped', () => {
+    const container = makeContainer(200);
+    const scrollTo = makeScrollable(container);
+    const row = makePinRow('pin', 180, 40);
+
+    scrollPinRowIntoList(row, container);
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 180 + 40 - 200 + 24, behavior: 'smooth' });
   });
 });

@@ -1489,7 +1489,7 @@ export function getPinListScrollElement(
   return elements[0];
 }
 
-function scrollPinRowIntoList(
+export function scrollPinRowIntoList(
   el: HTMLElement,
   container: HTMLElement,
   stickyHeaderOffset = PIN_LIST_STICKY_HEADER_OFFSET,
@@ -1506,7 +1506,11 @@ function scrollPinRowIntoList(
     container.scrollTo({ top: Math.min(maxScroll, Math.max(0, top)), behavior });
   };
 
-  if (relativeVisualTop < stickyHeaderOffset) {
+  // A row taller than the list cannot show both ends. Keep its top in view.
+  // A shorter row still scrolls the smaller distance that shows the whole row.
+  const visibleHeight = container.clientHeight - stickyHeaderOffset - 8;
+  const alignToTop = relativeVisualTop < stickyHeaderOffset || el.offsetHeight > visibleHeight;
+  if (alignToTop) {
     scrollToTop(currentScroll + relativeVisualTop - stickyHeaderOffset - 4);
   } else if (relativeVisualTop + el.offsetHeight > container.clientHeight - 8) {
     scrollToTop(currentScroll + (relativeVisualTop + el.offsetHeight) - container.clientHeight + 24);
@@ -1849,6 +1853,15 @@ const Sidebar = ({
   targetPinIdsRef.current = targetPinIds;
   const prevPanelMinimizedRef = useRef(isPanelMinimized);
 
+  // Layer changes keep editingPinId and the pin count the same. A collapsed
+  // destination has no row until it expands.
+  const editingPinLayerId = editingPinId
+    ? (pins.find(p => p.id === editingPinId)?.layerId ?? null)
+    : undefined;
+  const editingPinLayerExpanded = editingPinId
+    ? !collapsedLayerIds?.has(editingPinLayerId ?? null)
+    : true;
+
   // Auto-scroll the sidebar list to keep the active/editing pin in view.
   // Co-located pins (same exact lat/lng) are all highlighted; skip scrolling
   // if any one of those rows is already visible.
@@ -1875,7 +1888,15 @@ const Sidebar = ({
     }, openedFromMinimized ? PIN_LIST_SCROLL_AFTER_PANEL_OPEN_MS : PIN_LIST_SCROLL_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [targetPinId, editingPinId, pins.length, targetPinIdsKey, isPanelMinimized]);
+  }, [
+    targetPinId,
+    editingPinId,
+    editingPinLayerId,
+    editingPinLayerExpanded,
+    pins.length,
+    targetPinIdsKey,
+    isPanelMinimized,
+  ]);
   // PWA Install State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
