@@ -5,7 +5,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { apiService } from '../services/api';
 import { Map as MapIcon, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download, Upload, Sun, Moon, Eye } from 'lucide-react';
 import { getMapDownloadStatuses, unionCachedMapsWithDownloads, type MapDownloadStatus } from '../utils/tileUtils';
-import { tileWorkerManager } from '../utils/tileWorkerManager';
+import { landingStatusFromWorker, tileWorkerManager } from '../utils/tileWorkerManager';
 import { getStoredJson, setStoredJson } from '../utils/storageUtils';
 import { isForcedOffline, setForcedOffline } from '../utils/offlineSession';
 import { deleteUnrecognizedStorage, findUnrecognizedStorage, type LeftoverStorageItem } from '../utils/legacyStorage';
@@ -153,13 +153,9 @@ export default function LandingPage() {
       const targetIds = mapList ? mapList.map(m => m.id) : maps.map(m => m.id);
       targetIds.forEach(id => {
         const activeStatus = tileWorkerManager.getStatus(id);
-        if (activeStatus) {
-          if (activeStatus.isDownloading || activeStatus.hasPartialDownload) {
-            statusMap.set(id, { isComplete: false, isPartial: true });
-          } else if (activeStatus.isDownloaded) {
-            statusMap.set(id, { isComplete: true, isPartial: false });
-          }
-        }
+        if (!activeStatus) return;
+        const badge = landingStatusFromWorker(activeStatus);
+        if (badge) statusMap.set(id, badge);
       });
 
       setDownloadStatuses(statusMap);
@@ -167,7 +163,7 @@ export default function LandingPage() {
       statusMap.forEach((v, k) => { obj[k] = v; });
       setStoredJson('cached_download_statuses', obj);
       statusMap.forEach((status, id) => {
-        if (status.isPartial) {
+        if (status.isPartial && !status.isStalled) {
           void tileWorkerManager.resumeIfNeeded(id);
         }
       });
@@ -257,16 +253,11 @@ export default function LandingPage() {
 
     const unsubscribe = tileWorkerManager.subscribe((state) => {
       setDownloadStatuses((prev) => {
-        let newStatus: MapDownloadStatus | undefined;
-        if (state.isDownloading || state.hasPartialDownload) {
-          newStatus = { isComplete: false, isPartial: true };
-        } else if (state.isDownloaded) {
-          newStatus = { isComplete: true, isPartial: false };
-        }
+        const newStatus = landingStatusFromWorker(state);
 
         const current = prev.get(state.mapId);
         if (!newStatus && !current) return prev;
-        if (current && newStatus && current.isComplete === newStatus.isComplete && current.isPartial === newStatus.isPartial) {
+        if (current && newStatus && current.isComplete === newStatus.isComplete && current.isPartial === newStatus.isPartial && !!current.isStalled === !!newStatus.isStalled) {
           return prev;
         }
 
@@ -612,6 +603,13 @@ export default function LandingPage() {
                         return (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.7rem', color: '#27ae60', background: 'rgba(39, 174, 96, 0.12)', padding: '1px 6px', borderRadius: '10px', fontWeight: '700', marginLeft: 'auto', flexShrink: 0 }}>
                             <Download size={11} /> Downloaded
+                          </span>
+                        );
+                      }
+                      if (status?.isStalled) {
+                        return (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.7rem', color: 'var(--error-color)', background: 'rgba(203, 43, 62, 0.12)', padding: '1px 6px', borderRadius: '10px', fontWeight: '700', marginLeft: 'auto', flexShrink: 0 }}>
+                            <Download size={11} /> Stalled
                           </span>
                         );
                       }

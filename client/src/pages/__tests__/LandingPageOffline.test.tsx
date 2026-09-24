@@ -284,6 +284,66 @@ describe('LandingPage Offline Map Access', () => {
     subscribeSpy.mockRestore();
   });
 
+  it('shows Stalled when retries are exhausted and keeps Downloading while a retry is still in progress', async () => {
+    let subscriberCb: any;
+    const subscribeSpy = vi.spyOn(tileWorkerManager, 'subscribe').mockImplementation((cb: any) => {
+      subscriberCb = cb;
+      return () => {};
+    });
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Online Only Map')).toBeInTheDocument();
+    });
+
+    act(() => {
+      subscriberCb?.({
+        mapId: 'map-not-downloaded',
+        isDownloading: true,
+        isRemoving: false,
+        isDownloaded: false,
+        hasPartialDownload: false,
+        stalled: true,
+        downloadProgress: 0.4,
+        tileStats: { completed: 4, total: 10 },
+        byteStats: { received: 40, total: 100 },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Downloading')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Stalled')).not.toBeInTheDocument();
+
+    act(() => {
+      subscriberCb?.({
+        mapId: 'map-not-downloaded',
+        isDownloading: false,
+        isRemoving: false,
+        isDownloaded: false,
+        hasPartialDownload: true,
+        stalled: true,
+        downloadProgress: 0.4,
+        tileStats: { completed: 4, total: 10 },
+        byteStats: { received: 40, total: 100 },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Stalled')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Downloading')).not.toBeInTheDocument();
+
+    subscribeSpy.mockRestore();
+  });
+
   it('prevents opening maps in the middle of downloading while offline', async () => {
     (apiService.getMaps as any).mockRejectedValue(new Error('Network Error'));
     localStorage.setItem('cached_maps', JSON.stringify(mockMaps));

@@ -1,4 +1,4 @@
-import { removeMapDownload, removeAllDownloads, getDownloadStats, getOfflineMap, saveMapOffline, getPinsBoundingBox, type BoundingBox } from './tileUtils';
+import { removeMapDownload, removeAllDownloads, getDownloadStats, getOfflineMap, saveMapOffline, getPinsBoundingBox, type BoundingBox, type MapDownloadStatus } from './tileUtils';
 import { extractExists, getExtractResumeInfo, getPartFileSize } from './extractStore';
 import { invalidateExtractPMTiles } from './offlineExtract';
 import type { Pin } from '@shared/interfaces';
@@ -8,16 +8,82 @@ interface DownloadByteStats {
   total: number;
 }
 
-interface DownloadProgressState {
+export interface DownloadProgressState {
   mapId: string;
   isDownloading: boolean;
   isRemoving: boolean;
   isDownloaded: boolean;
   hasPartialDownload: boolean;
+  /** True while bytes are not arriving: retry backoff, page freeze, or retries exhausted. */
+  stalled: boolean;
   downloadProgress: number | null;
   tileStats: { completed: number; total: number } | null;
   byteStats: DownloadByteStats | null;
   error?: string | null;
+}
+
+/** Visible network failures. Chrome reports a suspended stream read as "network error". */
+const TRANSIENT_NETWORK_ERROR = /network error|failed to fetch|networkerror|load failed|internet connection|err_network/i;
+const MAX_TRANSIENT_FAILURES = 3;
+const RETRY_BASE_MS = 1000;
+
+function isTransientNetworkError(message: string): boolean {
+  return TRANSIENT_NETWORK_ERROR.test(message);
+}
+
+function isFatalDownloadError(message: string): boolean {
+  return message.includes('limit') || message.includes('400') || message.includes('Bad Request') || message.includes('exceeds') || message.includes('not found');
+}
+
+type DownloadPillIcon = 'animated' | 'stalled' | 'done' | 'removing';
+
+export function downloadActivityView(input: {
+  isDownloading: boolean;
+  isRemoving: boolean;
+  isDownloaded: boolean;
+  hasPartialDownload: boolean;
+  downloadProgress: number | null;
+  byteStats: DownloadByteStats | null;
+  stalled?: boolean;
+}): { show: boolean; progress: number | null; icon: DownloadPillIcon } {
+  const showActive = input.isDownloading || input.isRemoving || input.hasPartialDownload || !!input.stalled;
+  const completed = input.isDownloaded && !showActive;
+  if (!showActive && !completed) {
+    return { show: false, progress: null, icon: 'done' };
+  }
+  if (input.isRemoving) {
+    return { show: true, progress: null, icon: 'removing' };
+  }
+  if (completed) {
+    return { show: true, progress: null, icon: 'done' };
+  }
+  const byteProgress = input.byteStats && input.byteStats.total > 0
+    ? Math.min(1, Math.max(0, input.byteStats.received / input.byteStats.total))
+    : null;
+  const progress = input.downloadProgress ?? byteProgress;
+  // Null worker progress, or an explicit stall, means bytes are not arriving.
+  const notProgressing = !!input.stalled || input.downloadProgress === null;
+  return {
+    show: true,
+    progress,
+    icon: notProgressing ? 'stalled' : 'animated',
+  };
+}
+
+export function landingStatusFromWorker(state: DownloadProgressState): MapDownloadStatus | null {
+  if (state.isDownloading) {
+    return { isComplete: false, isPartial: true, isStalled: false };
+  }
+  if (state.stalled) {
+    return { isComplete: false, isPartial: true, isStalled: true };
+  }
+  if (state.hasPartialDownload) {
+    return { isComplete: false, isPartial: true, isStalled: false };
+  }
+  if (state.isDownloaded) {
+    return { isComplete: true, isPartial: false, isStalled: false };
+  }
+  return null;
 }
 
 interface StartDownloadParams {
@@ -28,6 +94,11 @@ interface StartDownloadParams {
 
 type ProgressCallback = (state: DownloadProgressState) => void;
 
+interface StartDownloadOptions {
+  /** Retry of an in-flight download. Keeps the failure count and the stalled pill. */
+  automatic?: boolean;
+}
+
 interface MapTask {
   mapId: string;
   worker: Worker | null;
@@ -36,30 +107,66 @@ interface MapTask {
   downloadProgress: number | null;
   tileStats: { completed: number; total: number } | null;
   byteStats: DownloadByteStats | null;
+  bbox: BoundingBox | null;
+  totalTiles: number;
+  stalled: boolean;
+  transientFailures: number;
+  gaveUp: boolean;
+  alerted: boolean;
+  retryTimer: ReturnType<typeof setTimeout> | null;
 }
 
-class TileWorkerManager {
+function emptyTask(mapId: string, patch: Partial<MapTask>): MapTask {
+  return {
+    mapId,
+    worker: null,
+    isDownloading: false,
+    isRemoving: false,
+    downloadProgress: null,
+    tileStats: null,
+    byteStats: null,
+    bbox: null,
+    totalTiles: 0,
+    stalled: false,
+    transientFailures: 0,
+    gaveUp: false,
+    alerted: false,
+    retryTimer: null,
+    ...patch,
+  };
+}
+
+export class TileWorkerManager {
   private tasks = new Map<string, MapTask>();
   private subscribers = new Set<ProgressCallback>();
   private pendingResume = new Set<string>();
+  private starting = new Set<string>();
+  private hooksInstalled = false;
+
+  private buildState(task: MapTask, error?: string | null): DownloadProgressState {
+    const received = task.byteStats?.received || 0;
+    const tileTotal = task.tileStats?.total || 0;
+    const tileCompleted = task.tileStats?.completed || 0;
+    const hasProgress = tileCompleted > 0 || received > 0;
+    const tilePartial = hasProgress && tileCompleted < tileTotal && tileTotal > 0;
+    return {
+      mapId: task.mapId,
+      isDownloading: task.isDownloading,
+      isRemoving: task.isRemoving,
+      isDownloaded: !task.isDownloading && !task.isRemoving && !task.stalled && task.downloadProgress === null && tileTotal > 0 && tileCompleted === tileTotal,
+      hasPartialDownload: !task.isDownloading && !task.isRemoving && (tilePartial || task.stalled),
+      stalled: task.stalled,
+      downloadProgress: task.downloadProgress,
+      tileStats: task.tileStats,
+      byteStats: task.byteStats,
+      error: error || null,
+    };
+  }
 
   public getStatus(mapId: string | null): DownloadProgressState | null {
     if (!mapId) return null;
     const task = this.tasks.get(mapId);
-    if (task) {
-      const hasProgress = ((task.tileStats?.completed || 0) > 0) || ((task.byteStats?.received || 0) > 0);
-      return {
-        mapId,
-        isDownloading: task.isDownloading,
-        isRemoving: task.isRemoving,
-        isDownloaded: !task.isDownloading && !task.isRemoving && task.downloadProgress === null && (task.tileStats?.completed === task.tileStats?.total && (task.tileStats?.total || 0) > 0),
-        hasPartialDownload: !task.isDownloading && !task.isRemoving && hasProgress && (task.tileStats?.completed || 0) < (task.tileStats?.total || 0) && (task.tileStats?.total || 0) > 0,
-        downloadProgress: task.downloadProgress,
-        tileStats: task.tileStats,
-        byteStats: task.byteStats
-      };
-    }
-    return null;
+    return task ? this.buildState(task) : null;
   }
 
   public subscribe(callback: ProgressCallback): () => void {
@@ -72,141 +179,272 @@ class TileWorkerManager {
   private notifySubscribers(mapId: string, error?: string | null) {
     const task = this.tasks.get(mapId);
     if (!task) return;
-    const hasProgress = ((task.tileStats?.completed || 0) > 0) || ((task.byteStats?.received || 0) > 0);
-    const state: DownloadProgressState = {
-      mapId,
-      isDownloading: task.isDownloading,
-      isRemoving: task.isRemoving,
-      isDownloaded: !task.isDownloading && !task.isRemoving && task.downloadProgress === null && (task.tileStats?.completed === task.tileStats?.total && (task.tileStats?.total || 0) > 0),
-      hasPartialDownload: !task.isDownloading && !task.isRemoving && hasProgress && (task.tileStats?.completed || 0) < (task.tileStats?.total || 0) && (task.tileStats?.total || 0) > 0,
-      downloadProgress: task.downloadProgress,
-      tileStats: task.tileStats,
-      byteStats: task.byteStats,
-      error: error || null
-    };
+    const state = this.buildState(task, error);
     this.subscribers.forEach(cb => cb(state));
   }
 
-  public async startDownload(mapId: string, params: StartDownloadParams) {
-    let task = this.tasks.get(mapId);
+  private installHooks() {
+    if (this.hooksInstalled || typeof document === 'undefined') return;
+    this.hooksInstalled = true;
+    document.addEventListener('visibilitychange', this.onForeground);
+    document.addEventListener('freeze', this.onFreeze as EventListener);
+    document.addEventListener('resume', this.onForeground as EventListener);
+    window.addEventListener('pageshow', this.onForeground);
+    window.addEventListener('online', this.onForeground);
+  }
 
-    if (task && task.isDownloading && task.worker) {
+  private isBackgrounded(): boolean {
+    const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    return hidden || offline;
+  }
+
+  private clearRetry(task: MapTask) {
+    if (task.retryTimer) {
+      clearTimeout(task.retryTimer);
+      task.retryTimer = null;
+    }
+  }
+
+  private detachWorker(task: MapTask) {
+    this.clearRetry(task);
+    const worker = task.worker;
+    task.worker = null;
+    worker?.terminate();
+  }
+
+  private alertDownloadFailed(message: string) {
+    if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+      window.alert(`Map download failed: ${message}`);
+    }
+  }
+
+  /** A frozen page suspends the extract stream. Drop the worker and resume from the .part file on return. */
+  private onFreeze = () => {
+    for (const [mapId, task] of this.tasks) {
+      if (task.gaveUp || (!task.isDownloading && !task.stalled)) continue;
+      task.stalled = true;
+      this.detachWorker(task);
+      this.notifySubscribers(mapId);
+    }
+  };
+
+  private onForeground = () => {
+    if (this.isBackgrounded()) return;
+    for (const [mapId, task] of this.tasks) {
+      if (task.gaveUp) {
+        task.gaveUp = false;
+        task.transientFailures = 0;
+        task.stalled = true;
+        task.isDownloading = true;
+        this.clearRetry(task);
+        this.notifySubscribers(mapId);
+        void this.restartDownload(mapId);
+        continue;
+      }
+      if (task.worker || (!task.stalled && !task.isDownloading)) continue;
+      this.clearRetry(task);
+      void this.restartDownload(mapId);
+    }
+  };
+
+  private giveUp(mapId: string, errorMsg: string) {
+    const task = this.tasks.get(mapId);
+    if (!task) return;
+    this.clearRetry(task);
+    task.gaveUp = true;
+    task.stalled = true;
+    task.isDownloading = false;
+    this.notifySubscribers(mapId);
+    if (task.alerted) return;
+    task.alerted = true;
+    this.alertDownloadFailed(errorMsg);
+  }
+
+  private scheduleRetry(mapId: string) {
+    const task = this.tasks.get(mapId);
+    if (!task || task.gaveUp || this.isBackgrounded()) return;
+    this.clearRetry(task);
+    const delay = RETRY_BASE_MS * (2 ** Math.max(0, task.transientFailures - 1));
+    task.retryTimer = setTimeout(() => {
+      const current = this.tasks.get(mapId);
+      if (!current || current.gaveUp) return;
+      current.retryTimer = null;
+      void this.restartDownload(mapId);
+    }, delay);
+  }
+
+  private restartDownload(mapId: string) {
+    const task = this.tasks.get(mapId);
+    if (!task || task.gaveUp || task.worker || this.starting.has(mapId)) return;
+    void this.startDownload(
+      mapId,
+      { bbox: task.bbox, totalTiles: task.totalTiles },
+      { automatic: true },
+    );
+  }
+
+  public retryDownload(mapId: string): void {
+    const task = this.tasks.get(mapId);
+    if (!task) {
+      void this.resumeIfNeeded(mapId);
+      return;
+    }
+    this.clearRetry(task);
+    task.gaveUp = false;
+    task.alerted = false;
+    task.transientFailures = 0;
+    task.stalled = false;
+    void this.startDownload(mapId, { bbox: task.bbox, totalTiles: task.totalTiles });
+  }
+
+  public async startDownload(mapId: string, params: StartDownloadParams, options?: StartDownloadOptions) {
+    this.installHooks();
+    const previous = this.tasks.get(mapId);
+    const automatic = !!options?.automatic;
+
+    if (previous && previous.isDownloading && previous.worker && !automatic) {
       this.notifySubscribers(mapId);
       return;
     }
+    if (this.starting.has(mapId)) return;
+    this.starting.add(mapId);
+    try {
+      if (previous) this.detachWorker(previous);
 
-    if (task && task.worker) {
-      task.worker.terminate();
-      task.worker = null;
-    }
+      const carriedFailures = automatic ? (previous?.transientFailures ?? 0) : 0;
+      const keepStalled = automatic && !!previous && (previous.stalled || previous.transientFailures > 0);
+      const bbox = params.bbox ?? previous?.bbox ?? null;
+      const totalTiles = params.totalTiles || previous?.totalTiles || 0;
+      const resume = await getExtractResumeInfo(mapId);
+      let totalBytes = resume.totalBytes;
+      if (!totalBytes) {
+        const offlineMap = await getOfflineMap(mapId);
+        totalBytes = offlineMap?.extractTotalBytes || 0;
+      }
+      const initialProgress = resume.partBytes > 0 && totalBytes > 0
+        ? Math.min(1, resume.partBytes / totalBytes)
+        : (resume.partBytes > 0 ? null : 0);
+      const initialCompleted = initialProgress != null && totalTiles > 0
+        ? Math.round(initialProgress * totalTiles)
+        : 0;
 
-    const bbox = params.bbox;
-    const totalTiles = params.totalTiles || 0;
-    const resume = await getExtractResumeInfo(mapId);
-    let totalBytes = resume.totalBytes;
-    if (!totalBytes) {
-      const offlineMap = await getOfflineMap(mapId);
-      totalBytes = offlineMap?.extractTotalBytes || 0;
-    }
-    const initialProgress = resume.partBytes > 0 && totalBytes > 0
-      ? Math.min(1, resume.partBytes / totalBytes)
-      : (resume.partBytes > 0 ? null : 0);
-    const initialCompleted = initialProgress != null && totalTiles > 0
-      ? Math.round(initialProgress * totalTiles)
-      : 0;
+      console.log(`[TILE_STREAM_CLIENT][manager] startDownload invoked for map ${mapId}: resume.partBytes=${resume.partBytes}, resume.totalBytes=${resume.totalBytes}, resolved totalBytes=${totalBytes}, initialProgress=${initialProgress}`);
 
-    console.log(`[TILE_STREAM_CLIENT][manager] startDownload invoked for map ${mapId}: resume.partBytes=${resume.partBytes}, resume.totalBytes=${resume.totalBytes}, resolved totalBytes=${totalBytes}, initialProgress=${initialProgress}`);
-
-    task = {
-      mapId,
-      worker: null,
-      isDownloading: true,
-      isRemoving: false,
-      downloadProgress: initialProgress,
-      tileStats: { completed: initialCompleted, total: totalTiles },
-      byteStats: { received: resume.partBytes, total: totalBytes }
-    };
-    this.tasks.set(mapId, task);
-    this.notifySubscribers(mapId);
-
-    if (typeof Worker !== 'undefined') {
-      const worker = new Worker(new URL('../workers/tileWorker.ts', import.meta.url), { type: 'module' });
-      task.worker = worker;
-
-      worker.postMessage({
-        type: 'start-download',
-        mapId,
+      const task = emptyTask(mapId, {
+        isDownloading: true,
+        downloadProgress: initialProgress,
+        tileStats: { completed: initialCompleted, total: totalTiles },
+        byteStats: { received: resume.partBytes, total: totalBytes },
         bbox,
         totalTiles,
-        totalBytes
+        stalled: keepStalled,
+        transientFailures: carriedFailures,
+        alerted: automatic ? (previous?.alerted ?? false) : false,
       });
+      this.tasks.set(mapId, task);
+      this.notifySubscribers(mapId);
 
-      worker.onmessage = (e) => {
-        const currentTask = this.tasks.get(mapId);
-        if (!currentTask || currentTask.worker !== worker) {
-          worker.terminate();
-          return;
-        }
+      if (typeof Worker !== 'undefined') {
+        const worker = new Worker(new URL('../workers/tileWorker.ts', import.meta.url), { type: 'module' });
+        task.worker = worker;
 
-        const { type, progress, error, total, completed, receivedBytes, totalBytes: progressTotalBytes, bytes } = e.data;
-        if (type === 'progress') {
-          const actualTotal = total || totalTiles;
-          const actualCompleted = completed !== undefined ? completed : Math.round(progress * actualTotal);
-          currentTask.downloadProgress = Math.min(1, Math.max(0, progress));
-          currentTask.tileStats = { total: actualTotal, completed: actualCompleted };
-          const received = Number(receivedBytes);
-          const knownTotal = Number(progressTotalBytes);
-          currentTask.byteStats = {
-            received: Number.isFinite(received) ? received : (currentTask.byteStats?.received || 0),
-            total: Number.isFinite(knownTotal) && knownTotal > 0 ? knownTotal : (currentTask.byteStats?.total || 0)
-          };
-          this.notifySubscribers(mapId);
-        } else if (type === 'complete') {
-          const actualTotal = total || totalTiles;
-          console.log(`[TILE_STREAM_CLIENT][manager] Download complete event for map ${mapId}: bytes=${bytes}, totalTiles=${actualTotal}`);
-          currentTask.isDownloading = false;
-          currentTask.downloadProgress = null;
-          currentTask.tileStats = { total: actualTotal, completed: actualTotal };
-          const completedBytes = Number(bytes) || Number(progressTotalBytes) || currentTask.byteStats?.total || 0;
-          currentTask.byteStats = completedBytes > 0 ? { received: completedBytes, total: completedBytes } : currentTask.byteStats;
-          invalidateExtractPMTiles(mapId);
-          getOfflineMap(mapId).then((offlineMap) => {
-            if (offlineMap) {
-              offlineMap.totalTiles = actualTotal;
-              offlineMap.completedTiles = actualTotal;
-              if (completedBytes > 0) offlineMap.extractTotalBytes = completedBytes;
-              saveMapOffline(offlineMap);
+        worker.postMessage({
+          type: 'start-download',
+          mapId,
+          bbox,
+          totalTiles,
+          totalBytes
+        });
+
+        worker.onmessage = (e) => {
+          const currentTask = this.tasks.get(mapId);
+          if (!currentTask || currentTask.worker !== worker) {
+            worker.terminate();
+            return;
+          }
+
+          const { type, progress, error, total, completed, receivedBytes, totalBytes: progressTotalBytes, bytes } = e.data;
+          if (type === 'progress') {
+            const actualTotal = total || totalTiles;
+            const actualCompleted = completed !== undefined ? completed : Math.round(progress * actualTotal);
+            currentTask.stalled = false;
+            currentTask.transientFailures = 0;
+            currentTask.alerted = false;
+            currentTask.gaveUp = false;
+            currentTask.downloadProgress = Math.min(1, Math.max(0, progress));
+            currentTask.tileStats = { total: actualTotal, completed: actualCompleted };
+            const received = Number(receivedBytes);
+            const knownTotal = Number(progressTotalBytes);
+            currentTask.byteStats = {
+              received: Number.isFinite(received) ? received : (currentTask.byteStats?.received || 0),
+              total: Number.isFinite(knownTotal) && knownTotal > 0 ? knownTotal : (currentTask.byteStats?.total || 0)
+            };
+            this.notifySubscribers(mapId);
+          } else if (type === 'complete') {
+            const actualTotal = total || totalTiles;
+            console.log(`[TILE_STREAM_CLIENT][manager] Download complete event for map ${mapId}: bytes=${bytes}, totalTiles=${actualTotal}`);
+            currentTask.isDownloading = false;
+            currentTask.stalled = false;
+            currentTask.downloadProgress = null;
+            currentTask.tileStats = { total: actualTotal, completed: actualTotal };
+            const completedBytes = Number(bytes) || Number(progressTotalBytes) || currentTask.byteStats?.total || 0;
+            currentTask.byteStats = completedBytes > 0 ? { received: completedBytes, total: completedBytes } : currentTask.byteStats;
+            invalidateExtractPMTiles(mapId);
+            getOfflineMap(mapId).then((offlineMap) => {
+              if (offlineMap) {
+                offlineMap.totalTiles = actualTotal;
+                offlineMap.completedTiles = actualTotal;
+                if (completedBytes > 0) offlineMap.extractTotalBytes = completedBytes;
+                saveMapOffline(offlineMap);
+              }
+            });
+            this.notifySubscribers(mapId);
+            this.clearRetry(currentTask);
+            worker.terminate();
+            currentTask.worker = null;
+            this.tasks.delete(mapId);
+          } else if (type === 'error') {
+            console.error(`[TILE_STREAM_CLIENT][manager] Worker error for map ${mapId}:`, error);
+            const hadProgress = ((currentTask.byteStats?.received || 0) > 0) || ((currentTask.tileStats?.completed || 0) > 0);
+            const errorMsg = String(error || 'Download error');
+            const fatal = isFatalDownloadError(errorMsg);
+            currentTask.worker = null;
+            worker.terminate();
+
+            if (!fatal && isTransientNetworkError(errorMsg)) {
+              currentTask.stalled = true;
+              currentTask.isDownloading = true;
+              this.notifySubscribers(mapId);
+              if (this.isBackgrounded()) return;
+              currentTask.transientFailures += 1;
+              if (currentTask.transientFailures >= MAX_TRANSIENT_FAILURES) {
+                this.giveUp(mapId, errorMsg);
+                return;
+              }
+              this.scheduleRetry(mapId);
+              return;
             }
-          });
-          this.notifySubscribers(mapId);
-          worker.terminate();
-          currentTask.worker = null;
-          this.tasks.delete(mapId);
-        } else if (type === 'error') {
-          console.error(`[TILE_STREAM_CLIENT][manager] Worker error for map ${mapId}:`, error);
-          const hadProgress = ((currentTask.byteStats?.received || 0) > 0) || ((currentTask.tileStats?.completed || 0) > 0);
-          const errorMsg = String(error || 'Download error');
-          const isFatal = errorMsg.includes('limit') || errorMsg.includes('400') || errorMsg.includes('Bad Request') || errorMsg.includes('exceeds') || errorMsg.includes('not found');
 
-          currentTask.isDownloading = false;
-          currentTask.downloadProgress = null;
+            currentTask.isDownloading = false;
+            currentTask.stalled = false;
+            currentTask.downloadProgress = null;
 
-          if (!hadProgress || isFatal) {
-            currentTask.tileStats = null;
-            currentTask.byteStats = null;
-            void removeMapDownload(mapId);
+            if (!hadProgress || fatal) {
+              currentTask.tileStats = null;
+              currentTask.byteStats = null;
+              void removeMapDownload(mapId);
+            }
+
+            this.notifySubscribers(mapId, errorMsg);
+            this.tasks.delete(mapId);
+
+            if (error) this.alertDownloadFailed(errorMsg);
           }
-
-          this.notifySubscribers(mapId, errorMsg);
-          worker.terminate();
-          currentTask.worker = null;
-          this.tasks.delete(mapId);
-
-          if (typeof window !== 'undefined' && typeof window.alert === 'function' && error) {
-            window.alert(`Map download failed: ${errorMsg}`);
-          }
-        }
-      };
+        };
+      }
+    } finally {
+      this.starting.delete(mapId);
     }
   }
 
@@ -221,6 +459,7 @@ class TileWorkerManager {
     this.pendingResume.add(mapId);
     try {
       const task = this.tasks.get(mapId);
+      if (task?.gaveUp) return;
       if (task && task.isDownloading && task.worker) {
         this.notifySubscribers(mapId);
         return;
@@ -234,6 +473,11 @@ class TileWorkerManager {
       const stats = await getDownloadStats(mapId);
       const incomplete = stats.total > 0 && stats.completed > 0 && stats.completed < stats.total;
       if (partSize <= 0 && !incomplete) {
+        const live = this.tasks.get(mapId);
+        if (live && !live.gaveUp && (live.isDownloading || live.stalled)) {
+          await this.startDownload(mapId, { bbox: live.bbox, totalTiles: live.totalTiles || stats.total }, { automatic: true });
+          return;
+        }
         if (stats.total > 0 && stats.completed === 0) {
           await removeMapDownload(mapId);
         }
@@ -246,7 +490,7 @@ class TileWorkerManager {
       }
       console.log(`[TILE_STREAM_CLIENT][manager] resumeIfNeeded(${mapId}): partSize=${partSize}, stats=${JSON.stringify(stats)}, incomplete=${incomplete}`);
       const bbox = offlineMap.pins ? getPinsBoundingBox(offlineMap.pins) : null;
-      this.startDownload(mapId, { bbox, pins: offlineMap.pins, totalTiles: stats.total || offlineMap.totalTiles });
+      this.startDownload(mapId, { bbox, pins: offlineMap.pins, totalTiles: stats.total || offlineMap.totalTiles }, { automatic: true });
     } finally {
       this.pendingResume.delete(mapId);
     }
@@ -254,20 +498,9 @@ class TileWorkerManager {
 
   public async cancelDownload(mapId: string): Promise<void> {
     const existingTask = this.tasks.get(mapId);
-    if (existingTask && existingTask.worker) {
-      existingTask.worker.terminate();
-      existingTask.worker = null;
-    }
+    if (existingTask) this.detachWorker(existingTask);
 
-    const task: MapTask = {
-      mapId,
-      worker: null,
-      isDownloading: false,
-      isRemoving: true,
-      downloadProgress: null,
-      tileStats: null,
-      byteStats: null
-    };
+    const task = emptyTask(mapId, { isRemoving: true });
     this.tasks.set(mapId, task);
     this.notifySubscribers(mapId);
 
@@ -320,10 +553,7 @@ class TileWorkerManager {
 
   public async removeAllDownloads(): Promise<void> {
     for (const task of this.tasks.values()) {
-      if (task.worker) {
-        task.worker.terminate();
-        task.worker = null;
-      }
+      this.detachWorker(task);
     }
     const mapIds = Array.from(this.tasks.keys());
     this.tasks.clear();
@@ -338,6 +568,7 @@ class TileWorkerManager {
         isRemoving: false,
         isDownloaded: false,
         hasPartialDownload: false,
+        stalled: false,
         downloadProgress: null,
         tileStats: null,
         byteStats: null

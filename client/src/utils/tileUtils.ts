@@ -327,6 +327,8 @@ export async function unionCachedMapsWithDownloads<T extends CachedMapSummary>(c
 export interface MapDownloadStatus {
     isComplete: boolean;
     isPartial: boolean;
+    /** Retries exhausted. Partial bytes are still on disk. */
+    isStalled?: boolean;
 }
 
 export async function getDownloadStats(mapId: string): Promise<{ total: number, completed: number }> {

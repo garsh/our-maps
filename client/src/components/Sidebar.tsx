@@ -69,7 +69,7 @@ import {
 import { getExtractFile, getExtractResumeInfo, writeExtractMeta } from '../utils/extractStore';
 import { canFit, formatDownloadBytes, getStoredJson } from '../utils/storageUtils';
 import { apiService } from '../services/api';
-import { tileWorkerManager } from '../utils/tileWorkerManager';
+import { downloadActivityView, tileWorkerManager } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
 import { comparePinPositions } from '../utils/reorderUtils';
 import { getMapViewportBounds } from '../utils/mapViewport';
@@ -1925,6 +1925,7 @@ const Sidebar = ({
   const [isRemoving, setIsRemoving] = useState(false);
   const [isDownloaded, setIsDownloaded] = useState(false);
   const [hasPartialDownload, setHasPartialDownload] = useState(false);
+  const [downloadStalled, setDownloadStalled] = useState(false);
   const [isPreparingDownload, setIsPreparingDownload] = useState(false);
   const [byteStats, setByteStats] = useState<{ received: number; total: number } | null>(null);
 
@@ -1945,6 +1946,7 @@ const Sidebar = ({
     if (!mapId) {
       setIsDownloaded(false);
       setHasPartialDownload(false);
+      setDownloadStalled(false);
       setIsDownloading(false);
       setIsRemoving(false);
       setDownloadProgress(null);
@@ -1957,6 +1959,7 @@ const Sidebar = ({
       setIsRemoving(state.isRemoving || false);
       setIsDownloaded(state.isDownloaded);
       setHasPartialDownload(state.hasPartialDownload);
+      setDownloadStalled(!!state.stalled);
       setDownloadProgress(state.downloadProgress);
       setByteStats(state.byteStats ?? null);
     };
@@ -1968,7 +1971,7 @@ const Sidebar = ({
     });
 
     const activeStatus = tileWorkerManager.getStatus(mapId);
-    if (activeStatus && (activeStatus.isDownloading || activeStatus.isRemoving)) {
+    if (activeStatus) {
       updateFromState(activeStatus);
     } else {
       let cancelled = false;
@@ -1981,6 +1984,7 @@ const Sidebar = ({
           // No download recorded — skip the OPFS/IDB reads entirely.
           setIsDownloaded(false);
           setHasPartialDownload(false);
+          setDownloadStalled(false);
           setIsDownloading(false);
           setDownloadProgress(null);
           setByteStats(null);
@@ -2001,6 +2005,7 @@ const Sidebar = ({
         if (stats.total > 0 && stats.completed === stats.total) {
           setIsDownloaded(true);
           setHasPartialDownload(false);
+          setDownloadStalled(false);
           setIsDownloading(false);
           setDownloadProgress(null);
           const size = extractFile?.size || 0;
@@ -2017,6 +2022,7 @@ const Sidebar = ({
         if (isPartial) {
           setIsDownloaded(false);
           setHasPartialDownload(true);
+          setDownloadStalled(false);
           setIsDownloading(true);
           setDownloadProgress(byteProgress ?? tileProgress);
           setByteStats({ received: resume.partBytes, total: resume.totalBytes });
@@ -2024,6 +2030,7 @@ const Sidebar = ({
         } else {
           setIsDownloaded(false);
           setHasPartialDownload(false);
+          setDownloadStalled(false);
           setIsDownloading(false);
           setDownloadProgress(null);
           setByteStats(null);
@@ -2118,6 +2125,12 @@ const Sidebar = ({
       console.error("Failed to remove download:", error);
       alert("Failed to remove download.");
     });
+  };
+
+  const handleResumeDownload = () => {
+    if (!mapId) return;
+    setIsMenuOpen(false);
+    tileWorkerManager.retryDownload(mapId);
   };
 
   useEffect(() => {
@@ -2446,15 +2459,27 @@ const Sidebar = ({
                     </div>
                   )}
                   {isAuthenticated && !isOffline && (
-                    isDownloaded || isDownloading || isRemoving || hasPartialDownload ? (
-                      <div 
-                        style={{ padding: '10px 16px', cursor: isRemoving ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isRemoving ? '#999' : 'inherit' }}
-                        onClick={isRemoving ? undefined : handleRemoveDownload}
-                        onMouseEnter={(e) => !isRemoving && (e.currentTarget.style.background = 'var(--bg-color)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        {isRemoving ? 'Removing Download...' : 'Remove Download'}
-                      </div>
+                    isDownloaded || isDownloading || isRemoving || hasPartialDownload || downloadStalled ? (
+                      <>
+                        {downloadStalled && !isDownloading && !isRemoving && (
+                          <div
+                            style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                            onClick={handleResumeDownload}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                          >
+                            Resume Download
+                          </div>
+                        )}
+                        <div 
+                          style={{ padding: '10px 16px', cursor: isRemoving ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: isRemoving ? '#999' : 'inherit' }}
+                          onClick={isRemoving ? undefined : handleRemoveDownload}
+                          onMouseEnter={(e) => !isRemoving && (e.currentTarget.style.background = 'var(--bg-color)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          {isRemoving ? 'Removing Download...' : 'Remove Download'}
+                        </div>
+                      </>
                     ) : (
                       <div 
                         style={{ padding: '10px 16px', cursor: (isDownloading || isPreparingDownload) ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600', color: (isDownloading || isPreparingDownload) ? '#999' : 'inherit' }}
@@ -3225,27 +3250,35 @@ const Sidebar = ({
           : (typeof document !== 'undefined' ? document.getElementById('download-pill-container') : null);
         if (!isAuthenticated || !pillContainer || !document.body.contains(pillContainer)) return null;
 
-        const showActiveProgress = isDownloading || isRemoving || hasPartialDownload;
-        const showCompleted = isDownloaded && !showActiveProgress;
-
-        if (!showActiveProgress && !showCompleted) return null;
+        const activity = downloadActivityView({
+          isDownloading,
+          isRemoving,
+          isDownloaded,
+          hasPartialDownload,
+          downloadProgress,
+          byteStats,
+          stalled: downloadStalled,
+        });
+        if (!activity.show) return null;
 
         const receivedBytes = byteStats?.received ?? 0;
         const totalBytes = byteStats?.total ?? 0;
+        const byteLabel = totalBytes > 0
+          ? `${formatDownloadBytes(receivedBytes)} / ${formatDownloadBytes(totalBytes)}`
+          : (receivedBytes > 0 ? `${formatDownloadBytes(receivedBytes)} downloaded` : null);
 
         let tooltipText = 'Map downloaded';
-        if (isRemoving) {
+        if (activity.icon === 'removing') {
           tooltipText = 'Removing downloaded map...';
-        } else if (showCompleted) {
+        } else if (activity.icon === 'done') {
           tooltipText = totalBytes > 0 ? `${formatDownloadBytes(totalBytes)} downloaded` : 'Map downloaded';
-        } else if (showActiveProgress) {
-          if (totalBytes > 0) {
-            tooltipText = `${formatDownloadBytes(receivedBytes)} / ${formatDownloadBytes(totalBytes)}`;
-          } else if (receivedBytes > 0) {
-            tooltipText = `${formatDownloadBytes(receivedBytes)} downloaded`;
-          } else {
-            tooltipText = 'Downloading map...';
-          }
+        } else if (activity.icon === 'stalled') {
+          const label = isDownloading ? 'Download interrupted' : 'Download stalled';
+          tooltipText = byteLabel ? `${label} · ${byteLabel}` : label;
+        } else if (byteLabel) {
+          tooltipText = byteLabel;
+        } else {
+          tooltipText = 'Downloading map...';
         }
 
         return createPortal(
@@ -3266,10 +3299,10 @@ const Sidebar = ({
               cursor: 'default'
             }}
           >
-            {showActiveProgress && downloadProgress !== null && !isRemoving && (
-              <span>{Math.round(downloadProgress * 100)}%</span>
+            {activity.progress !== null && activity.icon !== 'removing' && activity.icon !== 'done' && (
+              <span>{Math.round(activity.progress * 100)}%</span>
             )}
-            {isRemoving ? (
+            {activity.icon === 'removing' ? (
               <Upload 
                 size={13} 
                 className="animated-download-icon" 
@@ -3277,8 +3310,12 @@ const Sidebar = ({
             ) : (
               <Download 
                 size={13} 
-                className={showActiveProgress ? 'animated-download-icon' : ''} 
-                style={showCompleted ? { color: '#4ade80' } : undefined} 
+                className={activity.icon === 'animated' ? 'animated-download-icon' : ''} 
+                style={
+                  activity.icon === 'done' ? { color: '#4ade80' }
+                  : activity.icon === 'stalled' ? { color: 'var(--error-color)' }
+                  : undefined
+                } 
               />
             )}
           </div>,
