@@ -221,10 +221,3 @@ export async function deleteUnrecognizedStorage(items: LeftoverStorageItem[]): P
     throw new Error(errors.join('\n'));
   }
 }
-
-export async function reportLeftoverData(): Promise<void> {
-  const items = await findUnrecognizedStorage();
-  if (items.length > 0) {
-    console.warn('Leftover data found:', items);
-  }
-}
