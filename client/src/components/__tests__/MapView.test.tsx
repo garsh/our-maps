@@ -27,6 +27,7 @@ const mockGetContainer = vi.fn(() => ({
   clientWidth: 1000,
   clientHeight: 800,
 }));
+const mockGetPadding = vi.fn(() => ({ top: 0, bottom: 0, left: 0, right: 0 }));
 const mockGetBounds = vi.fn(() => ({
   getNorthWest: () => ({ lat: 40, lng: -70 }),
   getSouthEast: () => ({ lat: 30, lng: -80 }),
@@ -58,6 +59,7 @@ const mockMapInstance = {
     getBearing: mockGetBearing,
     getPitch: mockGetPitch,
     getBounds: mockGetBounds,
+    getPadding: mockGetPadding,
     project: mockProject,
     getContainer: mockGetContainer,
     getCanvas: () => ({
@@ -569,6 +571,7 @@ describe('isPinInPaddedViewport', () => {
 describe('MapView Compass and Tilt Indicator', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetPadding.mockReturnValue({ top: 0, bottom: 0, left: 0, right: 0 });
     resetPinHoverForTests();
     resetMapViewportBoundsForTests();
     capturedMapProps.current = null;
@@ -710,6 +713,46 @@ describe('MapView Compass and Tilt Indicator', () => {
           right: 80,
           bottom: 430,
         },
+      })
+    );
+  });
+
+  it('does not add find-my-location chrome padding again on compass double-click', () => {
+    mockGetPadding.mockReturnValue({
+      top: 80,
+      left: 480,
+      right: 80,
+      bottom: 430,
+    });
+
+    const mockPins = [
+      { id: 'pin-1', lat: 10, lng: 20, label: 'Pin 1', color: 'blue' as const, position: 0 },
+      { id: 'pin-2', lat: 30, lng: 40, label: 'Pin 2', color: 'red' as const, position: 1 },
+    ];
+
+    render(
+      <MapView
+        pins={mockPins}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        onBoundsChange={vi.fn()}
+        leftPadding={400}
+        bottomPadding={350}
+      />
+    );
+
+    const compassButton = screen.getByRole('button', { name: /Compass - Reset bearing to North/i });
+    fireEvent.click(compassButton);
+    fireEvent.click(compassButton);
+
+    expect(mockFitBounds).toHaveBeenCalledWith(
+      [
+        [20, 10],
+        [40, 30],
+      ],
+      expect.objectContaining({
+        maxZoom: 13,
+        padding: { top: 0, left: 0, right: 0, bottom: 0 },
       })
     );
   });

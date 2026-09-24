@@ -1118,6 +1118,18 @@ export function paddedMapView(leftPadding: number, bottomPadding: number) {
   };
 }
 
+type ViewPadding = { top: number; left: number; right: number; bottom: number };
+
+// fitBounds adds the argument to transform.padding. Pass only the part not already stored.
+function paddingBeyondCurrent(current: Partial<ViewPadding> | null | undefined, desired: ViewPadding): ViewPadding {
+  return {
+    top: desired.top - (current?.top ?? 0),
+    left: desired.left - (current?.left ?? 0),
+    right: desired.right - (current?.right ?? 0),
+    bottom: desired.bottom - (current?.bottom ?? 0),
+  };
+}
+
 export function isPinInPaddedViewport(
   map: {
     project?: (lngLat: [number, number]) => { x: number; y: number };
@@ -2264,7 +2276,7 @@ const MapView = ({
             [maxLng, maxLat],
           ],
           {
-            padding,
+            padding: paddingBeyondCurrent(mapRef.current.getMap().getPadding(), padding),
             maxZoom: 13,
             bearing: 0,
             pitch: 0,
