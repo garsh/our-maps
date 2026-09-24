@@ -37,7 +37,11 @@ const KNOWN_LOCAL_STORAGE_PREFIXES = [
 ];
 
 export function isKnownIndexedDbName(name: string): boolean {
-  return name === CURRENT_INDEXED_DB;
+  if (name === CURRENT_INDEXED_DB) return true;
+  // Workbox ExpirationPlugin / background sync. Same prefix as Cache Storage.
+  // Not an old Our Maps database; deleting it makes cached assets look expired.
+  if (name.startsWith('workbox-')) return true;
+  return false;
 }
 
 export function isKnownOpfsEntry(name: string): boolean {

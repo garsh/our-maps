@@ -12,6 +12,8 @@ import {
 describe('legacyStorage classification', () => {
     it('recognizes storage the current app still uses', () => {
         expect(isKnownIndexedDbName('MapTilesDB_v2')).toBe(true);
+        expect(isKnownIndexedDbName('workbox-expiration')).toBe(true);
+        expect(isKnownIndexedDbName('workbox-background-sync')).toBe(true);
         expect(isKnownOpfsEntry('offline-extracts')).toBe(true);
         expect(isKnownCacheName('api-cache')).toBe(true);
         expect(isKnownCacheName('elevation-tiles-cache')).toBe(true);
@@ -40,6 +42,7 @@ describe('findUnrecognizedStorage', () => {
         (global as any).indexedDB = {
             databases: vi.fn(async () => [
                 { name: 'MapTilesDB_v2', version: 5 },
+                { name: 'workbox-expiration', version: 1 },
                 { name: 'MapTilesDB', version: 1 },
             ]),
             deleteDatabase: vi.fn(),
@@ -78,6 +81,7 @@ describe('findUnrecognizedStorage', () => {
             'Old saved setting (stale_tile_index)',
         ].sort());
         expect(leftovers.find((item) => item.name === 'MapTilesDB_v2')).toBeUndefined();
+        expect(leftovers.find((item) => item.name === 'workbox-expiration')).toBeUndefined();
         expect(leftovers.find((item) => item.name === 'offline-extracts')).toBeUndefined();
         expect(leftovers.find((item) => item.name === 'token')).toBeUndefined();
     });
