@@ -1,5 +1,14 @@
 import type { MapData, MapPermission } from '@shared/interfaces';
 import { getOfflineMap, saveMapToViewCache, getMapETag, touchMapCacheAccess, pruneViewCache, type BoundingBox } from '../utils/tileUtils';
+import { tileWorkerManager } from '../utils/tileWorkerManager';
+
+const MAP_FETCH_TIMEOUT_MS = 1500;
+const MAP_FETCH_TIMEOUT_DURING_DOWNLOAD_MS = 15_000;
+
+export function mapFetchTimeoutMs(status: { isDownloading: boolean; stalled: boolean } | null | undefined): number {
+  if (status?.isDownloading && !status.stalled) return MAP_FETCH_TIMEOUT_DURING_DOWNLOAD_MS;
+  return MAP_FETCH_TIMEOUT_MS;
+}
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -139,8 +148,9 @@ export const apiService = {
     const controller = new AbortController();
     // 1500ms matches the SW NetworkFirst strategy timeout, cutting the
     // "Syncing..." false-positive window when the server is down but
-    // navigator.onLine is true.
-    const timeoutId = setTimeout(() => controller.abort(), 1500);
+    // navigator.onLine is true. Stretch that while an extract is still
+    // receiving bytes — the stream can delay this GET past 1.5s.
+    const timeoutId = setTimeout(() => controller.abort(), mapFetchTimeoutMs(tileWorkerManager.getStatus(id)));
     try {
       const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, {
         headers: { ...getHeaders(), ...extraHeaders },
