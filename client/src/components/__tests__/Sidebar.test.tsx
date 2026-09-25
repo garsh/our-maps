@@ -677,6 +677,75 @@ describe('Sidebar', () => {
     expect(onToggleSatellite).toHaveBeenCalledWith(true);
   });
 
+  it('orders appearance options and describes offline behavior on hover and long-press', () => {
+    const onToggle3DTerrain = vi.fn();
+    render(<TestWrapper handlers={{ onToggle3DTerrain, show3DTerrain: true }} />);
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+
+    const labels = ['Dark Mode', '3D Buildings', 'Hillshading', '3D Terrain', 'Satellite'];
+    const nodes = labels.map((label) => screen.getByText(label));
+    for (let i = 0; i < nodes.length - 1; i++) {
+      expect(nodes[i].compareDocumentPosition(nodes[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+
+    const row = (label: string) => screen.getByText(label).parentElement?.parentElement as HTMLElement;
+
+    const terrainRow = row('3D Terrain');
+    expect(terrainRow.style.userSelect).toBe('none');
+    expect(terrainRow.style.webkitUserSelect).toBe('none');
+    const contextEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    fireEvent(terrainRow, contextEvent);
+    expect(contextEvent.defaultPrevented).toBe(true);
+
+    fireEvent.mouseEnter(row('Dark Mode'));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Available offline via download.');
+    fireEvent.mouseLeave(row('Dark Mode'));
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(row('3D Buildings'));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Available offline via download.');
+    fireEvent.mouseLeave(row('3D Buildings'));
+
+    fireEvent.mouseEnter(row('Hillshading'));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
+    fireEvent.mouseLeave(row('Hillshading'));
+
+    fireEvent.mouseEnter(row('Satellite'));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
+    fireEvent.mouseLeave(row('Satellite'));
+
+    fireEvent.mouseEnter(row('3D Terrain'));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
+    fireEvent.mouseLeave(row('3D Terrain'));
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.touchStart(terrainRow, { touches: [{ clientX: 8, clientY: 8 }] });
+      act(() => {
+        vi.advanceTimersByTime(449);
+      });
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
+      fireEvent.click(terrainRow);
+      expect(onToggle3DTerrain).not.toHaveBeenCalled();
+
+      fireEvent.touchEnd(terrainRow);
+      fireEvent.touchStart(terrainRow, { touches: [{ clientX: 8, clientY: 8 }] });
+      fireEvent.touchEnd(terrainRow);
+      act(() => {
+        vi.advanceTimersByTime(450);
+      });
+      fireEvent.click(terrainRow);
+      expect(onToggle3DTerrain).toHaveBeenCalledWith(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('allows dark mode toggle but greys out and disables hillshading when satellite mode is active', () => {
     const onThemeChange = vi.fn();
     const onToggleHillshade = vi.fn();

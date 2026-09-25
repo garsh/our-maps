@@ -88,6 +88,237 @@ class MouseSensor extends PointerSensor {
 
 const MOUSE_SENSOR_OPTIONS = { activationConstraint: { distance: 5 } };
 const MAP_OPTIONS_MENU_WIDTH = 220;
+const VIEWED_OFFLINE_TIP = 'Not available offline except where previously viewed.';
+const DOWNLOAD_OFFLINE_TIP = 'Available offline via download.';
+
+type AppearanceTip = { text: string; x: number; y: number; below: boolean };
+
+function AppearanceRow({
+  label,
+  on,
+  disabled = false,
+  switchColor,
+  bordered = true,
+  icon,
+  onToggle,
+  onMouseEnter,
+  onMouseLeave,
+  onTouchStart,
+  onTouchMove,
+  onTouchEnd,
+  consumeLongPress,
+}: {
+  label: string;
+  on: boolean;
+  disabled?: boolean;
+  switchColor: string;
+  bordered?: boolean;
+  icon: React.ReactNode;
+  onToggle: () => void;
+  onMouseEnter: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onMouseLeave: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onTouchStart: (e: React.TouchEvent<HTMLDivElement>) => void;
+  onTouchMove: (e: React.TouchEvent<HTMLDivElement>) => void;
+  onTouchEnd: () => void;
+  consumeLongPress: () => boolean;
+}) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el) return;
+    const blockSelect = (event: Event) => event.preventDefault();
+    el.addEventListener('selectstart', blockSelect);
+    return () => el.removeEventListener('selectstart', blockSelect);
+  }, []);
+
+  return (
+    <div
+      ref={rowRef}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (consumeLongPress()) return;
+        if (!disabled) onToggle();
+      }}
+      data-appearance-row=""
+      style={{
+        padding: '10px 16px 10px 28px',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.45 : 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        fontSize: '0.82rem',
+        fontWeight: on ? '600' : '500',
+        color: 'var(--text-primary)',
+        borderBottom: bordered ? '1px solid var(--border-color)' : undefined,
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        WebkitTouchCallout: 'none',
+      }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchEnd}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div
+        style={{
+          width: '34px',
+          height: '18px',
+          borderRadius: '10px',
+          background: switchColor,
+          position: 'relative',
+          transition: 'background 0.2s ease',
+          flexShrink: 0,
+        }}
+      >
+        <div
+          style={{
+            width: '14px',
+            height: '14px',
+            borderRadius: '50%',
+            background: 'white',
+            position: 'absolute',
+            top: '2px',
+            left: on ? '18px' : '2px',
+            transition: 'left 0.2s ease',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function useAppearanceTips(isMenuOpen: boolean) {
+  const [tip, setTip] = useState<AppearanceTip | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressFiredRef = useRef(false);
+  const touchRef = useRef(false);
+  const triggerRef = useRef<'hover' | 'touch' | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const clearLongPress = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  const clearHideTimer = useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+  }, []);
+
+  const hideTip = useCallback(() => {
+    clearHideTimer();
+    triggerRef.current = null;
+    setTip((current) => (current ? null : current));
+  }, [clearHideTimer]);
+
+  const showTip = useCallback((text: string, el: HTMLElement) => {
+    const rect = el.getBoundingClientRect();
+    const tipWidth = 220;
+    const center = rect.left + rect.width / 2;
+    const x = Math.max(12 + tipWidth / 2, Math.min(center, window.innerWidth - 12 - tipWidth / 2));
+    const below = rect.top < 72;
+    setTip({
+      text,
+      x,
+      y: below ? rect.bottom + 8 : rect.top - 6,
+      below,
+    });
+  }, []);
+
+  const consumeLongPress = () => {
+    if (!longPressFiredRef.current) return false;
+    longPressFiredRef.current = false;
+    return true;
+  };
+
+  const tipProps = (text: string, highlight: boolean) => ({
+    onMouseEnter: (e: React.MouseEvent<HTMLDivElement>) => {
+      if (highlight) e.currentTarget.style.background = 'var(--bg-color)';
+      if (touchRef.current) {
+        touchRef.current = false;
+        return;
+      }
+      clearHideTimer();
+      triggerRef.current = 'hover';
+      showTip(text, e.currentTarget);
+    },
+    onMouseLeave: (e: React.MouseEvent<HTMLDivElement>) => {
+      e.currentTarget.style.background = 'transparent';
+      if (triggerRef.current === 'hover') hideTip();
+    },
+    onTouchStart: (e: React.TouchEvent<HTMLDivElement>) => {
+      touchRef.current = true;
+      const touch = e.touches[0];
+      const el = e.currentTarget;
+      clearLongPress();
+      clearHideTimer();
+      longPressFiredRef.current = false;
+      touchStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+      longPressTimerRef.current = setTimeout(() => {
+        longPressFiredRef.current = true;
+        triggerRef.current = 'touch';
+        showTip(text, el);
+        hideTimerRef.current = setTimeout(() => hideTip(), 2500);
+      }, 450);
+    },
+    onTouchMove: (e: React.TouchEvent<HTMLDivElement>) => {
+      if (!longPressTimerRef.current || !touchStartRef.current) return;
+      const touch = e.touches[0];
+      if (!touch) return;
+      const dx = touch.clientX - touchStartRef.current.x;
+      const dy = touch.clientY - touchStartRef.current.y;
+      if (Math.hypot(dx, dy) > 10) clearLongPress();
+    },
+    onTouchEnd: () => clearLongPress(),
+  });
+
+  const hideOnScroll = () => {
+    if (triggerRef.current) hideTip();
+  };
+
+  useEffect(() => {
+    if (isMenuOpen) return;
+    clearLongPress();
+    hideTip();
+  }, [isMenuOpen, clearLongPress, hideTip]);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const clearRowSelection = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) return;
+      const node = sel.anchorNode;
+      const el = node instanceof Element ? node : node?.parentElement;
+      if (el?.closest('[data-appearance-row]')) sel.removeAllRanges();
+    };
+    document.addEventListener('selectionchange', clearRowSelection);
+    return () => document.removeEventListener('selectionchange', clearRowSelection);
+  }, [isMenuOpen]);
+
+  useEffect(() => {
+    return () => {
+      clearLongPress();
+      clearHideTimer();
+    };
+  }, [clearLongPress, clearHideTimer]);
+
+  return { tip, hideOnScroll, consumeLongPress, tipProps };
+}
+
 // Grip only, with touch-action: none, so movement starts the drag. No hold.
 const TOUCH_SENSOR_OPTIONS = { activationConstraint: { distance: 5 } };
 const KEYBOARD_SENSOR_OPTIONS = { coordinateGetter: sortableKeyboardCoordinates };
@@ -1800,6 +2031,7 @@ const Sidebar = ({
   isPanelMinimized = false
 }: SidebarProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const appearanceTips = useAppearanceTips(isMenuOpen);
   const [menuCoords, setMenuCoords] = useState({ top: 0, left: 0 });
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -2377,9 +2609,11 @@ const Sidebar = ({
               </button>
               
               {isMenuOpen && typeof document !== 'undefined' && createPortal(
+                <>
                 <div
                   ref={menuDropdownRef}
                   data-testid="map-options-menu"
+                  onScroll={appearanceTips.hideOnScroll}
                   style={{ position: 'fixed', top: menuCoords.top, left: menuCoords.left, width: MAP_OPTIONS_MENU_WIDTH, background: 'var(--surface-color)', color: 'var(--text-primary)', textAlign: 'left', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)', zIndex: 4000, maxHeight: 'min(80vh, 640px)', overflowY: 'auto' }}
                 >
                   {!isAuthenticated && (
@@ -2628,259 +2862,79 @@ const Sidebar = ({
                     <Palette size={12} />
                     Appearance
                   </div>
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleSatellite?.(!showSatellite);
-                    }}
-                    style={{
-                      padding: '10px 16px 10px 28px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      fontSize: '0.82rem',
-                      fontWeight: showSatellite ? '600' : '500',
-                      color: 'var(--text-primary)',
-                      borderBottom: '1px solid var(--border-color)',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Globe size={15} color={showSatellite ? '#3b82f6' : '#64748b'} />
-                      <span>Satellite</span>
-                    </div>
-                    <div
-                      style={{
-                        width: '34px',
-                        height: '18px',
-                        borderRadius: '10px',
-                        background: showSatellite ? '#3b82f6' : '#e2e8f0',
-                        position: 'relative',
-                        transition: 'background 0.2s ease',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: '14px',
-                          height: '14px',
-                          borderRadius: '50%',
-                          background: 'white',
-                          position: 'absolute',
-                          top: '2px',
-                          left: showSatellite ? '18px' : '2px',
-                          transition: 'left 0.2s ease',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onThemeChange?.(mapTheme === 'dark' ? 'light' : 'dark');
-                    }}
-                    style={{
-                      padding: '10px 16px 10px 28px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      fontSize: '0.82rem',
-                      fontWeight: mapTheme === 'dark' ? '600' : '500',
-                      color: 'var(--text-primary)',
-                      borderBottom: '1px solid var(--border-color)',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {mapTheme === 'dark' ? <Moon size={15} color="#3b82f6" /> : <Sun size={15} color="#64748b" />}
-                      <span>Dark Mode</span>
-                    </div>
-                    <div
-                      style={{
-                        width: '34px',
-                        height: '18px',
-                        borderRadius: '10px',
-                        background: mapTheme === 'dark' ? '#3b82f6' : '#e2e8f0',
-                        position: 'relative',
-                        transition: 'background 0.2s ease',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: '14px',
-                          height: '14px',
-                          borderRadius: '50%',
-                          background: 'white',
-                          position: 'absolute',
-                          top: '2px',
-                          left: mapTheme === 'dark' ? '18px' : '2px',
-                          transition: 'left 0.2s ease',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!showSatellite) {
-                        onToggleHillshade?.(!showHillshade);
-                      }
-                    }}
-                    style={{
-                      padding: '10px 16px 10px 28px',
-                      cursor: showSatellite ? 'not-allowed' : 'pointer',
-                      opacity: showSatellite ? 0.45 : 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      fontSize: '0.82rem',
-                      fontWeight: showHillshade ? '600' : '500',
-                      color: 'var(--text-primary)',
-                      borderBottom: '1px solid var(--border-color)',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!showSatellite) e.currentTarget.style.background = 'var(--bg-color)';
-                    }}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <AppearanceRow
+                    label="Dark Mode"
+                    on={mapTheme === 'dark'}
+                    switchColor={mapTheme === 'dark' ? '#3b82f6' : '#e2e8f0'}
+                    icon={mapTheme === 'dark' ? <Moon size={15} color="#3b82f6" /> : <Sun size={15} color="#64748b" />}
+                    onToggle={() => onThemeChange?.(mapTheme === 'dark' ? 'light' : 'dark')}
+                    consumeLongPress={appearanceTips.consumeLongPress}
+                    {...appearanceTips.tipProps(DOWNLOAD_OFFLINE_TIP, true)}
+                  />
+                  <AppearanceRow
+                    label="3D Buildings"
+                    on={show3DBuildings}
+                    switchColor={show3DBuildings ? '#3b82f6' : '#e2e8f0'}
+                    icon={<Box size={15} style={{ color: show3DBuildings ? '#1d4ed8' : '#64748b' }} />}
+                    onToggle={() => onToggle3DBuildings?.(!show3DBuildings)}
+                    consumeLongPress={appearanceTips.consumeLongPress}
+                    {...appearanceTips.tipProps(DOWNLOAD_OFFLINE_TIP, true)}
+                  />
+                  <AppearanceRow
+                    label="Hillshading"
+                    on={showHillshade}
+                    disabled={showSatellite}
+                    switchColor={showHillshade ? (showSatellite ? '#94a3b8' : '#3b82f6') : '#e2e8f0'}
+                    icon={
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={showHillshade ? (showSatellite ? '#94a3b8' : '#1d4ed8') : '#64748b'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="m8 3 4 8 5-5 5 15H2L8 3z" />
                         <path d="M12 11l5 10H12V11z" fill={showHillshade ? (showSatellite ? '#94a3b8' : '#1d4ed8') : '#64748b'} opacity="0.4" stroke="none" />
                       </svg>
-                      <span>Hillshading</span>
-                    </div>
-                    <div
-                      style={{
-                        width: '34px',
-                        height: '18px',
-                        borderRadius: '10px',
-                        background: showHillshade ? (showSatellite ? '#94a3b8' : '#3b82f6') : '#e2e8f0',
-                        position: 'relative',
-                        transition: 'background 0.2s ease',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: '14px',
-                          height: '14px',
-                          borderRadius: '50%',
-                          background: 'white',
-                          position: 'absolute',
-                          top: '2px',
-                          left: showHillshade ? '18px' : '2px',
-                          transition: 'left 0.2s ease',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                        }}
-                      />
-                    </div>
-                  </div>
+                    }
+                    onToggle={() => onToggleHillshade?.(!showHillshade)}
+                    consumeLongPress={appearanceTips.consumeLongPress}
+                    {...appearanceTips.tipProps(VIEWED_OFFLINE_TIP, !showSatellite)}
+                  />
+                  <AppearanceRow
+                    label="3D Terrain"
+                    on={show3DTerrain}
+                    switchColor={show3DTerrain ? '#3b82f6' : '#e2e8f0'}
+                    icon={<Mountain size={15} style={{ color: show3DTerrain ? '#1d4ed8' : '#64748b' }} />}
+                    onToggle={() => onToggle3DTerrain?.(!show3DTerrain)}
+                    consumeLongPress={appearanceTips.consumeLongPress}
+                    {...appearanceTips.tipProps(VIEWED_OFFLINE_TIP, true)}
+                  />
+                  <AppearanceRow
+                    label="Satellite"
+                    on={showSatellite}
+                    bordered={false}
+                    switchColor={showSatellite ? '#3b82f6' : '#e2e8f0'}
+                    icon={<Globe size={15} color={showSatellite ? '#3b82f6' : '#64748b'} />}
+                    onToggle={() => onToggleSatellite?.(!showSatellite)}
+                    consumeLongPress={appearanceTips.consumeLongPress}
+                    {...appearanceTips.tipProps(VIEWED_OFFLINE_TIP, true)}
+                  />
+                </div>
+                {appearanceTips.tip && (
                   <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggle3DTerrain?.(!show3DTerrain);
-                    }}
+                    className="touch-tooltip-bubble"
+                    role="tooltip"
                     style={{
-                      padding: '10px 16px 10px 28px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      fontSize: '0.82rem',
-                      fontWeight: show3DTerrain ? '600' : '500',
-                      color: 'var(--text-primary)',
-                      borderBottom: '1px solid var(--border-color)',
+                      left: appearanceTips.tip.x,
+                      top: appearanceTips.tip.y,
+                      zIndex: 5000,
+                      whiteSpace: 'normal',
+                      maxWidth: 220,
+                      textAlign: 'center',
+                      lineHeight: 1.35,
+                      animation: 'none',
+                      transform: appearanceTips.tip.below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Mountain size={15} style={{ color: show3DTerrain ? '#1d4ed8' : '#64748b' }} />
-                      <span>3D Terrain</span>
-                    </div>
-                    <div
-                      style={{
-                        width: '34px',
-                        height: '18px',
-                        borderRadius: '10px',
-                        background: show3DTerrain ? '#3b82f6' : '#e2e8f0',
-                        position: 'relative',
-                        transition: 'background 0.2s ease',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: '14px',
-                          height: '14px',
-                          borderRadius: '50%',
-                          background: 'white',
-                          position: 'absolute',
-                          top: '2px',
-                          left: show3DTerrain ? '18px' : '2px',
-                          transition: 'left 0.2s ease',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                        }}
-                      />
-                    </div>
+                    {appearanceTips.tip.text}
                   </div>
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggle3DBuildings?.(!show3DBuildings);
-                    }}
-                    style={{
-                      padding: '10px 16px 10px 28px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      fontSize: '0.82rem',
-                      fontWeight: show3DBuildings ? '600' : '500',
-                      color: 'var(--text-primary)',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Box size={15} style={{ color: show3DBuildings ? '#1d4ed8' : '#64748b' }} />
-                      <span>3D Buildings</span>
-                    </div>
-                    <div
-                      style={{
-                        width: '34px',
-                        height: '18px',
-                        borderRadius: '10px',
-                        background: show3DBuildings ? '#3b82f6' : '#e2e8f0',
-                        position: 'relative',
-                        transition: 'background 0.2s ease',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: '14px',
-                          height: '14px',
-                          borderRadius: '50%',
-                          background: 'white',
-                          position: 'absolute',
-                          top: '2px',
-                          left: show3DBuildings ? '18px' : '2px',
-                          transition: 'left 0.2s ease',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>,
+                )}
+                </>,
                 document.body
               )}
             </div>
