@@ -64,10 +64,9 @@ import {
   saveMapOffline,
   MAX_EXTRACT_TILES,
   type BoundingBox,
-  type MapDownloadStatus
 } from '../utils/tileUtils';
 import { getExtractFile, getExtractResumeInfo, writeExtractMeta } from '../utils/extractStore';
-import { canFit, formatDownloadBytes, getStoredJson } from '../utils/storageUtils';
+import { canFit, formatDownloadBytes } from '../utils/storageUtils';
 import { apiService } from '../services/api';
 import { downloadActivityView, tileWorkerManager } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
@@ -1964,85 +1963,90 @@ const Sidebar = ({
       setByteStats(state.byteStats ?? null);
     };
 
+    let cancelled = false;
+
     const unsubscribe = tileWorkerManager.subscribe((state) => {
       if (state.mapId === mapId) {
         updateFromState(state);
       }
     });
 
-    const activeStatus = tileWorkerManager.getStatus(mapId);
-    if (activeStatus) {
-      updateFromState(activeStatus);
-    } else {
-      let cancelled = false;
-      (async () => {
-        // Short-circuit: skip OPFS/IDB reads entirely when localStorage confirms no offline data.
-        const cachedStatuses = getStoredJson<Record<string, MapDownloadStatus> | null>('cached_download_statuses', null);
-        const cachedEntry = cachedStatuses?.[mapId];
-        const mightHaveOfflineData = !cachedStatuses || (cachedEntry && (cachedEntry.isComplete || cachedEntry.isPartial));
-        if (!mightHaveOfflineData) {
-          // No download recorded — skip the OPFS/IDB reads entirely.
-          setIsDownloaded(false);
-          setHasPartialDownload(false);
-          setDownloadStalled(false);
-          setIsDownloading(false);
-          setDownloadProgress(null);
-          setByteStats(null);
-          return;
-        }
+    // Landing's localStorage cache can miss a download that finished on this page.
+    const readFromDisk = async () => {
+      const live = tileWorkerManager.getStatus(mapId);
+      if (live && (live.isDownloading || live.isRemoving || live.stalled || live.hasPartialDownload)) {
+        updateFromState(live);
+        return;
+      }
 
-        const [stats, resume, extractFile] = await Promise.all([
-          getDownloadStats(mapId),
-          getExtractResumeInfo(mapId),
-          getExtractFile(mapId),
-        ]);
-        if (cancelled) return;
-        const live = tileWorkerManager.getStatus(mapId);
-        if (live && (live.isDownloading || live.isRemoving)) {
-          updateFromState(live);
-          return;
-        }
-        if (stats.total > 0 && stats.completed === stats.total) {
-          setIsDownloaded(true);
-          setHasPartialDownload(false);
-          setDownloadStalled(false);
-          setIsDownloading(false);
-          setDownloadProgress(null);
-          const size = extractFile?.size || 0;
-          setByteStats(size > 0 ? { received: size, total: size } : null);
-          return;
-        }
-        const byteProgress = resume.partBytes > 0 && resume.totalBytes > 0
-          ? Math.min(1, resume.partBytes / resume.totalBytes)
-          : null;
-        const tileProgress = stats.total > 0 && stats.completed > 0 && stats.completed < stats.total
-          ? stats.completed / stats.total
-          : null;
-        const isPartial = resume.partBytes > 0 || (stats.total > 0 && stats.completed > 0 && stats.completed < stats.total);
-        if (isPartial) {
-          setIsDownloaded(false);
-          setHasPartialDownload(true);
-          setDownloadStalled(false);
-          setIsDownloading(true);
-          setDownloadProgress(byteProgress ?? tileProgress);
-          setByteStats({ received: resume.partBytes, total: resume.totalBytes });
-          await tileWorkerManager.resumeIfNeeded(mapId);
-        } else {
-          setIsDownloaded(false);
-          setHasPartialDownload(false);
-          setDownloadStalled(false);
-          setIsDownloading(false);
-          setDownloadProgress(null);
-          setByteStats(null);
-        }
-      })();
-      return () => {
-        cancelled = true;
-        unsubscribe();
-      };
-    }
+      const [stats, resume, extractFile] = await Promise.all([
+        getDownloadStats(mapId),
+        getExtractResumeInfo(mapId),
+        getExtractFile(mapId),
+      ]);
+      if (cancelled) return;
+      const liveAfter = tileWorkerManager.getStatus(mapId);
+      if (liveAfter && (liveAfter.isDownloading || liveAfter.isRemoving || liveAfter.stalled || liveAfter.hasPartialDownload)) {
+        updateFromState(liveAfter);
+        return;
+      }
+      if (stats.total > 0 && stats.completed === stats.total) {
+        setIsDownloaded(true);
+        setHasPartialDownload(false);
+        setDownloadStalled(false);
+        setIsDownloading(false);
+        setDownloadProgress(null);
+        const size = extractFile?.size || 0;
+        setByteStats(size > 0 ? { received: size, total: size } : null);
+        return;
+      }
+      const byteProgress = resume.partBytes > 0 && resume.totalBytes > 0
+        ? Math.min(1, resume.partBytes / resume.totalBytes)
+        : null;
+      const tileProgress = stats.total > 0 && stats.completed > 0 && stats.completed < stats.total
+        ? stats.completed / stats.total
+        : null;
+      const isPartial = resume.partBytes > 0 || (stats.total > 0 && stats.completed > 0 && stats.completed < stats.total);
+      if (isPartial) {
+        setIsDownloaded(false);
+        setHasPartialDownload(true);
+        setDownloadStalled(false);
+        setIsDownloading(true);
+        setDownloadProgress(byteProgress ?? tileProgress);
+        setByteStats({ received: resume.partBytes, total: resume.totalBytes });
+        await tileWorkerManager.resumeIfNeeded(mapId);
+      } else {
+        setIsDownloaded(false);
+        setHasPartialDownload(false);
+        setDownloadStalled(false);
+        setIsDownloading(false);
+        setDownloadProgress(null);
+        setByteStats(null);
+      }
+    };
+
+    void readFromDisk();
+
+    // visibilitychange, pageshow, and resume can all fire on one return to the app.
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        if (!cancelled) void readFromDisk();
+      }, 0);
+    };
+    document.addEventListener('visibilitychange', scheduleRefresh);
+    document.addEventListener('resume', scheduleRefresh);
+    window.addEventListener('pageshow', scheduleRefresh);
 
     return () => {
+      cancelled = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      document.removeEventListener('visibilitychange', scheduleRefresh);
+      document.removeEventListener('resume', scheduleRefresh);
+      window.removeEventListener('pageshow', scheduleRefresh);
       unsubscribe();
     };
   }, [mapId]);

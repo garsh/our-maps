@@ -1,7 +1,19 @@
 import { removeMapDownload, removeAllDownloads, getDownloadStats, getOfflineMap, saveMapOffline, getPinsBoundingBox, type BoundingBox, type MapDownloadStatus } from './tileUtils';
 import { extractExists, getExtractResumeInfo, getPartFileSize } from './extractStore';
 import { invalidateExtractPMTiles } from './offlineExtract';
+import { getStoredJson, setStoredJson } from './storageUtils';
 import type { Pin } from '@shared/interfaces';
+
+const CACHED_DOWNLOAD_STATUSES_KEY = 'cached_download_statuses';
+
+/** Landing reads this cache before the async OPFS scan. Keep it current even when Landing is unmounted. */
+function rememberDownloadStatus(mapId: string, status: MapDownloadStatus | null) {
+  if (typeof localStorage === 'undefined') return;
+  const cached = getStoredJson<Record<string, MapDownloadStatus>>(CACHED_DOWNLOAD_STATUSES_KEY, {});
+  if (status) cached[mapId] = status;
+  else delete cached[mapId];
+  setStoredJson(CACHED_DOWNLOAD_STATUSES_KEY, cached);
+}
 
 interface DownloadByteStats {
   received: number;
@@ -141,6 +153,7 @@ export class TileWorkerManager {
   private subscribers = new Set<ProgressCallback>();
   private pendingResume = new Set<string>();
   private starting = new Set<string>();
+  private foregroundReconcile = new Set<string>();
   private hooksInstalled = false;
 
   private buildState(task: MapTask, error?: string | null): DownloadProgressState {
@@ -229,22 +242,63 @@ export class TileWorkerManager {
     }
   };
 
-  private onForeground = () => {
-    if (this.isBackgrounded()) return;
-    for (const [mapId, task] of this.tasks) {
-      if (task.gaveUp) {
-        task.gaveUp = false;
-        task.transientFailures = 0;
-        task.stalled = true;
-        task.isDownloading = true;
-        this.clearRetry(task);
+  /**
+   * A finished extract must win over a worker that was killed while the page
+   * was frozen. Restarting would open a new stream and delete that file.
+   */
+  private finishDownloaded(task: MapTask) {
+    this.detachWorker(task);
+    const total = task.tileStats?.total || task.totalTiles || 1;
+    task.isDownloading = false;
+    task.isRemoving = false;
+    task.stalled = false;
+    task.gaveUp = false;
+    task.downloadProgress = null;
+    task.tileStats = { total, completed: total };
+    if (task.byteStats && task.byteStats.total > 0) {
+      task.byteStats = { received: task.byteStats.total, total: task.byteStats.total };
+    }
+    this.notifySubscribers(task.mapId);
+    this.tasks.delete(task.mapId);
+    rememberDownloadStatus(task.mapId, { isComplete: true, isPartial: false });
+  }
+
+  private async reconcileForeground(mapId: string) {
+    if (this.foregroundReconcile.has(mapId)) return;
+    this.foregroundReconcile.add(mapId);
+    try {
+      const task = this.tasks.get(mapId);
+      if (!task) return;
+      if (await extractExists(mapId)) {
+        const live = this.tasks.get(mapId);
+        if (!live) return;
+        this.finishDownloaded(live);
+        return;
+      }
+      const live = this.tasks.get(mapId);
+      if (!live) return;
+      if (live.gaveUp) {
+        live.gaveUp = false;
+        live.transientFailures = 0;
+        live.stalled = true;
+        live.isDownloading = true;
+        this.clearRetry(live);
         this.notifySubscribers(mapId);
         void this.restartDownload(mapId);
-        continue;
+        return;
       }
-      if (task.worker || (!task.stalled && !task.isDownloading)) continue;
-      this.clearRetry(task);
+      if (live.worker || (!live.stalled && !live.isDownloading)) return;
+      this.clearRetry(live);
       void this.restartDownload(mapId);
+    } finally {
+      this.foregroundReconcile.delete(mapId);
+    }
+  }
+
+  private onForeground = () => {
+    if (this.isBackgrounded()) return;
+    for (const mapId of this.tasks.keys()) {
+      void this.reconcileForeground(mapId);
     }
   };
 
@@ -382,13 +436,13 @@ export class TileWorkerManager {
             };
             this.notifySubscribers(mapId);
           } else if (type === 'complete') {
-            const actualTotal = total || totalTiles;
+            const completedBytes = Number(bytes) || Number(progressTotalBytes) || currentTask.byteStats?.total || 0;
+            const actualTotal = total || totalTiles || (completedBytes > 0 ? 1 : 0);
             console.log(`[TILE_STREAM_CLIENT][manager] Download complete event for map ${mapId}: bytes=${bytes}, totalTiles=${actualTotal}`);
             currentTask.isDownloading = false;
             currentTask.stalled = false;
             currentTask.downloadProgress = null;
             currentTask.tileStats = { total: actualTotal, completed: actualTotal };
-            const completedBytes = Number(bytes) || Number(progressTotalBytes) || currentTask.byteStats?.total || 0;
             currentTask.byteStats = completedBytes > 0 ? { received: completedBytes, total: completedBytes } : currentTask.byteStats;
             invalidateExtractPMTiles(mapId);
             getOfflineMap(mapId).then((offlineMap) => {
@@ -404,6 +458,7 @@ export class TileWorkerManager {
             worker.terminate();
             currentTask.worker = null;
             this.tasks.delete(mapId);
+            rememberDownloadStatus(mapId, { isComplete: true, isPartial: false });
           } else if (type === 'error') {
             console.error(`[TILE_STREAM_CLIENT][manager] Worker error for map ${mapId}:`, error);
             const hadProgress = ((currentTask.byteStats?.received || 0) > 0) || ((currentTask.tileStats?.completed || 0) > 0);
@@ -526,6 +581,7 @@ export class TileWorkerManager {
               worker.terminate();
               currentTask.worker = null;
               this.tasks.delete(mapId);
+              rememberDownloadStatus(mapId, null);
             } else {
               worker.terminate();
             }

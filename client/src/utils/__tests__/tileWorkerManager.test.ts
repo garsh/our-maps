@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { downloadActivityView, TileWorkerManager } from '../tileWorkerManager';
+import { extractExists } from '../extractStore';
 
 const { removeMapDownload } = vi.hoisted(() => ({
   removeMapDownload: vi.fn(async () => {}),
@@ -219,6 +220,36 @@ describe('TileWorkerManager transient network errors', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(FakeWorker.all.length).toBe(2);
     expect(alertSpy).not.toHaveBeenCalled();
+  });
+
+  it('marks a backgrounded download downloaded when the extract is already on disk', async () => {
+    vi.mocked(extractExists).mockResolvedValue(true);
+    try {
+      const worker = await begin();
+      emitProgress(worker);
+      const states: Array<{ isDownloaded: boolean; isDownloading: boolean }> = [];
+      manager.subscribe((state) => {
+        states.push({ isDownloaded: state.isDownloaded, isDownloading: state.isDownloading });
+      });
+
+      visibility = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+      visibility = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(worker.terminated).toBe(true);
+      expect(FakeWorker.all.length).toBe(1);
+      expect(manager.getStatus('map-1')).toBeNull();
+      expect(states.at(-1)).toEqual({ isDownloaded: true, isDownloading: false });
+      expect(JSON.parse(localStorage.getItem('cached_download_statuses') || '{}')['map-1']).toEqual({
+        isComplete: true,
+        isPartial: false,
+      });
+    } finally {
+      vi.mocked(extractExists).mockResolvedValue(false);
+      localStorage.removeItem('cached_download_statuses');
+    }
   });
 
   it('restarts a frozen download without counting it as a failure', async () => {

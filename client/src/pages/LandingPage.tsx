@@ -154,6 +154,8 @@ export default function LandingPage() {
       targetIds.forEach(id => {
         const activeStatus = tileWorkerManager.getStatus(id);
         if (!activeStatus) return;
+        // A finished extract beats a worker left behind by a frozen page.
+        if (statusMap.get(id)?.isComplete && !activeStatus.isRemoving) return;
         const badge = landingStatusFromWorker(activeStatus);
         if (badge) statusMap.set(id, badge);
       });

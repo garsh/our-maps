@@ -275,6 +275,50 @@ describe('Sidebar', () => {
     expect(await screen.findByText(/Download for Offline/i)).toBeInTheDocument();
   });
 
+  it('shows Remove Download when the status cache is stale but the extract is complete', async () => {
+    localStorage.setItem('cached_download_statuses', JSON.stringify({
+      'test-map-1': { isComplete: false, isPartial: false },
+    }));
+    const tileUtilsModule = await import('../../utils/tileUtils');
+    vi.spyOn(tileUtilsModule, 'getDownloadStats').mockResolvedValue({ total: 10, completed: 10 });
+
+    try {
+      render(<TestWrapper handlers={{ mapId: 'test-map-1' }} />);
+
+      const moreBtn = screen.getByLabelText(/more options/i);
+      fireEvent.click(moreBtn);
+
+      expect(await screen.findByText(/Remove Download/i)).toBeInTheDocument();
+      expect(screen.queryByText(/Download for Offline/i)).not.toBeInTheDocument();
+    } finally {
+      localStorage.removeItem('cached_download_statuses');
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('shows the map as downloaded after the page becomes visible again', async () => {
+    const tileUtilsModule = await import('../../utils/tileUtils');
+    const extractStore = await import('../../utils/extractStore');
+    const stats = vi.spyOn(tileUtilsModule, 'getDownloadStats').mockResolvedValue({ total: 10, completed: 0 });
+    vi.spyOn(extractStore, 'getExtractResumeInfo').mockResolvedValue({ partBytes: 0, totalBytes: 0 });
+    vi.spyOn(extractStore, 'getExtractFile').mockResolvedValue(null);
+
+    try {
+      render(<TestWrapper handlers={{ mapId: 'test-map-1' }} />);
+
+      fireEvent.click(screen.getByLabelText(/more options/i));
+      expect(await screen.findByText(/Download for Offline/i)).toBeInTheDocument();
+
+      stats.mockResolvedValue({ total: 10, completed: 10 });
+      fireEvent(document, new Event('visibilitychange'));
+
+      expect(await screen.findByText(/Remove Download/i)).toBeInTheDocument();
+      expect(screen.queryByText(/Download for Offline/i)).not.toBeInTheDocument();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it('shows Remove Download option in the menu when map is downloaded', async () => {
     const tileUtilsModule = await import('../../utils/tileUtils');
     vi.spyOn(tileUtilsModule, 'getDownloadStats').mockResolvedValue({ total: 10, completed: 10 });
