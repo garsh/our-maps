@@ -227,6 +227,58 @@ describe('Sidebar', () => {
     expect(onPinClick).toHaveBeenCalled();
   });
 
+  it('does not let a long-press select a pin or layer name', () => {
+    render(
+      <TestWrapper
+        pins={[{ id: '1', lat: 10, lng: 20, label: 'Test Pin', description: 'Trail notes', position: 0 }]}
+        handlers={{ layers: [{ id: 'day-1', name: 'Day Hike', position: 0 }] }}
+      />
+    );
+
+    const label = screen.getByText('Test Pin');
+    const cluster = label.closest('[data-no-text-select]') as HTMLElement;
+    expect(cluster.style.userSelect).toBe('none');
+    expect(cluster.style.webkitUserSelect).toBe('none');
+    expect(screen.getByText('Trail notes').closest('[data-no-text-select]')).toBe(cluster);
+
+    const grip = cluster.querySelector('svg') as SVGElement;
+    const gripMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    fireEvent(grip, gripMenu);
+    expect(gripMenu.defaultPrevented).toBe(true);
+
+    const selectEvent = new Event('selectstart', { bubbles: true, cancelable: true });
+    fireEvent(label, selectEvent);
+    expect(selectEvent.defaultPrevented).toBe(true);
+
+    const selection = window.getSelection()!;
+    const range = document.createRange();
+    range.selectNodeContents(label);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+    expect(selection.rangeCount).toBe(0);
+
+    const layerName = screen.getByText(/Day Hike/, { selector: 'span' });
+    const layerRow = layerName.closest('[data-no-text-select]') as HTMLElement;
+    expect(layerRow.style.userSelect).toBe('none');
+    expect(layerRow.style.webkitUserSelect).toBe('none');
+    const layerMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    fireEvent(layerName, layerMenu);
+    expect(layerMenu.defaultPrevented).toBe(true);
+
+    fireEvent.click(screen.getByLabelText('Edit'));
+    const nameInput = document.getElementById('label-1') as HTMLElement;
+    const inputSelect = new Event('selectstart', { bubbles: true, cancelable: true });
+    fireEvent(nameInput, inputSelect);
+    expect(inputSelect.defaultPrevented).toBe(false);
+
+    fireEvent.doubleClick(layerName);
+    const layerInput = document.getElementById('label-day-1') as HTMLElement;
+    const layerSelect = new Event('selectstart', { bubbles: true, cancelable: true });
+    fireEvent(layerInput, layerSelect);
+    expect(layerSelect.defaultPrevented).toBe(false);
+  });
+
   it('marks pin rows for CSS hover and applies the shared hover class from the store', () => {
     const onHoverPin = vi.fn();
     render(<TestWrapper handlers={{ onHoverPin }} />);

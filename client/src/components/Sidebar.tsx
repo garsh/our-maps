@@ -321,6 +321,21 @@ function useAppearanceTips(isMenuOpen: boolean) {
 
 // Grip only, with touch-action: none, so movement starts the drag. No hold.
 const TOUCH_SENSOR_OPTIONS = { activationConstraint: { distance: 5 } };
+
+// A stationary hold on the grip sits on the name. Android Chrome still selects
+// that text when user-select is only set in CSS, then opens the dictionary bar.
+const NO_TEXT_SELECT_STYLE: React.CSSProperties = {
+  userSelect: 'none',
+  WebkitUserSelect: 'none',
+  WebkitTouchCallout: 'none',
+};
+
+function isProtectedListText(target: EventTarget | Node | null) {
+  const el = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
+  if (!el || el.closest('input, textarea, [contenteditable="true"]')) return false;
+  return !!el.closest('[data-no-text-select]');
+}
+
 const KEYBOARD_SENSOR_OPTIONS = { coordinateGetter: sortableKeyboardCoordinates };
 
 export type MapTheme = 'light' | 'dark';
@@ -545,7 +560,7 @@ const TruncatedTooltip = ({ text, style }: { text: string, style?: React.CSSProp
   };
 
   return (
-    <div 
+    <div
       onMouseEnter={handleMouseEnter}
       style={{
         whiteSpace: 'nowrap',
@@ -1035,7 +1050,7 @@ const SortablePin = memo(({
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
+        <div data-no-text-select="" style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, ...NO_TEXT_SELECT_STYLE }}>
           {!readOnly && (
             <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '0px', color: '#bbb', padding: '1px 1px', marginLeft: '-2px', touchAction: 'none' }}>
               <GripVertical size={10} />
@@ -1463,13 +1478,14 @@ const SortableLayer = memo(({
         boxShadow: isHighlighted ? '0 0 0 1px var(--primary-color)' : 'var(--shadow-sm)',
         transition: 'all 0.1s ease'
       }}>
-        <div style={{ 
+        <div data-no-text-select="" style={{ 
           display: 'flex', 
           alignItems: 'center', 
           padding: '0 0.15rem', 
           borderBottom: 'none',
           minHeight: '20px',
-          transition: 'all 0.1s ease'
+          transition: 'all 0.1s ease',
+          ...NO_TEXT_SELECT_STYLE,
         }}>
           {!readOnly && (
             <div {...attributes} {...listeners} style={{ cursor: 'grab', color: '#bbb', padding: '1px 1px', marginLeft: '-2px', display: 'flex', alignItems: 'center', touchAction: 'none' }}>
@@ -2037,6 +2053,28 @@ const Sidebar = ({
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const menuDropdownRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const root = scrollContainerRef.current;
+    if (!root) return;
+    const blockSelect = (event: Event) => {
+      if (isProtectedListText(event.target)) event.preventDefault();
+    };
+    const clearSelection = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) return;
+      if (isProtectedListText(sel.anchorNode)) sel.removeAllRanges();
+    };
+    root.addEventListener('selectstart', blockSelect);
+    root.addEventListener('contextmenu', blockSelect);
+    document.addEventListener('selectionchange', clearSelection);
+    return () => {
+      root.removeEventListener('selectstart', blockSelect);
+      root.removeEventListener('contextmenu', blockSelect);
+      document.removeEventListener('selectionchange', clearSelection);
+    };
+  }, []);
+
   const renameInputRef = useRef<HTMLInputElement>(null);
   const canEdit = userRole !== 'view';
   const isEditMode = canEdit && !isOffline && (editMode ?? true);
