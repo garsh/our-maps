@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import type { Pin } from '@shared/interfaces';
 import Fuse from 'fuse.js';
 import { Search, MapPin, Loader2, X, Plus } from 'lucide-react';
@@ -32,6 +32,27 @@ interface SearchBarProps {
   onHoverPin?: (id: string | null, leavingPinId?: string) => void;
   onSearchAreaStateChange?: (state: SearchAreaState | null) => void;
   isPanelMinimized?: boolean;
+}
+
+const RESULTS_GAP_PX = 8;
+
+// The sheet/sidebar clips overflow. A viewport max-height taller than that clip
+// is not a scrollport, so a touch cannot move rows that are only clipped.
+export function measureSearchResultsMaxHeight(anchor: HTMLElement): number {
+  const anchorRect = anchor.getBoundingClientRect();
+  const clip = anchor.closest('aside');
+  const clipRect = clip?.getBoundingClientRect();
+  const scaleSource = clip && clip.offsetHeight > 0 ? clip : anchor;
+  const scaleRect = scaleSource === clip && clipRect ? clipRect : anchorRect;
+  const scale = scaleSource.offsetHeight > 0 && scaleRect.height > 0
+    ? scaleRect.height / scaleSource.offsetHeight
+    : 1;
+  const viewport = window.visualViewport;
+  const viewportBottom = viewport && viewport.height > 0
+    ? viewport.offsetTop + viewport.height
+    : window.innerHeight;
+  const clipBottom = clipRect ? Math.min(clipRect.bottom, viewportBottom) : viewportBottom;
+  return Math.max(0, Math.floor((clipBottom - anchorRect.bottom) / scale - RESULTS_GAP_PX));
 }
 
 const renderAddressParts = (title: string, address: string = '') => {
@@ -73,6 +94,8 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
   mapBoundsRef.current = effectiveBounds;
   const abortControllerRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [resultsMaxHeight, setResultsMaxHeight] = useState<number | null>(null);
   const onHoverSearchResultRef = useRef(onHoverSearchResult);
   onHoverSearchResultRef.current = onHoverSearchResult;
   const onHoverPinRef = useRef(onHoverPin);
@@ -292,6 +315,36 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     }
   };
 
+  const resultsOpen = query.trim() !== '' && (localResults.length > 0 || globalResults.length > 0);
+
+  const updateResultsMaxHeight = useCallback(() => {
+    const anchor = containerRef.current;
+    if (!anchor) return;
+    const next = measureSearchResultsMaxHeight(anchor);
+    setResultsMaxHeight((prev) => (prev === next ? prev : next));
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!resultsOpen) return;
+    updateResultsMaxHeight();
+    const anchor = containerRef.current;
+    const clip = anchor?.closest('aside') ?? anchor;
+    const observer = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => updateResultsMaxHeight())
+      : null;
+    if (clip) observer?.observe(clip);
+    if (anchor && anchor !== clip) observer?.observe(anchor);
+    window.addEventListener('resize', updateResultsMaxHeight);
+    window.visualViewport?.addEventListener('resize', updateResultsMaxHeight);
+    window.visualViewport?.addEventListener('scroll', updateResultsMaxHeight);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateResultsMaxHeight);
+      window.visualViewport?.removeEventListener('resize', updateResultsMaxHeight);
+      window.visualViewport?.removeEventListener('scroll', updateResultsMaxHeight);
+    };
+  }, [resultsOpen, updateResultsMaxHeight]);
+
   // Show a hover preview pin without closing the search results (for tap/click)
   const handleResultPreview = (result: SearchResult) => {
     if (result.type === 'local' && result.pinId) {
@@ -302,7 +355,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
   };
 
   return (
-    <div className="search-container" style={{ marginBottom: 0, position: 'relative', height: '28px' }}>
+    <div ref={containerRef} className="search-container" style={{ marginBottom: 0, position: 'relative', height: '28px' }}>
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center', height: '28px' }}>
         <div style={{ position: 'absolute', left: '12px', color: 'var(--primary-color)', display: 'flex' }}>
           {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
@@ -345,21 +398,27 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
         )}
       </div>
 
-      {query.trim() !== '' && (localResults.length > 0 || globalResults.length > 0) && (
-        <div style={{ 
-          position: 'absolute',
-          top: '100%',
-          left: 0,
-          right: 0,
-          maxHeight: 'calc(100vh - 180px)', 
-          overflowY: 'auto', 
-          background: 'white', 
-          border: '1px solid var(--border-color)', 
-          borderRadius: 'var(--radius-md)',
-          boxShadow: 'var(--shadow-lg)',
-          zIndex: 1500,
-          marginTop: '8px'
-        }}>
+      {resultsOpen && (
+        <div
+          data-testid="search-results"
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            maxHeight: resultsMaxHeight ?? 0,
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            touchAction: 'pan-y',
+            overscrollBehavior: 'contain',
+            background: 'white',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: 'var(--shadow-lg)',
+            zIndex: 1500,
+            marginTop: `${RESULTS_GAP_PX}px`,
+          }}
+        >
           {/* Local Results */}
           {localResults.length > 0 && (
             <div>

@@ -2887,7 +2887,8 @@ const Sidebar = ({
         })()}
 
         {(isEditMode || selectedPins.length > 0) && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px', height: '28px' }}>
+          // Above pin rows (drop targets use z-index 50) so a touch hits the results list.
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px', height: '28px', position: 'relative', zIndex: 60 }}>
             {isEditMode && (
               <div style={{ flex: 1, minWidth: 0, height: '28px' }}>
                 <SearchBar 

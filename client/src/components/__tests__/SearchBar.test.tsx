@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import SearchBar from '../SearchBar';
+import SearchBar, { measureSearchResultsMaxHeight } from '../SearchBar';
 import { setMapViewportBounds, resetMapViewportBoundsForTests } from '../../utils/mapViewport';
 
 describe('SearchBar', () => {
@@ -365,6 +365,42 @@ describe('SearchBar', () => {
     expect(mockOnHoverSearchResult).toHaveBeenCalledWith(null, null);
     expect(mockOnHoverPin).toHaveBeenCalledWith(null);
     expect(input).not.toHaveFocus();
+  });
+
+  it('caps the results list to the visible panel so touch can scroll it', async () => {
+    render(<SearchBar onAddPin={mockOnAddPin} pins={mockPins} />);
+    fireEvent.change(screen.getByPlaceholderText(/Search.../i), { target: { value: 'Coffee' } });
+
+    const list = await screen.findByTestId('search-results');
+    expect(list.style.maxHeight).toBe(`${window.innerHeight - 8}px`);
+    expect(list.style.overflowY).toBe('auto');
+    expect(list.style.touchAction).toBe('pan-y');
+  });
+
+  it('measures results height inside a zoomed sheet instead of the viewport', () => {
+    const aside = document.createElement('aside');
+    const anchor = document.createElement('div');
+    aside.appendChild(anchor);
+    document.body.appendChild(aside);
+    const box = (partial: Partial<DOMRect>): DOMRect => ({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: 0,
+      height: 0,
+      toJSON() { return {}; },
+      ...partial,
+    });
+    Object.defineProperty(aside, 'offsetHeight', { configurable: true, value: 200 });
+    aside.getBoundingClientRect = () => box({ top: 100, bottom: 500, height: 400, left: 0, right: 300, width: 300 });
+    anchor.getBoundingClientRect = () => box({ top: 100, bottom: 180, height: 80, left: 10, right: 290, width: 280 });
+
+    // scale = 400/200. Visible room below the field is (500-180)/2 - 8 = 152.
+    expect(measureSearchResultsMaxHeight(anchor)).toBe(152);
+    aside.remove();
   });
 });
 
