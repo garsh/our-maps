@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, type CSSProperties, type ReactNode, type TouchEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -22,6 +22,50 @@ interface TouchTooltipState {
   text: string;
   x: number;
   y: number;
+}
+
+const LONG_PRESS_LABEL_STYLE: CSSProperties = {
+  userSelect: 'none',
+  WebkitUserSelect: 'none',
+  WebkitTouchCallout: 'none',
+};
+
+function LongPressLabel({
+  title,
+  style,
+  children,
+  onTouchStart,
+  onTouchEnd,
+}: {
+  title: string;
+  style?: CSSProperties;
+  children: ReactNode;
+  onTouchStart: (event: TouchEvent<HTMLSpanElement>) => void;
+  onTouchEnd: () => void;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const block = (event: Event) => event.preventDefault();
+    el.addEventListener('selectstart', block);
+    return () => el.removeEventListener('selectstart', block);
+  }, []);
+
+  return (
+    <span
+      ref={ref}
+      data-long-press-label=""
+      title={title}
+      style={{ ...style, ...LONG_PRESS_LABEL_STYLE }}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchEnd}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      {children}
+    </span>
+  );
 }
 
 export default function LandingPage() {
@@ -220,6 +264,18 @@ export default function LandingPage() {
     fetchMapsRef.current = fetchMaps;
     fetchDownloadedMapStatusesRef.current = fetchDownloadedMapStatuses;
   });
+
+  useEffect(() => {
+    const clearLabelSelection = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) return;
+      const node = sel.anchorNode;
+      const el = node instanceof Element ? node : node?.parentElement;
+      if (el?.closest('[data-long-press-label]')) sel.removeAllRanges();
+    };
+    document.addEventListener('selectionchange', clearLabelSelection);
+    return () => document.removeEventListener('selectionchange', clearLabelSelection);
+  }, []);
 
   useEffect(() => {
     fetchMaps();
@@ -580,25 +636,23 @@ export default function LandingPage() {
                 <div className="map-card-info">
                   <h3 className="map-card-title" title={map.name}>{map.name}</h3>
                   <div className="map-card-meta">
-                    <span 
-                      style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0, cursor: 'default' }}
+                    <LongPressLabel
                       title="Map Owner"
+                      style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0, cursor: 'default' }}
                       onTouchStart={(e) => handleTouchStart('Map Owner', e)}
                       onTouchEnd={handleTouchEnd}
-                      onTouchCancel={handleTouchEnd}
                     >
                       <span>{map.ownerId === user?.id ? (user?.name || map.ownerName || 'You') : (map.ownerName || 'Shared')}</span>
-                    </span>
+                    </LongPressLabel>
                     <span style={{ opacity: 0.5 }}>•</span>
-                    <span 
-                      style={{ flexShrink: 0, opacity: 0.85, cursor: 'default' }}
+                    <LongPressLabel
                       title="Last Accessed Date"
+                      style={{ flexShrink: 0, opacity: 0.85, cursor: 'default' }}
                       onTouchStart={(e) => handleTouchStart('Last Accessed Date', e)}
                       onTouchEnd={handleTouchEnd}
-                      onTouchCancel={handleTouchEnd}
                     >
                       {formatDate(map.lastAccessedAt)}
-                    </span>
+                    </LongPressLabel>
                     {(() => {
                       const status = downloadStatuses.get(map.id);
                       if (status?.isComplete) {

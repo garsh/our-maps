@@ -64,6 +64,26 @@ describe('LandingPage Offline Map Access', () => {
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
 
+  it('does not let a long-press select the owner or date on a map card', async () => {
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    const owner = (await screen.findAllByTitle('Map Owner'))[0];
+    const accessed = screen.getAllByTitle('Last Accessed Date')[0];
+    for (const label of [owner, accessed]) {
+      expect(label.style.userSelect).toBe('none');
+      expect(label.style.webkitUserSelect).toBe('none');
+      const contextEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+      fireEvent(label, contextEvent);
+      expect(contextEvent.defaultPrevented).toBe(true);
+    }
+  });
+
   it('allows opening maps with download when offline', async () => {
     (apiService.getMaps as any).mockRejectedValue(new Error('Network Error'));
     localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
