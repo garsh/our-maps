@@ -1,5 +1,5 @@
 import type { MapData, MapPermission } from '@shared/interfaces';
-import { getOfflineMap, saveMapToViewCache, getMapETag, touchMapCacheAccess, pruneViewCache, type BoundingBox } from '../utils/tileUtils';
+import { getOfflineMap, saveMapToViewCache, getMapETag, touchMapCacheAccess, pruneViewCache, currentDownloadDocumentEpoch, type BoundingBox } from '../utils/tileUtils';
 import { tileWorkerManager } from '../utils/tileWorkerManager';
 
 const MAP_FETCH_TIMEOUT_MS = 1500;
@@ -135,6 +135,7 @@ export const apiService = {
   },
 
   async getMap(id: string): Promise<MapData> {
+    const documentEpoch = currentDownloadDocumentEpoch();
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       const offlineMap = await getOfflineMap(id);
       if (offlineMap) return offlineMap;
@@ -174,7 +175,10 @@ export const apiService = {
 
       // Always save to view cache for instant future loads (LRU-managed).
       // Explicit offline downloads are updated in the same write (flag preserved).
-      saveMapToViewCache(data, etag).catch(() => {});
+      // Skip when a pin, layer, or name edit was stored while this request was in flight.
+      if (currentDownloadDocumentEpoch() === documentEpoch) {
+        saveMapToViewCache(data, etag).catch(() => {});
+      }
 
       // Prune stale view-cache entries during idle time
       if (typeof requestIdleCallback !== 'undefined') {

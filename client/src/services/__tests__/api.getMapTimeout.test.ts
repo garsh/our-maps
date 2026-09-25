@@ -8,6 +8,7 @@ vi.mock('../../utils/tileUtils', () => ({
   saveMapToViewCache: vi.fn(async () => {}),
   touchMapCacheAccess: vi.fn(async () => {}),
   pruneViewCache: vi.fn(async () => {}),
+  currentDownloadDocumentEpoch: () => 0,
 }));
 
 describe('mapFetchTimeoutMs', () => {

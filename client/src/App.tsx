@@ -32,7 +32,7 @@ import { Loader2, Map as MapIcon, RotateCw } from 'lucide-react';
 import type { SearchAreaState } from './components/SearchBar';
 import { reorderPins, reorderLayers, isSameLayer, emitPinMoveOrReorderEvents, applyRemotePinsReorder, applyRemotePinMoveLayer } from './utils/reorderUtils';
 import { generateId, mergeImportedMapData } from './utils/fileUtils';
-import { getOfflineMap, isMapDownloaded, touchMapCacheAccess, saveMapToViewCache, clearMapMetadataCache } from './utils/tileUtils';
+import { getOfflineMap, isMapDownloaded, touchMapCacheAccess, saveMapToViewCache, clearMapMetadataCache, bumpDownloadDocumentEpoch, currentDownloadDocumentEpoch, updateDownloadedMapDocument } from './utils/tileUtils';
 import { preloadExtract, setActiveOfflineMapId } from './utils/offlineExtract';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
 import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
@@ -48,6 +48,10 @@ import {
 import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
+
+function downloadedDocumentKey(mapId: string, name: string, layers: PinLayer[], pins: Pin[]): string {
+  return JSON.stringify({ mapId, name, layers, pins });
+}
 
 export function clampSidebarWidth(width: number, viewportWidth: number, min = 200, maxMargin = 50): number {
   return Math.max(min, Math.min(viewportWidth - maxMargin, width));
@@ -707,6 +711,32 @@ export function MapEditor() {
   const isRemoteUpdateRef = useRef(false);
   const isInitialLoadRef = useRef(false);
   const hasLoadedRef = useRef(false);
+  // First sight of a map is the loaded copy. Later name, layer, or pin
+  // changes are edits. Server snapshots mark the key so they are not edits.
+  const seenDownloadMapIdRef = useRef<string | null>(null);
+  const appliedDownloadKeyRef = useRef<string | null>(null);
+
+  const noteServerMapDocument = (nextMapId: string, name: string, nextLayers: PinLayer[], nextPins: Pin[]) => {
+    seenDownloadMapIdRef.current = nextMapId;
+    appliedDownloadKeyRef.current = downloadedDocumentKey(nextMapId, name, nextLayers, nextPins);
+  };
+
+  useEffect(() => {
+    if (!mapId) return;
+    // The route id is set before pins are loaded. Skip that empty render so it
+    // does not replace a download. Edits during the initial fetch still count.
+    if (isMapLoading && seenDownloadMapIdRef.current !== mapId && pins.length === 0 && layers.length === 0 && !mapName) return;
+    const key = downloadedDocumentKey(mapId, mapName, layers, pins);
+    if (seenDownloadMapIdRef.current !== mapId) {
+      seenDownloadMapIdRef.current = mapId;
+      appliedDownloadKeyRef.current = key;
+      return;
+    }
+    if (appliedDownloadKeyRef.current === key) return;
+    appliedDownloadKeyRef.current = key;
+    bumpDownloadDocumentEpoch();
+    void updateDownloadedMapDocument(mapId, { name: mapName, layers, pins });
+  }, [mapId, isMapLoading, mapName, layers, pins]);
   const dragStartLayersRef = useRef<Map<string, string | undefined>>(new Map());
   const dragStartPinsRef = useRef<Pin[] | null>(null);
 
@@ -1021,15 +1051,24 @@ export function MapEditor() {
 
   const reconcileOnReconnect = async (currentMapId: string) => {
     const epoch = ++loadEpochRef.current;
+    const documentEpoch = currentDownloadDocumentEpoch();
     setIsSyncing(true);
     try {
       const serverData = await apiService.getMap(currentMapId);
       if (epoch !== loadEpochRef.current) return;
-      setLayers(serverData.layers || []);
-      setPins(serverData.pins || []);
-      setCustomColors(serverData.customColors || []);
       setUserRole(serverData.userRole || 'view');
       if (typeof serverData.isPublic === 'boolean') setIsPublic(serverData.isPublic);
+      // A pin, layer, or name edit landed while this response was in flight.
+      // Keep that screen state. Role and public updates still apply.
+      if (currentDownloadDocumentEpoch() !== documentEpoch) return;
+      const nextName = serverData.name || 'Unnamed Map';
+      const nextLayers = serverData.layers || [];
+      const nextPins = serverData.pins || [];
+      noteServerMapDocument(currentMapId, nextName, nextLayers, nextPins);
+      setMapName(nextName);
+      setLayers(nextLayers);
+      setPins(nextPins);
+      setCustomColors(serverData.customColors || []);
     } catch (err) {
       console.error('[SOCKET] Reconnect reconciliation failed:', err);
     } finally {
@@ -1111,19 +1150,28 @@ export function MapEditor() {
 
     // 2. Fetch latest map from network / revalidate
     try {
+      const documentEpoch = currentDownloadDocumentEpoch();
       const data = await apiService.getMap(mapId);
       if (epoch !== loadEpochRef.current) return;
 
       isInitialLoadRef.current = true;
       setMapId(data.id);
-      setMapName(data.name || 'Unnamed Map');
-      setLayers(data.layers || []);
-      setPins(data.pins);
-      setCustomColors(data.customColors || []);
-      if (data.pins && data.pins.length > 0) {
-        if (!hasHydratedLocally && !silent) {
+      setUserRole(data.userRole || 'view');
+      setIsPublic(Boolean(data.isPublic));
+      // A pin, layer, or name edit landed while this response was in flight.
+      // Keep that screen state. Role and public updates still apply.
+      if (currentDownloadDocumentEpoch() === documentEpoch) {
+        const nextName = data.name || 'Unnamed Map';
+        const nextLayers = data.layers || [];
+        const nextPins = data.pins || [];
+        noteServerMapDocument(data.id, nextName, nextLayers, nextPins);
+        setMapName(nextName);
+        setLayers(nextLayers);
+        setPins(nextPins);
+        setCustomColors(data.customColors || []);
+        if (nextPins.length > 0 && !hasHydratedLocally && !silent) {
           let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
-          for (const p of data.pins) {
+          for (const p of nextPins) {
             if (p.lat < minLat) minLat = p.lat;
             if (p.lat > maxLat) maxLat = p.lat;
             if (p.lng < minLng) minLng = p.lng;
@@ -1132,8 +1180,6 @@ export function MapEditor() {
           triggerBoundsToFit([[minLat, minLng], [maxLat, maxLng]], 3000);
         }
       }
-      setUserRole(data.userRole || 'view');
-      setIsPublic(Boolean(data.isPublic));
       setIsDirty(false);
       setIsSyncing(false);
       // Item D: Successful network response exits offline mode if trapped by sessionStorage

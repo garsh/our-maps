@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getYRange, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, saveMapToViewCache, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB, stripMapCachePii, unionCachedMapsWithDownloads } from '../tileUtils';
+import { getYRange, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, saveMapToViewCache, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB, stripMapCachePii, unionCachedMapsWithDownloads, updateDownloadedMapDocument, bumpDownloadDocumentEpoch, currentDownloadDocumentEpoch } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 const { mockExtracts, mockPartSizes, mockMetaBytes } = vi.hoisted(() => ({
@@ -300,6 +300,71 @@ describe('tileUtils', () => {
         expect(retrieved.extractTotalBytes).toBe(2000);
         expect(retrieved).not.toHaveProperty('permissions');
         expect(retrieved).not.toHaveProperty('ownerEmail');
+    });
+
+    it('patches an explicit download in place and ignores a view-cache row', async () => {
+        expect(currentDownloadDocumentEpoch()).toBe(0);
+        expect(bumpDownloadDocumentEpoch()).toBe(1);
+
+        const missed = await updateDownloadedMapDocument('missing-map', {
+            name: 'Nope',
+            layers: [],
+            pins: [],
+        });
+        expect(missed).toBe(false);
+        expect(await getOfflineMap('missing-map')).toBeNull();
+
+        await saveMapToViewCache({
+            id: 'view-only',
+            name: 'View',
+            layers: [],
+            pins: [],
+        } as any);
+        const viewWrite = await updateDownloadedMapDocument('view-only', {
+            name: 'Changed',
+            layers: [{ id: 'l1', name: 'Layer 1', position: 0 }],
+            pins: [{ id: 'p1', lat: 1, lng: 2, label: 'P', position: 0 }],
+        });
+        expect(viewWrite).toBe(false);
+        const viewRecord = await getOfflineMap('view-only') as any;
+        expect(viewRecord.name).toBe('View');
+        expect(viewRecord.pins).toEqual([]);
+        expect(viewRecord.isExplicitDownload).toBe(false);
+
+        await saveMapOffline({
+            id: 'dl-patch',
+            name: 'Before',
+            layers: [],
+            pins: [{ id: 'seed', lat: 10, lng: 10, label: 'Seed', position: 0 }],
+            totalTiles: 12,
+            completedTiles: 12,
+            extractTotalBytes: 999,
+        } as any);
+        await saveMapToViewCache({
+            id: 'dl-patch',
+            name: 'Before',
+            layers: [],
+            pins: [{ id: 'seed', lat: 10, lng: 10, label: 'Seed', position: 0 }],
+        } as any, '"etag-keep"');
+
+        const wrote = await updateDownloadedMapDocument('dl-patch', {
+            name: 'After',
+            layers: [{ id: 'l1', name: 'Layer 1', position: 0 }],
+            pins: [
+                { id: 'seed', lat: 10, lng: 10, label: 'Seed', position: 0 },
+                { id: 'far', lat: 64, lng: 25, label: 'Far', position: 1 },
+            ],
+        });
+        expect(wrote).toBe(true);
+        const patched = await getOfflineMap('dl-patch') as any;
+        expect(patched.name).toBe('After');
+        expect(patched.layers).toEqual([{ id: 'l1', name: 'Layer 1', position: 0 }]);
+        expect(patched.pins.map((pin: { label: string }) => pin.label)).toEqual(['Seed', 'Far']);
+        expect(patched.isExplicitDownload).toBe(true);
+        expect(patched.etag).toBe('"etag-keep"');
+        expect(patched.totalTiles).toBe(12);
+        expect(patched.completedTiles).toBe(12);
+        expect(patched.extractTotalBytes).toBe(999);
     });
 
     it('unions complete extracts missing from cached_maps onto the offline list', async () => {

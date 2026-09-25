@@ -1,4 +1,4 @@
-import type { Pin, MapData } from '@shared/interfaces';
+import type { Pin, PinLayer, MapData } from '@shared/interfaces';
 import { extractExists, getExtractResumeInfo, getPartFileSize, removeAllExtracts, removeExtract } from './extractStore';
 
 export interface BoundingBox {
@@ -31,8 +31,74 @@ export function clearMapMetadataCache(): void {
   mapMetadataCache.clear();
 }
 
+let downloadDocumentEpoch = 0;
+
+/** Bumped when a pin, layer, or name edit is written into an explicit download. */
+export function currentDownloadDocumentEpoch(): number {
+    return downloadDocumentEpoch;
+}
+
+export function bumpDownloadDocumentEpoch(): number {
+    downloadDocumentEpoch += 1;
+    return downloadDocumentEpoch;
+}
+
 export function resetDBForTesting(): void {
     dbPromise = null;
+    downloadDocumentEpoch = 0;
+}
+
+export interface DownloadedMapDocumentFields {
+    name: string;
+    layers: PinLayer[];
+    pins: Pin[];
+}
+
+/**
+ * Patch name, layers, and pins on an explicit offline download.
+ * Leaves the ETag, tile counts, and extract bytes alone. No-ops when the
+ * map was never downloaded.
+ */
+export async function updateDownloadedMapDocument(
+    mapId: string,
+    fields: DownloadedMapDocumentFields
+): Promise<boolean> {
+    if (!mapId || typeof indexedDB === 'undefined') return false;
+    invalidateMapMetadataCache(mapId);
+    try {
+        const db = await openDB();
+        return await new Promise((resolve, reject) => {
+            const tx = db.transaction(MAP_STORE, 'readwrite');
+            const store = tx.objectStore(MAP_STORE);
+            const getReq = store.get(mapId);
+            getReq.onsuccess = () => {
+                const existing = getReq.result as (MapData & {
+                    isExplicitDownload?: boolean;
+                    etag?: string;
+                }) | undefined;
+                if (!existing?.isExplicitDownload) {
+                    resolve(false);
+                    return;
+                }
+                const putReq = store.put({
+                    ...existing,
+                    name: fields.name,
+                    layers: fields.layers,
+                    pins: fields.pins,
+                    lastAccessedAt: Date.now(),
+                });
+                putReq.onsuccess = () => {
+                    invalidateMapMetadataCache(mapId);
+                    resolve(true);
+                };
+                putReq.onerror = () => reject(putReq.error);
+            };
+            getReq.onerror = () => reject(getReq.error);
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch {
+        return false;
+    }
 }
 
 export async function openDB(): Promise<IDBDatabase> {
