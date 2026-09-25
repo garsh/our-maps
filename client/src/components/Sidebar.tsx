@@ -2886,14 +2886,13 @@ const Sidebar = ({
             : menuContent;
         })()}
 
-        {(canEdit || !readOnly || selectedPins.length > 0) && (
+        {(isEditMode || selectedPins.length > 0) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px', height: '28px' }}>
-            {canEdit && (
+            {isEditMode && (
               <div style={{ flex: 1, minWidth: 0, height: '28px' }}>
                 <SearchBar 
                   onAddPin={onAddPin}
                   pins={pins} 
-                  disabled={readOnly} 
                   onHoverSearchResult={onHoverSearchResult}
                   onHoverPin={onHoverPin}
                   onSearchAreaStateChange={onSearchAreaStateChange}

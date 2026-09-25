@@ -941,6 +941,7 @@ describe('App Components Error Handling', () => {
     });
 
     expect(screen.getByText(/Synced/i)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/Search.../i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText(/more options/i));
     expect(screen.queryByText('Rename Map')).not.toBeInTheDocument();
@@ -951,6 +952,7 @@ describe('App Components Error Handling', () => {
     await waitFor(() => {
       expect(screen.getByText('Rename Map')).toBeInTheDocument();
     });
+    expect(screen.getByPlaceholderText(/Search.../i)).toBeInTheDocument();
     expect(screen.getByText(/Synced/i)).toBeInTheDocument();
   });
 

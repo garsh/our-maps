@@ -886,6 +886,20 @@ describe('Sidebar', () => {
     expect(screen.getByPlaceholderText('Search...')).toBeInTheDocument();
   });
 
+  it('hides SearchBar in view mode and when the user cannot edit', () => {
+    const { rerender } = render(<TestWrapper handlers={{ userRole: 'owner', editMode: false }} />);
+    expect(screen.queryByPlaceholderText('Search...')).not.toBeInTheDocument();
+
+    rerender(<TestWrapper handlers={{ userRole: 'view', editMode: true }} />);
+    expect(screen.queryByPlaceholderText('Search...')).not.toBeInTheDocument();
+
+    rerender(<TestWrapper handlers={{ userRole: 'owner', editMode: true, isOffline: true }} />);
+    expect(screen.queryByPlaceholderText('Search...')).not.toBeInTheDocument();
+
+    rerender(<TestWrapper handlers={{ userRole: 'owner', editMode: true }} />);
+    expect(screen.getByPlaceholderText('Search...')).toBeInTheDocument();
+  });
+
   it('does not highlight an expanded empty layer header when dragged over', () => {
     const spy = vi.spyOn(dndSortable, 'useSortable').mockImplementation((args: any) => {
       if (args.id === 'layer-1') {
