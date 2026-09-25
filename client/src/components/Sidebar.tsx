@@ -88,7 +88,8 @@ class MouseSensor extends PointerSensor {
 
 const MOUSE_SENSOR_OPTIONS = { activationConstraint: { distance: 5 } };
 const MAP_OPTIONS_MENU_WIDTH = 220;
-const TOUCH_SENSOR_OPTIONS = { activationConstraint: { delay: 250, tolerance: 5 } };
+// Grip only, with touch-action: none, so movement starts the drag. No hold.
+const TOUCH_SENSOR_OPTIONS = { activationConstraint: { distance: 5 } };
 const KEYBOARD_SENSOR_OPTIONS = { coordinateGetter: sortableKeyboardCoordinates };
 
 export type MapTheme = 'light' | 'dark';
