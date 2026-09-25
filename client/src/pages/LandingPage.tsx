@@ -7,7 +7,7 @@ import { Map as MapIcon, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download, 
 import { getMapDownloadStatuses, unionCachedMapsWithDownloads, type MapDownloadStatus } from '../utils/tileUtils';
 import { landingStatusFromWorker, tileWorkerManager } from '../utils/tileWorkerManager';
 import { getStoredJson, setStoredJson } from '../utils/storageUtils';
-import { isForcedOffline, setForcedOffline } from '../utils/offlineSession';
+import { setForcedOffline } from '../utils/offlineSession';
 import { deleteUnrecognizedStorage, findUnrecognizedStorage, type LeftoverStorageItem } from '../utils/legacyStorage';
 
 interface MapSummary {
@@ -80,11 +80,9 @@ export default function LandingPage() {
     }
     return new Map();
   });
-  const [loading, setLoading] = useState(() => {
-    const cached = getStoredJson<MapSummary[] | null>('cached_maps', null);
-    return !cached || cached.length === 0;
-  });
-  const [isOffline, setIsOffline] = useState(() => isForcedOffline());
+  // Hold cards until the entry probe. navigator.onLine can stay false after reconnect.
+  const [loading, setLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [showSignOutDialog, setShowSignOutDialog] = useState(false);
@@ -98,6 +96,8 @@ export default function LandingPage() {
   const [touchTooltip, setTouchTooltip] = useState<TouchTooltipState | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggeredRef = useRef<boolean>(false);
+  // True after a list fetch reaches the server. A stale navigator.onLine must not block opens.
+  const reachedServerRef = useRef(false);
 
   const clearLongPress = () => {
     if (longPressTimerRef.current) {
@@ -175,7 +175,8 @@ export default function LandingPage() {
   };
 
   const handleMapClick = (mapId: string, viewMode = false) => {
-    const currentlyOffline = isOffline || (typeof navigator !== 'undefined' && !navigator.onLine);
+    const browserOffline = typeof navigator !== 'undefined' && !navigator.onLine && !reachedServerRef.current;
+    const currentlyOffline = isOffline || browserOffline;
     if (currentlyOffline) {
       const status = downloadStatuses.get(mapId);
       if (!status || !status.isComplete) {
@@ -225,20 +226,10 @@ export default function LandingPage() {
     fetchDownloadedMapStatuses(merged);
   };
 
-  const fetchMaps = async (opts?: { force?: boolean }) => {
-    const browserOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-    // SessionStorage can still say offline after a reconnect (it survives
-    // refresh). Only skip the network when the browser itself reports offline.
-    if (!opts?.force && browserOffline) {
-      setForcedOffline(true);
-      setIsOffline(true);
-      await applyCachedMaps();
-      setLoading(false);
-      return;
-    }
-
+  const fetchMaps = async () => {
     try {
-      const data = await apiService.getMaps();
+      const data = await apiService.getMaps({ ignoreNavigatorOnline: true });
+      reachedServerRef.current = true;
       setForcedOffline(false);
       setMaps(data);
       setIsOffline(false);
@@ -250,6 +241,7 @@ export default function LandingPage() {
         logout();
         return;
       }
+      reachedServerRef.current = false;
       setForcedOffline(true);
       setIsOffline(true);
       await applyCachedMaps();
@@ -279,13 +271,14 @@ export default function LandingPage() {
 
   useEffect(() => {
     fetchMaps();
-    
+
     const handleOnline = () => {
       setForcedOffline(false);
       setIsOffline(false);
-      fetchMapsRef.current({ force: true });
+      fetchMapsRef.current();
     };
     const handleOffline = () => {
+      reachedServerRef.current = false;
       setForcedOffline(true);
       setIsOffline(true);
     };
@@ -303,11 +296,6 @@ export default function LandingPage() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     document.addEventListener('visibilitychange', handleVisible);
-    
-    if (isForcedOffline()) {
-      setForcedOffline(true);
-      setIsOffline(true);
-    }
 
     const unsubscribe = tileWorkerManager.subscribe((state) => {
       setDownloadStatuses((prev) => {
@@ -580,7 +568,7 @@ export default function LandingPage() {
               <MapIcon size={18} />
             </div>
           </div>
-          {!isOffline && (
+          {!loading && !isOffline && (
             <button 
               onClick={handleCreateMap}
               className="btn-primary"
@@ -589,9 +577,9 @@ export default function LandingPage() {
               New Map
             </button>
           )}
-          {isOffline && (
+          {!loading && isOffline && (
             <button 
-              onClick={() => fetchMaps({ force: true })}
+              onClick={() => fetchMaps()}
               className="btn-primary"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', whiteSpace: 'nowrap', flexShrink: 0, background: 'var(--text-secondary)' }}
             >

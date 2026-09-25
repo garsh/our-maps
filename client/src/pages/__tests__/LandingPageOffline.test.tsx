@@ -164,6 +164,7 @@ describe('LandingPage Offline Map Access', () => {
 
   it('shows downloaded maps that are missing from cached_maps while offline', async () => {
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    (apiService.getMaps as any).mockRejectedValue(new Error('Failed to fetch'));
     localStorage.removeItem('cached_maps');
     (tileUtils.unionCachedMapsWithDownloads as any).mockImplementation(async () => [
       { id: 'map-extract-only', name: 'Extract Only Map', ownerId: 'user-1', ownerName: 'Test User' },
@@ -205,7 +206,7 @@ describe('LandingPage Offline Map Access', () => {
     });
   });
 
-  it('shows stored offline UI immediately then revalidates when the browser is online', async () => {
+  it('checks the server before showing an offline landing page', async () => {
     sessionStorage.setItem('ourmaps_offline', '1');
     localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
 
@@ -217,8 +218,10 @@ describe('LandingPage Offline Map Access', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText('Retry Sync')).toBeInTheDocument();
+    expect(screen.getByText('Loading your maps...')).toBeInTheDocument();
+    expect(screen.queryByText('Retry Sync')).not.toBeInTheDocument();
     expect(screen.queryByText('New Map')).not.toBeInTheDocument();
+    expect(screen.queryByText('Offline')).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(apiService.getMaps).toHaveBeenCalled();
@@ -227,7 +230,7 @@ describe('LandingPage Offline Map Access', () => {
     expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
   });
 
-  it('skips getMaps when the browser reports offline', async () => {
+  it('retries sync once on entry even when the browser still reports offline', async () => {
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
     sessionStorage.setItem('ourmaps_offline', '1');
     localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
@@ -240,9 +243,44 @@ describe('LandingPage Offline Map Access', () => {
       </MemoryRouter>
     );
 
+    expect(screen.getByText('Loading your maps...')).toBeInTheDocument();
+    expect(screen.queryByText('Retry Sync')).not.toBeInTheDocument();
+    expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(apiService.getMaps).toHaveBeenCalledTimes(1);
+      expect(apiService.getMaps).toHaveBeenCalledWith({ ignoreNavigatorOnline: true });
+      expect(screen.getByText('New Map')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Retry Sync')).not.toBeInTheDocument();
+    expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+    expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
+
+    fireEvent.click(screen.getByText('Online Only Map'));
+    expect(mockNavigate).toHaveBeenCalledWith('/map/map-not-downloaded');
+    expect(screen.queryByText('This map is not available in offline mode')).not.toBeInTheDocument();
+  });
+
+  it('stays offline when the entry sync fails and the browser reports offline', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    (apiService.getMaps as any).mockRejectedValue(new Error('Failed to fetch'));
+    sessionStorage.setItem('ourmaps_offline', '1');
+    localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiService.getMaps).toHaveBeenCalledTimes(1);
+    });
     expect(screen.getByText('Retry Sync')).toBeInTheDocument();
-    expect(apiService.getMaps).not.toHaveBeenCalled();
-    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    expect(screen.getByText('Offline')).toBeInTheDocument();
+    expect(sessionStorage.getItem('ourmaps_offline')).toBe('1');
   });
 
   it('shows owner name without Shared by prefix for shared maps', async () => {

@@ -18,8 +18,14 @@ const getHeaders = () => {
   };
 };
 
-const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 3): Promise<Response> => {
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+const fetchWithRetry = async (
+  url: string,
+  options: RequestInit = {},
+  retries = 3,
+  fetchOpts?: { ignoreNavigatorOnline?: boolean },
+): Promise<Response> => {
+  // Opt-in. navigator.onLine can stay false after a reconnect.
+  if (!fetchOpts?.ignoreNavigatorOnline && typeof navigator !== 'undefined' && !navigator.onLine) {
     throw new Error('Offline: No network connection');
   }
   try {
@@ -27,11 +33,11 @@ const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 
     if (!res.ok && retries > 0 && res.status >= 500) {
       console.warn(`Fetch status ${res.status} for ${url}, retrying... (${retries} left)`);
       await new Promise(resolve => setTimeout(resolve, 1000));
-      return fetchWithRetry(url, options, retries - 1);
+      return fetchWithRetry(url, options, retries - 1, fetchOpts);
     }
     return res;
   } catch (err: any) {
-    if (err?.name === 'AbortError' || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+    if (err?.name === 'AbortError' || (!fetchOpts?.ignoreNavigatorOnline && typeof navigator !== 'undefined' && !navigator.onLine)) {
       throw err;
     }
     // Chrome DevTools Offline and dead networks throw TypeError: Failed to fetch.
@@ -40,7 +46,7 @@ const fetchWithRetry = async (url: string, options: RequestInit = {}, retries = 
     if (retries > 0 && !failedToFetch) {
       console.warn(`Fetch network error for ${url}, retrying... (${retries} left)`, err);
       await new Promise(resolve => setTimeout(resolve, 1000));
-      return fetchWithRetry(url, options, retries - 1);
+      return fetchWithRetry(url, options, retries - 1, fetchOpts);
     }
     throw err;
   }
@@ -123,11 +129,16 @@ export const apiService = {
     });
   },
 
-  async getMaps(): Promise<any[]> {
+  async getMaps(opts?: { ignoreNavigatorOnline?: boolean }): Promise<any[]> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
-      const res = await fetchWithRetry(`${API_BASE}/maps`, { headers: getHeaders(), signal: controller.signal, cache: 'no-store' }, 0);
+      const res = await fetchWithRetry(
+        `${API_BASE}/maps`,
+        { headers: getHeaders(), signal: controller.signal, cache: 'no-store' },
+        0,
+        opts?.ignoreNavigatorOnline ? { ignoreNavigatorOnline: true } : undefined,
+      );
       return handleResponse<any[]>(res, this._logoutCallback, `Server error: ${res.status}`);
     } finally {
       clearTimeout(timeoutId);
@@ -136,12 +147,7 @@ export const apiService = {
 
   async getMap(id: string): Promise<MapData> {
     const documentEpoch = currentDownloadDocumentEpoch();
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      const offlineMap = await getOfflineMap(id);
-      if (offlineMap) return offlineMap;
-    }
-
-    // Send stored ETag so the server can reply 304 if nothing changed
+    // Send stored ETag so the server can reply 304 if nothing changed.
     const storedETag = await getMapETag(id);
     const extraHeaders: Record<string, string> = {};
     if (storedETag) extraHeaders['If-None-Match'] = storedETag;
@@ -153,11 +159,12 @@ export const apiService = {
     // receiving bytes — the stream can delay this GET past 1.5s.
     const timeoutId = setTimeout(() => controller.abort(), mapFetchTimeoutMs(tileWorkerManager.getStatus(id)));
     try {
+      // Callers treat a return as a server sync, so do not answer from IndexedDB.
       const res = await fetchWithRetry(`${API_BASE}/maps/${id}`, {
         headers: { ...getHeaders(), ...extraHeaders },
         signal: controller.signal,
         cache: 'no-store',
-      }, 0);
+      }, 0, { ignoreNavigatorOnline: true });
 
       // 304: map unchanged — return cached version
       if (res.status === 304) {
@@ -198,7 +205,7 @@ export const apiService = {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ bbox, minZoom, maxZoom }),
-    }, 0);
+    }, 0, { ignoreNavigatorOnline: true });
     return handleResponse(res, this._logoutCallback, 'Failed to estimate map extract size');
   },
 

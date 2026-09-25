@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiService, mapFetchTimeoutMs } from '../api';
 import { tileWorkerManager } from '../../utils/tileWorkerManager';
+import { getOfflineMap } from '../../utils/tileUtils';
 
 vi.mock('../../utils/tileUtils', () => ({
   getOfflineMap: vi.fn(async () => null),
@@ -17,6 +18,52 @@ describe('mapFetchTimeoutMs', () => {
     expect(mapFetchTimeoutMs({ isDownloading: false, stalled: false })).toBe(1500);
     expect(mapFetchTimeoutMs({ isDownloading: true, stalled: true })).toBe(1500);
     expect(mapFetchTimeoutMs({ isDownloading: true, stalled: false })).toBe(15_000);
+  });
+});
+
+describe('api calls when the browser reports offline', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+  });
+
+  it('does not call fetch when the browser reports offline', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await expect(apiService.getMaps()).rejects.toThrow('Offline: No network connection');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('calls fetch when ignoreNavigatorOnline is set', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    await expect(apiService.getMaps({ ignoreNavigatorOnline: true })).resolves.toEqual([]);
+    expect(fetch).toHaveBeenCalled();
+  });
+
+  it('getMap requests the server when the browser reports offline', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    vi.mocked(getOfflineMap).mockResolvedValue({ id: 'map-1', name: 'Cached', layers: [], pins: [] } as never);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      id: 'map-1', name: 'Server', layers: [], pins: [],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const data = await apiService.getMap('map-1');
+    expect(fetch).toHaveBeenCalled();
+    expect(data.name).toBe('Server');
+  });
+
+  it('estimateExtract requests the server when the browser reports offline', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      bytes: 10, addressedTiles: 2,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    await expect(apiService.estimateExtract({ west: 0, south: 0, east: 1, north: 1 })).resolves.toEqual({
+      bytes: 10, addressedTiles: 2,
+    });
+    expect(fetch).toHaveBeenCalled();
   });
 });
 
