@@ -2,6 +2,16 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import SearchBar, { measureSearchResultsMaxHeight } from '../SearchBar';
 import { setMapViewportBounds, resetMapViewportBoundsForTests } from '../../utils/mapViewport';
+import { setLastPointerTypeForTests } from '../../utils/pinHover';
+
+function searchResultRow(label: string): HTMLElement {
+  let node: HTMLElement | null = screen.getByText(label);
+  while (node && !node.getAttribute('style')?.includes('cursor: pointer')) {
+    node = node.parentElement;
+  }
+  if (!node) throw new Error(`no search result row for ${label}`);
+  return node;
+}
 
 describe('SearchBar', () => {
   const mockOnAddPin = vi.fn();
@@ -12,6 +22,7 @@ describe('SearchBar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetMapViewportBoundsForTests();
+    setLastPointerTypeForTests('mouse');
   });
 
   it('renders correctly', () => {
@@ -65,6 +76,108 @@ describe('SearchBar', () => {
     fireEvent.click(screen.getByText('Local Coffee'));
 
     expect(mockOnHoverPin).toHaveBeenCalledWith('1');
+  });
+
+  it('drops the preview pin when the same result is tapped again on touch', async () => {
+    const mockOnHoverSearchResult = vi.fn();
+    const mockOnHoverPin = vi.fn();
+    (window.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ([
+        { place_id: 1, address: 'London, UK', title: '', lat: '51.5', lon: '-0.1' },
+        { place_id: 2, address: 'Paris, France', title: '', lat: '48.8', lon: '2.3' },
+      ]),
+    });
+
+    render(
+      <SearchBar
+        onAddPin={mockOnAddPin}
+        onHoverSearchResult={mockOnHoverSearchResult}
+        onHoverPin={mockOnHoverPin}
+        pins={mockPins}
+        debounceMs={10}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText(/Search.../i), { target: { value: 'London' } });
+    await screen.findByText('London');
+    const londonRow = searchResultRow('London');
+    setLastPointerTypeForTests('touch');
+
+    fireEvent.mouseEnter(londonRow);
+    fireEvent.click(londonRow);
+    fireEvent.mouseLeave(londonRow);
+    expect(mockOnHoverSearchResult).toHaveBeenCalledTimes(1);
+    expect(mockOnHoverSearchResult).toHaveBeenCalledWith(51.5, -0.1);
+
+    fireEvent.click(searchResultRow('Paris'));
+    expect(mockOnHoverSearchResult).toHaveBeenLastCalledWith(48.8, 2.3);
+
+    fireEvent.click(searchResultRow('Paris'));
+    expect(mockOnHoverSearchResult).toHaveBeenLastCalledWith(null, null);
+    expect(mockOnHoverPin).toHaveBeenLastCalledWith(null);
+
+    fireEvent.click(searchResultRow('Paris'));
+    expect(mockOnHoverSearchResult).toHaveBeenLastCalledWith(48.8, 2.3);
+  });
+
+  it('keeps the preview pin when a fine pointer clicks the same result twice', async () => {
+    const mockOnHoverSearchResult = vi.fn();
+    (window.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ([
+        { place_id: 1, address: 'London, UK', title: '', lat: '51.5', lon: '-0.1' },
+      ]),
+    });
+
+    render(
+      <SearchBar
+        onAddPin={mockOnAddPin}
+        onHoverSearchResult={mockOnHoverSearchResult}
+        pins={[]}
+        debounceMs={10}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText(/Search.../i), { target: { value: 'London' } });
+    await screen.findByText('London');
+    const row = searchResultRow('London');
+    fireEvent.click(row);
+    fireEvent.click(row);
+    expect(mockOnHoverSearchResult).toHaveBeenNthCalledWith(1, 51.5, -0.1);
+    expect(mockOnHoverSearchResult).toHaveBeenNthCalledWith(2, 51.5, -0.1);
+
+    fireEvent.mouseEnter(row);
+    expect(mockOnHoverSearchResult).toHaveBeenLastCalledWith(51.5, -0.1);
+    fireEvent.mouseLeave(row);
+    expect(mockOnHoverSearchResult).toHaveBeenLastCalledWith(null, null);
+  });
+
+  it('clears a local pin highlight when the same result is tapped again on touch', async () => {
+    const mockOnHoverPin = vi.fn();
+    const mockOnHoverSearchResult = vi.fn();
+    setLastPointerTypeForTests('touch');
+    render(
+      <SearchBar
+        onAddPin={mockOnAddPin}
+        onHoverPin={mockOnHoverPin}
+        onHoverSearchResult={mockOnHoverSearchResult}
+        pins={mockPins}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText(/Search.../i), { target: { value: 'Coffee' } });
+    await screen.findByText('Local Coffee');
+    const row = searchResultRow('Local Coffee');
+    fireEvent.mouseEnter(row);
+    fireEvent.click(row);
+    fireEvent.mouseLeave(row);
+    expect(mockOnHoverPin).toHaveBeenCalledTimes(1);
+    expect(mockOnHoverPin).toHaveBeenCalledWith('1');
+
+    fireEvent.click(row);
+    expect(mockOnHoverPin).toHaveBeenLastCalledWith(null);
+    expect(mockOnHoverSearchResult).toHaveBeenLastCalledWith(null, null);
   });
 
   it('filters local pins by mapBounds while preserving best match order', async () => {

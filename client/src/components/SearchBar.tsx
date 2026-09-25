@@ -5,6 +5,7 @@ import { Search, MapPin, Loader2, X, Plus } from 'lucide-react';
 import { apiService } from '../services/api';
 import { parseAndClampBounds, isWithinBounds } from '@shared/geoUtils';
 import { getMapViewportBounds, subscribeMapViewportBounds } from '../utils/mapViewport';
+import { hasFinePointer } from '../utils/pinHover';
 
 interface SearchResult {
   place_id: string | number;
@@ -101,6 +102,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
   const onHoverPinRef = useRef(onHoverPin);
   onHoverPinRef.current = onHoverPin;
   const prevQueryRef = useRef(query);
+  const activePreviewIdRef = useRef<string | number | null>(null);
 
   if (isPanelMinimized && query !== '') {
     setQuery('');
@@ -111,6 +113,12 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     prevQueryRef.current = '';
   }
 
+  const clearPreview = useCallback(() => {
+    activePreviewIdRef.current = null;
+    onHoverPinRef.current?.(null);
+    onHoverSearchResultRef.current?.(null, null);
+  }, []);
+
   const handleClear = () => {
     setQuery('');
     setLocalResults([]);
@@ -119,15 +127,15 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     setIsSearching(false);
     abortControllerRef.current?.abort();
     prevQueryRef.current = '';
+    clearPreview();
     inputRef.current?.focus();
   };
 
   useEffect(() => {
     if (!isPanelMinimized) return;
     abortControllerRef.current?.abort();
-    onHoverSearchResultRef.current?.(null, null);
-    onHoverPinRef.current?.(null);
-  }, [isPanelMinimized]);
+    clearPreview();
+  }, [isPanelMinimized, clearPreview]);
 
   useEffect(() => {
     return () => {
@@ -221,6 +229,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
       setResults([]);
       setIsSearching(false);
       setLastSearchedBounds(null);
+      clearPreview();
       return;
     }
 
@@ -345,12 +354,29 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     };
   }, [resultsOpen, updateResultsMaxHeight]);
 
-  // Show a hover preview pin without closing the search results (for tap/click)
+  // Touch also emits mouseenter/mouseleave. Ignore those so a second tap can clear the pin.
   const handleResultPreview = (result: SearchResult) => {
+    const lat = parseFloat(result.lat);
+    const lng = parseFloat(result.lon);
+    if (hasFinePointer()) {
+      if (result.type === 'local' && result.pinId) {
+        onHoverPin?.(result.pinId);
+      } else {
+        onHoverSearchResult?.(lat, lng);
+      }
+      return;
+    }
+    if (activePreviewIdRef.current === result.place_id) {
+      clearPreview();
+      return;
+    }
+    activePreviewIdRef.current = result.place_id;
     if (result.type === 'local' && result.pinId) {
+      onHoverSearchResult?.(null, null);
       onHoverPin?.(result.pinId);
     } else {
-      onHoverSearchResult?.(parseFloat(result.lat), parseFloat(result.lon));
+      onHoverPin?.(null);
+      onHoverSearchResult?.(lat, lng);
     }
   };
 
@@ -429,10 +455,12 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
                   style={{ padding: '0.4rem 0.2rem', borderBottom: '1px solid #f1f1f1', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', transition: 'background 0.2s' }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'var(--bg-color)';
+                    if (!hasFinePointer()) return;
                     onHoverPin?.(result.pinId || null);
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background = 'transparent';
+                    if (!hasFinePointer()) return;
                     onHoverPin?.(null, result.pinId);
                   }}
                 >
@@ -466,10 +494,12 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
                   onClick={() => handleResultPreview(result)}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'var(--bg-color)';
+                    if (!hasFinePointer()) return;
                     onHoverSearchResult?.(parseFloat(result.lat), parseFloat(result.lon));
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background = 'transparent';
+                    if (!hasFinePointer()) return;
                     onHoverSearchResult?.(null, null);
                   }}
                 >
@@ -482,7 +512,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
                         onClick={(e) => {
                           e.stopPropagation();
                           onAddPin(parseFloat(result.lat), parseFloat(result.lon), result.title || result.address.split(',')[0], result.address || undefined);
-                          onHoverSearchResult?.(null, null);
+                          clearPreview();
                           setQuery('');
                         }}
                         style={{ 
