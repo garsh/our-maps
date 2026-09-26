@@ -1120,6 +1120,41 @@ export function paddedMapView(leftPadding: number, bottomPadding: number) {
 
 type ViewPadding = { top: number; left: number; right: number; bottom: number };
 
+type MapCameraSnapshot = {
+  longitude: number;
+  latitude: number;
+  zoom: number;
+  pitch: number;
+  bearing: number;
+};
+
+function cameraFromMap(map: {
+  getCenter?: () => { lng: number; lat: number };
+  getZoom?: () => number;
+  getPitch?: () => number;
+  getBearing?: () => number;
+} | null | undefined): MapCameraSnapshot | null {
+  if (!map || typeof map.getCenter !== 'function') return null;
+  const c = map.getCenter();
+  return {
+    longitude: c.lng,
+    latitude: c.lat,
+    zoom: typeof map.getZoom === 'function' ? map.getZoom() : 10,
+    pitch: typeof map.getPitch === 'function' ? map.getPitch() : 0,
+    bearing: typeof map.getBearing === 'function' ? map.getBearing() : 0,
+  };
+}
+
+// Spread Math.min/Math.max, so one NaN poisons the span. Callers already skip empty lists.
+function pinSpanBounds(pins: Array<{ lat: number; lng: number }>): [[number, number], [number, number]] {
+  const lats = pins.map((p) => p.lat);
+  const lngs = pins.map((p) => p.lng);
+  return [
+    [Math.min(...lats), Math.min(...lngs)],
+    [Math.max(...lats), Math.max(...lngs)],
+  ];
+}
+
 // fitBounds adds the argument to transform.padding. Pass only the part not already stored.
 function paddingBeyondCurrent(current: Partial<ViewPadding> | null | undefined, desired: ViewPadding): ViewPadding {
   return {
@@ -1255,17 +1290,8 @@ const MapView = ({
   const triggerMapRemount = useCallback(() => {
     if (!currentViewStateRef.current && mapRef.current) {
       try {
-        const m = mapRef.current.getMap();
-        if (m && typeof m.getCenter === 'function') {
-          const c = m.getCenter();
-          currentViewStateRef.current = {
-            longitude: c.lng,
-            latitude: c.lat,
-            zoom: typeof m.getZoom === 'function' ? m.getZoom() : 10,
-            pitch: typeof m.getPitch === 'function' ? m.getPitch() : 0,
-            bearing: typeof m.getBearing === 'function' ? m.getBearing() : 0,
-          };
-        }
+        const shot = cameraFromMap(mapRef.current.getMap());
+        if (shot) currentViewStateRef.current = shot;
       } catch {}
     }
     contextLostRef.current = false;
@@ -2047,12 +2073,7 @@ const MapView = ({
       } else {
         const pinsToUse = visiblePins.length > 0 ? visiblePins : pins;
         if (pinsToUse.length > 0) {
-          const lats = pinsToUse.map((p) => p.lat);
-          const lngs = pinsToUse.map((p) => p.lng);
-          targetBounds = [
-            [Math.min(...lats), Math.min(...lngs)],
-            [Math.max(...lats), Math.max(...lngs)],
-          ];
+          targetBounds = pinSpanBounds(pinsToUse);
         }
       }
 
@@ -2221,15 +2242,10 @@ const MapView = ({
       };
     } else if (mapRef.current) {
       try {
-        const m = mapRef.current.getMap();
-        if (m && typeof m.getCenter === 'function') {
-          const c = m.getCenter();
+        const shot = cameraFromMap(mapRef.current.getMap());
+        if (shot) {
           currentViewStateRef.current = {
-            longitude: c.lng,
-            latitude: c.lat,
-            zoom: typeof m.getZoom === 'function' ? m.getZoom() : 10,
-            pitch: typeof m.getPitch === 'function' ? m.getPitch() : 0,
-            bearing: typeof m.getBearing === 'function' ? m.getBearing() : 0,
+            ...shot,
             padding: currentViewStateRef.current?.padding,
           };
         }
@@ -2292,13 +2308,7 @@ const MapView = ({
   const fitAllPins = useCallback(() => {
     const pinsToUse = visiblePins.length > 0 ? visiblePins : pins;
     if (pinsToUse && pinsToUse.length > 0) {
-      const lats = pinsToUse.map((p) => p.lat);
-      const lngs = pinsToUse.map((p) => p.lng);
-      const bounds: [[number, number], [number, number]] = [
-        [Math.min(...lats), Math.min(...lngs)],
-        [Math.max(...lats), Math.max(...lngs)],
-      ];
-      applyBoundsToFit(bounds, true);
+      applyBoundsToFit(pinSpanBounds(pinsToUse), true);
     }
   }, [pins, visiblePins, applyBoundsToFit]);
   fitAllPinsRef.current = fitAllPins;
@@ -2353,12 +2363,7 @@ const MapView = ({
     if ((!targetBounds || !Array.isArray(targetBounds) || targetBounds.length !== 2) && !hasFitInitialBoundsRef.current) {
       const pinsToUse = visiblePins.length > 0 ? visiblePins : pins;
       if (pinsToUse && pinsToUse.length > 0) {
-        const lats = pinsToUse.map((p) => p.lat);
-        const lngs = pinsToUse.map((p) => p.lng);
-        targetBounds = [
-          [Math.min(...lats), Math.min(...lngs)],
-          [Math.max(...lats), Math.max(...lngs)],
-        ];
+        targetBounds = pinSpanBounds(pinsToUse);
       }
     }
 

@@ -154,14 +154,12 @@ export async function openDB(): Promise<IDBDatabase> {
 
 /** Drop collaborator/owner profile fields that are not needed to render a map offline. */
 export function stripMapCachePii(mapData: MapData): MapData {
-    const {
-        permissions: _permissions,
-        ownerId: _ownerId,
-        ownerName: _ownerName,
-        ownerEmail: _ownerEmail,
-        ownerPicture: _ownerPicture,
-        ...rest
-    } = mapData;
+    const rest = { ...mapData };
+    delete rest.permissions;
+    delete rest.ownerId;
+    delete rest.ownerName;
+    delete rest.ownerEmail;
+    delete rest.ownerPicture;
     return rest;
 }
 

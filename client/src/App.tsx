@@ -35,7 +35,7 @@ import { generateId, mergeImportedMapData } from './utils/fileUtils';
 import { getOfflineMap, isMapDownloaded, touchMapCacheAccess, saveMapToViewCache, clearMapMetadataCache, bumpDownloadDocumentEpoch, currentDownloadDocumentEpoch, updateDownloadedMapDocument } from './utils/tileUtils';
 import { preloadExtract, setActiveOfflineMapId } from './utils/offlineExtract';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
-import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
+import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, isForcedOffline, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
 
 import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer, syncCoLocatedPins } from './utils/pinHover';
 import { PIN_COLORS, nextTargetPinIdAfterClick } from './utils/mapUtils';
@@ -55,6 +55,18 @@ function downloadedDocumentKey(mapId: string, name: string, layers: PinLayer[], 
 
 export function clampSidebarWidth(width: number, viewportWidth: number, min = 200, maxMargin = 50): number {
   return Math.max(min, Math.min(viewportWidth - maxMargin, width));
+}
+
+// Comparisons skip NaN. Math.min/Math.max would poison the whole span.
+function pinLatLngBounds(pins: Array<{ lat: number; lng: number }>): [[number, number], [number, number]] {
+  let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+  for (const p of pins) {
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+    if (p.lng < minLng) minLng = p.lng;
+    if (p.lng > maxLng) maxLng = p.lng;
+  }
+  return [[minLat, minLng], [maxLat, maxLng]];
 }
 
 /** Returns the next available position value for a pin in the given layer. Single-pass, no spread. */
@@ -184,11 +196,9 @@ export function MapEditor() {
   };
   const [mobileScale, setMobileScale] = useState(computeMobileScale);
 
-  const [isOffline, setIsOffline] = useState(
-    () => (typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY)
-  );
+  const [isOffline, setIsOffline] = useState(() => isForcedOffline());
   const [isSyncing, setIsSyncing] = useState(
-    () => id !== 'new' && !((typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY))
+    () => id !== 'new' && !isForcedOffline()
   );
   const [isInitialCreating, setIsInitialCreating] = useState(false);
   const editMode = canEditMap && !isOffline && searchParams.get('mode') !== 'view' && !isInitialCreating;
@@ -1103,7 +1113,7 @@ export function MapEditor() {
     let hasHydratedLocally = false;
     try {
       // Compute offline status before the async fan-out so both branches see the same snapshot.
-      const currentlyOffline = isOfflineRef.current || (typeof navigator !== 'undefined' && !navigator.onLine) || readSessionFlag(OFFLINE_SESSION_KEY);
+      const currentlyOffline = isOfflineRef.current || isForcedOffline();
       // Fetch cached map metadata and OPFS extract status in parallel — they are independent.
       const [cached, downloaded] = await Promise.all([
         getOfflineMap(mapId),
@@ -1123,14 +1133,7 @@ export function MapEditor() {
         setIsPublic(Boolean(cached.isPublic));
         if (cached.pins && cached.pins.length > 0) {
           if (!silent) {
-            let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
-            for (const p of cached.pins) {
-              if (p.lat < minLat) minLat = p.lat;
-              if (p.lat > maxLat) maxLat = p.lat;
-              if (p.lng < minLng) minLng = p.lng;
-              if (p.lng > maxLng) maxLng = p.lng;
-            }
-            triggerBoundsToFit([[minLat, minLng], [maxLat, maxLng]], 3000);
+            triggerBoundsToFit(pinLatLngBounds(cached.pins), 3000);
           }
         }
         setIsMapLoading(false);
@@ -1170,14 +1173,7 @@ export function MapEditor() {
         setPins(nextPins);
         setCustomColors(data.customColors || []);
         if (nextPins.length > 0 && !hasHydratedLocally && !silent) {
-          let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
-          for (const p of nextPins) {
-            if (p.lat < minLat) minLat = p.lat;
-            if (p.lat > maxLat) maxLat = p.lat;
-            if (p.lng < minLng) minLng = p.lng;
-            if (p.lng > maxLng) maxLng = p.lng;
-          }
-          triggerBoundsToFit([[minLat, minLng], [maxLat, maxLng]], 3000);
+          triggerBoundsToFit(pinLatLngBounds(nextPins), 3000);
         }
       }
       setIsDirty(false);
@@ -1751,14 +1747,7 @@ export function MapEditor() {
     }
 
     if (merged.addedPins.length > 0) {
-      let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
-      for (const p of merged.addedPins) {
-        if (p.lat < minLat) minLat = p.lat;
-        if (p.lat > maxLat) maxLat = p.lat;
-        if (p.lng < minLng) minLng = p.lng;
-        if (p.lng > maxLng) maxLng = p.lng;
-      }
-      triggerBoundsToFit([[minLat, minLng], [maxLat, maxLng]], 1000);
+      triggerBoundsToFit(pinLatLngBounds(merged.addedPins), 1000);
     }
 
     if (merged.skippedPins > 0 || merged.skippedLayers > 0) {

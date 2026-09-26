@@ -93,6 +93,36 @@ const DOWNLOAD_OFFLINE_TIP = 'Available offline via download.';
 
 type AppearanceTip = { text: string; x: number; y: number; below: boolean };
 
+function ToggleSwitch({ on, color }: { on: boolean; color: string }) {
+  return (
+    <div
+      style={{
+        width: '34px',
+        height: '18px',
+        borderRadius: '10px',
+        background: color,
+        position: 'relative',
+        transition: 'background 0.2s ease',
+        flexShrink: 0,
+      }}
+    >
+      <div
+        style={{
+          width: '14px',
+          height: '14px',
+          borderRadius: '50%',
+          background: 'white',
+          position: 'absolute',
+          top: '2px',
+          left: on ? '18px' : '2px',
+          transition: 'left 0.2s ease',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+        }}
+      />
+    </div>
+  );
+}
+
 function AppearanceRow({
   label,
   on,
@@ -167,31 +197,7 @@ function AppearanceRow({
         {icon}
         <span>{label}</span>
       </div>
-      <div
-        style={{
-          width: '34px',
-          height: '18px',
-          borderRadius: '10px',
-          background: switchColor,
-          position: 'relative',
-          transition: 'background 0.2s ease',
-          flexShrink: 0,
-        }}
-      >
-        <div
-          style={{
-            width: '14px',
-            height: '14px',
-            borderRadius: '50%',
-            background: 'white',
-            position: 'absolute',
-            top: '2px',
-            left: on ? '18px' : '2px',
-            transition: 'left 0.2s ease',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-          }}
-        />
-      </div>
+      <ToggleSwitch on={on} color={switchColor} />
     </div>
   );
 }
@@ -1777,16 +1783,15 @@ export function computeCustomCollisionDetection(
 
   const { layers, scrollContainer, collisionCacheRef } = options;
   const isLayerDrag = active.data.current?.type === 'layer';
-  const containerEl = scrollContainer;
-  const containerRect = containerEl?.getBoundingClientRect();
-  const scrollTop = containerEl?.scrollTop || 0;
+  const containerRect = scrollContainer?.getBoundingClientRect();
+  const scrollTop = scrollContainer?.scrollTop || 0;
 
   // Filter droppable containers: if dragging a layer, only consider regular layers and layer-top (exclude pins and default layer)
   const allowedContainers = isLayerDrag
     ? droppableContainers.filter((c: any) => (c.data.current?.type === 'layer' || c.data.current?.type === 'layer-top') && c.id !== 'default')
     : droppableContainers;
 
-  let cache = collisionCacheRef.current;
+  const cache = collisionCacheRef.current;
   let containerRectMap: Map<string, { top: number; bottom: number; left: number; right: number; height: number }>;
 
   if (
@@ -2708,31 +2713,10 @@ const Sidebar = ({
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
                       <span>Edit Mode</span>
-                      <div
-                        style={{
-                          width: '34px',
-                          height: '18px',
-                          borderRadius: '10px',
-                          background: isEditMode ? (canEdit ? '#3b82f6' : '#94a3b8') : '#e2e8f0',
-                          position: 'relative',
-                          transition: 'background 0.2s ease',
-                          flexShrink: 0,
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: '14px',
-                            height: '14px',
-                            borderRadius: '50%',
-                            background: 'white',
-                            position: 'absolute',
-                            top: '2px',
-                            left: isEditMode ? '18px' : '2px',
-                            transition: 'left 0.2s ease',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                          }}
-                        />
-                      </div>
+                      <ToggleSwitch
+                        on={isEditMode}
+                        color={isEditMode ? (canEdit ? '#3b82f6' : '#94a3b8') : '#e2e8f0'}
+                      />
                     </div>
                   )}
                   {isAuthenticated && !isOffline && (
