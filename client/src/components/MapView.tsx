@@ -1107,14 +1107,24 @@ function applyThemePaintsOnMap(map: any, flavor: 'light' | 'dark') {
 // Terrain flyTo freezes camera height and only calls _finalizeElevation when this is set.
 // Without it, street labels keep a mid-flight perspective scale after Find my location.
 const FLY_TO_TERRAIN = { freezeElevation: true as const };
-const MAP_EDGE_PADDING = 80;
+// Edge padding set to 4% of viewport width and height
+export function getMapEdgePadding() {
+  if (typeof window === 'undefined') {
+    return { x: 40, y: 32 };
+  }
+  return {
+    x: Math.round(window.innerWidth * 0.04),
+    y: Math.round(window.innerHeight * 0.04),
+  };
+}
 
 export function paddedMapView(leftPadding: number, bottomPadding: number) {
+  const edge = getMapEdgePadding();
   return {
-    top: MAP_EDGE_PADDING,
-    left: leftPadding + MAP_EDGE_PADDING,
-    right: MAP_EDGE_PADDING,
-    bottom: MAP_EDGE_PADDING + bottomPadding,
+    top: edge.y,
+    left: leftPadding + edge.x,
+    right: edge.x,
+    bottom: edge.y + bottomPadding,
   };
 }
 

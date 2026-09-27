@@ -5,6 +5,7 @@ import MapView, {
   isPinInPaddedViewport,
   syncOfflineTerrain,
   resetDEMInflightForTests,
+  paddedMapView,
 } from '../MapView';
 import { getHoveredPinId, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
 import { getMapViewportBounds, resetMapViewportBoundsForTests } from '../../utils/mapViewport';
@@ -669,12 +670,7 @@ describe('MapView Compass and Tilt Indicator', () => {
       expect.objectContaining({
         center: [20, 10],
         zoom: 6,
-        padding: {
-          top: 80,
-          left: 80,
-          right: 80,
-          bottom: 430,
-        },
+        padding: paddedMapView(0, 350),
       })
     );
   });
@@ -707,23 +703,13 @@ describe('MapView Compass and Tilt Indicator', () => {
       ],
       expect.objectContaining({
         maxZoom: 13,
-        padding: {
-          top: 80,
-          left: 80,
-          right: 80,
-          bottom: 430,
-        },
+        padding: paddedMapView(0, 350),
       })
     );
   });
 
   it('does not add find-my-location chrome padding again on compass double-click', () => {
-    mockGetPadding.mockReturnValue({
-      top: 80,
-      left: 480,
-      right: 80,
-      bottom: 430,
-    });
+    mockGetPadding.mockReturnValue(paddedMapView(400, 350));
 
     const mockPins = [
       { id: 'pin-1', lat: 10, lng: 20, label: 'Pin 1', color: 'blue' as const, position: 0 },
@@ -940,12 +926,7 @@ describe('MapView Compass and Tilt Indicator', () => {
       expect.objectContaining({
         center: [-122.4194, 37.7749],
         zoom: 16,
-        padding: {
-          top: 80,
-          left: 480,
-          right: 80,
-          bottom: 430,
-        },
+        padding: paddedMapView(400, 350),
       })
     );
   });
@@ -993,7 +974,7 @@ describe('MapView Compass and Tilt Indicator', () => {
 
     expect(mockFlyTo).toHaveBeenCalledWith(expect.objectContaining({
       center: [20, 10],
-      padding: expect.objectContaining({ left: 480 }),
+      padding: expect.objectContaining({ left: paddedMapView(400, 0).left }),
     }));
   });
 
@@ -1187,12 +1168,7 @@ describe('MapView Compass and Tilt Indicator', () => {
     });
     expect(capturedMapProps.current.initialViewState).toEqual(expect.objectContaining({
       fitBoundsOptions: expect.objectContaining({
-        padding: {
-          top: 80,
-          left: 480,
-          right: 80,
-          bottom: 80,
-        },
+        padding: paddedMapView(400, 0),
       }),
     }));
   });
