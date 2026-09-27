@@ -101,15 +101,6 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
     return res.status(userId ? 403 : 401).json({ error: userId ? 'Access denied' : 'Authentication required' });
   }
 
-  // ETag based on updated_at (falls back to map id if column not yet migrated)
-  const etag = `"${mapId}-${map.updated_at || map.id}"`;
-  const ifNoneMatch = req.headers['if-none-match'];
-  if (!newlyAdded && ifNoneMatch && ifNoneMatch === etag) {
-    // Map unchanged — skip DB reads and payload serialisation
-    res.setHeader('ETag', etag);
-    return res.status(304).end();
-  }
-
   // Update Last Accessed — only for logged-in users, throttled to at most once per 30 minutes
   if (userId) {
     const existingAccess = await db.get<{ last_accessed_at: string | null }>(
@@ -125,6 +116,15 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
         ON CONFLICT(user_id, map_id) DO UPDATE SET last_accessed_at = CURRENT_TIMESTAMP
       `, userId, mapId);
     }
+  }
+
+  // ETag based on updated_at (falls back to map id if column not yet migrated)
+  const etag = `"${mapId}-${map.updated_at || map.id}"`;
+  const ifNoneMatch = req.headers['if-none-match'];
+  if (!newlyAdded && ifNoneMatch && ifNoneMatch === etag) {
+    // Map unchanged — skip DB reads and payload serialisation
+    res.setHeader('ETag', etag);
+    return res.status(304).end();
   }
 
 

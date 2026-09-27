@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act, within } from '@testing-library/react';
+import { render, screen, fireEvent, act, within, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Sidebar, { computeCustomCollisionDetection, isPinRowVisibleInList, getPinListScrollElement, scrollPinRowIntoList, PIN_LIST_STICKY_HEADER_OFFSET, PIN_LIST_SCROLL_DELAY_MS, PIN_LIST_SCROLL_AFTER_PANEL_OPEN_MS } from '../Sidebar';
 import { useState } from 'react';
@@ -1563,6 +1563,33 @@ describe('Sidebar', () => {
       vi.useRealTimers();
     }
   });
+
+  it('renders download pill in header container when unauthenticated and map is downloaded', async () => {
+    const container = document.createElement('div');
+    container.id = 'download-pill-container';
+    document.body.appendChild(container);
+
+    const tileUtilsModule = await import('../../utils/tileUtils');
+    vi.spyOn(tileUtilsModule, 'getDownloadStats').mockResolvedValue({ total: 10, completed: 10 });
+
+    try {
+      render(
+        <TestWrapper
+          handlers={{
+            mapId: 'downloaded-map-1',
+            isAuthenticated: false,
+          }}
+        />
+      );
+
+      await waitFor(() => {
+        expect(container.querySelector('[title="Map downloaded"]')).toBeInTheDocument();
+      });
+    } finally {
+      document.body.removeChild(container);
+      vi.restoreAllMocks();
+    }
+  });
 });
 
 describe('pin list scroll targeting', () => {
@@ -1680,3 +1707,4 @@ describe('pin list scroll targeting', () => {
     expect(scrollTo).toHaveBeenCalledWith({ top: 180 + 40 - 200 + 24, behavior: 'smooth' });
   });
 });
+

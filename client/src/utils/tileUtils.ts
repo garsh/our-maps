@@ -1,5 +1,6 @@
 import type { Pin, PinLayer, MapData } from '@shared/interfaces';
 import { extractExists, getExtractResumeInfo, getPartFileSize, removeAllExtracts, removeExtract } from './extractStore';
+import { getStoredJson, setStoredJson } from './storageUtils';
 
 export interface BoundingBox {
     north: number;
@@ -267,9 +268,30 @@ export async function getMapETag(mapId: string): Promise<string | null> {
     }
 }
 
-/** Touch lastAccessedAt on a cache hit so the LRU order stays accurate. */
+/** Touch lastAccessedAt on a cache hit so the LRU order stays accurate and local sorting reflects access. */
 export async function touchMapCacheAccess(mapId: string): Promise<void> {
-    if (!mapId || typeof indexedDB === 'undefined') return;
+    if (!mapId) return;
+    const nowIso = new Date().toISOString();
+    try {
+        const cachedMaps = getStoredJson<CachedMapSummary[]>('cached_maps', []);
+        if (cachedMaps && cachedMaps.length > 0) {
+            let found = false;
+            const updated = cachedMaps.map((m) => {
+                if (m.id === mapId) {
+                    found = true;
+                    return { ...m, lastAccessedAt: nowIso };
+                }
+                return m;
+            });
+            if (found) {
+                setStoredJson('cached_maps', updated);
+            }
+        }
+    } catch {
+        // Non-critical
+    }
+
+    if (typeof indexedDB === 'undefined') return;
     try {
         const db = await openDB();
         await new Promise<void>((resolve) => {
@@ -343,7 +365,7 @@ export async function pruneViewCache(): Promise<void> {
     }
 }
 
-async function listOfflineMaps(): Promise<MapData[]> {
+async function listOfflineMaps(): Promise<(MapData & { lastAccessedAt?: number })[]> {
     if (typeof indexedDB === 'undefined') return [];
     try {
         const db = await openDB();
@@ -351,7 +373,7 @@ async function listOfflineMaps(): Promise<MapData[]> {
             const transaction = db.transaction(MAP_STORE, 'readonly');
             const store = transaction.objectStore(MAP_STORE);
             const request = store.getAll();
-            request.onsuccess = () => resolve((request.result as MapData[]) || []);
+            request.onsuccess = () => resolve((request.result as (MapData & { lastAccessedAt?: number })[]) || []);
             request.onerror = () => reject(request.error);
         });
     } catch {
@@ -383,6 +405,7 @@ export async function unionCachedMapsWithDownloads<T extends CachedMapSummary>(c
             name: m.name || 'Unnamed Map',
             ownerId: m.ownerId || '',
             ownerName: m.ownerName || '',
+            lastAccessedAt: m.lastAccessedAt ? new Date(m.lastAccessedAt).toISOString() : undefined,
         } as T);
     }));
     return extras.length === 0 ? cached : [...extras, ...cached];

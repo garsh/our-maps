@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { apiService } from '../services/api';
-import { Map as MapIcon, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download, Upload, Sun, Moon, Eye } from 'lucide-react';
+import { Map as MapIcon, LogIn, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download, Upload, Sun, Moon, Eye } from 'lucide-react';
 import { getMapDownloadStatuses, unionCachedMapsWithDownloads, type MapDownloadStatus } from '../utils/tileUtils';
 import { landingStatusFromWorker, tileWorkerManager } from '../utils/tileWorkerManager';
 import { getStoredJson, setStoredJson } from '../utils/storageUtils';
@@ -238,8 +238,9 @@ export default function LandingPage() {
     } catch (error: any) {
       console.error('Failed to fetch maps', error);
       if (error?.message?.includes('Unauthorized')) {
-        logout();
-        return;
+        try {
+          await logout();
+        } catch {}
       }
       reachedServerRef.current = false;
       setForcedOffline(true);
@@ -336,6 +337,14 @@ export default function LandingPage() {
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setForcedOffline(true);
+      setIsOffline(true);
+      void applyCachedMaps();
+    }
+  }, [user]);
 
 
   const handleDelete = async (id: string) => {
@@ -524,28 +533,52 @@ export default function LandingPage() {
                     <span>Remove All Downloads</span>
                   </div>
 
-                  {/* Sign Out */}
-                  <div
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      setShowSignOutDialog(true);
-                    }}
-                    style={{
-                      padding: '10px 16px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      fontSize: '0.85rem',
-                      fontWeight: '600',
-                      color: 'var(--error-color)'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <LogOut size={16} />
-                    <span>Sign Out</span>
-                  </div>
+                  {/* Sign Out or Sign In */}
+                  {user ? (
+                    <div
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        setShowSignOutDialog(true);
+                      }}
+                      style={{
+                        padding: '10px 16px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '0.85rem',
+                        fontWeight: '600',
+                        color: 'var(--error-color)'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <LogOut size={16} />
+                      <span>Sign Out</span>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        navigate('/login');
+                      }}
+                      style={{
+                        padding: '10px 16px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '0.85rem',
+                        fontWeight: '600',
+                        color: 'var(--primary-color)'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <LogIn size={16} />
+                      <span>Sign In</span>
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -568,7 +601,16 @@ export default function LandingPage() {
               <MapIcon size={18} />
             </div>
           </div>
-          {!loading && !isOffline && (
+          {!loading && !user && (
+            <button 
+              onClick={() => navigate('/login')}
+              className="btn-primary"
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              <LogIn size={18} /> Sign In
+            </button>
+          )}
+          {!loading && Boolean(user) && !isOffline && (
             <button 
               onClick={handleCreateMap}
               className="btn-primary"
@@ -577,7 +619,7 @@ export default function LandingPage() {
               New Map
             </button>
           )}
-          {!loading && isOffline && (
+          {!loading && Boolean(user) && isOffline && (
             <button 
               onClick={() => fetchMaps()}
               className="btn-primary"
@@ -664,10 +706,12 @@ export default function LandingPage() {
                           </span>
                         );
                       }
-                      if (isOffline) {
+                      if (isOffline || !user) {
+                        const isLoggedOut = !user;
                         return (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.7rem', color: '#e74c3c', background: 'rgba(231, 76, 60, 0.12)', padding: '1px 6px', borderRadius: '10px', fontWeight: '700', marginLeft: 'auto', flexShrink: 0 }}>
-                            <WifiOff size={11} /> Offline
+                            {isLoggedOut ? <LogIn size={11} /> : <WifiOff size={11} />}
+                            {isLoggedOut ? 'Logged Out' : 'Offline'}
                           </span>
                         );
                       }
@@ -678,25 +722,27 @@ export default function LandingPage() {
 
                 {/* Right button actions with generous touch targets */}
                 <div className="map-card-actions">
-                  <button
-                    type="button"
-                    className="map-card-action-btn view-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (longPressTriggeredRef.current) {
-                        longPressTriggeredRef.current = false;
-                        return;
-                      }
-                      handleMapClick(map.id, true);
-                    }}
-                    onTouchStart={(e) => handleTouchStart('Open in view mode', e)}
-                    onTouchEnd={handleTouchEnd}
-                    onTouchCancel={handleTouchEnd}
-                    title="Open in view mode"
-                    aria-label="Open in view mode"
-                  >
-                    <Eye size={18} />
-                  </button>
+                  {((!isOffline && Boolean(user)) || Boolean(downloadStatuses.get(map.id)?.isComplete)) && (
+                    <button
+                      type="button"
+                      className="map-card-action-btn view-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (longPressTriggeredRef.current) {
+                          longPressTriggeredRef.current = false;
+                          return;
+                        }
+                        handleMapClick(map.id, true);
+                      }}
+                      onTouchStart={(e) => handleTouchStart('Open in view mode', e)}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchCancel={handleTouchEnd}
+                      title="Open in view mode"
+                      aria-label="Open in view mode"
+                    >
+                      <Eye size={18} />
+                    </button>
+                  )}
                   {!isOffline && (
                     <button 
                       type="button"

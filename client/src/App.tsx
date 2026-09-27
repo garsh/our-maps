@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import MapView from './components/MapView'
 import Sidebar from './components/Sidebar'
@@ -81,6 +81,7 @@ function getNextPinPosition(allPins: Pin[], targetLayerId?: string): number {
 export function MapEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isLoading: isAuthLoading } = useAuth();
   const socketRef = useRef<Socket | null>(null);
@@ -1186,18 +1187,18 @@ export function MapEditor() {
       if (epoch !== loadEpochRef.current) return;
       setIsSyncing(false);
       const isAuthError = err?.message?.includes('Authentication required') || err?.message?.includes('Unauthorized');
-      if (isAuthError || (!hasHydratedLocally && !user)) {
+      if (hasHydratedLocally) {
+        applyOffline(true, true);
+        return;
+      }
+      if (isAuthError || !user) {
         redirectedToLogin = true;
         navigate('/login', { replace: true });
         return;
       }
-      if (hasHydratedLocally) {
-        applyOffline(true, true);
-      } else {
-        console.error('Failed to load map', err);
-        setError('No Data');
-        setTimeout(() => navigate('/'), 2000);
-      }
+      console.error('Failed to load map', err);
+      setError('No Data');
+      setTimeout(() => navigate('/'), 2000);
     } finally {
       if (epoch === loadEpochRef.current && !redirectedToLogin) {
         setIsMapLoading(false);
@@ -2019,7 +2020,40 @@ export function MapEditor() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 2, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 2, minWidth: 0, overflow: 'hidden' }}>
           <div id="download-pill-container" style={{ display: 'flex', alignItems: 'center', flexShrink: 1, minWidth: 0, overflow: 'hidden' }}></div>
-          {Boolean(user) && (() => {
+          {(() => {
+            if (!user) {
+              return (
+                <div style={{ flexShrink: 2, minWidth: 0, overflow: 'hidden' }}>
+                  <button
+                    data-testid="sync-status"
+                    data-status="logged-out"
+                    data-edit-mode="false"
+                    onClick={() => navigate('/login', { state: { from: location } })}
+                    title="Click to sign in"
+                    style={{
+                      background: 'rgba(255,255,255,0.1)',
+                      padding: '3px 8px',
+                      borderRadius: '50px',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      color: '#ffbdad',
+                      fontWeight: '600',
+                      whiteSpace: 'nowrap',
+                      cursor: 'pointer',
+                      outline: 'none',
+                      fontFamily: 'inherit',
+                      fontSize: '0.65rem'
+                    }}
+                  >
+                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ff4d4f', flexShrink: 0 }} />
+                    <span>Logged Out</span>
+                  </button>
+                </div>
+              );
+            }
+
             const isDirtyOnNewMap = !mapId && (isDirty || pins.length > 0 || layers.length > 0 || (mapName && mapName !== 'Unnamed Map'));
             const syncStatus = error
               ? 'error'
@@ -2214,7 +2248,7 @@ export function MapEditor() {
               onDragStart={handleDragStart}
               userRole={userRole}
               isAuthenticated={Boolean(user)}
-              onSignIn={() => navigate('/login')}
+              onSignIn={() => navigate('/login', { state: { from: location } })}
               editMode={editMode}
               onToggleEditMode={handleToggleEditMode}
               onShare={handleOpenShare}
@@ -2350,16 +2384,6 @@ export function MapEditor() {
   );
 }
 
-const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, isLoading } = useAuth();
-  
-  if (isLoading) {
-    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100dvh' }}>Loading...</div>;
-  }
-  
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
-};
-
 function App() {
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'MOCK_CLIENT_ID';
   
@@ -2370,7 +2394,7 @@ function App() {
           <BrowserRouter>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
-              <Route path="/" element={<PrivateRoute><LandingPage /></PrivateRoute>} />
+              <Route path="/" element={<LandingPage />} />
               <Route path="/map/:id" element={<MapEditor />} />
             </Routes>
           </BrowserRouter>

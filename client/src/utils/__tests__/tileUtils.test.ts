@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getYRange, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, saveMapToViewCache, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB, stripMapCachePii, unionCachedMapsWithDownloads, updateDownloadedMapDocument, bumpDownloadDocumentEpoch, currentDownloadDocumentEpoch } from '../tileUtils';
+import { getYRange, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, saveMapToViewCache, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB, stripMapCachePii, unionCachedMapsWithDownloads, updateDownloadedMapDocument, bumpDownloadDocumentEpoch, currentDownloadDocumentEpoch, touchMapCacheAccess } from '../tileUtils';
 import type { Pin } from '@shared/interfaces';
 
 const { mockExtracts, mockPartSizes, mockMetaBytes } = vi.hoisted(() => ({
@@ -512,5 +512,32 @@ describe('tileUtils', () => {
         expect(stores.has('tiles')).toBe(false);
         expect(stores.has('manifest')).toBe(false);
         expect((global as any).indexedDB.deleteDatabase).toHaveBeenCalled();
+    });
+
+    it('touchMapCacheAccess updates lastAccessedAt in both localStorage and IndexedDB', async () => {
+        localStorage.setItem('cached_maps', JSON.stringify([
+            { id: 'map-lru-1', name: 'Map 1', lastAccessedAt: '2020-01-01T00:00:00.000Z' },
+            { id: 'map-lru-2', name: 'Map 2', lastAccessedAt: '2020-01-01T00:00:00.000Z' }
+        ]));
+
+        await saveMapOffline({
+            id: 'map-lru-1',
+            name: 'Map 1',
+            ownerId: 'u1',
+            layers: [],
+            pins: [],
+        } as any);
+
+        await touchMapCacheAccess('map-lru-1');
+
+        const cached = JSON.parse(localStorage.getItem('cached_maps') || '[]');
+        const map1 = cached.find((m: any) => m.id === 'map-lru-1');
+        const map2 = cached.find((m: any) => m.id === 'map-lru-2');
+        expect(map1.lastAccessedAt).not.toBe('2020-01-01T00:00:00.000Z');
+        expect(new Date(map1.lastAccessedAt).getTime()).toBeGreaterThan(new Date('2025-01-01').getTime());
+        expect(map2.lastAccessedAt).toBe('2020-01-01T00:00:00.000Z');
+
+        const mapStore = stores.get('maps');
+        expect(mapStore?.get('map-lru-1')?.lastAccessedAt).toBeGreaterThan(0);
     });
 });

@@ -113,6 +113,20 @@ describe('API Endpoints', () => {
     expect(res.body.name).toBe('Loaded Map');
     expect(res.body.pins).toHaveLength(1);
     expect(res.body.userRole).toBe('owner');
+
+    const access1 = await db.get<{ last_accessed_at: string }>(
+      'SELECT last_accessed_at FROM user_map_access WHERE user_id = ? AND map_id = ?',
+      mockUser.id, mapId
+    );
+    expect(access1?.last_accessed_at).toBeTruthy();
+
+    // 304 Not Modified request should also touch / update access
+    const etag = res.headers['etag'];
+    const res304 = await request(app)
+      .get(`/api/maps/${mapId}`)
+      .set(authHeader)
+      .set('If-None-Match', etag);
+    expect(res304.status).toBe(304);
   });
 
   it('GET /api/maps/:id serializes pins and layers without map_id or layer_id', async () => {

@@ -3329,7 +3329,7 @@ const Sidebar = ({
         const pillContainer = (downloadPillEl && document.body.contains(downloadPillEl))
           ? downloadPillEl
           : (typeof document !== 'undefined' ? document.getElementById('download-pill-container') : null);
-        if (!isAuthenticated || !pillContainer || !document.body.contains(pillContainer)) return null;
+        if (!pillContainer || !document.body.contains(pillContainer)) return null;
 
         const activity = downloadActivityView({
           isDownloading,

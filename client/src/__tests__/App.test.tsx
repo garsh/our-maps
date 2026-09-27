@@ -1354,10 +1354,11 @@ describe('App Components Error Handling', () => {
       expect(screen.getByText('Public Community Map')).toBeInTheDocument();
     });
 
-    // Verify status pill is NOT shown for non-logged-in users
+    // Verify status pill displays Logged Out for non-logged-in users
     expect(screen.queryByText(/Synced/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Syncing/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Offline/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Logged Out')).toBeInTheDocument();
 
     // Verify view-only mode menu (Sign In available, Edit Mode / Download / Export absent)
     fireEvent.click(screen.getByLabelText(/more options/i));
@@ -1399,6 +1400,54 @@ describe('App Components Error Handling', () => {
     // Should never show "No Data" or "Unable to load map offline"
     expect(screen.queryByText(/No Data/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Unable to load map offline/i)).not.toBeInTheDocument();
+  });
+
+  it('retains locally cached map in offline mode and does not redirect to login when auth fails', async () => {
+    (useAuth as any).mockReturnValue({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isLoading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      logoutEverywhere: vi.fn(),
+      handleCredentialResponse: vi.fn()
+    });
+
+    const tileUtilsMock = await import('../utils/tileUtils');
+    (tileUtilsMock.getOfflineMap as any).mockResolvedValue({
+      id: 'cached-private-map',
+      name: 'Cached Offline Map',
+      pins: [],
+      layers: [],
+      userRole: 'view'
+    });
+    (tileUtilsMock.isMapDownloaded as any).mockResolvedValue(true);
+    (apiService.getMap as any).mockRejectedValue(new Error('Authentication required'));
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/cached-private-map']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+            <Route path="/login" element={<div data-testid="login-page">Login Page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Cached Offline Map')).toBeInTheDocument();
+    });
+
+    // Should NOT redirect to login because it hydrated locally
+    expect(screen.queryByTestId('login-page')).not.toBeInTheDocument();
+    const loggedOutPill = screen.getByText('Logged Out');
+    expect(loggedOutPill).toBeInTheDocument();
+
+    // Clicking the Logged Out pill navigates to login, preserving the return location
+    fireEvent.click(loggedOutPill);
+    expect(await screen.findByTestId('login-page')).toBeInTheDocument();
   });
 
   it('updates the public-link setting when map-public-updated arrives', async () => {

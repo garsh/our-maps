@@ -152,14 +152,10 @@ describe('LandingPage Offline Map Access', () => {
     fireEvent.click(screen.getByText('OK'));
     expect(screen.queryByText('This map is not available in offline mode')).not.toBeInTheDocument();
 
-    // 2. Click view button
+    // 2. View button should NOT be rendered for undownloaded maps when offline
     const onlineOnlyCard = screen.getByText('Online Only Map').closest('.card');
-    const viewButton = onlineOnlyCard?.querySelector('[aria-label="Open in view mode"]') as HTMLElement;
-    expect(viewButton).toBeTruthy();
-    fireEvent.click(viewButton);
-
-    expect(mockNavigate).not.toHaveBeenCalled();
-    expect(screen.getByText('This map is not available in offline mode')).toBeInTheDocument();
+    const viewButton = onlineOnlyCard?.querySelector('[aria-label="Open in view mode"]');
+    expect(viewButton).toBeNull();
   });
 
   it('shows downloaded maps that are missing from cached_maps while offline', async () => {
@@ -512,4 +508,118 @@ describe('LandingPage Offline Map Access', () => {
       ]);
     });
   });
+
+  it('shows Sign In button instead of Retry Sync when unauthenticated and offline', async () => {
+    (useAuth as any).mockReturnValue({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isLoading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      logoutEverywhere: vi.fn(),
+    });
+    (apiService.getMaps as any).mockRejectedValue(new Error('Unauthorized'));
+    localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Downloaded Map')).toBeInTheDocument();
+    });
+
+    // Should show Sign In button instead of Retry Sync
+    expect(screen.getByText('Sign In')).toBeInTheDocument();
+    expect(screen.queryByText('Retry Sync')).not.toBeInTheDocument();
+
+    // Clicking Sign In navigates to /login
+    fireEvent.click(screen.getByText('Sign In'));
+    expect(mockNavigate).toHaveBeenCalledWith('/login');
+
+    // Non-downloaded maps should show "Logged Out" badge
+    expect(screen.getByText('Logged Out')).toBeInTheDocument();
+  });
+
+  it('immediately transitions to Sign In button and Logged Out pills upon sign out', async () => {
+    let authUser: any = mockUser;
+    (useAuth as any).mockImplementation(() => ({
+      user: authUser,
+      token: authUser ? 'mock-token' : null,
+      isAuthenticated: !!authUser,
+      isLoading: false,
+      login: vi.fn(),
+      logout: vi.fn(() => {
+        authUser = null;
+      }),
+      logoutEverywhere: vi.fn(),
+    }));
+
+    localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('New Map')).toBeInTheDocument();
+    });
+
+    // Sign out from user menu
+    fireEvent.click(screen.getByTitle('Test User'));
+    fireEvent.click(screen.getByText('Sign Out'));
+    fireEvent.click(screen.getByRole('button', { name: 'Sign Out' }));
+
+    // Re-render to reflect auth context state update
+    rerender(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    // New Map should be replaced with Sign In
+    expect(screen.queryByText('New Map')).not.toBeInTheDocument();
+    expect(screen.getByText('Sign In')).toBeInTheDocument();
+
+    // Undownloaded maps should now show "Logged Out"
+    expect(screen.getByText('Logged Out')).toBeInTheDocument();
+  });
+
+  it('sorts maps by lastAccessedAt so most recently accessed appears first', async () => {
+    const mapsWithAccess = [
+      { id: 'map-older', name: 'Older Access Map', ownerId: 'user-1', ownerName: 'Test User', lastAccessedAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'map-newer', name: 'Newer Access Map', ownerId: 'user-1', ownerName: 'Test User', lastAccessedAt: '2026-02-01T00:00:00.000Z' },
+    ];
+    (apiService.getMaps as any).mockResolvedValue(mapsWithAccess);
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Newer Access Map')).toBeInTheDocument();
+      expect(screen.getByText('Older Access Map')).toBeInTheDocument();
+    });
+
+    const renderedHeadings = screen.getAllByRole('heading', { level: 3 }).map(el => el.textContent);
+    const newerIndex = renderedHeadings.indexOf('Newer Access Map');
+    const olderIndex = renderedHeadings.indexOf('Older Access Map');
+    expect(newerIndex).toBeLessThan(olderIndex);
+  });
 });
+

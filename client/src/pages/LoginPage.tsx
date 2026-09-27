@@ -1,18 +1,23 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { GoogleLogin } from '@react-oauth/google';
 
 export default function LoginPage() {
   const { handleCredentialResponse, isAuthenticated, login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/');
+      const from = (location.state as any)?.from;
+      const destination = typeof from === 'string'
+        ? from
+        : (from?.pathname ? `${from.pathname}${from.search || ''}${from.hash || ''}` : '/');
+      navigate(destination, { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, location]);
 
   const hasClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID && import.meta.env.VITE_GOOGLE_CLIENT_ID !== 'MOCK_CLIENT_ID';
   const forceMock = import.meta.env.VITE_MOCK_AUTH === 'true';
