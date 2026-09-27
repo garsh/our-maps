@@ -322,12 +322,13 @@ function writeChunk(res: Response, chunk: Buffer): Promise<void> {
 }
 
 function parseExtractRequest(req: Request): { bbox: BoundingBox; startZoom: number; endZoom: number } | { error: string } {
-  const { bbox, minZoom = 1, maxZoom = 15 } = req.body || {};
+  const { bbox, minZoom = 0, maxZoom = 15 } = req.body || {};
   const validated = validateExtractBbox(bbox);
   if (!validated.valid) {
     return { error: validated.error };
   }
-  const startZoom = Math.max(1, Math.min(15, Number(minZoom) || 1));
+  const minZNum = Number(minZoom);
+  const startZoom = Math.max(0, Math.min(15, Number.isFinite(minZNum) ? minZNum : 0));
   const endZoom = Math.max(startZoom, Math.min(15, Number(maxZoom) || 15));
 
   const estimatedTiles = countExtractTiles(validated.bbox, startZoom, endZoom);

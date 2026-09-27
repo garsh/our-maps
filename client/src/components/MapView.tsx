@@ -1997,7 +1997,7 @@ const MapView = ({
           // immediately. `url` (TileJSON) only runs on the main thread; tiles
           // still require the worker, which must not depend on HTTP.
           tiles: [`pmtiles://${pmtilesUrl}/{z}/{x}/{y}`],
-          minzoom: 1,
+          minzoom: 0,
           maxzoom: 15,
           attribution: `&copy; <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a> &copy; <a href="https://openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>`,
         },
@@ -2470,7 +2470,7 @@ const MapView = ({
           style={{ width: '100%', height: '100%' }}
           doubleClickZoom={false}
           maxZoom={22}
-          minZoom={1}
+          minZoom={0}
           maxPitch={85}
           // Allow MapLibre to slice vector tiles up to zoom 18 (22 - 4) and overscale
           // above that to prevent exponential tile explosion and WebGL context loss at deep zoom levels.

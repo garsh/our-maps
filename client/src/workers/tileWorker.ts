@@ -48,7 +48,7 @@ self.onmessage = async (e) => {
                     method: 'POST',
                     headers,
                     credentials: 'include',
-                    body: JSON.stringify({ bbox, minZoom: 1, maxZoom: 15, mapId, offset: resumeOffset })
+                    body: JSON.stringify({ bbox, minZoom: 0, maxZoom: 15, mapId, offset: resumeOffset })
                 });
             };
 

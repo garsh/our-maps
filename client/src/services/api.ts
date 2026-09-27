@@ -200,7 +200,7 @@ export const apiService = {
     }
   },
 
-  async estimateExtract(bbox: BoundingBox, minZoom = 1, maxZoom = 15): Promise<{ bytes: number; addressedTiles: number }> {
+  async estimateExtract(bbox: BoundingBox, minZoom = 0, maxZoom = 15): Promise<{ bytes: number; addressedTiles: number }> {
     const res = await fetchWithRetry(`${API_BASE}/maps/tiles/extract-size`, {
       method: 'POST',
       headers: getHeaders(),
