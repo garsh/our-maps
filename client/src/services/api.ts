@@ -186,6 +186,7 @@ export const apiService = {
       if (currentDownloadDocumentEpoch() === documentEpoch) {
         saveMapToViewCache(data, etag).catch(() => {});
       }
+      touchMapCacheAccess(id, { name: data.name, ownerId: data.ownerId }).catch(() => {});
 
       // Prune stale view-cache entries during idle time
       if (typeof requestIdleCallback !== 'undefined') {
@@ -226,7 +227,11 @@ export const apiService = {
         headers: getHeaders(),
         body: JSON.stringify(mapData),
       });
-      return await handleResponse<MapData>(res, this._logoutCallback, 'Failed to create map');
+      const created = await handleResponse<MapData>(res, this._logoutCallback, 'Failed to create map');
+      if (created?.id) {
+        touchMapCacheAccess(created.id, { name: created.name, ownerId: created.ownerId }).catch(() => {});
+      }
+      return created;
     } catch (err) {
       console.error('API createMap FETCH ERROR:', err);
       throw err;

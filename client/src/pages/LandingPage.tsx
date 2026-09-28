@@ -21,6 +21,15 @@ interface TouchTooltipState {
   y: number;
 }
 
+function parseUtcDateString(dateStr?: string | null): number {
+  if (!dateStr) return 0;
+  const normalized = dateStr.includes(' ') && !dateStr.endsWith('Z')
+    ? dateStr.replace(' ', 'T') + 'Z'
+    : dateStr;
+  const time = new Date(normalized).getTime();
+  return isNaN(time) ? 0 : time;
+}
+
 export default function LandingPage() {
   const { user, isLoading: authLoading, logout, logoutEverywhere } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -523,6 +532,11 @@ export default function LandingPage() {
         if (!a.lastAccessedAt && b.lastAccessedAt) return -1;
         if (a.lastAccessedAt && !b.lastAccessedAt) return 1;
         if (a.lastAccessedAt && b.lastAccessedAt) {
+          const timeA = parseUtcDateString(a.lastAccessedAt);
+          const timeB = parseUtcDateString(b.lastAccessedAt);
+          if (timeA !== timeB) {
+            return timeB - timeA;
+          }
           return b.lastAccessedAt.localeCompare(a.lastAccessedAt);
         }
         return a.name.localeCompare(b.name);
@@ -709,7 +723,10 @@ export default function LandingPage() {
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Never';
-    return new Date(dateString).toLocaleDateString(undefined, { 
+    const normalized = dateString.includes(' ') && !dateString.endsWith('Z')
+      ? dateString.replace(' ', 'T') + 'Z'
+      : dateString;
+    return new Date(normalized).toLocaleDateString(undefined, { 
       month: 'short', day: 'numeric', year: 'numeric' 
     });
   };

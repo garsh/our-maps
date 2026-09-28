@@ -44,6 +44,24 @@ function formatLayerRow(l: { id: string; name: string; position?: number | null 
   };
 }
 
+function parseUtcTimestamp(dateStr?: string | null): number {
+  if (!dateStr) return 0;
+  const normalized = dateStr.includes(' ') && !dateStr.endsWith('Z')
+    ? dateStr.replace(' ', 'T') + 'Z'
+    : dateStr;
+  const time = new Date(normalized).getTime();
+  return isNaN(time) ? 0 : time;
+}
+
+function formatUtcIso(dateStr?: string | null): string | undefined {
+  if (!dateStr) return undefined;
+  const normalized = dateStr.includes(' ') && !dateStr.endsWith('Z')
+    ? dateStr.replace(' ', 'T') + 'Z'
+    : dateStr;
+  const d = new Date(normalized);
+  return isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
 // GET all accessible maps for the landing page
 router.get('/', authMiddleware, async (req: AuthRequest, res) => {
   const userId = req.user!.id;
@@ -71,7 +89,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res) => {
     name: m.name,
     ownerId: m.owner_id,
     ownerName: m.owner_name || 'Legacy User',
-    lastAccessedAt: m.last_accessed_at
+    lastAccessedAt: formatUtcIso(m.last_accessed_at)
   })));
 });
 
@@ -101,15 +119,25 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
     return res.status(userId ? 403 : 401).json({ error: userId ? 'Access denied' : 'Authentication required' });
   }
 
-  // Update Last Accessed — only for logged-in users, throttled to at most once per 30 minutes
+  // Update Last Accessed — only for logged-in users.
+  // Throttled to reduce SQLite write pressure, but only if this map is ALREADY
+  // the user's most recently accessed map and accessed within the throttle window (30 min).
+  // If the user is switching from another map, or has never accessed this map, update immediately.
   if (userId) {
-    const existingAccess = await db.get<{ last_accessed_at: string | null }>(
-      'SELECT last_accessed_at FROM user_map_access WHERE user_id = ? AND map_id = ?',
-      userId, mapId
+    const mostRecent = await db.get<{ map_id: string; last_accessed_at: string | null }>(
+      'SELECT map_id, last_accessed_at FROM user_map_access WHERE user_id = ? ORDER BY last_accessed_at DESC LIMIT 1',
+      userId
     );
-    const lastAccessed = existingAccess?.last_accessed_at ? new Date(existingAccess.last_accessed_at).getTime() : 0;
-    const thirtyMinutes = 30 * 60 * 1000;
-    if (newlyAdded || Date.now() - lastAccessed > thirtyMinutes) {
+    const isAlreadyTop = mostRecent?.map_id === mapId;
+    let shouldUpdate = newlyAdded || !isAlreadyTop;
+    if (!shouldUpdate && mostRecent?.last_accessed_at) {
+      const lastAccessed = parseUtcTimestamp(mostRecent.last_accessed_at);
+      const thirtyMinutes = 30 * 60 * 1000;
+      if (Date.now() - lastAccessed > thirtyMinutes) {
+        shouldUpdate = true;
+      }
+    }
+    if (shouldUpdate) {
       await db.run(`
         INSERT INTO user_map_access (user_id, map_id, last_accessed_at) 
         VALUES (?, ?, CURRENT_TIMESTAMP) 

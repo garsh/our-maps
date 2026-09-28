@@ -129,6 +129,43 @@ describe('API Endpoints', () => {
     expect(res304.status).toBe(304);
   });
 
+  it('GET /api/maps/:id updates last_accessed_at when switching between maps and returns ISO strings on GET /api/maps', async () => {
+    const mapA = uuid(80);
+    const mapB = uuid(81);
+    const db = await getDb();
+    await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', mapA, 'Map Alpha', mockUser.id);
+    await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', mapB, 'Map Beta', mockUser.id);
+
+    // Manually ensure Map A has an older timestamp in user_map_access
+    await db.run(
+      'INSERT INTO user_map_access (user_id, map_id, last_accessed_at) VALUES (?, ?, datetime("now", "-10 minutes"))',
+      mockUser.id,
+      mapA
+    );
+    // Map B is newer
+    await db.run(
+      'INSERT INTO user_map_access (user_id, map_id, last_accessed_at) VALUES (?, ?, datetime("now", "-5 minutes"))',
+      mockUser.id,
+      mapB
+    );
+
+    // Re-access Map A. Even though Map A was accessed 10 mins ago (< 30 min window),
+    // because Map B was the most recent, accessing Map A must update Map A to the top!
+    const reaccess = await request(app).get(`/api/maps/${mapA}`).set(authHeader);
+    expect(reaccess.status).toBe(200);
+
+    const listRes = await request(app).get('/api/maps').set(authHeader);
+    expect(listRes.status).toBe(200);
+    const indexA = listRes.body.findIndex((m: any) => m.id === mapA);
+    const indexB = listRes.body.findIndex((m: any) => m.id === mapB);
+    expect(indexA).toBeLessThan(indexB);
+
+    // Validate ISO timestamp format (e.g. YYYY-MM-DDTHH:MM:SS.sssZ)
+    const mapAEntry = listRes.body.find((m: any) => m.id === mapA);
+    expect(mapAEntry.lastAccessedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    expect(mapAEntry.lastAccessedAt.endsWith('Z')).toBe(true);
+  });
+
   it('GET /api/maps/:id serializes pins and layers without map_id or layer_id', async () => {
     const mapId = uuid(22);
     const layerId = uuid(23);

@@ -268,8 +268,16 @@ export async function getMapETag(mapId: string): Promise<string | null> {
     }
 }
 
-/** Touch lastAccessedAt on a cache hit so the LRU order stays accurate and local sorting reflects access. */
-export async function touchMapCacheAccess(mapId: string): Promise<void> {
+export interface CachedMapSummary {
+    id: string;
+    name: string;
+    ownerId?: string;
+    ownerName?: string;
+    lastAccessedAt?: string;
+}
+
+/** Touch lastAccessedAt on a cache hit or fetch so the LRU order stays accurate and local sorting reflects access. */
+export async function touchMapCacheAccess(mapId: string, summary?: Partial<CachedMapSummary>): Promise<void> {
     if (!mapId) return;
     const nowIso = new Date().toISOString();
     try {
@@ -285,7 +293,24 @@ export async function touchMapCacheAccess(mapId: string): Promise<void> {
             });
             if (found) {
                 setStoredJson('cached_maps', updated);
+            } else if (summary?.name) {
+                updated.unshift({
+                    id: mapId,
+                    name: summary.name,
+                    ownerId: summary.ownerId || '',
+                    ownerName: summary.ownerName || '',
+                    lastAccessedAt: nowIso,
+                });
+                setStoredJson('cached_maps', updated);
             }
+        } else if (summary?.name) {
+            setStoredJson('cached_maps', [{
+                id: mapId,
+                name: summary.name,
+                ownerId: summary.ownerId || '',
+                ownerName: summary.ownerName || '',
+                lastAccessedAt: nowIso,
+            }]);
         }
     } catch {
         // Non-critical
@@ -379,14 +404,6 @@ async function listOfflineMaps(): Promise<(MapData & { lastAccessedAt?: number }
     } catch {
         return [];
     }
-}
-
-interface CachedMapSummary {
-    id: string;
-    name: string;
-    ownerId?: string;
-    ownerName?: string;
-    lastAccessedAt?: string;
 }
 
 /**

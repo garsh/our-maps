@@ -540,4 +540,18 @@ describe('tileUtils', () => {
         const mapStore = stores.get('maps');
         expect(mapStore?.get('map-lru-1')?.lastAccessedAt).toBeGreaterThan(0);
     });
+
+    it('touchMapCacheAccess adds new map to cached_maps if summary fallback is provided', async () => {
+        localStorage.setItem('cached_maps', JSON.stringify([
+            { id: 'map-existing', name: 'Existing Map', lastAccessedAt: '2020-01-01T00:00:00.000Z' }
+        ]));
+
+        await touchMapCacheAccess('map-new', { name: 'Brand New Map', ownerId: 'u2' });
+
+        const cached = JSON.parse(localStorage.getItem('cached_maps') || '[]');
+        expect(cached).toHaveLength(2);
+        expect(cached[0].id).toBe('map-new');
+        expect(cached[0].name).toBe('Brand New Map');
+        expect(cached[0].lastAccessedAt).toBeTruthy();
+    });
 });
