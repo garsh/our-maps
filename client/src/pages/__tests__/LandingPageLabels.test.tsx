@@ -147,4 +147,28 @@ describe('LandingPage label persistence', () => {
       expect(select.value).toBe('all');
     });
   });
+
+  it('filters maps correctly when "Unlabelled Maps" is selected', async () => {
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    const select = await screen.findByLabelText('Filter maps by label') as HTMLSelectElement;
+    // Before filter: Map One (has label-123) and Map Two (no label) are present
+    expect(await screen.findByText('Map One')).toBeInTheDocument();
+    expect(await screen.findByText('Map Two')).toBeInTheDocument();
+
+    // Select Unlabelled Maps
+    fireEvent.change(select, { target: { value: 'unlabelled' } });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Map One')).not.toBeInTheDocument();
+      expect(screen.getByText('Map Two')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Unlabelled Maps')).toBeInTheDocument();
+  });
 });

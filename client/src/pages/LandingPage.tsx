@@ -281,7 +281,7 @@ export default function LandingPage() {
 
       if (res.labels) {
         setActiveLabelId(prev => {
-          if (['all', 'owned', 'shared', 'offline', 'search'].includes(prev)) {
+          if (['all', 'owned', 'shared', 'unlabelled', 'offline', 'search'].includes(prev)) {
             return prev;
           }
           if (!res.labels.some(l => l.id === prev)) {
@@ -465,7 +465,7 @@ export default function LandingPage() {
       const mode = systemSettings['search'] || 'last_accessed';
       return mode === 'custom' ? 'last_accessed' : mode;
     }
-    if (['all', 'owned', 'shared', 'offline'].includes(activeLabelId)) {
+    if (['all', 'owned', 'shared', 'unlabelled', 'offline'].includes(activeLabelId)) {
       return systemSettings[activeLabelId] || 'last_accessed';
     }
     const userLabel = labels.find(l => l.id === activeLabelId);
@@ -473,10 +473,12 @@ export default function LandingPage() {
   }, [activeLabelId, systemSettings, labels]);
 
   const labelCounts = useMemo(() => {
+    const labeledMapIds = new Set(assignments.map(a => a.mapId));
     const counts: Record<string, number> = {
       all: maps.length,
       owned: maps.filter(m => m.ownerId === user?.id).length,
       shared: maps.filter(m => m.ownerId !== user?.id).length,
+      unlabelled: maps.filter(m => !labeledMapIds.has(m.id)).length,
       offline: maps.filter(m => downloadStatuses.get(m.id)?.isComplete).length,
     };
     for (const l of labels) {
@@ -496,6 +498,9 @@ export default function LandingPage() {
       list = list.filter(m => m.ownerId === user?.id);
     } else if (activeLabelId === 'shared') {
       list = list.filter(m => m.ownerId !== user?.id);
+    } else if (activeLabelId === 'unlabelled') {
+      const labeledMapIds = new Set(assignments.map(a => a.mapId));
+      list = list.filter(m => !labeledMapIds.has(m.id));
     } else if (activeLabelId === 'offline') {
       list = list.filter(m => downloadStatuses.get(m.id)?.isComplete);
     } else if (activeLabelId !== 'all') {
@@ -509,7 +514,7 @@ export default function LandingPage() {
     } else if (activeSortMode === 'created_at') {
       sorted.sort((a, b) => (b.id || '').localeCompare(a.id || ''));
     } else if (activeSortMode === 'custom') {
-      if (['all', 'owned', 'shared', 'offline'].includes(activeLabelId)) {
+      if (['all', 'owned', 'shared', 'unlabelled', 'offline'].includes(activeLabelId)) {
         const order = systemOrder[activeLabelId] || [];
         const orderMap = new Map(order.map((id, idx) => [id, idx]));
         sorted.sort((a, b) => {
@@ -553,7 +558,7 @@ export default function LandingPage() {
     }
     if (newMode === 'custom') {
       let hasOrder = false;
-      if (['all', 'owned', 'shared', 'offline'].includes(activeLabelId)) {
+      if (['all', 'owned', 'shared', 'unlabelled', 'offline'].includes(activeLabelId)) {
         hasOrder = Boolean(systemOrder[activeLabelId]?.length);
       } else {
         hasOrder = assignments.some(a => a.labelId === activeLabelId && a.position != null);
@@ -562,7 +567,7 @@ export default function LandingPage() {
       if (!hasOrder) {
         // Seed initial custom order from the current displayed order
         const seedIds = filteredMaps.map(m => m.id);
-        if (['all', 'owned', 'shared', 'offline'].includes(activeLabelId)) {
+        if (['all', 'owned', 'shared', 'unlabelled', 'offline'].includes(activeLabelId)) {
           const updated = { ...systemOrder, [activeLabelId]: seedIds };
           setSystemOrder(updated);
           setStoredJson('cached_system_label_map_order', updated);
@@ -586,7 +591,7 @@ export default function LandingPage() {
       }
     }
 
-    if (['all', 'owned', 'shared', 'offline', 'search'].includes(activeLabelId)) {
+    if (['all', 'owned', 'shared', 'unlabelled', 'offline', 'search'].includes(activeLabelId)) {
       const updated = { ...systemSettings, [activeLabelId]: newMode };
       setSystemSettings(updated);
       setStoredJson('cached_system_label_settings', updated);
@@ -616,7 +621,7 @@ export default function LandingPage() {
     const [moved] = reorderedIds.splice(oldIndex, 1);
     reorderedIds.splice(newIndex, 0, moved);
 
-    if (['all', 'owned', 'shared', 'offline'].includes(activeLabelId)) {
+    if (['all', 'owned', 'shared', 'unlabelled', 'offline'].includes(activeLabelId)) {
       const updated = { ...systemOrder, [activeLabelId]: reorderedIds };
       setSystemOrder(updated);
       setStoredJson('cached_system_label_map_order', updated);
@@ -735,6 +740,7 @@ export default function LandingPage() {
     if (activeLabelId === 'all') return 'All Maps';
     if (activeLabelId === 'owned') return 'Owned by Me';
     if (activeLabelId === 'shared') return 'Shared with Me';
+    if (activeLabelId === 'unlabelled') return 'Unlabelled Maps';
     if (activeLabelId === 'offline') return 'Downloaded';
     if (activeLabelId === 'search') return 'Search';
     const found = labels.find(l => l.id === activeLabelId);
@@ -1113,6 +1119,7 @@ export default function LandingPage() {
                           <option value="shared">Shared with Me ({labelCounts.shared || 0})</option>
                         </>
                       )}
+                      <option value="unlabelled">Unlabelled Maps ({labelCounts.unlabelled || 0})</option>
                       <option value="offline">Downloaded ({labelCounts.offline || 0})</option>
                       <option value="search">Search</option>
                       {Boolean(user) && labels.map(l => (
@@ -1198,6 +1205,7 @@ export default function LandingPage() {
                         <option value="shared">Shared with Me ({labelCounts.shared || 0})</option>
                       </>
                     )}
+                    <option value="unlabelled">Unlabelled Maps ({labelCounts.unlabelled || 0})</option>
                     <option value="offline">Downloaded ({labelCounts.offline || 0})</option>
                     <option value="search">Search</option>
                     {Boolean(user) && labels.map(l => (
@@ -1213,7 +1221,7 @@ export default function LandingPage() {
               )}
 
               {/* If user-defined label: delete label option */}
-              {!['all', 'owned', 'shared', 'offline', 'search'].includes(activeLabelId) && !isOffline && (
+              {!['all', 'owned', 'shared', 'unlabelled', 'offline', 'search'].includes(activeLabelId) && !isOffline && (
                 <button
                   type="button"
                   onClick={() => handleDeleteUserLabel(activeLabelId)}
@@ -1363,6 +1371,8 @@ export default function LandingPage() {
               'No maps have been shared with you yet.'
             ) : activeLabelId === 'owned' ? (
               'You haven\'t created any maps yet.'
+            ) : activeLabelId === 'unlabelled' ? (
+              'All maps currently have labels assigned.'
             ) : activeLabelId === 'offline' ? (
               'No maps downloaded for offline use.'
             ) : (
