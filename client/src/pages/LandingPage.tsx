@@ -83,6 +83,10 @@ export default function LandingPage() {
   const labelHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const [headingEl, setHeadingEl] = useState<HTMLHeadingElement | null>(null);
   const [isTitleOverflowing, setIsTitleOverflowing] = useState(false);
+  const [isSortCollapsed, setIsSortCollapsed] = useState(false);
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
+  const editBtnRef = useRef<HTMLButtonElement | null>(null);
+  const measureSortButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const setHeadingRef = useCallback((el: HTMLHeadingElement | null) => {
     labelHeadingRef.current = el;
@@ -808,25 +812,68 @@ export default function LandingPage() {
   }, [activeLabelId, labels]);
 
   useEffect(() => {
-    if (!headingEl) {
+    if (!headingEl || activeLabelId === 'search') {
+      setIsSortCollapsed(false);
       setIsTitleOverflowing(false);
       return;
     }
-    const checkOverflow = () => {
-      // scrollWidth > clientWidth means text is clipped by the container
-      setIsTitleOverflowing(headingEl.scrollWidth > headingEl.clientWidth + 1);
+
+    const checkFit = () => {
+      const toolbar = toolbarRef.current;
+      const heading = headingEl;
+      if (!toolbar || !heading) return;
+
+      const measureSort = measureSortButtonRef.current;
+      const fullSortWidth = measureSort ? measureSort.offsetWidth : 120;
+      const toolbarWidth = toolbar.clientWidth;
+      const toolbarGap = parseFloat(window.getComputedStyle(toolbar).gap) || 4;
+      const headingTextWidth = heading.scrollWidth;
+      const chevronWidth = 22; // 18px icon + 4px margin
+      const hasEditBtn = !['all', 'owned', 'shared', 'unlabelled', 'offline', 'search'].includes(activeLabelId) && !isOffline;
+      const editBtn = editBtnRef.current;
+      const editWidth = editBtn ? editBtn.offsetWidth + 4 : (hasEditBtn ? 32 : 0);
+
+      const totalNeededWidth = headingTextWidth + chevronWidth + editWidth + toolbarGap + fullSortWidth;
+      const isMobile = typeof window !== 'undefined' && window.innerWidth <= 640;
+      const shouldCollapse = isMobile && totalNeededWidth > toolbarWidth + 1;
+
+      const currentSortWidth = shouldCollapse ? 32 : fullSortWidth;
+      const availableForHeading = toolbarWidth - toolbarGap - currentSortWidth - editWidth - chevronWidth;
+      const isOverflowing = headingTextWidth > availableForHeading + 1;
+
+      setIsSortCollapsed(shouldCollapse);
+      setIsTitleOverflowing(isOverflowing);
     };
-    checkOverflow();
+
+    checkFit();
+
+    let active = true;
     if (typeof document !== 'undefined' && document.fonts?.ready) {
-      document.fonts.ready.then(checkOverflow);
+      document.fonts.ready.then(() => {
+        if (active) checkFit();
+      });
     }
+
+    window.addEventListener('resize', checkFit);
+
     if (typeof ResizeObserver === 'undefined') {
-      return;
+      return () => {
+        active = false;
+        window.removeEventListener('resize', checkFit);
+      };
     }
-    const observer = new ResizeObserver(checkOverflow);
+
+    const observer = new ResizeObserver(checkFit);
+    if (toolbarRef.current) {
+      observer.observe(toolbarRef.current);
+    }
     observer.observe(headingEl);
-    return () => observer.disconnect();
-  }, [headingEl, activeLabelTitle]);
+    return () => {
+      active = false;
+      window.removeEventListener('resize', checkFit);
+      observer.disconnect();
+    };
+  }, [headingEl, activeLabelTitle, activeLabelId, activeSortMode, isOffline]);
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-color)', paddingBottom: '4rem' }}>
@@ -1089,6 +1136,7 @@ export default function LandingPage() {
         {/* Landing Toolbar: Label Selection & Sort Controls */}
         {!loading && (
           <div
+            ref={toolbarRef}
             className="landing-toolbar"
             style={{
               display: 'flex',
@@ -1298,6 +1346,7 @@ export default function LandingPage() {
               {/* If user-defined label: edit label option */}
               {!['all', 'owned', 'shared', 'unlabelled', 'offline', 'search'].includes(activeLabelId) && !isOffline && (
                 <button
+                  ref={editBtnRef}
                   type="button"
                   onClick={() => {
                     const label = labels.find(l => l.id === activeLabelId);
@@ -1329,7 +1378,7 @@ export default function LandingPage() {
             <div style={{ position: 'relative', flexShrink: 0 }}>
               <button
                 type="button"
-                className={`landing-sort-button ${activeLabelTitle.length > 10 ? 'sort-collapsed' : ''}`}
+                className={`landing-sort-button ${isSortCollapsed ? 'sort-collapsed' : ''}`}
                 onClick={() => setShowSortDropdown(!showSortDropdown)}
                 aria-label="Change sort order"
                 title={`Sort: ${activeSortMode === 'last_accessed' ? 'Last Accessed' : activeSortMode === 'custom' ? 'Custom' : activeSortMode === 'name' ? 'Alphabetical' : 'Date Created'}`}
@@ -1407,7 +1456,34 @@ export default function LandingPage() {
             )}
           </div>
 
-          </div>
+          {/* Hidden off-screen button to measure full sort button width without .sort-collapsed */}
+          <button
+            ref={measureSortButtonRef}
+            type="button"
+            tabIndex={-1}
+            aria-hidden="true"
+            className="landing-sort-button"
+            style={{
+              position: 'absolute',
+              visibility: 'hidden',
+              pointerEvents: 'none',
+              top: -9999,
+              left: -9999,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <ArrowUpDown size={13} style={{ flexShrink: 0 }} />
+            <span className="landing-sort-text">
+              {activeSortMode === 'last_accessed'
+                ? 'Last Accessed'
+                : activeSortMode === 'custom'
+                ? 'Custom'
+                : activeSortMode === 'name'
+                ? 'Alphabetical'
+                : 'Date Created'}
+            </span>
+          </button>
+        </div>
         )}
 
         {loading ? (
