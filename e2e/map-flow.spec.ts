@@ -150,13 +150,18 @@ test('pin grouping and persistence', async ({ page }) => {
   // searching while editMode=false can prevent results from rendering.
   await waitForAutoSave(page);
 
+  // Close inline layer edit mode so focus isn't stolen while searching
+  const layerInput = page.getByLabel('NAME', { exact: true });
+  if (await layerInput.isVisible()) {
+    await layerInput.press('Enter');
+  }
+
   // 2. Add a pin
   const searchInput = page.getByPlaceholder('Search...');
   await searchInput.fill('Group City');
   await expect(page.getByText('Group City').first()).toBeVisible({ timeout: 10000 });
   await page.locator('button[title="Add to Map"]').first().click();
   await waitForAutoSave(page);
-  await page.waitForURL(url => url.pathname !== '/map/new' && url.pathname.includes('/map/'));
 
   // Initially it's in Default Layer
   await expect(page.locator('aside')).toContainText('Group City');

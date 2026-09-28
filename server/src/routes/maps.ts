@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import crypto from 'crypto';
-import { getDb } from '../db';
+import { getDb, runInTransaction } from '../db';
 import type { Pin, MapData, MapPermission, PinLayer, PinIcon } from '@shared/interfaces';
 import { authMiddleware, optionalAuthMiddleware, type AuthRequest } from '../auth';
 import { addMapViewerIfLinkShared, resolveMapAccess } from '../permissions';
@@ -376,11 +376,8 @@ router.post('/', authMiddleware, async (req: AuthRequest, res) => {
     const validatedData = MapCreateSchema.parse(req.body);
     const { id, name, layers, pins, customColors } = validatedData;
     const userId = req.user!.id;
-    const db = await getDb();
 
-    await db.run('BEGIN TRANSACTION');
-
-    try {
+    const { finalGroups, finalPins } = await runInTransaction(async (db) => {
       await db.run(
         'INSERT INTO maps (id, name, owner_id, custom_colors) VALUES (?, ?, ?, ?)',
         id,
@@ -389,7 +386,7 @@ router.post('/', authMiddleware, async (req: AuthRequest, res) => {
         JSON.stringify(customColors || [])
       );
       
-      const { layers: finalGroups, pins: finalPins } = await syncMapLayersAndPins(
+      const { layers: groups, pins: pList } = await syncMapLayersAndPins(
         db,
         id,
         layers,
@@ -402,21 +399,18 @@ router.post('/', authMiddleware, async (req: AuthRequest, res) => {
         VALUES (?, ?, CURRENT_TIMESTAMP) 
       `, userId, id);
 
-      await db.run('COMMIT');
+      return { finalGroups: groups, finalPins: pList };
+    });
 
-      res.status(201).json({ 
-        id, 
-        name, 
-        layers: finalGroups, 
-        pins: finalPins,
-        customColors: customColors || [],
-        ownerId: userId,
-        userRole: 'owner'
-      });
-    } catch (error) {
-      await db.run('ROLLBACK');
-      throw error;
-    }
+    res.status(201).json({ 
+      id, 
+      name, 
+      layers: finalGroups, 
+      pins: finalPins,
+      customColors: customColors || [],
+      ownerId: userId,
+      userRole: 'owner'
+    });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Validation failed', details: error.issues });
@@ -481,26 +475,19 @@ router.post('/:id/share', authMiddleware, async (req: AuthRequest, res) => {
     }
 
     if (role === 'owner') {
-      try {
-        await db.run('BEGIN TRANSACTION');
-        
+      await runInTransaction(async (database) => {
         // Remove target user from permissions if they are already there
-        await db.run('DELETE FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, targetUser.id);
+        await database.run('DELETE FROM map_permissions WHERE map_id = ? AND user_id = ?', mapId, targetUser.id);
         
         // Change ownership
-        await db.run('UPDATE maps SET owner_id = ? WHERE id = ?', targetUser.id, mapId);
+        await database.run('UPDATE maps SET owner_id = ? WHERE id = ?', targetUser.id, mapId);
         
         // Add previous owner as an editor
-        await db.run(`
+        await database.run(`
           INSERT INTO map_permissions (map_id, user_id, role) VALUES (?, ?, 'edit')
           ON CONFLICT(map_id, user_id) DO UPDATE SET role = 'edit'
         `, mapId, userId);
-        
-        await db.run('COMMIT');
-      } catch (error) {
-        await db.run('ROLLBACK');
-        throw error;
-      }
+      });
     } else {
       // Add/Update permission
       await db.run(`

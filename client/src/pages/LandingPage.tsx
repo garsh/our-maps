@@ -63,6 +63,16 @@ export default function LandingPage() {
   const [newLabelName, setNewLabelName] = useState('');
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(true);
+  const labelsAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      labelsAbortRef.current?.abort();
+    };
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -218,8 +228,12 @@ export default function LandingPage() {
 
   const fetchLabels = async () => {
     if (!user) return;
+    labelsAbortRef.current?.abort();
+    const controller = new AbortController();
+    labelsAbortRef.current = controller;
     try {
-      const res = await apiService.getLabels();
+      const res = await apiService.getLabels(controller.signal);
+      if (!isMountedRef.current) return;
       setLabels(res.labels);
       setAssignments(res.assignments);
       const settingsMap: Record<string, LabelSortMode> = {};
@@ -235,7 +249,10 @@ export default function LandingPage() {
       setStoredJson('cached_map_label_assignments', res.assignments);
       setStoredJson('cached_system_label_settings', settingsMap);
       setStoredJson('cached_system_label_map_order', orderMap);
-    } catch (err) {
+    } catch (err: any) {
+      if (!isMountedRef.current || err?.name === 'AbortError' || /failed to fetch/i.test(String(err?.message || ''))) {
+        return;
+      }
       console.warn('Failed to fetch labels, using cached values', err);
     }
   };
@@ -249,15 +266,13 @@ export default function LandingPage() {
   const fetchMaps = async () => {
     try {
       const data = await apiService.getMaps({ ignoreNavigatorOnline: true });
+      if (!isMountedRef.current) return;
       reachedServerRef.current = true;
       setForcedOffline(false);
       setMaps(data);
       setIsOffline(false);
       setStoredJson('cached_maps', data);
       fetchDownloadedMapStatuses(data);
-      if (user) {
-        void fetchLabels();
-      }
     } catch (error: any) {
       console.error('Failed to fetch maps', error);
       if (error?.message?.includes('Unauthorized')) {

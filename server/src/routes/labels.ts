@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { authMiddleware, type AuthRequest } from '../auth';
-import { getDb } from '../db';
+import { getDb, runInTransaction } from '../db';
 import type { LabelSortMode } from '@shared/interfaces';
 
 const router = Router();
@@ -279,22 +279,19 @@ router.put('/:id/order', async (req: AuthRequest, res: Response) => {
   }
 
   try {
-    const db = await getDb();
-    await db.run('BEGIN TRANSACTION');
-    for (let i = 0; i < mapIds.length; i++) {
-      await db.run(
-        `UPDATE user_map_labels SET position = ? WHERE user_id = ? AND label_id = ? AND map_id = ?`,
-        i,
-        userId,
-        labelId,
-        mapIds[i]
-      );
-    }
-    await db.run('COMMIT');
+    await runInTransaction(async (db) => {
+      for (let i = 0; i < mapIds.length; i++) {
+        await db.run(
+          `UPDATE user_map_labels SET position = ? WHERE user_id = ? AND label_id = ? AND map_id = ?`,
+          i,
+          userId,
+          labelId,
+          mapIds[i]
+        );
+      }
+    });
     res.json({ success: true });
   } catch (err: any) {
-    const db = await getDb();
-    await db.run('ROLLBACK').catch(() => {});
     console.error('[Labels] Failed to update map order:', err);
     res.status(500).json({ error: 'Failed to update map order' });
   }
@@ -344,24 +341,21 @@ router.put('/system/:systemLabelId/order', async (req: AuthRequest, res: Respons
   }
 
   try {
-    const db = await getDb();
-    await db.run('BEGIN TRANSACTION');
-    for (let i = 0; i < mapIds.length; i++) {
-      await db.run(
-        `INSERT INTO user_system_label_map_order (user_id, system_label_id, map_id, position)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(user_id, system_label_id, map_id) DO UPDATE SET position = excluded.position`,
-        userId,
-        systemLabelId,
-        mapIds[i],
-        i
-      );
-    }
-    await db.run('COMMIT');
+    await runInTransaction(async (db) => {
+      for (let i = 0; i < mapIds.length; i++) {
+        await db.run(
+          `INSERT INTO user_system_label_map_order (user_id, system_label_id, map_id, position)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(user_id, system_label_id, map_id) DO UPDATE SET position = excluded.position`,
+          userId,
+          systemLabelId,
+          mapIds[i],
+          i
+        );
+      }
+    });
     res.json({ success: true });
   } catch (err: any) {
-    const db = await getDb();
-    await db.run('ROLLBACK').catch(() => {});
     console.error('[Labels] Failed to update system label map order:', err);
     res.status(500).json({ error: 'Failed to update system label map order' });
   }

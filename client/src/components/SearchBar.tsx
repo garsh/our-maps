@@ -432,7 +432,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
             top: '100%',
             left: 0,
             right: 0,
-            maxHeight: resultsMaxHeight ?? 0,
+            maxHeight: resultsMaxHeight !== null && resultsMaxHeight > 0 ? resultsMaxHeight : 'calc(100vh - 180px)',
             overflowY: 'auto',
             WebkitOverflowScrolling: 'touch',
             touchAction: 'pan-y',

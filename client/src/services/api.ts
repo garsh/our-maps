@@ -302,7 +302,7 @@ export const apiService = {
     return data.address || null;
   },
 
-  async getLabels(): Promise<{
+  async getLabels(signal?: AbortSignal): Promise<{
     labels: UserLabel[];
     assignments: MapLabelAssignment[];
     systemSettings: SystemLabelSetting[];
@@ -310,6 +310,7 @@ export const apiService = {
   }> {
     const res = await fetchWithRetry(`${API_BASE}/labels`, {
       headers: getHeaders(),
+      signal,
     });
     return handleResponse(res, this._logoutCallback, 'Failed to fetch labels');
   },

@@ -721,7 +721,7 @@ export function MapEditor() {
   const [error, setError] = useState<string | null>(null);
   const isRemoteUpdateRef = useRef(false);
   const isInitialLoadRef = useRef(false);
-  const hasLoadedRef = useRef(false);
+  const loadedMapIdRef = useRef<string | null>(null);
   // First sight of a map is the loaded copy. Later name, layer, or pin
   // changes are edits. Server snapshots mark the key so they are not edits.
   const seenDownloadMapIdRef = useRef<string | null>(null);
@@ -753,7 +753,7 @@ export function MapEditor() {
 
   useEffect(() => {
     if (id && id !== 'new') {
-      if (mapId !== id || !hasLoadedRef.current) {
+      if (loadedMapIdRef.current !== id) {
         loadMap(id);
       }
 
@@ -985,7 +985,7 @@ export function MapEditor() {
         boundsTimerRef.current = null;
       }
       setBoundsToFit(null);
-      hasLoadedRef.current = false;
+      loadedMapIdRef.current = null;
       isInitialLoadRef.current = false;
       // New map defaults
       setMapId(null);
@@ -1097,7 +1097,7 @@ export function MapEditor() {
       boundsTimerRef.current = null;
     }
     setBoundsToFit(null);
-    hasLoadedRef.current = true;
+    loadedMapIdRef.current = mapId;
     setSelectedNavIds(new Set());
     setActiveOfflineMapId(mapId);
     // Await preloadExtract before the Promise.all below so that extractCache is populated
@@ -1197,6 +1197,7 @@ export function MapEditor() {
         return;
       }
       console.error('Failed to load map', err);
+      loadedMapIdRef.current = null;
       setError('No Data');
       setTimeout(() => navigate('/'), 2000);
     } finally {
@@ -1218,7 +1219,7 @@ export function MapEditor() {
 
     try {
       const newId = generateId();
-      hasLoadedRef.current = true;
+      loadedMapIdRef.current = newId;
       await apiService.createMap({
         id: newId,
         name: mapNameRef.current || 'Unnamed Map',

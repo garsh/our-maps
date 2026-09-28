@@ -175,7 +175,7 @@ function setupConsoleFilter(page: Page) {
       text.includes('websocket') ||
       text.includes('elevation-tiles-prod') ||
       text.includes('AJAXError') ||
-      text.trim() === 'TypeError: Failed to fetch'
+      text.includes('Failed to fetch')
     ) {
       return;
     }

@@ -1,4 +1,4 @@
-import { getDb, touchMapUpdatedAt } from './db';
+import { getDb, touchMapUpdatedAt, runInTransaction } from './db';
 import { MAX_LAYERS_PER_MAP, MAX_PINS_PER_MAP } from './schemas';
 import type {
   PinCreatePayload,
@@ -163,35 +163,24 @@ async function loadLayerPinIds(db: any, mapId: string, layerId: string | null): 
 }
 
 export async function handlePinsReorder(data: PinsReorderPayload) {
-  const db = await getDb();
   const { mapId, layerId, pinIds, insertIndex } = data;
   if (!mapId || !Array.isArray(pinIds) || pinIds.length === 0) return;
 
-  await db.run('BEGIN TRANSACTION');
-  try {
+  await runInTransaction(async (db) => {
     const currentIds = await loadLayerPinIds(db, mapId, layerId || null);
     const layerIdSet = new Set(currentIds);
     const moved = pinIds.filter((id) => layerIdSet.has(id));
-    if (moved.length === 0) {
-      await db.run('COMMIT');
-      return;
-    }
+    if (moved.length === 0) return;
     await updateEntityPositions(db, 'pins', insertIdsAt(currentIds, moved, insertIndex), mapId);
-    await db.run('COMMIT');
-    await touchMapUpdatedAt(mapId);
-  } catch (error) {
-    await db.run('ROLLBACK');
-    throw error;
-  }
+  });
+  await touchMapUpdatedAt(mapId);
 }
 
 export async function handlePinMoveLayer(data: PinMoveLayerPayload) {
-  const db = await getDb();
   const { mapId, pinIds, targetLayerId, destInsertIndex } = data;
   if (!mapId || !Array.isArray(pinIds) || pinIds.length === 0) return;
 
-  await db.run('BEGIN TRANSACTION');
-  try {
+  await runInTransaction(async (db) => {
     const targetLayer = targetLayerId || null;
     const chunkSize = 500;
     const existing: Array<{ id: string; layer_id: string | null }> = [];
@@ -205,10 +194,7 @@ export async function handlePinMoveLayer(data: PinMoveLayerPayload) {
       );
       existing.push(...rows);
     }
-    if (existing.length === 0) {
-      await db.run('COMMIT');
-      return;
-    }
+    if (existing.length === 0) return;
 
     const existingIds = existing.map((row) => row.id);
     for (let i = 0; i < existingIds.length; i += chunkSize) {
@@ -232,13 +218,8 @@ export async function handlePinMoveLayer(data: PinMoveLayerPayload) {
       const remaining = await loadLayerPinIds(db, mapId, src);
       await updateEntityPositions(db, 'pins', remaining, mapId);
     }
-
-    await db.run('COMMIT');
-    await touchMapUpdatedAt(mapId);
-  } catch (error) {
-    await db.run('ROLLBACK');
-    throw error;
-  }
+  });
+  await touchMapUpdatedAt(mapId);
 }
 
 export async function handleLayerCreate(data: LayerCreatePayload): Promise<boolean | void> {
@@ -295,12 +276,10 @@ export async function handleLayerUpdate(data: LayerUpdatePayload) {
 }
 
 export async function handleLayerDelete(data: LayerDeletePayload) {
-  const db = await getDb();
   const { mapId, layerId } = data;
   if (!mapId || !layerId) return;
 
-  await db.run('BEGIN TRANSACTION');
-  try {
+  await runInTransaction(async (db) => {
     // Find where to append the moved pins (after last existing default-layer pin).
     const maxRow = await db.get(
       'SELECT MAX(position) as maxPos FROM pins WHERE (layer_id IS NULL OR layer_id = \'\') AND map_id = ?',
@@ -322,28 +301,18 @@ export async function handleLayerDelete(data: LayerDeletePayload) {
     }
 
     await db.run('DELETE FROM pin_layers WHERE id = ? AND map_id = ?', layerId, mapId);
-    await db.run('COMMIT');
-    await touchMapUpdatedAt(mapId);
-  } catch (error) {
-    await db.run('ROLLBACK');
-    throw error;
-  }
+  });
+  await touchMapUpdatedAt(mapId);
 }
 
 export async function handleLayersReorder(data: LayersReorderPayload) {
-  const db = await getDb();
   const { mapId, layerOrder } = data;
   if (!mapId || !Array.isArray(layerOrder)) return;
 
-  await db.run('BEGIN TRANSACTION');
-  try {
+  await runInTransaction(async (db) => {
     await updateEntityPositions(db, 'pin_layers', layerOrder, mapId);
-    await db.run('COMMIT');
-    await touchMapUpdatedAt(mapId);
-  } catch (error) {
-    await db.run('ROLLBACK');
-    throw error;
-  }
+  });
+  await touchMapUpdatedAt(mapId);
 }
 
 export async function handleMapNameUpdate(data: MapNameUpdatePayload) {

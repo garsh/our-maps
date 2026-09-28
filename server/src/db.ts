@@ -191,3 +191,64 @@ export async function touchMapUpdatedAt(mapId: string): Promise<void> {
     mapId
   );
 }
+
+/**
+ * In-process mutex to serialize write transactions on SQLite's singleton connection handle.
+ * Prevents concurrent BEGIN TRANSACTION collisions ("cannot start a transaction within a transaction").
+ */
+class AsyncMutex {
+  private queue: Array<() => void> = [];
+  private locked = false;
+
+  private acquire(): Promise<() => void> {
+    return new Promise((resolve) => {
+      const run = () => {
+        this.locked = true;
+        resolve(() => {
+          this.locked = false;
+          const next = this.queue.shift();
+          if (next) next();
+        });
+      };
+      if (!this.locked) {
+        run();
+      } else {
+        this.queue.push(run);
+      }
+    });
+  }
+
+  async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const release = await this.acquire();
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+}
+
+const txMutex = new AsyncMutex();
+
+/**
+ * Safely executes a callback inside an IMMEDIATE transaction serialized by txMutex.
+ */
+export async function runInTransaction<T>(fn: (database: Database) => Promise<T>): Promise<T> {
+  const database = await getDb();
+  return txMutex.runExclusive(async () => {
+    await database.run('BEGIN IMMEDIATE TRANSACTION');
+    try {
+      const result = await fn(database);
+      await database.run('COMMIT');
+      return result;
+    } catch (error) {
+      try {
+        await database.run('ROLLBACK');
+      } catch {
+        // Ignore rollback failure if already rolled back
+      }
+      throw error;
+    }
+  });
+}
+
