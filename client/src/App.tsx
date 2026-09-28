@@ -1142,7 +1142,7 @@ export function MapEditor() {
           setIsSyncing(true);
         }
         // Update LRU timestamp so this map isn't evicted from view cache prematurely
-        touchMapCacheAccess(mapId, { name: localMap.name, ownerId: localMap.ownerId }).catch(() => {});
+        touchMapCacheAccess(mapId, { name: cached.name, ownerId: cached.ownerId }).catch(() => {});
       }
     } catch (cacheErr) {
       console.warn('[APP] Instant offline cache hydration check error:', cacheErr);
