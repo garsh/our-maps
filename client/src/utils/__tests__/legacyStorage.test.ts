@@ -20,6 +20,7 @@ describe('legacyStorage classification', () => {
         expect(isKnownCacheName('workbox-precache-v2-https://example')).toBe(true);
         expect(isKnownLocalStorageKey('token')).toBe(true);
         expect(isKnownLocalStorageKey('cached_maps')).toBe(true);
+        expect(isKnownLocalStorageKey('cached_selected_label')).toBe(true);
         expect(isKnownLocalStorageKey('ourmaps_map_theme')).toBe(true);
         expect(isKnownLocalStorageKey('ourmaps_3d')).toBe(true);
         expect(isKnownLocalStorageKey('ourmaps_visibility_abc')).toBe(true);

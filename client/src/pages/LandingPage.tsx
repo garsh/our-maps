@@ -22,7 +22,7 @@ interface TouchTooltipState {
 }
 
 export default function LandingPage() {
-  const { user, logout, logoutEverywhere } = useAuth();
+  const { user, isLoading: authLoading, logout, logoutEverywhere } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [maps, setMaps] = useState<MapSummary[]>(() => getStoredJson<MapSummary[]>('cached_maps', []));
@@ -57,7 +57,11 @@ export default function LandingPage() {
   const [assignments, setAssignments] = useState<MapLabelAssignment[]>(() => getStoredJson<MapLabelAssignment[]>('cached_map_label_assignments', []));
   const [systemSettings, setSystemSettings] = useState<Record<string, LabelSortMode>>(() => getStoredJson<Record<string, LabelSortMode>>('cached_system_label_settings', {}));
   const [systemOrder, setSystemOrder] = useState<Record<string, string[]>>(() => getStoredJson<Record<string, string[]>>('cached_system_label_map_order', {}));
-  const [activeLabelId, setActiveLabelId] = useState<string>('all');
+  const [activeLabelId, setActiveLabelId] = useState<string>(() => {
+    const saved = getStoredJson<string | null>('cached_selected_label', null);
+    if (!saved || saved === 'search') return 'all';
+    return saved;
+  });
   const [labelingMap, setLabelingMap] = useState<{ map: MapSummary; anchorRect: DOMRect } | null>(null);
   const [showCreateLabelModal, setShowCreateLabelModal] = useState(false);
   const [newLabelName, setNewLabelName] = useState('');
@@ -73,6 +77,22 @@ export default function LandingPage() {
       labelsAbortRef.current?.abort();
     };
   }, []);
+
+  // Remember the last selected label across visits (ignoring transient search mode)
+  useEffect(() => {
+    if (activeLabelId && activeLabelId !== 'search') {
+      setStoredJson('cached_selected_label', activeLabelId);
+    }
+  }, [activeLabelId]);
+
+  // If user is not authenticated once auth check finishes, revert user-only labels to 'all'
+  useEffect(() => {
+    if (!authLoading && !user) {
+      if (activeLabelId !== 'all' && activeLabelId !== 'offline' && activeLabelId !== 'search') {
+        setActiveLabelId('all');
+      }
+    }
+  }, [user, authLoading, activeLabelId]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -249,6 +269,18 @@ export default function LandingPage() {
       setStoredJson('cached_map_label_assignments', res.assignments);
       setStoredJson('cached_system_label_settings', settingsMap);
       setStoredJson('cached_system_label_map_order', orderMap);
+
+      if (res.labels) {
+        setActiveLabelId(prev => {
+          if (['all', 'owned', 'shared', 'offline', 'search'].includes(prev)) {
+            return prev;
+          }
+          if (!res.labels.some(l => l.id === prev)) {
+            return 'all';
+          }
+          return prev;
+        });
+      }
     } catch (err: any) {
       if (!isMountedRef.current || err?.name === 'AbortError' || /failed to fetch/i.test(String(err?.message || ''))) {
         return;
@@ -640,6 +672,7 @@ export default function LandingPage() {
       try {
         const created = await apiService.createLabel(name.trim(), 'last_accessed');
         setLabels(prev => prev.map(l => l.id === tempId ? created : l));
+        setActiveLabelId(prev => prev === tempId ? created.id : prev);
         const cached = getStoredJson<UserLabel[]>('cached_user_labels', []);
         setStoredJson('cached_user_labels', cached.map(l => l.id === tempId ? created : l));
         return created;
@@ -1613,11 +1646,15 @@ export default function LandingPage() {
                 placeholder="e.g. Road Trips, Wishlist"
                 value={newLabelName}
                 onChange={e => setNewLabelName(e.target.value)}
-                onKeyDown={e => {
+                onKeyDown={async e => {
                   if (e.key === 'Enter' && newLabelName.trim()) {
                     e.preventDefault();
-                    void handleCreateLabel(newLabelName);
+                    const name = newLabelName.trim();
                     setShowCreateLabelModal(false);
+                    const created = await handleCreateLabel(name);
+                    if (created) {
+                      setActiveLabelId(created.id);
+                    }
                   }
                 }}
                 className="input-field"
@@ -1644,10 +1681,14 @@ export default function LandingPage() {
               <button
                 type="button"
                 disabled={!newLabelName.trim()}
-                onClick={() => {
+                onClick={async () => {
                   if (!newLabelName.trim()) return;
-                  void handleCreateLabel(newLabelName);
+                  const name = newLabelName.trim();
                   setShowCreateLabelModal(false);
+                  const created = await handleCreateLabel(name);
+                  if (created) {
+                    setActiveLabelId(created.id);
+                  }
                 }}
                 className="btn-primary"
                 style={{ flex: 1, padding: '10px', opacity: !newLabelName.trim() ? 0.5 : 1 }}
