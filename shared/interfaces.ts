@@ -54,5 +54,37 @@ export interface MapData {
   extractTotalBytes?: number;
 }
 
+export type LabelSortMode = 'last_accessed' | 'custom' | 'name' | 'created_at';
+
+export interface UserLabel {
+  id: string;
+  userId?: string;
+  name: string;
+  sortMode: LabelSortMode;
+  position: number;
+  createdAt?: string;
+}
+
+export interface MapLabelAssignment {
+  userId?: string;
+  labelId: string;
+  mapId: string;
+  position: number;
+  addedAt?: string;
+}
+
+export interface SystemLabelSetting {
+  userId?: string;
+  systemLabelId: string;
+  sortMode: LabelSortMode;
+}
+
+export interface SystemLabelMapOrder {
+  userId?: string;
+  systemLabelId: string;
+  mapId: string;
+  position: number;
+}
+
 export * from './types/socket';
 export * from './geoUtils';

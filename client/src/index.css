@@ -451,10 +451,19 @@ button:active {
   min-height: 58px;
 }
 
-.map-card-compact:hover {
+.map-card-compact:hover:not(:has(.map-card-actions:hover)):not(:has(.map-card-badge:hover)) {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
   border-color: var(--primary-color);
+}
+
+.map-card-badge {
+  transition: transform 0.15s ease, opacity 0.15s ease, filter 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.map-card-badge:active {
+  transform: scale(0.9);
 }
 
 .map-card-info {
@@ -528,6 +537,21 @@ button:active {
 [data-theme='dark'] .map-card-action-btn.view-btn:hover {
   background: rgba(165, 180, 252, 0.15);
   border-color: #a5b4fc;
+}
+
+.map-card-action-btn.label-btn {
+  color: #6366f1;
+}
+.map-card-action-btn.label-btn:hover {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: #6366f1;
+}
+[data-theme='dark'] .map-card-action-btn.label-btn {
+  color: #818cf8;
+}
+[data-theme='dark'] .map-card-action-btn.label-btn:hover {
+  background: rgba(129, 140, 248, 0.15);
+  border-color: #818cf8;
 }
 
 .map-card-action-btn.delete-btn {

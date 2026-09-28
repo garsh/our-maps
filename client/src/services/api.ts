@@ -1,4 +1,4 @@
-import type { MapData, MapPermission } from '@shared/interfaces';
+import type { MapData, MapPermission, UserLabel, MapLabelAssignment, SystemLabelSetting, SystemLabelMapOrder, LabelSortMode } from '@shared/interfaces';
 import { getOfflineMap, saveMapToViewCache, getMapETag, touchMapCacheAccess, pruneViewCache, currentDownloadDocumentEpoch, type BoundingBox } from '../utils/tileUtils';
 import { tileWorkerManager } from '../utils/tileWorkerManager';
 
@@ -300,5 +300,107 @@ export const apiService = {
     }, 0);
     const data = await handleResponse<{ address?: string }>(res, this._logoutCallback, 'Reverse geocode failed');
     return data.address || null;
+  },
+
+  async getLabels(): Promise<{
+    labels: UserLabel[];
+    assignments: MapLabelAssignment[];
+    systemSettings: SystemLabelSetting[];
+    systemOrder: SystemLabelMapOrder[];
+  }> {
+    const res = await fetchWithRetry(`${API_BASE}/labels`, {
+      headers: getHeaders(),
+    });
+    return handleResponse(res, this._logoutCallback, 'Failed to fetch labels');
+  },
+
+  async createLabel(name: string, sortMode?: LabelSortMode): Promise<UserLabel> {
+    const res = await fetchWithRetry(`${API_BASE}/labels`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ name, sortMode }),
+    });
+    return handleResponse<UserLabel>(res, this._logoutCallback, 'Failed to create label');
+  },
+
+  async updateLabel(
+    id: string,
+    updates: Partial<{ name: string; sortMode: LabelSortMode; position: number }>
+  ): Promise<UserLabel> {
+    const res = await fetchWithRetry(`${API_BASE}/labels/${id}`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify(updates),
+    });
+    return handleResponse<UserLabel>(res, this._logoutCallback, 'Failed to update label');
+  },
+
+  async deleteLabel(id: string): Promise<void> {
+    const res = await fetchWithRetry(`${API_BASE}/labels/${id}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    return handleResponse<void>(res, this._logoutCallback, 'Failed to delete label');
+  },
+
+  async assignMapLabel(labelId: string, mapId: string, position?: number): Promise<{ success: boolean; labelId: string; mapId: string; position: number }> {
+    const res = await fetchWithRetry(`${API_BASE}/labels/${labelId}/maps`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ mapId, position }),
+    });
+    return handleResponse(res, this._logoutCallback, 'Failed to assign map to label');
+  },
+
+  async removeMapLabel(labelId: string, mapId: string): Promise<void> {
+    const res = await fetchWithRetry(`${API_BASE}/labels/${labelId}/maps/${mapId}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    return handleResponse<void>(res, this._logoutCallback, 'Failed to remove map from label');
+  },
+
+  async updateLabelMapOrder(labelId: string, mapIds: string[]): Promise<void> {
+    const res = await fetchWithRetry(`${API_BASE}/labels/${labelId}/order`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify({ mapIds }),
+    });
+    return handleResponse<void>(res, this._logoutCallback, 'Failed to update label map order');
+  },
+
+  async updateSystemLabelSetting(systemLabelId: string, sortMode: LabelSortMode): Promise<void> {
+    const res = await fetchWithRetry(`${API_BASE}/labels/system/${systemLabelId}/settings`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify({ sortMode }),
+    });
+    return handleResponse<void>(res, this._logoutCallback, 'Failed to update system label settings');
+  },
+
+  async updateSystemLabelMapOrder(systemLabelId: string, mapIds: string[]): Promise<void> {
+    const res = await fetchWithRetry(`${API_BASE}/labels/system/${systemLabelId}/order`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify({ mapIds }),
+    });
+    return handleResponse<void>(res, this._logoutCallback, 'Failed to update system label map order');
+  },
+
+  async assignSystemMapLabel(systemLabelId: string, mapId: string): Promise<void> {
+    const res = await fetchWithRetry(`${API_BASE}/labels/system/${systemLabelId}/maps`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ mapId }),
+    });
+    return handleResponse<void>(res, this._logoutCallback, 'Failed to add map to system label');
+  },
+
+  async removeSystemMapLabel(systemLabelId: string, mapId: string): Promise<void> {
+    const res = await fetchWithRetry(`${API_BASE}/labels/system/${systemLabelId}/maps/${mapId}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+    });
+    return handleResponse<void>(res, this._logoutCallback, 'Failed to remove map from system label');
   }
 };

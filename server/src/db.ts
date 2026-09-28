@@ -115,6 +115,49 @@ export async function getDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+
+    CREATE TABLE IF NOT EXISTS user_labels (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      sort_mode TEXT NOT NULL DEFAULT 'last_accessed',
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(user_id, name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_labels_user ON user_labels(user_id, position);
+
+    CREATE TABLE IF NOT EXISTS user_map_labels (
+      user_id TEXT NOT NULL,
+      label_id TEXT NOT NULL,
+      map_id TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0,
+      added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, label_id, map_id),
+      FOREIGN KEY (label_id) REFERENCES user_labels(id) ON DELETE CASCADE,
+      FOREIGN KEY (map_id) REFERENCES maps(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_map_labels_user_map ON user_map_labels(user_id, map_id);
+    CREATE INDEX IF NOT EXISTS idx_user_map_labels_user_label ON user_map_labels(user_id, label_id, position);
+
+    CREATE TABLE IF NOT EXISTS user_system_label_settings (
+      user_id TEXT NOT NULL,
+      system_label_id TEXT NOT NULL,
+      sort_mode TEXT NOT NULL DEFAULT 'last_accessed',
+      PRIMARY KEY (user_id, system_label_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS user_system_label_map_order (
+      user_id TEXT NOT NULL,
+      system_label_id TEXT NOT NULL,
+      map_id TEXT NOT NULL,
+      position INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, system_label_id, map_id),
+      FOREIGN KEY (map_id) REFERENCES maps(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_system_label_map_order ON user_system_label_map_order(user_id, system_label_id, position);
   `);
 
   await migrate(db);

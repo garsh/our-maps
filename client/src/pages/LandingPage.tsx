@@ -1,71 +1,24 @@
-import { useEffect, useState, useMemo, useRef, type CSSProperties, type ReactNode, type TouchEvent } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { apiService } from '../services/api';
-import { Map as MapIcon, LogIn, LogOut, WifiOff, CloudSync, Loader2, Trash2, Download, Upload, Sun, Moon, Eye } from 'lucide-react';
+import { Map as MapIcon, LogIn, LogOut, WifiOff, CloudSync, Loader2, Trash2, Upload, Sun, Moon, ChevronDown, Check, ArrowUpDown, Search, X } from 'lucide-react';
 import { getMapDownloadStatuses, unionCachedMapsWithDownloads, type MapDownloadStatus } from '../utils/tileUtils';
 import { landingStatusFromWorker, tileWorkerManager } from '../utils/tileWorkerManager';
 import { getStoredJson, setStoredJson } from '../utils/storageUtils';
 import { setForcedOffline } from '../utils/offlineSession';
 import { deleteUnrecognizedStorage, findUnrecognizedStorage, type LeftoverStorageItem } from '../utils/legacyStorage';
-
-interface MapSummary {
-  id: string;
-  name: string;
-  ownerId: string;
-  ownerName: string;
-  lastAccessedAt?: string;
-}
+import type { UserLabel, MapLabelAssignment, LabelSortMode } from '@shared/interfaces';
+import MapLabelDialog from '../components/MapLabelDialog';
+import { LandingMapCard, type MapSummary } from '../components/LandingMapCard';
+import { DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, closestCenter, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, sortableKeyboardCoordinates, rectSortingStrategy } from '@dnd-kit/sortable';
 
 interface TouchTooltipState {
   text: string;
   x: number;
   y: number;
-}
-
-const LONG_PRESS_LABEL_STYLE: CSSProperties = {
-  userSelect: 'none',
-  WebkitUserSelect: 'none',
-  WebkitTouchCallout: 'none',
-};
-
-function LongPressLabel({
-  title,
-  style,
-  children,
-  onTouchStart,
-  onTouchEnd,
-}: {
-  title: string;
-  style?: CSSProperties;
-  children: ReactNode;
-  onTouchStart: (event: TouchEvent<HTMLSpanElement>) => void;
-  onTouchEnd: () => void;
-}) {
-  const ref = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const block = (event: Event) => event.preventDefault();
-    el.addEventListener('selectstart', block);
-    return () => el.removeEventListener('selectstart', block);
-  }, []);
-
-  return (
-    <span
-      ref={ref}
-      data-long-press-label=""
-      title={title}
-      style={{ ...style, ...LONG_PRESS_LABEL_STYLE }}
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
-      onTouchCancel={onTouchEnd}
-      onContextMenu={(event) => event.preventDefault()}
-    >
-      {children}
-    </span>
-  );
 }
 
 export default function LandingPage() {
@@ -99,11 +52,48 @@ export default function LandingPage() {
   // True after a list fetch reaches the server. A stale navigator.onLine must not block opens.
   const reachedServerRef = useRef(false);
 
+  // Label management state
+  const [labels, setLabels] = useState<UserLabel[]>(() => getStoredJson<UserLabel[]>('cached_user_labels', []));
+  const [assignments, setAssignments] = useState<MapLabelAssignment[]>(() => getStoredJson<MapLabelAssignment[]>('cached_map_label_assignments', []));
+  const [systemSettings, setSystemSettings] = useState<Record<string, LabelSortMode>>(() => getStoredJson<Record<string, LabelSortMode>>('cached_system_label_settings', {}));
+  const [systemOrder, setSystemOrder] = useState<Record<string, string[]>>(() => getStoredJson<Record<string, string[]>>('cached_system_label_map_order', {}));
+  const [activeLabelId, setActiveLabelId] = useState<string>('all');
+  const [labelingMap, setLabelingMap] = useState<{ map: MapSummary; anchorRect: DOMRect } | null>(null);
+  const [showCreateLabelModal, setShowCreateLabelModal] = useState(false);
+  const [newLabelName, setNewLabelName] = useState('');
+  const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
   const clearLongPress = () => {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+  };
+
+  const showTooltip = (text: string, element: HTMLElement) => {
+    clearLongPress();
+    const rect = element.getBoundingClientRect();
+    setTouchTooltip({
+      text,
+      x: rect.left + rect.width / 2,
+      y: rect.top - 6
+    });
+    // Auto-dismiss after 2.5s
+    setTimeout(() => {
+      setTouchTooltip(prev => (prev?.text === text ? null : prev));
+    }, 2500);
   };
 
   const handleTouchStart = (text: string, e: React.TouchEvent | React.MouseEvent) => {
@@ -226,6 +216,36 @@ export default function LandingPage() {
     fetchDownloadedMapStatuses(merged);
   };
 
+  const fetchLabels = async () => {
+    if (!user) return;
+    try {
+      const res = await apiService.getLabels();
+      setLabels(res.labels);
+      setAssignments(res.assignments);
+      const settingsMap: Record<string, LabelSortMode> = {};
+      res.systemSettings.forEach(s => { settingsMap[s.systemLabelId] = s.sortMode; });
+      setSystemSettings(settingsMap);
+      const orderMap: Record<string, string[]> = {};
+      res.systemOrder.forEach(o => {
+        if (!orderMap[o.systemLabelId]) orderMap[o.systemLabelId] = [];
+        orderMap[o.systemLabelId].push(o.mapId);
+      });
+      setSystemOrder(orderMap);
+      setStoredJson('cached_user_labels', res.labels);
+      setStoredJson('cached_map_label_assignments', res.assignments);
+      setStoredJson('cached_system_label_settings', settingsMap);
+      setStoredJson('cached_system_label_map_order', orderMap);
+    } catch (err) {
+      console.warn('Failed to fetch labels, using cached values', err);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      void fetchLabels();
+    }
+  }, [user]);
+
   const fetchMaps = async () => {
     try {
       const data = await apiService.getMaps({ ignoreNavigatorOnline: true });
@@ -235,6 +255,9 @@ export default function LandingPage() {
       setIsOffline(false);
       setStoredJson('cached_maps', data);
       fetchDownloadedMapStatuses(data);
+      if (user) {
+        void fetchLabels();
+      }
     } catch (error: any) {
       console.error('Failed to fetch maps', error);
       if (error?.message?.includes('Unauthorized')) {
@@ -381,21 +404,260 @@ export default function LandingPage() {
     navigate('/map/new');
   };
 
+  const activeSortMode: LabelSortMode = useMemo(() => {
+    if (activeLabelId === 'search') {
+      const mode = systemSettings['search'] || 'last_accessed';
+      return mode === 'custom' ? 'last_accessed' : mode;
+    }
+    if (['all', 'owned', 'shared', 'offline'].includes(activeLabelId)) {
+      return systemSettings[activeLabelId] || 'last_accessed';
+    }
+    const userLabel = labels.find(l => l.id === activeLabelId);
+    return userLabel?.sortMode || 'last_accessed';
+  }, [activeLabelId, systemSettings, labels]);
+
+  const labelCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      all: maps.length,
+      owned: maps.filter(m => m.ownerId === user?.id).length,
+      shared: maps.filter(m => m.ownerId !== user?.id).length,
+      offline: maps.filter(m => downloadStatuses.get(m.id)?.isComplete).length,
+    };
+    for (const l of labels) {
+      counts[l.id] = assignments.filter(a => a.labelId === l.id).length;
+    }
+    return counts;
+  }, [maps, user, downloadStatuses, labels, assignments]);
+
   const filteredMaps = useMemo(() => {
-    const q = searchQuery.toLowerCase();
-    return maps.filter(map => 
-      map.name.toLowerCase().includes(q) ||
-      (map.ownerName || '').toLowerCase().includes(q)
-    ).sort((a, b) => {
-      // Unaccessed maps are placed at the top so newly shared maps are immediately visible to the user
-      if (!a.lastAccessedAt && b.lastAccessedAt) return -1;
-      if (a.lastAccessedAt && !b.lastAccessedAt) return 1;
-      if (a.lastAccessedAt && b.lastAccessedAt) {
-        return b.lastAccessedAt.localeCompare(a.lastAccessedAt);
+    let list = maps;
+    if (activeLabelId === 'search') {
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        list = list.filter(m => m.name.toLowerCase().includes(q) || (m.ownerName || '').toLowerCase().includes(q));
       }
-      return a.name.localeCompare(b.name);
-    });
-  }, [maps, searchQuery]);
+    } else if (activeLabelId === 'owned') {
+      list = list.filter(m => m.ownerId === user?.id);
+    } else if (activeLabelId === 'shared') {
+      list = list.filter(m => m.ownerId !== user?.id);
+    } else if (activeLabelId === 'offline') {
+      list = list.filter(m => downloadStatuses.get(m.id)?.isComplete);
+    } else if (activeLabelId !== 'all') {
+      const assignedMapIds = new Set(assignments.filter(a => a.labelId === activeLabelId).map(a => a.mapId));
+      list = list.filter(m => assignedMapIds.has(m.id));
+    }
+
+    const sorted = [...list];
+    if (activeSortMode === 'name') {
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (activeSortMode === 'created_at') {
+      sorted.sort((a, b) => (b.id || '').localeCompare(a.id || ''));
+    } else if (activeSortMode === 'custom') {
+      if (['all', 'owned', 'shared', 'offline'].includes(activeLabelId)) {
+        const order = systemOrder[activeLabelId] || [];
+        const orderMap = new Map(order.map((id, idx) => [id, idx]));
+        sorted.sort((a, b) => {
+          const posA = orderMap.has(a.id) ? orderMap.get(a.id)! : 999999;
+          const posB = orderMap.has(b.id) ? orderMap.get(b.id)! : 999999;
+          return posA - posB;
+        });
+      } else {
+        const mapPos = new Map<string, number>();
+        assignments.filter(a => a.labelId === activeLabelId).forEach(a => mapPos.set(a.mapId, a.position));
+        sorted.sort((a, b) => {
+          const posA = mapPos.has(a.id) ? mapPos.get(a.id)! : 999999;
+          const posB = mapPos.has(b.id) ? mapPos.get(b.id)! : 999999;
+          return posA - posB;
+        });
+      }
+    } else {
+      // last_accessed (default)
+      sorted.sort((a, b) => {
+        if (!a.lastAccessedAt && b.lastAccessedAt) return -1;
+        if (a.lastAccessedAt && !b.lastAccessedAt) return 1;
+        if (a.lastAccessedAt && b.lastAccessedAt) {
+          return b.lastAccessedAt.localeCompare(a.lastAccessedAt);
+        }
+        return a.name.localeCompare(b.name);
+      });
+    }
+
+    return sorted;
+  }, [maps, activeLabelId, user, downloadStatuses, assignments, searchQuery, activeSortMode, systemOrder]);
+
+  const handleSortModeChange = async (newMode: LabelSortMode) => {
+    setShowSortDropdown(false);
+    if (activeLabelId === 'search' && newMode === 'custom') {
+      return;
+    }
+    if (newMode === 'custom') {
+      let hasOrder = false;
+      if (['all', 'owned', 'shared', 'offline'].includes(activeLabelId)) {
+        hasOrder = Boolean(systemOrder[activeLabelId]?.length);
+      } else {
+        hasOrder = assignments.some(a => a.labelId === activeLabelId && a.position != null);
+      }
+
+      if (!hasOrder) {
+        // Seed initial custom order from the current displayed order
+        const seedIds = filteredMaps.map(m => m.id);
+        if (['all', 'owned', 'shared', 'offline'].includes(activeLabelId)) {
+          const updated = { ...systemOrder, [activeLabelId]: seedIds };
+          setSystemOrder(updated);
+          setStoredJson('cached_system_label_map_order', updated);
+          if (!isOffline && user) {
+            apiService.updateSystemLabelMapOrder(activeLabelId, seedIds).catch(console.error);
+          }
+        } else {
+          const updatedAssignments = assignments.map(a => {
+            if (a.labelId === activeLabelId) {
+              const idx = seedIds.indexOf(a.mapId);
+              return { ...a, position: idx >= 0 ? idx : 999 };
+            }
+            return a;
+          });
+          setAssignments(updatedAssignments);
+          setStoredJson('cached_map_label_assignments', updatedAssignments);
+          if (!isOffline && user) {
+            apiService.updateLabelMapOrder(activeLabelId, seedIds).catch(console.error);
+          }
+        }
+      }
+    }
+
+    if (['all', 'owned', 'shared', 'offline', 'search'].includes(activeLabelId)) {
+      const updated = { ...systemSettings, [activeLabelId]: newMode };
+      setSystemSettings(updated);
+      setStoredJson('cached_system_label_settings', updated);
+      if (!isOffline && user) {
+        apiService.updateSystemLabelSetting(activeLabelId, newMode).catch(console.error);
+      }
+    } else {
+      setLabels(prev => prev.map(l => l.id === activeLabelId ? { ...l, sortMode: newMode } : l));
+      const cached = getStoredJson<UserLabel[]>('cached_user_labels', []);
+      setStoredJson('cached_user_labels', cached.map(l => l.id === activeLabelId ? { ...l, sortMode: newMode } : l));
+      if (!isOffline && user) {
+        apiService.updateLabel(activeLabelId, { sortMode: newMode }).catch(console.error);
+      }
+    }
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const currentIds = filteredMaps.map(m => m.id);
+    const oldIndex = currentIds.indexOf(String(active.id));
+    const newIndex = currentIds.indexOf(String(over.id));
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reorderedIds = [...currentIds];
+    const [moved] = reorderedIds.splice(oldIndex, 1);
+    reorderedIds.splice(newIndex, 0, moved);
+
+    if (['all', 'owned', 'shared', 'offline'].includes(activeLabelId)) {
+      const updated = { ...systemOrder, [activeLabelId]: reorderedIds };
+      setSystemOrder(updated);
+      setStoredJson('cached_system_label_map_order', updated);
+      if (!isOffline && user) {
+        apiService.updateSystemLabelMapOrder(activeLabelId, reorderedIds).catch(console.error);
+      }
+    } else {
+      const idPosMap = new Map(reorderedIds.map((id, idx) => [id, idx]));
+      const updatedAssignments = assignments.map(a => {
+        if (a.labelId === activeLabelId && idPosMap.has(a.mapId)) {
+          return { ...a, position: idPosMap.get(a.mapId)! };
+        }
+        return a;
+      });
+      setAssignments(updatedAssignments);
+      setStoredJson('cached_map_label_assignments', updatedAssignments);
+      if (!isOffline && user) {
+        apiService.updateLabelMapOrder(activeLabelId, reorderedIds).catch(console.error);
+      }
+    }
+  };
+
+  const handleToggleLabel = async (labelId: string, assigned: boolean) => {
+    if (!labelingMap) return;
+    const mapId = labelingMap.map.id;
+
+    let nextAssignments: MapLabelAssignment[];
+    if (assigned) {
+      nextAssignments = [...assignments.filter(a => !(a.labelId === labelId && a.mapId === mapId)), {
+        labelId,
+        mapId,
+        position: assignments.filter(a => a.labelId === labelId).length
+      }];
+    } else {
+      nextAssignments = assignments.filter(a => !(a.labelId === labelId && a.mapId === mapId));
+    }
+    setAssignments(nextAssignments);
+    setStoredJson('cached_map_label_assignments', nextAssignments);
+
+    if (!isOffline && user) {
+      try {
+        if (assigned) {
+          await apiService.assignMapLabel(labelId, mapId);
+        } else {
+          await apiService.removeMapLabel(labelId, mapId);
+        }
+      } catch (err) {
+        console.error('Failed to toggle label', err);
+      }
+    }
+  };
+
+  const handleCreateLabel = async (name: string): Promise<UserLabel | null> => {
+    if (!name.trim()) return null;
+    const tempId = 'label_' + Date.now();
+    const tempLabel: UserLabel = {
+      id: tempId,
+      name: name.trim(),
+      sortMode: 'last_accessed',
+      position: labels.length
+    };
+    const updatedLabels = [...labels, tempLabel];
+    setLabels(updatedLabels);
+    setStoredJson('cached_user_labels', updatedLabels);
+
+    if (!isOffline && user) {
+      try {
+        const created = await apiService.createLabel(name.trim(), 'last_accessed');
+        setLabels(prev => prev.map(l => l.id === tempId ? created : l));
+        const cached = getStoredJson<UserLabel[]>('cached_user_labels', []);
+        setStoredJson('cached_user_labels', cached.map(l => l.id === tempId ? created : l));
+        return created;
+      } catch (err) {
+        console.error('Failed to create label', err);
+      }
+    }
+    return tempLabel;
+  };
+
+  const handleDeleteUserLabel = async (labelId: string) => {
+    const label = labels.find(l => l.id === labelId);
+    if (!label) return;
+    if (!confirm(`Are you sure you want to delete label "${label.name}"?`)) return;
+
+    const nextLabels = labels.filter(l => l.id !== labelId);
+    const nextAssignments = assignments.filter(a => a.labelId !== labelId);
+    setLabels(nextLabels);
+    setAssignments(nextAssignments);
+    setStoredJson('cached_user_labels', nextLabels);
+    setStoredJson('cached_map_label_assignments', nextAssignments);
+    if (activeLabelId === labelId) {
+      setActiveLabelId('all');
+    }
+
+    if (!isOffline && user) {
+      try {
+        await apiService.deleteLabel(labelId);
+      } catch (err) {
+        console.error('Failed to delete label', err);
+      }
+    }
+  };
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Never';
@@ -404,13 +666,98 @@ export default function LandingPage() {
     });
   };
 
+  const activeLabelTitle = useMemo(() => {
+    if (activeLabelId === 'all') return 'All Maps';
+    if (activeLabelId === 'owned') return 'Owned by Me';
+    if (activeLabelId === 'shared') return 'Shared with Me';
+    if (activeLabelId === 'offline') return 'Downloaded';
+    if (activeLabelId === 'search') return 'Search';
+    const found = labels.find(l => l.id === activeLabelId);
+    return found ? found.name : 'All Maps';
+  }, [activeLabelId, labels]);
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-color)', paddingBottom: '4rem' }}>
       <header className="landing-header">
         <h1 className="landing-header-title" style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0, fontWeight: 'bold', color: theme === 'dark' ? '#cbd5e1' : 'white', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}>
           <MapIcon size={24} color={theme === 'dark' ? '#cbd5e1' : 'white'} /> OurMaps
         </h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          {!loading && !user && (
+            <button 
+              onClick={() => navigate('/login')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                height: '34px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                background: 'rgba(255, 255, 255, 0.2)',
+                color: 'white',
+                border: '1px solid rgba(255, 255, 255, 0.35)',
+                borderRadius: 'var(--radius-sm)',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
+            >
+              <LogIn size={16} /> Sign In
+            </button>
+          )}
+          {!loading && Boolean(user) && !isOffline && (
+            <button 
+              onClick={handleCreateMap}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                height: '34px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                background: 'rgba(255, 255, 255, 0.2)',
+                color: 'white',
+                border: '1px solid rgba(255, 255, 255, 0.35)',
+                borderRadius: 'var(--radius-sm)',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
+            >
+              New Map
+            </button>
+          )}
+          {!loading && Boolean(user) && isOffline && (
+            <button 
+              onClick={() => fetchMaps()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                height: '34px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                background: 'rgba(255, 255, 255, 0.2)',
+                color: 'white',
+                border: '1px solid rgba(255, 255, 255, 0.35)',
+                borderRadius: 'var(--radius-sm)',
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
+            >
+              <CloudSync size={16} /> Retry Sync
+            </button>
+          )}
           <div style={{ position: 'relative' }}>
             <div 
               onClick={() => setShowUserMenu(!showUserMenu)}
@@ -587,48 +934,337 @@ export default function LandingPage() {
       </header>
 
       <main className="landing-container">
-        <div className="landing-toolbar">
-          <div className="landing-search-wrapper">
-            <input 
-              type="text" 
-              placeholder="Search maps..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="input-field"
-              style={{ paddingLeft: '38px', height: '40px', paddingRight: '12px' }}
-            />
-            <div style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', display: 'flex', pointerEvents: 'none' }}>
-              <MapIcon size={18} />
+        {/* Landing Toolbar: Label Selection & Sort Controls */}
+        {!loading && (
+          <div
+            className="landing-toolbar"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              padding: '0 4px 0.75rem 4px',
+              borderBottom: '2px solid var(--primary-color)',
+              marginBottom: '1.25rem',
+              flexWrap: 'nowrap',
+            }}
+          >
+            {/* Left side: Heading / Label Selection (or Search input) & delete label button */}
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: '1 1 auto' }}>
+              {activeLabelId === 'search' ? (
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    background: 'var(--surface-color)',
+                    border: '1.5px solid var(--primary-color)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '0 10px 0 12px',
+                    height: '44px',
+                    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.08)',
+                    position: 'relative',
+                    minWidth: 0,
+                    width: '100%',
+                    maxWidth: '380px',
+                    boxSizing: 'border-box',
+                    flex: '1 1 auto',
+                  }}
+                >
+                  <Search size={18} color="var(--primary-color)" style={{ flexShrink: 0, marginRight: '6px' }} />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    placeholder="Search all maps..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    autoFocus
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      color: 'var(--text-primary)',
+                      fontSize: '1.15rem',
+                      fontWeight: 700,
+                      outline: 'none',
+                      width: '100%',
+                      minWidth: 0,
+                      padding: 0,
+                      fontFamily: 'inherit',
+                    }}
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        searchInputRef.current?.focus();
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--text-secondary)',
+                        padding: '2px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        flexShrink: 0,
+                      }}
+                      title="Clear search"
+                      aria-label="Clear search"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                  <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', marginLeft: '4px', flexShrink: 0 }}>
+                    <select
+                      value="search"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__new__') {
+                          setNewLabelName('');
+                          setShowCreateLabelModal(true);
+                          return;
+                        }
+                        if (val !== 'search') {
+                          setSearchQuery('');
+                        }
+                        setActiveLabelId(val);
+                      }}
+                      title="Select label"
+                      aria-label="Select label"
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        opacity: 0,
+                        cursor: 'pointer',
+                        width: '100%',
+                        height: '100%',
+                        zIndex: 2,
+                      }}
+                    >
+                      <option value="all">All Maps ({labelCounts.all || 0})</option>
+                      {Boolean(user) && (
+                        <>
+                          <option value="owned">Owned by Me ({labelCounts.owned || 0})</option>
+                          <option value="shared">Shared with Me ({labelCounts.shared || 0})</option>
+                        </>
+                      )}
+                      <option value="offline">Downloaded ({labelCounts.offline || 0})</option>
+                      <option value="search">Search</option>
+                      {Boolean(user) && labels.map(l => (
+                        <option key={l.id} value={l.id}>
+                          {l.name} ({labelCounts[l.id] || 0})
+                        </option>
+                      ))}
+                      {Boolean(user) && !isOffline && (
+                        <option value="__new__">+ New Label...</option>
+                      )}
+                    </select>
+                    <ChevronDown size={18} color="var(--primary-color)" style={{ pointerEvents: 'none' }} />
+                  </div>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    position: 'relative',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 0',
+                    cursor: 'pointer',
+                    background: 'transparent',
+                    minWidth: 0,
+                  }}
+                >
+                  <h2
+                    style={{
+                      margin: 0,
+                      color: 'var(--text-primary)',
+                      fontSize: '1.5rem',
+                      fontWeight: 800,
+                      letterSpacing: '-0.02em',
+                      lineHeight: 1.2,
+                      whiteSpace: 'nowrap',
+                      pointerEvents: 'none',
+                      userSelect: 'none',
+                    }}
+                  >
+                    {activeLabelTitle}
+                  </h2>
+                  <ChevronDown
+                    size={22}
+                    color="var(--text-secondary)"
+                    style={{
+                      pointerEvents: 'none',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <select
+                    value={activeLabelId}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__new__') {
+                        setNewLabelName('');
+                        setShowCreateLabelModal(true);
+                        return;
+                      }
+                      if (val !== 'search') {
+                        setSearchQuery('');
+                      }
+                      setActiveLabelId(val);
+                      if (val === 'search') {
+                        setTimeout(() => searchInputRef.current?.focus(), 50);
+                      }
+                    }}
+                    aria-label="Filter maps by label"
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      width: '100%',
+                      height: '100%',
+                      opacity: 0,
+                      cursor: 'pointer',
+                      zIndex: 2,
+                    }}
+                  >
+                    <option value="all">All Maps ({labelCounts.all || 0})</option>
+                    {Boolean(user) && (
+                      <>
+                        <option value="owned">Owned by Me ({labelCounts.owned || 0})</option>
+                        <option value="shared">Shared with Me ({labelCounts.shared || 0})</option>
+                      </>
+                    )}
+                    <option value="offline">Downloaded ({labelCounts.offline || 0})</option>
+                    <option value="search">Search</option>
+                    {Boolean(user) && labels.map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.name} ({labelCounts[l.id] || 0})
+                      </option>
+                    ))}
+                    {Boolean(user) && !isOffline && (
+                      <option value="__new__">+ New Label...</option>
+                    )}
+                  </select>
+                </div>
+              )}
+
+              {/* If user-defined label: delete label option */}
+              {!['all', 'owned', 'shared', 'offline', 'search'].includes(activeLabelId) && !isOffline && (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteUserLabel(activeLabelId)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--text-secondary)',
+                    padding: '6px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    flexShrink: 0,
+                  }}
+                  title="Delete this label"
+                  aria-label="Delete this label"
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
             </div>
+
+            {/* Right side: Sort Selector Dropdown */}
+            <div style={{ position: 'relative', flexShrink: 0, marginLeft: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setShowSortDropdown(!showSortDropdown)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1.5px solid var(--divider-color)',
+                  background: 'var(--surface-color)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  boxShadow: 'var(--shadow-sm)',
+                }}
+              >
+                <ArrowUpDown size={14} color="var(--text-secondary)" />
+                <span>
+                  {activeSortMode === 'last_accessed'
+                    ? 'Last Accessed'
+                    : activeSortMode === 'custom'
+                    ? 'Custom'
+                    : activeSortMode === 'name'
+                    ? 'Alphabetical'
+                    : 'Date Created'}
+                </span>
+                <ChevronDown size={14} color="var(--text-secondary)" />
+              </button>
+
+              {showSortDropdown && (
+                <>
+                  <div
+                    style={{ position: 'fixed', inset: 0, zIndex: 100 }}
+                    onClick={() => setShowSortDropdown(false)}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: 'calc(100% + 4px)',
+                      zIndex: 101,
+                      minWidth: '180px',
+                      background: 'var(--surface-color)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-sm)',
+                      boxShadow: 'var(--shadow-md)',
+                      padding: '4px',
+                    }}
+                  >
+                  {[
+                    { id: 'last_accessed' as LabelSortMode, label: 'Last Accessed' },
+                    ...(activeLabelId !== 'search' ? [{ id: 'custom' as LabelSortMode, label: 'Custom' }] : []),
+                    { id: 'name' as LabelSortMode, label: 'Alphabetical' },
+                    { id: 'created_at' as LabelSortMode, label: 'Date Created' },
+                  ].map(opt => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => handleSortModeChange(opt.id)}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 10px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: 'none',
+                        background: activeSortMode === opt.id ? 'var(--bg-color)' : 'transparent',
+                        color: activeSortMode === opt.id ? 'var(--primary-color)' : 'var(--text-primary)',
+                        fontSize: '0.8rem',
+                        fontWeight: activeSortMode === opt.id ? 700 : 500,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-color)')}
+                      onMouseLeave={e => {
+                        if (activeSortMode !== opt.id) e.currentTarget.style.background = 'transparent';
+                      }}
+                    >
+                      <span>{opt.label}</span>
+                      {activeSortMode === opt.id && <Check size={14} />}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
-          {!loading && !user && (
-            <button 
-              onClick={() => navigate('/login')}
-              className="btn-primary"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', whiteSpace: 'nowrap', flexShrink: 0 }}
-            >
-              <LogIn size={18} /> Sign In
-            </button>
-          )}
-          {!loading && Boolean(user) && !isOffline && (
-            <button 
-              onClick={handleCreateMap}
-              className="btn-primary"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', whiteSpace: 'nowrap', flexShrink: 0, boxShadow: '0 2px 8px rgba(72, 61, 139, 0.2)' }}
-            >
-              New Map
-            </button>
-          )}
-          {!loading && Boolean(user) && isOffline && (
-            <button 
-              onClick={() => fetchMaps()}
-              className="btn-primary"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '40px', padding: '0 16px', whiteSpace: 'nowrap', flexShrink: 0, background: 'var(--text-secondary)' }}
-            >
-              <CloudSync size={18} /> Retry Sync
-            </button>
-          )}
-        </div>
+
+          </div>
+        )}
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '6rem 0', color: 'var(--text-secondary)', userSelect: 'none', WebkitUserSelect: 'none' }}>
@@ -652,120 +1288,76 @@ export default function LandingPage() {
           </div>
         ) : filteredMaps.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', color: 'var(--text-secondary)', border: '1px dashed var(--border-color)', fontSize: '0.95rem' }}>
-            No maps found matching "{searchQuery}"
+            {activeLabelId === 'search' ? (
+              searchQuery.trim() ? (
+                `No maps found matching "${searchQuery}"`
+              ) : (
+                'No maps found.'
+              )
+            ) : activeLabelId === 'shared' ? (
+              'No maps have been shared with you yet.'
+            ) : activeLabelId === 'owned' ? (
+              'You haven\'t created any maps yet.'
+            ) : activeLabelId === 'offline' ? (
+              'No maps downloaded for offline use.'
+            ) : (
+              'No maps with this label yet. Click the label icon on any map card to add it!'
+            )}
           </div>
+        ) : activeSortMode === 'custom' ? (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={filteredMaps.map(m => m.id)} strategy={rectSortingStrategy}>
+              <div className="landing-maps-grid">
+                {filteredMaps.map(map => (
+                  <LandingMapCard
+                    key={map.id}
+                    map={map}
+                    isCustomSort={true}
+                    downloadStatus={downloadStatuses.get(map.id)}
+                    currentUserId={user?.id}
+                    isOffline={isOffline}
+                    onMapClick={handleMapClick}
+                    onOpenLabels={(m, e) => {
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setLabelingMap({ map: m, anchorRect: rect });
+                    }}
+                    onDeleteClick={id => setDeleteConfirm(id)}
+                    handleTouchStart={handleTouchStart}
+                    handleTouchEnd={handleTouchEnd}
+                    showTooltip={showTooltip}
+                    longPressTriggeredRef={longPressTriggeredRef}
+                    formatDate={formatDate}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
         ) : (
           <div className="landing-maps-grid">
             {filteredMaps.map(map => (
-              <div 
+              <LandingMapCard
                 key={map.id}
-                className="card map-card-compact"
-                onClick={() => handleMapClick(map.id)}
-              >
-                {/* Map info section */}
-                <div className="map-card-info">
-                  <h3 className="map-card-title" title={map.name}>{map.name}</h3>
-                  <div className="map-card-meta">
-                    <LongPressLabel
-                      title="Map Owner"
-                      style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0, cursor: 'default' }}
-                      onTouchStart={(e) => handleTouchStart('Map Owner', e)}
-                      onTouchEnd={handleTouchEnd}
-                    >
-                      <span>{map.ownerId === user?.id ? (user?.name || map.ownerName || 'You') : (map.ownerName || 'Shared')}</span>
-                    </LongPressLabel>
-                    <span style={{ opacity: 0.5 }}>•</span>
-                    <LongPressLabel
-                      title="Last Accessed Date"
-                      style={{ flexShrink: 0, opacity: 0.85, cursor: 'default' }}
-                      onTouchStart={(e) => handleTouchStart('Last Accessed Date', e)}
-                      onTouchEnd={handleTouchEnd}
-                    >
-                      {formatDate(map.lastAccessedAt)}
-                    </LongPressLabel>
-                    {(() => {
-                      const status = downloadStatuses.get(map.id);
-                      if (status?.isComplete) {
-                        return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.7rem', color: '#27ae60', background: 'rgba(39, 174, 96, 0.12)', padding: '1px 6px', borderRadius: '10px', fontWeight: '700', marginLeft: 'auto', flexShrink: 0 }}>
-                            <Download size={11} /> Downloaded
-                          </span>
-                        );
-                      }
-                      if (status?.isStalled) {
-                        return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.7rem', color: 'var(--error-color)', background: 'rgba(203, 43, 62, 0.12)', padding: '1px 6px', borderRadius: '10px', fontWeight: '700', marginLeft: 'auto', flexShrink: 0 }}>
-                            <Download size={11} /> Stalled
-                          </span>
-                        );
-                      }
-                      if (status?.isPartial) {
-                        return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.7rem', color: '#3b82f6', background: 'rgba(59, 130, 246, 0.12)', padding: '1px 6px', borderRadius: '10px', fontWeight: '700', marginLeft: 'auto', flexShrink: 0 }}>
-                            <Download size={11} className="animated-download-icon" /> Downloading
-                          </span>
-                        );
-                      }
-                      if (isOffline || !user) {
-                        const isLoggedOut = !user;
-                        return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '0.7rem', color: '#e74c3c', background: 'rgba(231, 76, 60, 0.12)', padding: '1px 6px', borderRadius: '10px', fontWeight: '700', marginLeft: 'auto', flexShrink: 0 }}>
-                            {isLoggedOut ? <LogIn size={11} /> : <WifiOff size={11} />}
-                            {isLoggedOut ? 'Logged Out' : 'Offline'}
-                          </span>
-                        );
-                      }
-                      return null;
-                    })()}
-                  </div>
-                </div>
-
-                {/* Right button actions with generous touch targets */}
-                <div className="map-card-actions">
-                  {((!isOffline && Boolean(user)) || Boolean(downloadStatuses.get(map.id)?.isComplete)) && (
-                    <button
-                      type="button"
-                      className="map-card-action-btn view-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (longPressTriggeredRef.current) {
-                          longPressTriggeredRef.current = false;
-                          return;
-                        }
-                        handleMapClick(map.id, true);
-                      }}
-                      onTouchStart={(e) => handleTouchStart('Open in view mode', e)}
-                      onTouchEnd={handleTouchEnd}
-                      onTouchCancel={handleTouchEnd}
-                      title="Open in view mode"
-                      aria-label="Open in view mode"
-                    >
-                      <Eye size={18} />
-                    </button>
-                  )}
-                  {!isOffline && (
-                    <button 
-                      type="button"
-                      className="map-card-action-btn delete-btn"
-                      onClick={(e) => { 
-                        e.stopPropagation(); 
-                        if (longPressTriggeredRef.current) {
-                          longPressTriggeredRef.current = false;
-                          return;
-                        }
-                        setDeleteConfirm(map.id); 
-                      }}
-                      onTouchStart={(e) => handleTouchStart(map.ownerId === user?.id ? 'Delete Map' : 'Leave Map', e)}
-                      onTouchEnd={handleTouchEnd}
-                      onTouchCancel={handleTouchEnd}
-                      title={map.ownerId === user?.id ? "Delete Map" : "Leave Map"}
-                      aria-label={map.ownerId === user?.id ? "Delete Map" : "Leave Map"}
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  )}
-                </div>
-              </div>
+                map={map}
+                isCustomSort={false}
+                downloadStatus={downloadStatuses.get(map.id)}
+                currentUserId={user?.id}
+                isOffline={isOffline}
+                onMapClick={handleMapClick}
+                onOpenLabels={(m, e) => {
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  setLabelingMap({ map: m, anchorRect: rect });
+                }}
+                onDeleteClick={id => setDeleteConfirm(id)}
+                handleTouchStart={handleTouchStart}
+                handleTouchEnd={handleTouchEnd}
+                showTooltip={showTooltip}
+                longPressTriggeredRef={longPressTriggeredRef}
+                formatDate={formatDate}
+              />
             ))}
           </div>
         )}
@@ -949,6 +1541,105 @@ export default function LandingPage() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {labelingMap && (
+        <MapLabelDialog
+          isOpen={true}
+          mapId={labelingMap.map.id}
+          mapName={labelingMap.map.name}
+          anchorRect={labelingMap.anchorRect}
+          labels={labels}
+          assignments={assignments}
+          onClose={() => setLabelingMap(null)}
+          onToggleLabel={handleToggleLabel}
+        />
+      )}
+
+      {showCreateLabelModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000,
+            backdropFilter: 'blur(4px)',
+          }}
+          onClick={() => setShowCreateLabelModal(false)}
+        >
+          <div
+            style={{
+              background: 'var(--surface-color)',
+              padding: '2rem',
+              borderRadius: 'var(--radius-lg)',
+              maxWidth: '400px',
+              width: '90%',
+              boxShadow: 'var(--shadow-lg)',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              Create New Label
+            </h3>
+            <div style={{ margin: '1.25rem 0 1.5rem 0' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                Label Name
+              </label>
+              <input
+                type="text"
+                autoFocus
+                placeholder="e.g. Road Trips, Wishlist"
+                value={newLabelName}
+                onChange={e => setNewLabelName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && newLabelName.trim()) {
+                    e.preventDefault();
+                    void handleCreateLabel(newLabelName);
+                    setShowCreateLabelModal(false);
+                  }
+                }}
+                className="input-field"
+                style={{ width: '100%', boxSizing: 'border-box' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button
+                type="button"
+                onClick={() => setShowCreateLabelModal(false)}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-color)',
+                  background: 'transparent',
+                  fontWeight: 600,
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!newLabelName.trim()}
+                onClick={() => {
+                  if (!newLabelName.trim()) return;
+                  void handleCreateLabel(newLabelName);
+                  setShowCreateLabelModal(false);
+                }}
+                className="btn-primary"
+                style={{ flex: 1, padding: '10px', opacity: !newLabelName.trim() ? 0.5 : 1 }}
+              >
+                Create
+              </button>
+            </div>
           </div>
         </div>
       )}

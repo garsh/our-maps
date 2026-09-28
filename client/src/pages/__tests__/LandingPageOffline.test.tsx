@@ -197,9 +197,13 @@ describe('LandingPage Offline Map Access', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Offline')).toBeInTheDocument();
-      expect(screen.getByText('Downloaded')).toBeInTheDocument();
+      expect(screen.getByTitle('Offline')).toBeInTheDocument();
+      expect(screen.getByTitle('Downloaded')).toBeInTheDocument();
     });
+
+    fireEvent.click(screen.getByTitle('Offline'));
+    expect(document.querySelector('.touch-tooltip-bubble')).toHaveTextContent('Offline');
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('checks the server before showing an offline landing page', async () => {
@@ -217,7 +221,7 @@ describe('LandingPage Offline Map Access', () => {
     expect(screen.getByText('Loading your maps...')).toBeInTheDocument();
     expect(screen.queryByText('Retry Sync')).not.toBeInTheDocument();
     expect(screen.queryByText('New Map')).not.toBeInTheDocument();
-    expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Offline')).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(apiService.getMaps).toHaveBeenCalled();
@@ -241,7 +245,7 @@ describe('LandingPage Offline Map Access', () => {
 
     expect(screen.getByText('Loading your maps...')).toBeInTheDocument();
     expect(screen.queryByText('Retry Sync')).not.toBeInTheDocument();
-    expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Offline')).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(apiService.getMaps).toHaveBeenCalledTimes(1);
@@ -249,7 +253,7 @@ describe('LandingPage Offline Map Access', () => {
       expect(screen.getByText('New Map')).toBeInTheDocument();
     });
     expect(screen.queryByText('Retry Sync')).not.toBeInTheDocument();
-    expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Offline')).not.toBeInTheDocument();
     expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
 
     fireEvent.click(screen.getByText('Online Only Map'));
@@ -275,7 +279,7 @@ describe('LandingPage Offline Map Access', () => {
       expect(apiService.getMaps).toHaveBeenCalledTimes(1);
     });
     expect(screen.getByText('Retry Sync')).toBeInTheDocument();
-    expect(screen.getByText('Offline')).toBeInTheDocument();
+    expect(screen.getByTitle('Offline')).toBeInTheDocument();
     expect(sessionStorage.getItem('ourmaps_offline')).toBe('1');
   });
 
@@ -543,7 +547,7 @@ describe('LandingPage Offline Map Access', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/login');
 
     // Non-downloaded maps should show "Logged Out" badge
-    expect(screen.getByText('Logged Out')).toBeInTheDocument();
+    expect(screen.getByTitle('Logged Out')).toBeInTheDocument();
   });
 
   it('immediately transitions to Sign In button and Logged Out pills upon sign out', async () => {
@@ -593,7 +597,7 @@ describe('LandingPage Offline Map Access', () => {
     expect(screen.getByText('Sign In')).toBeInTheDocument();
 
     // Undownloaded maps should now show "Logged Out"
-    expect(screen.getByText('Logged Out')).toBeInTheDocument();
+    expect(screen.getByTitle('Logged Out')).toBeInTheDocument();
   });
 
   it('sorts maps by lastAccessedAt so most recently accessed appears first', async () => {

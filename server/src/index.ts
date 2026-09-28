@@ -12,6 +12,7 @@ import fs from 'fs';
 import http from 'http';
 import { Server, Socket } from 'socket.io';
 import mapsRouter from './routes/maps';
+import labelsRouter from './routes/labels';
 import type { User } from '@shared/interfaces';
 import placesRouter from './routes/places';
 import { googleLoginHandler, searchUsersHandler, filterContactsHandler, authMiddleware, authenticateToken, getJwtSecret, assertMockAuthConfig, meHandler, mockLoginHandler, logoutHandler, logoutEverywhereHandler, parseCookies, SESSION_COOKIE, getUserForSession, cleanupSessionCache } from './auth';
@@ -116,6 +117,7 @@ app.post('/api/auth/logout-everywhere', authMiddleware, logoutEverywhereHandler)
 app.post('/api/auth/filter-contacts', authMiddleware, filterContactsHandler);
 app.get('/api/auth/search-users', authMiddleware, searchUsersHandler);
 app.use('/api/maps', mapsRouter);
+app.use('/api/labels', labelsRouter);
 app.use('/api/places', placesRouter);
 
 function getSocketToken(socket: Socket): string | undefined {
