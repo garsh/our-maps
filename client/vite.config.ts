@@ -191,6 +191,9 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id === INLINE_MAPLIBRE_WORKER_ID || id.includes('inline-maplibre-worker')) {
+            return 'maplibre-worker';
+          }
           if (id.includes('node_modules/maplibre-gl') || id.includes('node_modules/react-map-gl') || id.includes('node_modules/@vis.gl')) {
             return 'maplibre';
           }
