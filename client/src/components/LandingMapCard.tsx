@@ -158,7 +158,7 @@ export function LandingMapCard({
           <LongPressLabel
             title="Map Owner"
             style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0, cursor: 'default' }}
-            onTouchStart={e => handleTouchStart('Map Owner', e)}
+            onTouchStart={e => handleTouchStart?.('Map Owner', e)}
             onTouchEnd={handleTouchEnd}
             disabled={isCustomSort}
           >
@@ -168,7 +168,7 @@ export function LandingMapCard({
           <LongPressLabel
             title="Last Accessed Date"
             style={{ flexShrink: 0, opacity: 0.85, cursor: 'default' }}
-            onTouchStart={e => handleTouchStart('Last Accessed Date', e)}
+            onTouchStart={e => handleTouchStart?.('Last Accessed Date', e)}
             onTouchEnd={handleTouchEnd}
             disabled={isCustomSort}
           >
