@@ -492,6 +492,16 @@ button:active {
   border-color: var(--primary-color);
 }
 
+.map-card-compact.is-dragging,
+.map-card-compact.is-overlay {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.map-card-compact.is-overlay {
+  transition: none !important;
+}
+
 .map-card-badge {
   transition: transform 0.15s ease, opacity 0.15s ease, filter 0.15s ease;
   -webkit-tap-highlight-color: transparent;

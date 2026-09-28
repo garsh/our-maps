@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -12,7 +13,7 @@ import { deleteUnrecognizedStorage, findUnrecognizedStorage, type LeftoverStorag
 import type { UserLabel, MapLabelAssignment, LabelSortMode } from '@shared/interfaces';
 import MapLabelDialog from '../components/MapLabelDialog';
 import { LandingMapCard, type MapSummary } from '../components/LandingMapCard';
-import { DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, closestCenter, type DragEndEvent } from '@dnd-kit/core';
+import { DndContext, DragOverlay, PointerSensor, KeyboardSensor, useSensor, useSensors, closestCenter, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, rectSortingStrategy } from '@dnd-kit/sortable';
 
 interface TouchTooltipState {
@@ -87,6 +88,11 @@ export default function LandingPage() {
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   const editBtnRef = useRef<HTMLButtonElement | null>(null);
   const measureSortButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const activeDragMap = useMemo(() => {
+    if (!activeDragId) return null;
+    return maps.find(m => m.id === activeDragId) || null;
+  }, [maps, activeDragId]);
 
   const setHeadingRef = useCallback((el: HTMLHeadingElement | null) => {
     labelHeadingRef.current = el;
@@ -631,7 +637,16 @@ export default function LandingPage() {
     }
   };
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragId(String(event.active.id));
+  };
+
+  const handleDragCancel = () => {
+    setActiveDragId(null);
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
+    setActiveDragId(null);
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
@@ -1530,7 +1545,9 @@ export default function LandingPage() {
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
           >
             <SortableContext items={filteredMaps.map(m => m.id)} strategy={rectSortingStrategy}>
               <div className="landing-maps-grid">
@@ -1557,6 +1574,22 @@ export default function LandingPage() {
                 ))}
               </div>
             </SortableContext>
+            {typeof document !== 'undefined' && createPortal(
+              <DragOverlay zIndex={1000}>
+                {activeDragMap ? (
+                  <LandingMapCard
+                    map={activeDragMap}
+                    isCustomSort={true}
+                    downloadStatus={downloadStatuses.get(activeDragMap.id)}
+                    currentUserId={user?.id}
+                    isOffline={isOffline}
+                    formatDate={formatDate}
+                    isOverlay={true}
+                  />
+                ) : null}
+              </DragOverlay>,
+              document.body
+            )}
           </DndContext>
         ) : (
           <div className="landing-maps-grid">

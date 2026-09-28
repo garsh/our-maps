@@ -59,14 +59,15 @@ interface LandingMapCardProps {
   downloadStatus?: MapDownloadStatus;
   currentUserId?: string;
   isOffline: boolean;
-  onMapClick: (mapId: string, viewMode?: boolean) => void;
-  onOpenLabels: (map: MapSummary, e: React.MouseEvent) => void;
-  onDeleteClick: (mapId: string, e: React.MouseEvent) => void;
-  handleTouchStart: (text: string, e: React.TouchEvent | React.MouseEvent) => void;
-  handleTouchEnd: () => void;
+  onMapClick?: (mapId: string, viewMode?: boolean) => void;
+  onOpenLabels?: (map: MapSummary, e: React.MouseEvent) => void;
+  onDeleteClick?: (mapId: string, e: React.MouseEvent) => void;
+  handleTouchStart?: (text: string, e: React.TouchEvent | React.MouseEvent) => void;
+  handleTouchEnd?: () => void;
   showTooltip?: (text: string, element: HTMLElement) => void;
-  longPressTriggeredRef: React.MutableRefObject<boolean>;
+  longPressTriggeredRef?: React.MutableRefObject<boolean>;
   formatDate: (dateString?: string) => string;
+  isOverlay?: boolean;
 }
 
 export function LandingMapCard({
@@ -83,49 +84,63 @@ export function LandingMapCard({
   showTooltip,
   longPressTriggeredRef,
   formatDate,
+  isOverlay = false,
 }: LandingMapCardProps) {
   const sortable = useSortable({
     id: map.id,
-    disabled: !isCustomSort,
+    disabled: !isCustomSort || isOverlay,
   });
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = sortable;
 
-  const style: CSSProperties = {
-    transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-    transition,
-    opacity: isDragging ? 0.45 : 1,
-    zIndex: isDragging ? 50 : undefined,
-  };
+  const style: CSSProperties = isOverlay
+    ? {
+        cursor: 'grabbing',
+        boxShadow: 'var(--shadow-lg)',
+        border: '1.5px solid var(--primary-color)',
+        background: 'var(--surface-color)',
+        opacity: 0.96,
+        touchAction: 'none',
+        pointerEvents: 'none',
+        width: '100%',
+        boxSizing: 'border-box',
+      }
+    : {
+        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+        transition,
+        opacity: isDragging ? 0.35 : 1,
+        zIndex: isDragging ? 0 : undefined,
+        pointerEvents: isDragging ? 'none' : undefined,
+      };
 
   const cardClick = () => {
-    if (longPressTriggeredRef.current) {
+    if (longPressTriggeredRef?.current) {
       longPressTriggeredRef.current = false;
       return;
     }
-    onMapClick(map.id);
+    onMapClick?.(map.id);
   };
 
   return (
     <div
-      ref={isCustomSort ? setNodeRef : undefined}
+      ref={isCustomSort && !isOverlay ? setNodeRef : undefined}
       style={style}
-      className="card map-card-compact"
-      onClick={cardClick}
-      {...(isCustomSort ? attributes : {})}
+      className={`card map-card-compact${isDragging ? ' is-dragging' : ''}${isOverlay ? ' is-overlay' : ''}`}
+      onClick={isOverlay ? undefined : cardClick}
+      {...(isCustomSort && !isOverlay ? attributes : {})}
     >
       {/* Drag handle visible only in Custom Order mode */}
       {isCustomSort && (
         <div
-          {...listeners}
+          {...(isOverlay ? {} : listeners)}
           onClick={e => e.stopPropagation()}
           style={{
-            cursor: 'grab',
+            cursor: isOverlay ? 'grabbing' : 'grab',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             paddingRight: '6px',
-            color: 'var(--text-secondary)',
+            color: isOverlay ? 'var(--primary-color)' : 'var(--text-secondary)',
             touchAction: 'none',
           }}
           title="Drag to reorder"
@@ -284,14 +299,14 @@ export function LandingMapCard({
             className="map-card-action-btn view-btn"
             onClick={e => {
               e.stopPropagation();
-              if (longPressTriggeredRef.current) {
+              if (longPressTriggeredRef?.current) {
                 longPressTriggeredRef.current = false;
                 return;
               }
-              onMapClick(map.id, true);
+              onMapClick?.(map.id, true);
             }}
             onPointerDown={e => e.stopPropagation()}
-            onTouchStart={isCustomSort ? undefined : e => handleTouchStart('Open in view mode', e)}
+            onTouchStart={isCustomSort ? undefined : e => handleTouchStart?.('Open in view mode', e)}
             onTouchEnd={isCustomSort ? undefined : handleTouchEnd}
             onTouchCancel={isCustomSort ? undefined : handleTouchEnd}
             title="Open in view mode"
@@ -308,14 +323,14 @@ export function LandingMapCard({
             className="map-card-action-btn label-btn"
             onClick={e => {
               e.stopPropagation();
-              if (longPressTriggeredRef.current) {
+              if (longPressTriggeredRef?.current) {
                 longPressTriggeredRef.current = false;
                 return;
               }
-              onOpenLabels(map, e);
+              onOpenLabels?.(map, e);
             }}
             onPointerDown={e => e.stopPropagation()}
-            onTouchStart={isCustomSort ? undefined : e => handleTouchStart('Manage labels', e)}
+            onTouchStart={isCustomSort ? undefined : e => handleTouchStart?.('Manage labels', e)}
             onTouchEnd={isCustomSort ? undefined : handleTouchEnd}
             onTouchCancel={isCustomSort ? undefined : handleTouchEnd}
             title="Manage labels"
@@ -332,14 +347,14 @@ export function LandingMapCard({
             className="map-card-action-btn delete-btn"
             onClick={e => {
               e.stopPropagation();
-              if (longPressTriggeredRef.current) {
+              if (longPressTriggeredRef?.current) {
                 longPressTriggeredRef.current = false;
                 return;
               }
-              onDeleteClick(map.id, e);
+              onDeleteClick?.(map.id, e);
             }}
             onPointerDown={e => e.stopPropagation()}
-            onTouchStart={isCustomSort ? undefined : e => handleTouchStart(map.ownerId === currentUserId ? 'Delete Map' : 'Leave Map', e)}
+            onTouchStart={isCustomSort ? undefined : e => handleTouchStart?.(map.ownerId === currentUserId ? 'Delete Map' : 'Leave Map', e)}
             onTouchEnd={isCustomSort ? undefined : handleTouchEnd}
             onTouchCancel={isCustomSort ? undefined : handleTouchEnd}
             title={map.ownerId === currentUserId ? 'Delete Map' : 'Leave Map'}
