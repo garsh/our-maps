@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { apiService } from '../services/api';
-import { Map as MapIcon, LogIn, LogOut, WifiOff, CloudSync, Loader2, Trash2, Upload, Sun, Moon, ChevronDown, Check, ArrowUpDown, Search, X } from 'lucide-react';
+import { Map as MapIcon, LogIn, LogOut, WifiOff, CloudSync, Loader2, Trash2, Upload, Sun, Moon, ChevronDown, Check, ArrowUpDown, Search, X, Pencil } from 'lucide-react';
 import { getMapDownloadStatuses, unionCachedMapsWithDownloads, type MapDownloadStatus } from '../utils/tileUtils';
 import { landingStatusFromWorker, tileWorkerManager } from '../utils/tileWorkerManager';
 import { getStoredJson, setStoredJson } from '../utils/storageUtils';
@@ -74,10 +74,21 @@ export default function LandingPage() {
   const [labelingMap, setLabelingMap] = useState<{ map: MapSummary; anchorRect: DOMRect } | null>(null);
   const [showCreateLabelModal, setShowCreateLabelModal] = useState(false);
   const [newLabelName, setNewLabelName] = useState('');
+  const [showEditLabelModal, setShowEditLabelModal] = useState(false);
+  const [editLabelId, setEditLabelId] = useState<string | null>(null);
+  const [editLabelName, setEditLabelName] = useState('');
+  const editInputRef = useRef<HTMLInputElement>(null);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const isMountedRef = useRef(true);
   const labelsAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (showEditLabelModal && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [showEditLabelModal]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -702,11 +713,18 @@ export default function LandingPage() {
     return tempLabel;
   };
 
+  const closeEditModal = () => {
+    setShowEditLabelModal(false);
+    setEditLabelId(null);
+    setEditLabelName('');
+  };
+
   const handleDeleteUserLabel = async (labelId: string) => {
     const label = labels.find(l => l.id === labelId);
     if (!label) return;
     if (!confirm(`Are you sure you want to delete label "${label.name}"?`)) return;
 
+    closeEditModal();
     const nextLabels = labels.filter(l => l.id !== labelId);
     const nextAssignments = assignments.filter(a => a.labelId !== labelId);
     setLabels(nextLabels);
@@ -722,6 +740,40 @@ export default function LandingPage() {
         await apiService.deleteLabel(labelId);
       } catch (err) {
         console.error('Failed to delete label', err);
+      }
+    }
+  };
+
+  const handleRenameUserLabel = async (labelId: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    const label = labels.find(l => l.id === labelId);
+    if (!label) return;
+    if (label.name === trimmed) {
+      closeEditModal();
+      return;
+    }
+
+    const isDuplicate = labels.some(l => l.id !== labelId && l.name.toLowerCase() === trimmed.toLowerCase());
+    if (isDuplicate) {
+      alert('A label with that name already exists');
+      return;
+    }
+
+    const previousLabels = labels;
+    const nextLabels = labels.map(l => l.id === labelId ? { ...l, name: trimmed } : l);
+    setLabels(nextLabels);
+    setStoredJson('cached_user_labels', nextLabels);
+    closeEditModal();
+
+    if (!isOffline && user) {
+      try {
+        await apiService.updateLabel(labelId, { name: trimmed });
+      } catch (err: any) {
+        console.error('Failed to rename label', err);
+        setLabels(previousLabels);
+        setStoredJson('cached_user_labels', previousLabels);
+        alert(err.message || 'Failed to rename label');
       }
     }
   };
@@ -1220,11 +1272,18 @@ export default function LandingPage() {
                 </div>
               )}
 
-              {/* If user-defined label: delete label option */}
+              {/* If user-defined label: edit label option */}
               {!['all', 'owned', 'shared', 'unlabelled', 'offline', 'search'].includes(activeLabelId) && !isOffline && (
                 <button
                   type="button"
-                  onClick={() => handleDeleteUserLabel(activeLabelId)}
+                  onClick={() => {
+                    const label = labels.find(l => l.id === activeLabelId);
+                    if (label) {
+                      setEditLabelId(label.id);
+                      setEditLabelName(label.name);
+                      setShowEditLabelModal(true);
+                    }
+                  }}
                   style={{
                     background: 'transparent',
                     border: 'none',
@@ -1235,10 +1294,10 @@ export default function LandingPage() {
                     alignItems: 'center',
                     flexShrink: 0,
                   }}
-                  title="Delete this label"
-                  aria-label="Delete this label"
+                  title="Edit this label"
+                  aria-label="Edit this label"
                 >
-                  <Trash2 size={16} />
+                  <Pencil size={16} />
                 </button>
               )}
             </div>
@@ -1722,6 +1781,125 @@ export default function LandingPage() {
               >
                 Create
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEditLabelModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000,
+            backdropFilter: 'blur(4px)',
+          }}
+          onClick={closeEditModal}
+        >
+          <div
+            style={{
+              background: 'var(--surface-color)',
+              padding: '2rem',
+              borderRadius: 'var(--radius-lg)',
+              maxWidth: '400px',
+              width: '90%',
+              boxShadow: 'var(--shadow-lg)',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              Edit Label
+            </h3>
+            <div style={{ margin: '1.25rem 0 1.5rem 0' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                Label Name
+              </label>
+              <input
+                ref={editInputRef}
+                type="text"
+                autoFocus
+                placeholder="e.g. Road Trips, Wishlist"
+                value={editLabelName}
+                onChange={e => setEditLabelName(e.target.value)}
+                onFocus={e => e.target.select()}
+                onKeyDown={async e => {
+                  if (e.key === 'Enter' && editLabelName.trim() && editLabelId) {
+                    e.preventDefault();
+                    await handleRenameUserLabel(editLabelId, editLabelName);
+                  } else if (e.key === 'Escape') {
+                    closeEditModal();
+                  }
+                }}
+                className="input-field"
+                style={{ width: '100%', boxSizing: 'border-box' }}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (editLabelId) {
+                    handleDeleteUserLabel(editLabelId);
+                  }
+                }}
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--error-color)',
+                  background: 'transparent',
+                  fontWeight: 600,
+                  color: 'var(--error-color)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+                title="Delete label"
+                aria-label="Delete label"
+              >
+                <Trash2 size={16} />
+                Delete
+              </button>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={closeEditModal}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-color)',
+                    background: 'transparent',
+                    fontWeight: 600,
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!editLabelName.trim()}
+                  onClick={async () => {
+                    if (editLabelId && editLabelName.trim()) {
+                      await handleRenameUserLabel(editLabelId, editLabelName);
+                    }
+                  }}
+                  className="btn-primary"
+                  style={{
+                    padding: '10px 18px',
+                    opacity: !editLabelName.trim() ? 0.5 : 1,
+                  }}
+                >
+                  Save
+                </button>
+              </div>
             </div>
           </div>
         </div>

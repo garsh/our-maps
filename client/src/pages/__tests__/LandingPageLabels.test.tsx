@@ -171,4 +171,83 @@ describe('LandingPage label persistence', () => {
     });
     expect(screen.getByText('Unlabelled Maps')).toBeInTheDocument();
   });
+
+  it('shows edit button when user label is active and opens edit modal with prefilled name', async () => {
+    localStorage.setItem('cached_selected_label', JSON.stringify('label-123'));
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    const editBtn = await screen.findByTitle('Edit this label');
+    expect(editBtn).toBeInTheDocument();
+    // Trash icon should no longer be present directly in toolbar
+    expect(screen.queryByTitle('Delete this label')).not.toBeInTheDocument();
+
+    fireEvent.click(editBtn);
+
+    expect(screen.getByText('Edit Label')).toBeInTheDocument();
+    const input = screen.getByPlaceholderText('e.g. Road Trips, Wishlist') as HTMLInputElement;
+    expect(input.value).toBe('Road Trips');
+  });
+
+  it('renames a label and persists changes', async () => {
+    localStorage.setItem('cached_selected_label', JSON.stringify('label-123'));
+    (apiService.updateLabel as any).mockResolvedValue({
+      id: 'label-123',
+      name: 'Road Trips 2026',
+      sortMode: 'last_accessed',
+      position: 0,
+    });
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    const editBtn = await screen.findByTitle('Edit this label');
+    fireEvent.click(editBtn);
+
+    const input = screen.getByPlaceholderText('e.g. Road Trips, Wishlist') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'Road Trips 2026' } });
+
+    const saveBtn = screen.getByRole('button', { name: 'Save' });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(apiService.updateLabel).toHaveBeenCalledWith('label-123', { name: 'Road Trips 2026' });
+    });
+  });
+
+  it('allows deleting a label from within the edit modal', async () => {
+    localStorage.setItem('cached_selected_label', JSON.stringify('label-123'));
+    (apiService.deleteLabel as any).mockResolvedValue(undefined);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    const editBtn = await screen.findByTitle('Edit this label');
+    fireEvent.click(editBtn);
+
+    const deleteBtn = screen.getByRole('button', { name: 'Delete label' });
+    fireEvent.click(deleteBtn);
+
+    expect(window.confirm).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(apiService.deleteLabel).toHaveBeenCalledWith('label-123');
+    });
+  });
 });
