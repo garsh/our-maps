@@ -426,6 +426,41 @@ button:active {
   margin-bottom: 1rem;
 }
 
+.landing-label-heading {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  min-width: 0;
+}
+
+.landing-label-heading.is-overflowing {
+  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent calc(100% - 12px));
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent calc(100% - 12px));
+}
+
+.landing-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--divider-color);
+  background: var(--surface-color);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+}
+
 .landing-search-wrapper {
   position: relative;
   flex: 1;
@@ -579,6 +614,12 @@ button:active {
   }
   .landing-toolbar {
     gap: 0.5rem;
+  }
+  .landing-sort-button.sort-collapsed .landing-sort-text {
+    display: none;
+  }
+  .landing-sort-button.sort-collapsed {
+    padding: 6px 7px;
   }
   .landing-maps-grid {
     grid-template-columns: 1fr;

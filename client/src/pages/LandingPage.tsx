@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -80,6 +80,14 @@ export default function LandingPage() {
   const editInputRef = useRef<HTMLInputElement>(null);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const labelHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const [headingEl, setHeadingEl] = useState<HTMLHeadingElement | null>(null);
+  const [isTitleOverflowing, setIsTitleOverflowing] = useState(false);
+
+  const setHeadingRef = useCallback((el: HTMLHeadingElement | null) => {
+    labelHeadingRef.current = el;
+    setHeadingEl(el);
+  }, []);
   const isMountedRef = useRef(true);
   const labelsAbortRef = useRef<AbortController | null>(null);
 
@@ -799,6 +807,27 @@ export default function LandingPage() {
     return found ? found.name : 'All Maps';
   }, [activeLabelId, labels]);
 
+  useEffect(() => {
+    if (!headingEl) {
+      setIsTitleOverflowing(false);
+      return;
+    }
+    const checkOverflow = () => {
+      // scrollWidth > clientWidth means text is clipped by the container
+      setIsTitleOverflowing(headingEl.scrollWidth > headingEl.clientWidth + 1);
+    };
+    checkOverflow();
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      document.fonts.ready.then(checkOverflow);
+    }
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(checkOverflow);
+    observer.observe(headingEl);
+    return () => observer.disconnect();
+  }, [headingEl, activeLabelTitle]);
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-color)', paddingBottom: '4rem' }}>
       <header className="landing-header">
@@ -1065,7 +1094,7 @@ export default function LandingPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              gap: '8px',
+              gap: '4px',
               padding: '0 4px 0.75rem 4px',
               borderBottom: '2px solid var(--primary-color)',
               marginBottom: '1.25rem',
@@ -1073,7 +1102,7 @@ export default function LandingPage() {
             }}
           >
             {/* Left side: Heading / Label Selection (or Search input) & delete label button */}
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: '1 1 auto' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', minWidth: 0, flex: '1 1 auto' }}>
               {activeLabelId === 'search' ? (
                 <div
                   style={{
@@ -1192,34 +1221,28 @@ export default function LandingPage() {
                     position: 'relative',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '6px',
                     padding: '4px 0',
                     cursor: 'pointer',
                     background: 'transparent',
                     minWidth: 0,
+                    maxWidth: '100%',
                   }}
                 >
                   <h2
-                    style={{
-                      margin: 0,
-                      color: 'var(--text-primary)',
-                      fontSize: '1.5rem',
-                      fontWeight: 800,
-                      letterSpacing: '-0.02em',
-                      lineHeight: 1.2,
-                      whiteSpace: 'nowrap',
-                      pointerEvents: 'none',
-                      userSelect: 'none',
-                    }}
+                    ref={setHeadingRef}
+                    className={`landing-label-heading ${isTitleOverflowing ? 'is-overflowing' : ''}`}
                   >
                     {activeLabelTitle}
                   </h2>
                   <ChevronDown
-                    size={22}
+                    size={18}
                     color="var(--text-secondary)"
                     style={{
                       pointerEvents: 'none',
                       flexShrink: 0,
+                      marginLeft: isTitleOverflowing ? '-18px' : '4px',
+                      position: 'relative',
+                      zIndex: 1,
                     }}
                   />
                   <select
@@ -1303,28 +1326,16 @@ export default function LandingPage() {
             </div>
 
             {/* Right side: Sort Selector Dropdown */}
-            <div style={{ position: 'relative', flexShrink: 0, marginLeft: '8px' }}>
+            <div style={{ position: 'relative', flexShrink: 0 }}>
               <button
                 type="button"
+                className={`landing-sort-button ${activeLabelTitle.length > 10 ? 'sort-collapsed' : ''}`}
                 onClick={() => setShowSortDropdown(!showSortDropdown)}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1.5px solid var(--divider-color)',
-                  background: 'var(--surface-color)',
-                  color: 'var(--text-primary)',
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  boxShadow: 'var(--shadow-sm)',
-                }}
+                aria-label="Change sort order"
+                title={`Sort: ${activeSortMode === 'last_accessed' ? 'Last Accessed' : activeSortMode === 'custom' ? 'Custom' : activeSortMode === 'name' ? 'Alphabetical' : 'Date Created'}`}
               >
-                <ArrowUpDown size={14} color="var(--text-secondary)" />
-                <span>
+                <ArrowUpDown size={13} color="var(--text-secondary)" style={{ flexShrink: 0 }} />
+                <span className="landing-sort-text">
                   {activeSortMode === 'last_accessed'
                     ? 'Last Accessed'
                     : activeSortMode === 'custom'
@@ -1333,7 +1344,6 @@ export default function LandingPage() {
                     ? 'Alphabetical'
                     : 'Date Created'}
                 </span>
-                <ChevronDown size={14} color="var(--text-secondary)" />
               </button>
 
               {showSortDropdown && (
@@ -1348,7 +1358,7 @@ export default function LandingPage() {
                       right: 0,
                       top: 'calc(100% + 4px)',
                       zIndex: 101,
-                      minWidth: '180px',
+                      minWidth: '160px',
                       background: 'var(--surface-color)',
                       border: '1px solid var(--border-color)',
                       borderRadius: 'var(--radius-sm)',
@@ -1371,15 +1381,17 @@ export default function LandingPage() {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '8px 10px',
+                        padding: '8px 12px',
+                        gap: '8px',
                         borderRadius: 'var(--radius-sm)',
                         border: 'none',
                         background: activeSortMode === opt.id ? 'var(--bg-color)' : 'transparent',
                         color: activeSortMode === opt.id ? 'var(--primary-color)' : 'var(--text-primary)',
-                        fontSize: '0.8rem',
+                        fontSize: '0.95rem',
                         fontWeight: activeSortMode === opt.id ? 700 : 500,
                         cursor: 'pointer',
                         textAlign: 'left',
+                        whiteSpace: 'nowrap',
                       }}
                       onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-color)')}
                       onMouseLeave={e => {
@@ -1387,7 +1399,7 @@ export default function LandingPage() {
                       }}
                     >
                       <span>{opt.label}</span>
-                      {activeSortMode === opt.id && <Check size={14} />}
+                      {activeSortMode === opt.id && <Check size={16} style={{ flexShrink: 0 }} />}
                     </button>
                   ))}
                 </div>
