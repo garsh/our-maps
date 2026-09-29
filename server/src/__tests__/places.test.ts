@@ -116,10 +116,10 @@ describe('Places API Proxy Endpoints', () => {
       expect(headers['X-Goog-FieldMask']).toContain('places.id');
       const body = JSON.parse(options?.body as string);
       expect(body.textQuery).toBe('starbucks');
-      expect(body.locationRestriction.rectangle.low.latitude).toBeCloseTo(5.0);
-      expect(body.locationRestriction.rectangle.low.longitude).toBeCloseTo(-1.0);
-      expect(body.locationRestriction.rectangle.high.latitude).toBeCloseTo(6.0);
-      expect(body.locationRestriction.rectangle.high.longitude).toBeCloseTo(1.0);
+      expect(body.locationBias.rectangle.low.latitude).toBeCloseTo(5.0);
+      expect(body.locationBias.rectangle.low.longitude).toBeCloseTo(-1.0);
+      expect(body.locationBias.rectangle.high.latitude).toBeCloseTo(6.0);
+      expect(body.locationBias.rectangle.high.longitude).toBeCloseTo(1.0);
       return {
         json: async () => mockGoogleResults
       } as Response;
@@ -147,6 +147,64 @@ describe('Places API Proxy Endpoints', () => {
         lon: '0',
         title: 'Second Match Starbucks',
         address: '123 Second Match Lane',
+        type: 'global'
+      }
+    ]);
+
+    delete process.env.GOOGLE_MAPS_API_KEY;
+  });
+
+  it('should fall back to Google Geocoding API when Places API returns zero in-bounds results', async () => {
+    process.env.GOOGLE_MAPS_API_KEY = 'mock-google-key-value';
+
+    const mockGeocodeResults = {
+      status: 'OK',
+      results: [
+        {
+          place_id: 'geocode-tulare-id',
+          formatted_address: '67903 Tulare Rd, Montrose, CO 81403, USA',
+          geometry: {
+            location: {
+              lat: 38.3826,
+              lng: -107.8185
+            }
+          }
+        }
+      ]
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('places.googleapis.com/v1/places:searchText')) {
+        // Return 0 places from Places API
+        return {
+          json: async () => ({ places: [] })
+        } as Response;
+      }
+      if (urlStr.includes('maps.googleapis.com/maps/api/geocode/json')) {
+        const decodedUrl = decodeURIComponent(urlStr);
+        expect(decodedUrl).toContain('address=67903 Tulare Rd');
+        expect(decodedUrl).toContain('bounds=38.3,-107.9|38.4,-107.8');
+        return {
+          json: async () => mockGeocodeResults
+        } as Response;
+      }
+      throw new Error(`Unexpected fetch call: ${urlStr}`);
+    });
+
+    const res = await request(app)
+      .get('/api/places/search?q=67903%20Tulare%20Rd&bounds=-107.9,38.4,-107.8,38.3')
+      .set(authHeader);
+
+    expect(res.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(res.body).toEqual([
+      {
+        place_id: 'geocode-tulare-id',
+        title: '67903 Tulare Rd',
+        address: '67903 Tulare Rd, Montrose, CO 81403',
+        lat: '38.3826',
+        lon: '-107.8185',
         type: 'global'
       }
     ]);

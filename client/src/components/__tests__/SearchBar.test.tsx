@@ -66,6 +66,22 @@ describe('SearchBar', () => {
     });
   });
 
+  it('matches local pins by address when label differs', async () => {
+    const addressPins = [
+      { id: 'pin-100', lat: 38.3826, lng: -107.8185, label: 'Pin 1', address: '67903 Tulare Rd, Montrose, CO 81403', position: 0 }
+    ];
+    setMapViewportBounds('-107.9,38.4,-107.8,38.3');
+    render(<SearchBar onAddPin={mockOnAddPin} pins={addressPins} />);
+
+    const input = screen.getByPlaceholderText(/Search.../i);
+    fireEvent.change(input, { target: { value: '67903 Tulare Rd' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Pin 1')).toBeInTheDocument();
+      expect(screen.getByText(/67903 Tulare Rd/)).toBeInTheDocument();
+    });
+  });
+
   it('previews a local result when clicked', async () => {
     const mockOnHoverPin = vi.fn();
     render(<SearchBar onAddPin={mockOnAddPin} onHoverPin={mockOnHoverPin} pins={mockPins} />);

@@ -213,7 +213,7 @@ router.get('/search', async (req: AuthRequest, res) => {
     if (clamped && !isGlobal) {
       const height = Math.abs(clamped.maxLat - clamped.minLat);
       if (clamped.boundEast - clamped.boundWest <= 180 && clamped.boundSouth <= clamped.boundNorth) {
-        body.locationRestriction = {
+        body.locationBias = {
           rectangle: {
             low: { latitude: clamped.boundSouth, longitude: clamped.boundWest },
             high: { latitude: clamped.boundNorth, longitude: clamped.boundEast }
@@ -260,6 +260,41 @@ router.get('/search', async (req: AuthRequest, res) => {
 
     if (clamped && !isGlobal) {
       formatted = formatted.filter((item: any) => isWithinBounds(item.lat, item.lon, clamped));
+    }
+
+    // If Places API returned zero results, fallback to Google Geocoding API for addresses
+    if (results.length === 0) {
+      try {
+        let geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${apiKey}`;
+        if (clamped && !isGlobal) {
+          geocodeUrl += `&bounds=${encodeURIComponent(`${clamped.boundSouth},${clamped.boundWest}|${clamped.boundNorth},${clamped.boundEast}`)}`;
+        }
+        const geoResp = await fetch(geocodeUrl);
+        const geoData = await geoResp.json();
+        if (geoData.status === 'OK' && Array.isArray(geoData.results)) {
+          const geoFormatted = geoData.results.map((item: any) => {
+            const rawAddress = item.formatted_address || '';
+            const address = stripCountrySuffix(rawAddress);
+            const firstPart = rawAddress.split(',')[0].trim();
+            return {
+              place_id: item.place_id || '',
+              title: firstPart,
+              address,
+              lat: item.geometry?.location?.lat?.toString() || '0',
+              lon: item.geometry?.location?.lng?.toString() || '0',
+              type: 'global'
+            };
+          });
+          const inBoundsGeo = (clamped && !isGlobal)
+            ? geoFormatted.filter((item: any) => isWithinBounds(item.lat, item.lon, clamped))
+            : geoFormatted;
+          if (inBoundsGeo.length > 0) {
+            formatted = inBoundsGeo;
+          }
+        }
+      } catch (geoErr) {
+        console.warn('[Places API] Geocoding fallback failed:', geoErr);
+      }
     }
 
     const finalResults = formatted.slice(0, 10);

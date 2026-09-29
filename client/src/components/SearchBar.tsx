@@ -159,9 +159,10 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
   // Initialize Fuse for fuzzy search on local pins (memoized on pins array only)
   const fuse = useMemo(() => {
     return new Fuse(pins, {
-      keys: ['label', 'description'],
+      keys: ['label', 'description', 'address'],
       threshold: 0.4,
       includeScore: true,
+      ignoreLocation: true,
     });
   }, [pins]);
 
