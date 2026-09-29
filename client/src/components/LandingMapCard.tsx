@@ -25,18 +25,18 @@ function LongPressLabel({
   className,
   children,
   onClick,
-  onTouchStart,
+  onLongPress,
   onTouchEnd,
-  disabled = false,
+  onTouchMove,
 }: {
   title: string;
   style?: CSSProperties;
   className?: string;
   children: ReactNode;
   onClick?: (event: React.MouseEvent<HTMLSpanElement>) => void;
-  onTouchStart?: (event: TouchEvent<HTMLSpanElement>) => void;
+  onLongPress?: (event: TouchEvent<HTMLSpanElement> | React.MouseEvent<HTMLSpanElement>) => void;
   onTouchEnd?: () => void;
-  disabled?: boolean;
+  onTouchMove?: (event: TouchEvent<HTMLSpanElement>) => void;
 }) {
   return (
     <span
@@ -44,10 +44,14 @@ function LongPressLabel({
       title={title}
       className={className}
       style={{ ...style, ...LONG_PRESS_LABEL_STYLE }}
-      onClick={disabled ? undefined : onClick}
-      onTouchStart={disabled ? undefined : onTouchStart}
-      onTouchEnd={disabled ? undefined : onTouchEnd}
-      onTouchCancel={disabled ? undefined : onTouchEnd}
+      onClick={onClick}
+      onMouseDown={onLongPress}
+      onMouseUp={onTouchEnd}
+      onMouseLeave={onTouchEnd}
+      onTouchStart={onLongPress}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchEnd}
       onContextMenu={e => e.preventDefault()}
     >
       {children}
@@ -66,6 +70,7 @@ interface LandingMapCardProps {
   onDeleteClick?: (mapId: string, e: React.MouseEvent) => void;
   handleTouchStart?: (text: string, e: React.TouchEvent | React.MouseEvent) => void;
   handleTouchEnd?: () => void;
+  handleTouchMove?: (e: React.TouchEvent) => void;
   showTooltip?: (text: string, element: HTMLElement) => void;
   longPressTriggeredRef?: React.MutableRefObject<boolean>;
   formatDate: (dateString?: string) => string;
@@ -83,6 +88,7 @@ export function LandingMapCard({
   onDeleteClick,
   handleTouchStart,
   handleTouchEnd,
+  handleTouchMove,
   showTooltip,
   longPressTriggeredRef,
   formatDate,
@@ -155,16 +161,28 @@ export function LandingMapCard({
 
       {/* Map Info Section */}
       <div className="map-card-info" style={NO_TEXT_SELECT_STYLE}>
-        <h3 className="map-card-title" title={map.name} style={NO_TEXT_SELECT_STYLE}>
+        <h3
+          className="map-card-title"
+          title={map.name}
+          style={NO_TEXT_SELECT_STYLE}
+          onMouseDown={e => handleTouchStart?.(map.name, e)}
+          onMouseUp={handleTouchEnd}
+          onMouseLeave={handleTouchEnd}
+          onTouchStart={e => handleTouchStart?.(map.name, e)}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
+          onContextMenu={e => e.preventDefault()}
+        >
           {map.name}
         </h3>
         <div className="map-card-meta" style={NO_TEXT_SELECT_STYLE}>
           <LongPressLabel
             title="Map Owner"
             style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0, cursor: 'default' }}
-            onTouchStart={e => handleTouchStart?.('Map Owner', e)}
+            onLongPress={e => handleTouchStart?.('Map Owner', e)}
             onTouchEnd={handleTouchEnd}
-            disabled={isCustomSort}
+            onTouchMove={handleTouchMove}
           >
             <span>{map.ownerId === currentUserId ? 'You' : (map.ownerName || 'Shared')}</span>
           </LongPressLabel>
@@ -172,9 +190,9 @@ export function LandingMapCard({
           <LongPressLabel
             title="Last Accessed Date"
             style={{ flexShrink: 0, opacity: 0.85, cursor: 'default' }}
-            onTouchStart={e => handleTouchStart?.('Last Accessed Date', e)}
+            onLongPress={e => handleTouchStart?.('Last Accessed Date', e)}
             onTouchEnd={handleTouchEnd}
-            disabled={isCustomSort}
+            onTouchMove={handleTouchMove}
           >
             {formatDate(map.lastAccessedAt)}
           </LongPressLabel>
@@ -200,11 +218,17 @@ export function LandingMapCard({
                   }}
                   onClick={e => {
                     e.stopPropagation();
+                    if (longPressTriggeredRef?.current) {
+                      longPressTriggeredRef.current = false;
+                      return;
+                    }
                     if (showTooltip) {
                       showTooltip('Downloaded', e.currentTarget);
                     }
                   }}
-                  disabled={isCustomSort}
+                  onLongPress={e => handleTouchStart?.('Downloaded', e)}
+                  onTouchEnd={handleTouchEnd}
+                  onTouchMove={handleTouchMove}
                 >
                   <Download size={12} />
                 </LongPressLabel>
@@ -277,11 +301,17 @@ export function LandingMapCard({
                   }}
                   onClick={e => {
                     e.stopPropagation();
+                    if (longPressTriggeredRef?.current) {
+                      longPressTriggeredRef.current = false;
+                      return;
+                    }
                     if (showTooltip) {
                       showTooltip(labelText, e.currentTarget);
                     }
                   }}
-                  disabled={isCustomSort}
+                  onLongPress={e => handleTouchStart?.(labelText, e)}
+                  onTouchEnd={handleTouchEnd}
+                  onTouchMove={handleTouchMove}
                 >
                   {isLoggedOut ? <LogIn size={12} /> : <WifiOff size={12} />}
                 </LongPressLabel>
@@ -312,9 +342,14 @@ export function LandingMapCard({
               onMapClick?.(map.id, true);
             }}
             onPointerDown={e => e.stopPropagation()}
-            onTouchStart={isCustomSort ? undefined : e => handleTouchStart?.('Open in view mode', e)}
-            onTouchEnd={isCustomSort ? undefined : handleTouchEnd}
-            onTouchCancel={isCustomSort ? undefined : handleTouchEnd}
+            onMouseDown={e => handleTouchStart?.('Open in view mode', e)}
+            onMouseUp={handleTouchEnd}
+            onMouseLeave={handleTouchEnd}
+            onTouchStart={e => handleTouchStart?.('Open in view mode', e)}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchEnd}
+            onContextMenu={e => e.preventDefault()}
             title="Open in view mode"
             aria-label="Open in view mode"
           >
@@ -336,9 +371,14 @@ export function LandingMapCard({
               onOpenLabels?.(map, e);
             }}
             onPointerDown={e => e.stopPropagation()}
-            onTouchStart={isCustomSort ? undefined : e => handleTouchStart?.('Manage labels', e)}
-            onTouchEnd={isCustomSort ? undefined : handleTouchEnd}
-            onTouchCancel={isCustomSort ? undefined : handleTouchEnd}
+            onMouseDown={e => handleTouchStart?.('Manage labels', e)}
+            onMouseUp={handleTouchEnd}
+            onMouseLeave={handleTouchEnd}
+            onTouchStart={e => handleTouchStart?.('Manage labels', e)}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchEnd}
+            onContextMenu={e => e.preventDefault()}
             title="Manage labels"
             aria-label="Manage labels"
           >
@@ -360,9 +400,14 @@ export function LandingMapCard({
               onDeleteClick?.(map.id, e);
             }}
             onPointerDown={e => e.stopPropagation()}
-            onTouchStart={isCustomSort ? undefined : e => handleTouchStart?.(map.ownerId === currentUserId ? 'Delete Map' : 'Leave Map', e)}
-            onTouchEnd={isCustomSort ? undefined : handleTouchEnd}
-            onTouchCancel={isCustomSort ? undefined : handleTouchEnd}
+            onMouseDown={e => handleTouchStart?.(map.ownerId === currentUserId ? 'Delete Map' : 'Leave Map', e)}
+            onMouseUp={handleTouchEnd}
+            onMouseLeave={handleTouchEnd}
+            onTouchStart={e => handleTouchStart?.(map.ownerId === currentUserId ? 'Delete Map' : 'Leave Map', e)}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchEnd}
+            onContextMenu={e => e.preventDefault()}
             title={map.ownerId === currentUserId ? 'Delete Map' : 'Leave Map'}
             aria-label={map.ownerId === currentUserId ? 'Delete Map' : 'Leave Map'}
           >

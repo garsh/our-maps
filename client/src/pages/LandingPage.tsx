@@ -20,6 +20,7 @@ interface TouchTooltipState {
   text: string;
   x: number;
   y: number;
+  below?: boolean;
 }
 
 function parseUtcDateString(dateStr?: string | null): number {
@@ -159,6 +160,10 @@ export default function LandingPage() {
     })
   );
 
+  const isTouchActiveRef = useRef(false);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const tooltipDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const clearLongPress = () => {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
@@ -166,41 +171,78 @@ export default function LandingPage() {
     }
   };
 
+  const calculateTooltipPosition = (text: string, element: HTMLElement) => {
+    const rect = element.getBoundingClientRect();
+    const center = rect.left + rect.width / 2;
+    const maxHalfWidth = Math.min(160, Math.max(20, (window.innerWidth - 32) / 2));
+    const x = Math.max(16 + maxHalfWidth, Math.min(center, window.innerWidth - 16 - maxHalfWidth));
+    const below = rect.top < 65;
+    return {
+      text,
+      x,
+      y: below ? rect.bottom + 8 : rect.top - 6,
+      below,
+    };
+  };
+
   const showTooltip = (text: string, element: HTMLElement) => {
     clearLongPress();
-    const rect = element.getBoundingClientRect();
-    setTouchTooltip({
-      text,
-      x: rect.left + rect.width / 2,
-      y: rect.top - 6
-    });
+    if (tooltipDismissTimerRef.current) {
+      clearTimeout(tooltipDismissTimerRef.current);
+    }
+    setTouchTooltip(calculateTooltipPosition(text, element));
     // Auto-dismiss after 2.5s
-    setTimeout(() => {
+    tooltipDismissTimerRef.current = setTimeout(() => {
       setTouchTooltip(prev => (prev?.text === text ? null : prev));
+      tooltipDismissTimerRef.current = null;
     }, 2500);
   };
 
   const handleTouchStart = (text: string, e: React.TouchEvent | React.MouseEvent) => {
+    if (!('touches' in e) && isTouchActiveRef.current) {
+      return;
+    }
+    if ('touches' in e) {
+      isTouchActiveRef.current = true;
+      const touch = e.touches[0];
+      touchStartPosRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+    } else {
+      touchStartPosRef.current = null;
+    }
+
     clearLongPress();
     longPressTriggeredRef.current = false;
     const targetElement = e.currentTarget as HTMLElement;
     longPressTimerRef.current = setTimeout(() => {
       longPressTriggeredRef.current = true;
-      const rect = targetElement.getBoundingClientRect();
-      setTouchTooltip({
-        text,
-        x: rect.left + rect.width / 2,
-        y: rect.top - 6
-      });
+      if (tooltipDismissTimerRef.current) {
+        clearTimeout(tooltipDismissTimerRef.current);
+      }
+      setTouchTooltip(calculateTooltipPosition(text, targetElement));
       // Auto-dismiss after 2.5s
-      setTimeout(() => {
+      tooltipDismissTimerRef.current = setTimeout(() => {
         setTouchTooltip(prev => (prev?.text === text ? null : prev));
+        tooltipDismissTimerRef.current = null;
       }, 2500);
     }, 450);
   };
 
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!longPressTimerRef.current || !touchStartPosRef.current) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    const dx = touch.clientX - touchStartPosRef.current.x;
+    const dy = touch.clientY - touchStartPosRef.current.y;
+    if (Math.hypot(dx, dy) > 10) {
+      clearLongPress();
+    }
+  };
+
   const handleTouchEnd = () => {
     clearLongPress();
+    setTimeout(() => {
+      isTouchActiveRef.current = false;
+    }, 400);
   };
 
   const handleRemoveAllDownloads = async () => {
@@ -1611,6 +1653,7 @@ export default function LandingPage() {
                     }}
                     onDeleteClick={id => setDeleteConfirm(id)}
                     handleTouchStart={handleTouchStart}
+                    handleTouchMove={handleTouchMove}
                     handleTouchEnd={handleTouchEnd}
                     showTooltip={showTooltip}
                     longPressTriggeredRef={longPressTriggeredRef}
@@ -1653,6 +1696,7 @@ export default function LandingPage() {
                 }}
                 onDeleteClick={id => setDeleteConfirm(id)}
                 handleTouchStart={handleTouchStart}
+                handleTouchMove={handleTouchMove}
                 handleTouchEnd={handleTouchEnd}
                 showTooltip={showTooltip}
                 longPressTriggeredRef={longPressTriggeredRef}
@@ -1665,7 +1709,7 @@ export default function LandingPage() {
 
       {touchTooltip && (
         <div 
-          className="touch-tooltip-bubble"
+          className={`touch-tooltip-bubble${touchTooltip.below ? ' is-below' : ''}`}
           style={{
             left: `${touchTooltip.x}px`,
             top: `${touchTooltip.y}px`

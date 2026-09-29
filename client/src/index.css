@@ -509,12 +509,15 @@ button:active {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.map-card-compact:hover:not(:has(.map-card-actions:hover)):not(:has(.map-card-badge:hover)) {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--primary-color);
+@media (hover: hover) and (pointer: fine) {
+  .map-card-compact:hover:not(:has(.map-card-actions:hover)):not(:has(.map-card-badge:hover)) {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--primary-color);
+  }
 }
 
 .map-card-compact.is-dragging,
@@ -689,10 +692,18 @@ button:active {
   border-radius: var(--radius-sm);
   font-size: 0.75rem;
   font-weight: 600;
-  white-space: nowrap;
+  white-space: normal;
+  max-width: min(320px, calc(100vw - 32px));
+  word-break: break-word;
+  text-align: center;
   pointer-events: none;
   z-index: 3000;
   animation: tooltipFadeIn 0.15s ease-out forwards;
+}
+
+.touch-tooltip-bubble.is-below {
+  transform: translate(-50%, 0);
+  animation-name: tooltipFadeInBelow;
 }
 
 [data-theme='dark'] .touch-tooltip-bubble {
@@ -709,6 +720,17 @@ button:active {
   to {
     opacity: 1;
     transform: translate(-50%, -100%);
+  }
+}
+
+@keyframes tooltipFadeInBelow {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
   }
 }
 
