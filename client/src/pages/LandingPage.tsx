@@ -31,7 +31,23 @@ function parseUtcDateString(dateStr?: string | null): number {
   return isNaN(time) ? 0 : time;
 }
 
+const NO_TEXT_SELECT_STYLE: React.CSSProperties = {
+  userSelect: 'none',
+  WebkitUserSelect: 'none',
+  WebkitTouchCallout: 'none',
+};
+
+function isProtectedLandingText(target: EventTarget | Node | null, root: HTMLElement | null): boolean {
+  const el = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
+  if (!el) return false;
+  if (el.closest('input, textarea, select, [contenteditable="true"]')) return false;
+  if (el.closest('[data-long-press-label], [data-no-text-select]')) return true;
+  if (root && root.contains(el)) return true;
+  return false;
+}
+
 export default function LandingPage() {
+  const landingRootRef = useRef<HTMLDivElement>(null);
   const { user, isLoading: authLoading, logout, logoutEverywhere } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
@@ -367,15 +383,35 @@ export default function LandingPage() {
   });
 
   useEffect(() => {
-    const clearLabelSelection = () => {
+    const root = landingRootRef.current;
+    if (!root) return;
+
+    const blockSelect = (event: Event) => {
+      if (isProtectedLandingText(event.target, root)) {
+        event.preventDefault();
+      }
+    };
+
+    const clearSelection = () => {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) return;
-      const node = sel.anchorNode;
-      const el = node instanceof Element ? node : node?.parentElement;
-      if (el?.closest('[data-long-press-label]')) sel.removeAllRanges();
+      if (
+        isProtectedLandingText(sel.anchorNode, root) ||
+        isProtectedLandingText(sel.focusNode, root)
+      ) {
+        sel.removeAllRanges();
+      }
     };
-    document.addEventListener('selectionchange', clearLabelSelection);
-    return () => document.removeEventListener('selectionchange', clearLabelSelection);
+
+    root.addEventListener('selectstart', blockSelect);
+    root.addEventListener('contextmenu', blockSelect);
+    document.addEventListener('selectionchange', clearSelection);
+
+    return () => {
+      root.removeEventListener('selectstart', blockSelect);
+      root.removeEventListener('contextmenu', blockSelect);
+      document.removeEventListener('selectionchange', clearSelection);
+    };
   }, []);
 
   useEffect(() => {
@@ -891,7 +927,16 @@ export default function LandingPage() {
   }, [headingEl, activeLabelTitle, activeLabelId, activeSortMode, isOffline]);
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-color)', paddingBottom: '4rem' }}>
+    <div
+      ref={landingRootRef}
+      className="landing-page-root"
+      style={{
+        minHeight: '100vh',
+        background: 'var(--bg-color)',
+        paddingBottom: '4rem',
+        ...NO_TEXT_SELECT_STYLE,
+      }}
+    >
       <header className="landing-header">
         <h1 className="landing-header-title" style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: 0, fontWeight: 'bold', color: theme === 'dark' ? '#cbd5e1' : 'white', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}>
           <MapIcon size={24} color={theme === 'dark' ? '#cbd5e1' : 'white'} /> OurMaps

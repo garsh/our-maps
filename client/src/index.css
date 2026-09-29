@@ -398,6 +398,20 @@ button:active {
 }
 
 /* Landing Page Compact Density & Touch Target Styles */
+.landing-page-root {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.landing-page-root input,
+.landing-page-root textarea,
+.landing-page-root select,
+.landing-page-root [contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .landing-header {
   display: flex;
   justify-content: space-between;
@@ -407,6 +421,9 @@ button:active {
   color: white;
   box-shadow: var(--shadow-md);
   margin-bottom: 0.85rem;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .landing-header-title {
@@ -437,6 +454,8 @@ button:active {
   overflow: hidden;
   pointer-events: none;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   min-width: 0;
 }
 
@@ -459,6 +478,9 @@ button:active {
   cursor: pointer;
   white-space: nowrap;
   box-shadow: var(--shadow-sm);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .landing-search-wrapper {
@@ -484,6 +506,9 @@ button:active {
   align-items: center;
   justify-content: space-between;
   min-height: 58px;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .map-card-compact:hover:not(:has(.map-card-actions:hover)):not(:has(.map-card-badge:hover)) {
@@ -526,6 +551,9 @@ button:active {
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.3;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .map-card-meta {
@@ -538,6 +566,9 @@ button:active {
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.2;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .map-card-actions {

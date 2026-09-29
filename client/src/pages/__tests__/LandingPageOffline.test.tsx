@@ -84,6 +84,58 @@ describe('LandingPage Offline Map Access', () => {
     }
   });
 
+  it('does not let a long-press select map titles or general landing page text, preventing context menu and clearing selection', async () => {
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    const title = (await screen.findAllByText('Downloaded Map'))[0];
+    expect(title.style.userSelect).toBe('none');
+    expect(title.style.webkitUserSelect).toBe('none');
+
+    const contextEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    fireEvent(title, contextEvent);
+    expect(contextEvent.defaultPrevented).toBe(true);
+
+    const selectEvent = new Event('selectstart', { bubbles: true, cancelable: true });
+    fireEvent(title, selectEvent);
+    expect(selectEvent.defaultPrevented).toBe(true);
+
+    const selection = window.getSelection()!;
+    const range = document.createRange();
+    range.selectNodeContents(title);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+    expect(selection.rangeCount).toBe(0);
+  });
+
+  it('allows text selection and context menu on inputs like search', async () => {
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    const select = await screen.findByLabelText('Filter maps by label');
+    fireEvent.change(select, { target: { value: 'search' } });
+
+    const searchInput = await screen.findByPlaceholderText('Search all maps...');
+    const contextEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    fireEvent(searchInput, contextEvent);
+    expect(contextEvent.defaultPrevented).toBe(false);
+
+    const selectEvent = new Event('selectstart', { bubbles: true, cancelable: true });
+    fireEvent(searchInput, selectEvent);
+    expect(selectEvent.defaultPrevented).toBe(false);
+  });
+
   it('allows opening maps with download when offline', async () => {
     (apiService.getMaps as any).mockRejectedValue(new Error('Network Error'));
     localStorage.setItem('cached_maps', JSON.stringify(mockMaps));

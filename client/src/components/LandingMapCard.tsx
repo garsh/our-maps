@@ -11,11 +11,13 @@ export interface MapSummary {
   lastAccessedAt?: string;
 }
 
-const LONG_PRESS_LABEL_STYLE: CSSProperties = {
+const NO_TEXT_SELECT_STYLE: CSSProperties = {
   userSelect: 'none',
   WebkitUserSelect: 'none',
   WebkitTouchCallout: 'none',
 };
+
+const LONG_PRESS_LABEL_STYLE = NO_TEXT_SELECT_STYLE;
 
 function LongPressLabel({
   title,
@@ -124,9 +126,11 @@ export function LandingMapCard({
   return (
     <div
       ref={isCustomSort && !isOverlay ? setNodeRef : undefined}
-      style={style}
+      style={{ ...NO_TEXT_SELECT_STYLE, ...style }}
       className={`card map-card-compact${isDragging ? ' is-dragging' : ''}${isOverlay ? ' is-overlay' : ''}`}
       onClick={isOverlay ? undefined : cardClick}
+      onContextMenu={e => e.preventDefault()}
+      data-no-text-select=""
       {...(isCustomSort && !isOverlay ? attributes : {})}
     >
       {/* Drag handle visible only in Custom Order mode */}
@@ -150,11 +154,11 @@ export function LandingMapCard({
       )}
 
       {/* Map Info Section */}
-      <div className="map-card-info">
-        <h3 className="map-card-title" title={map.name}>
+      <div className="map-card-info" style={NO_TEXT_SELECT_STYLE}>
+        <h3 className="map-card-title" title={map.name} style={NO_TEXT_SELECT_STYLE}>
           {map.name}
         </h3>
-        <div className="map-card-meta">
+        <div className="map-card-meta" style={NO_TEXT_SELECT_STYLE}>
           <LongPressLabel
             title="Map Owner"
             style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0, cursor: 'default' }}
@@ -222,6 +226,7 @@ export function LandingMapCard({
                     fontWeight: '700',
                     marginLeft: 'auto',
                     flexShrink: 0,
+                    ...NO_TEXT_SELECT_STYLE,
                   }}
                 >
                   <Download size={11} /> Stalled
@@ -244,6 +249,7 @@ export function LandingMapCard({
                     fontWeight: '700',
                     marginLeft: 'auto',
                     flexShrink: 0,
+                    ...NO_TEXT_SELECT_STYLE,
                   }}
                 >
                   <Download size={11} className="animated-download-icon" /> Downloading
