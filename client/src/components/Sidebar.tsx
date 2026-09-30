@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, memo, type CSSProperties } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, memo, type CSSProperties, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import SearchBar, { type SearchAreaState } from './SearchBar';
 import { reverseGeocode } from '../utils/geocoding';
@@ -401,6 +401,7 @@ interface SidebarProps {
   isHoverBlocked?: boolean;
   onSearchAreaStateChange?: (state: SearchAreaState | null) => void;
   isPanelMinimized?: boolean;
+  mobileControlsRef?: Ref<HTMLDivElement>;
 }
 
 
@@ -2049,7 +2050,8 @@ const Sidebar = ({
   isOffline = false,
   isHoverBlocked = false,
   onSearchAreaStateChange,
-  isPanelMinimized = false
+  isPanelMinimized = false,
+  mobileControlsRef
 }: SidebarProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const appearanceTips = useAppearanceTips(isMenuOpen);
@@ -2967,9 +2969,9 @@ const Sidebar = ({
             : menuContent;
         })()}
 
-        {(isEditMode || selectedPins.length > 0) && (
+        {(isMobile || isEditMode || selectedPins.length > 0) && (
           // Above pin rows (drop targets use z-index 50) so a touch hits the results list.
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px', height: '28px', position: 'relative', zIndex: 60 }}>
+          <div className="sidebar-toolbar" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px', height: '28px', position: 'relative', zIndex: 60 }}>
             {isEditMode && (
               <div style={{ flex: 1, minWidth: 0, height: '28px' }}>
                 <SearchBar 
@@ -2981,6 +2983,14 @@ const Sidebar = ({
                   isPanelMinimized={isPanelMinimized}
                 />
               </div>
+            )}
+            {isMobile && (
+              <div
+                id="mobile-map-controls"
+                ref={mobileControlsRef}
+                className="mobile-map-controls"
+                style={isEditMode ? undefined : { marginLeft: 'auto' }}
+              />
             )}
             {selectedPins.length > 0 && (
               <button 
@@ -3001,7 +3011,7 @@ const Sidebar = ({
                   height: '28px',
                   boxSizing: 'border-box',
                   whiteSpace: 'nowrap',
-                  marginLeft: readOnly ? 'auto' : undefined
+                  marginLeft: readOnly && !isMobile ? 'auto' : undefined
                 }}
               >
                 <Navigation size={10} /> Go ({selectedPins.length})

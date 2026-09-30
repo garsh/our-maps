@@ -2171,14 +2171,6 @@ export function MapEditor() {
           </div>
         )}
 
-        {isMobile && (
-          <div 
-            id="mobile-map-controls" 
-            ref={setMobileControlsTarget}
-            className="mobile-map-controls"
-          />
-        )}
-
         {/* Desktop: resizer handle protrudes at any sidebar width via position:absolute */}
         {!isMobile && (
           <div
@@ -2283,6 +2275,7 @@ export function MapEditor() {
               onToggle3DBuildings={handleToggle3DBuildings}
               onSearchAreaStateChange={setSearchAreaState}
               isPanelMinimized={isMobile ? sheetHeight <= 0 : sidebarWidth <= 0}
+              mobileControlsRef={setMobileControlsTarget}
             />
           </div>
         </div>

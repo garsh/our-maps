@@ -2683,8 +2683,63 @@ const MapView = ({
 
       {/* Combined Compass & Tilt Indicator Control and Location Tracking */}
       {(() => {
+        // Portaled buttons share the 28px search row. The mobile sidebar zoom
+        // brings that back up to about the same on-screen size as the 42px map buttons.
+        const controlSize = isPortaled ? 28 : 42;
+        const compassIconSize = isPortaled ? 22 : 34;
+        const locateIconSize = isPortaled ? 16 : 24;
         const mapControls = (
           <>
+            <button
+              onClick={handleToggleLocationTracking}
+              style={{
+                position: isPortaled ? 'relative' : 'absolute',
+                bottom: isPortaled ? undefined : '60px',
+                right: isPortaled ? undefined : '12px',
+                width: `${controlSize}px`,
+                height: `${controlSize}px`,
+                boxSizing: 'border-box',
+                flexShrink: 0,
+                borderRadius: isPortaled ? '8px' : '12px',
+                background: 'var(--surface-color)',
+                border: isTrackingLocation ? '2px solid #4285F4' : '1px solid var(--border-color)',
+                boxShadow: 'var(--shadow-md)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 1000,
+                color: isTrackingLocation ? '#4285F4' : (mapTheme === 'dark' ? '#cbd5e1' : 'var(--primary-color)'),
+                transition: 'all 0.2s',
+                pointerEvents: 'auto',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface-color)')}
+              title={!isTrackingLocation ? 'Find my location' : userLocation ? 'Stop location tracking' : 'Locating...'}
+              aria-label={!isTrackingLocation ? 'Find my location' : userLocation ? 'Stop location tracking' : 'Locating...'}
+              aria-pressed={isTrackingLocation}
+            >
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Locate size={locateIconSize} />
+                {isTrackingLocation && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: '#4285F4',
+                      ...(userLocation
+                        ? {}
+                        : {
+                            animation: 'locatePulse 1.4s ease-in-out infinite',
+                          }),
+                    }}
+                  />
+                )}
+              </div>
+            </button>
+
             <button
               ref={compassButtonRef}
               onClick={handleCombinedCompassTilt}
@@ -2694,11 +2749,13 @@ const MapView = ({
               onPointerLeave={handleCompassPointerUp}
               style={{
                 position: isPortaled ? 'relative' : 'absolute',
-                bottom: isPortaled ? undefined : '60px',
+                bottom: isPortaled ? undefined : '10px',
                 right: isPortaled ? undefined : '12px',
-                width: '42px',
-                height: '42px',
-                borderRadius: '12px',
+                width: `${controlSize}px`,
+                height: `${controlSize}px`,
+                boxSizing: 'border-box',
+                flexShrink: 0,
+                borderRadius: isPortaled ? '8px' : '12px',
                 background: 'var(--surface-color)',
                 border: '1px solid var(--border-color)',
                 boxShadow: 'var(--shadow-md)',
@@ -2719,8 +2776,8 @@ const MapView = ({
             >
               <svg
                 ref={compassSvgRef}
-                width="34"
-                height="34"
+                width={compassIconSize}
+                height={compassIconSize}
                 viewBox="0 0 24 24"
                 style={{
                   transform: 'perspective(60px) rotateX(0deg)',
@@ -2744,54 +2801,6 @@ const MapView = ({
                   <polygon points="12,23 17,12 7,12" fill={mapTheme === 'dark' ? '#9ca3af' : '#374151'} />
                 </g>
               </svg>
-            </button>
-
-            <button
-              onClick={handleToggleLocationTracking}
-              style={{
-                position: isPortaled ? 'relative' : 'absolute',
-                bottom: isPortaled ? undefined : '10px',
-                right: isPortaled ? undefined : '12px',
-                width: '42px',
-                height: '42px',
-                borderRadius: '12px',
-                background: 'var(--surface-color)',
-                border: isTrackingLocation ? '2px solid #4285F4' : '1px solid var(--border-color)',
-                boxShadow: 'var(--shadow-md)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                zIndex: 1000,
-                color: isTrackingLocation ? '#4285F4' : (mapTheme === 'dark' ? '#cbd5e1' : 'var(--primary-color)'),
-                transition: 'all 0.2s',
-                pointerEvents: 'auto',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-color)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--surface-color)')}
-              title={!isTrackingLocation ? 'Find my location' : userLocation ? 'Stop location tracking' : 'Locating...'}
-              aria-label={!isTrackingLocation ? 'Find my location' : userLocation ? 'Stop location tracking' : 'Locating...'}
-              aria-pressed={isTrackingLocation}
-            >
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Locate size={24} />
-                {isTrackingLocation && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '50%',
-                      backgroundColor: '#4285F4',
-                      ...(userLocation
-                        ? {}
-                        : {
-                            animation: 'locatePulse 1.4s ease-in-out infinite',
-                          }),
-                    }}
-                  />
-                )}
-              </div>
             </button>
           </>
         );
@@ -2822,7 +2831,7 @@ const MapView = ({
           display: inline-flex !important;
           flex-direction: row-reverse !important;
           align-items: center !important;
-          margin: 0 60px 10px 0 !important;
+          margin: 0 ${isMobile ? '10px' : '60px'} 10px 0 !important;
           background: var(--surface-color) !important;
           color: var(--text-secondary) !important;
           border: 1px solid var(--border-color) !important;
