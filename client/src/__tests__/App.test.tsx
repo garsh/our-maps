@@ -1689,6 +1689,57 @@ describe('App Components Error Handling', () => {
       expect(screen.getByTestId('home-page')).toBeInTheDocument();
       expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
     });
+
+    it('ensures sync and download pills do not shrink while long map names dynamically shorten with ellipsis', async () => {
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'map-long-name',
+        name: 'Cranberry Township map with a very long name too',
+        pins: [],
+        layers: [],
+        permissions: [],
+        userRole: 'owner',
+        isPublic: false,
+      });
+
+      render(
+        <GoogleOAuthProvider clientId="test-client-id">
+          <MemoryRouter initialEntries={['/map/map-long-name']}>
+            <Routes>
+              <Route path="/map/:id" element={<MapEditor />} />
+            </Routes>
+          </MemoryRouter>
+        </GoogleOAuthProvider>
+      );
+
+      const heading = await screen.findByRole('heading', { level: 1 });
+      expect(heading).toHaveTextContent('Cranberry Township map with a very long name too');
+      expect(heading.style.textOverflow).toBe('ellipsis');
+      expect(heading.style.overflow).toBe('hidden');
+      expect(heading.style.whiteSpace).toBe('nowrap');
+      expect(heading.style.flexShrink).toBe('1');
+      expect(heading.style.minWidth).toBe('0px');
+
+      const titleContainer = heading.closest('div')!;
+      expect(titleContainer.style.flexShrink).toBe('1');
+      expect(titleContainer.style.minWidth).toBe('0px');
+
+      const syncStatus = screen.getByTestId('sync-status');
+      expect(syncStatus).toBeInTheDocument();
+      expect(syncStatus.style.flexShrink).toBe('0');
+
+      const syncContainer = syncStatus.parentElement!;
+      expect(syncContainer.style.flexShrink).toBe('0');
+
+      const downloadPillContainer = document.getElementById('download-pill-container')!;
+      expect(downloadPillContainer).toBeInTheDocument();
+      expect(downloadPillContainer.style.flexShrink).toBe('0');
+
+      const pillsGroup = downloadPillContainer.parentElement!;
+      expect(pillsGroup.style.flexShrink).toBe('0');
+
+      const rightSection = pillsGroup.parentElement!;
+      expect(rightSection.style.flexShrink).toBe('0');
+    });
   });
 });
 

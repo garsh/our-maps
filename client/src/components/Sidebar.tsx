@@ -3377,7 +3377,8 @@ const Sidebar = ({
               fontWeight: '600',
               whiteSpace: 'nowrap',
               fontSize: '0.65rem',
-              cursor: 'default'
+              cursor: 'default',
+              flexShrink: 0
             }}
           >
             {activity.progress !== null && activity.icon !== 'removing' && activity.icon !== 'done' && (

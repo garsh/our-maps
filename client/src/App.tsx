@@ -1999,7 +1999,7 @@ export function MapEditor() {
         </div>
         <h1 
           ref={titleRef}
-          style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1, color: mapTheme === 'dark' ? '#cbd5e1' : 'white' }}
+          style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flexShrink: 1, color: mapTheme === 'dark' ? '#cbd5e1' : 'white' }}
         >
           {mapName || 'Untitled Map'}
         </h1>
@@ -2018,13 +2018,13 @@ export function MapEditor() {
         </div>
       )}
       
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 2, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 2, minWidth: 0, overflow: 'hidden' }}>
-          <div id="download-pill-container" style={{ display: 'flex', alignItems: 'center', flexShrink: 1, minWidth: 0, overflow: 'hidden' }}></div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+          <div id="download-pill-container" style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}></div>
           {(() => {
             if (!user) {
               return (
-                <div style={{ flexShrink: 2, minWidth: 0, overflow: 'hidden' }}>
+                <div style={{ flexShrink: 0 }}>
                   <button
                     data-testid="sync-status"
                     data-status="logged-out"
@@ -2045,7 +2045,8 @@ export function MapEditor() {
                       cursor: 'pointer',
                       outline: 'none',
                       fontFamily: 'inherit',
-                      fontSize: '0.65rem'
+                      fontSize: '0.65rem',
+                      flexShrink: 0
                     }}
                   >
                     <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ff4d4f', flexShrink: 0 }} />
@@ -2087,7 +2088,7 @@ export function MapEditor() {
               : '#4ade80';
 
             return (
-              <div style={{ flexShrink: 2, minWidth: 0, overflow: 'hidden' }}>
+              <div style={{ flexShrink: 0 }}>
                 <button 
                   data-testid="sync-status"
                   data-status={syncStatus}
@@ -2111,7 +2112,8 @@ export function MapEditor() {
                     cursor: (editMode && error && !isOffline) ? 'pointer' : 'default',
                     outline: 'none',
                     fontFamily: 'inherit',
-                    fontSize: '0.65rem'
+                    fontSize: '0.65rem',
+                    flexShrink: 0
                   }}>
                   <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
                   <span>{syncLabel}</span>
