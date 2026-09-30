@@ -52,17 +52,17 @@ export function isBundledSpriteId(id: string): boolean {
 
 export async function applyBundledSpriteById(map: any, id: string, theme?: 'light' | 'dark'): Promise<boolean> {
   if (!map || typeof map.addImage !== 'function' || !id) return false;
-  const order: Array<'light' | 'dark'> = theme
-    ? [theme, theme === 'light' ? 'dark' : 'light']
-    : ['light', 'dark'];
+  // MapLibre copies these pixels into the tile and will not reload it for an
+  // image registered during that wait. Fill a missing icon only.
+  if (typeof map.hasImage === 'function' && map.hasImage(id)) return true;
+  const preferred: 'light' | 'dark' = theme === 'dark' ? 'dark' : 'light';
+  const order: Array<'light' | 'dark'> = [preferred, preferred === 'light' ? 'dark' : 'light'];
   for (const t of order) {
     const sprites = await ensureSprites(t);
+    if (typeof map.hasImage === 'function' && map.hasImage(id)) return true;
     const sprite = sprites.find((s) => s.id === id);
     if (!sprite) continue;
     try {
-      if (typeof map.hasImage === 'function' && map.hasImage(id)) {
-        map.removeImage(id);
-      }
       map.addImage(id, sprite.imageData, { pixelRatio: sprite.pixelRatio, sdf: sprite.sdf });
       return true;
     } catch {
@@ -104,10 +104,14 @@ export async function applyBundledSprites(map: any, theme: 'light' | 'dark'): Pr
   let added = 0;
   for (const sprite of sprites) {
     try {
+      const options = { pixelRatio: sprite.pixelRatio, sdf: sprite.sdf };
       if (typeof map.hasImage === 'function' && map.hasImage(sprite.id)) {
-        map.removeImage(sprite.id);
+        // Bumps the atlas version. Removing and re-adding leaves version 0,
+        // so the tile keeps the previous sheet.
+        map.updateImage(sprite.id, sprite.imageData);
+      } else {
+        map.addImage(sprite.id, sprite.imageData, options);
       }
-      map.addImage(sprite.id, sprite.imageData, { pixelRatio: sprite.pixelRatio, sdf: sprite.sdf });
       added++;
     } catch {
       // ignore duplicate-id races
@@ -115,6 +119,10 @@ export async function applyBundledSprites(map: any, theme: 'light' | 'dark'): Pr
   }
   if (typeof map.triggerRepaint === 'function') map.triggerRepaint();
   return added;
+}
+
+export function resetBundledSpriteCacheForTests() {
+  spriteCache.clear();
 }
 
 export function bundledSpriteIconCount(theme: 'light' | 'dark'): number {

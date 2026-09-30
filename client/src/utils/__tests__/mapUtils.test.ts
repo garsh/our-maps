@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { isValidPinColor, isValidPinIcon, resolvePinColorCode, getPreviewMarkerHTML, formatColorName, DEFAULT_ICON_COLORS, pinsShareExactLocation, getCoLocatedPinIds, nextTargetPinIdAfterClick } from '../mapUtils';
-import { bundledSpriteIconCount, isBundledSpriteId } from '../basemapSprites';
+import darkPng from '../../assets/basemap-sprites/dark@2x.png?inline';
+import { applyBundledSpriteById, applyBundledSprites, bundledSpriteIconCount, isBundledSpriteId, resetBundledSpriteCacheForTests } from '../basemapSprites';
 import {
   getMapViewportBounds,
   setMapViewportBounds,
@@ -8,6 +9,22 @@ import {
   resetMapViewportBoundsForTests,
 } from '../mapViewport';
 import { reverseGeocode, clearGeocodeCacheForTests } from '../geocoding';
+
+function spriteMap(overrides: Record<string, unknown> = {}) {
+  return {
+    addImage: vi.fn(),
+    removeImage: vi.fn(),
+    updateImage: vi.fn(),
+    hasImage: vi.fn(() => false),
+    triggerRepaint: vi.fn(),
+    ...overrides,
+  };
+}
+
+function addedMarker(map: { addImage: ReturnType<typeof vi.fn> }, id: string) {
+  const call = map.addImage.mock.calls.find((c) => c[0] === id);
+  return call?.[1]?.data?.[0];
+}
 
 describe('mapUtils', () => {
 
@@ -106,6 +123,93 @@ describe('mapUtils', () => {
       expect(isBundledSpriteId('park')).toBe(true);
       expect(isBundledSpriteId('US:I-2char')).toBe(true);
       expect(isBundledSpriteId('not-a-sprite')).toBe(false);
+    });
+
+    describe('theme sheets', () => {
+      const originalGetContext = HTMLCanvasElement.prototype.getContext;
+
+      beforeEach(() => {
+        class ImmediateImage {
+          onload: (() => void) | null = null;
+          onerror: (() => void) | null = null;
+          private url = '';
+          set src(value: string) {
+            this.url = value;
+            queueMicrotask(() => this.onload?.());
+          }
+          get src() {
+            return this.url;
+          }
+        }
+        vi.stubGlobal('Image', ImmediateImage);
+        HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement) {
+          return {
+            clearRect() {},
+            drawImage(img: { src?: string }) {
+              (this as { __spriteSrc?: string }).__spriteSrc = img?.src;
+            },
+            getImageData(_x: number, _y: number, w: number, h: number) {
+              const data = new Uint8ClampedArray(w * h * 4);
+              const sheet = (this as HTMLCanvasElement & { __spriteSrc?: string }).__spriteSrc;
+              data[0] = sheet === darkPng ? 7 : 3;
+              return { data, width: w, height: h };
+            },
+          } as unknown as CanvasRenderingContext2D;
+        } as typeof HTMLCanvasElement.prototype.getContext;
+        resetBundledSpriteCacheForTests();
+      });
+
+      afterEach(() => {
+        HTMLCanvasElement.prototype.getContext = originalGetContext;
+        vi.unstubAllGlobals();
+        resetBundledSpriteCacheForTests();
+      });
+
+      it('registers the dark park and highway icons when the map opens in dark mode', async () => {
+        const map = spriteMap();
+        expect(await applyBundledSpriteById(map, 'park', 'dark')).toBe(true);
+        expect(await applyBundledSpriteById(map, 'US:I-2char', 'dark')).toBe(true);
+        expect(addedMarker(map, 'park')).toBe(7);
+        expect(addedMarker(map, 'US:I-2char')).toBe(7);
+      });
+
+      it('does not replace a sprite already registered while the dark sheet was decoding', async () => {
+        let present = false;
+        const map = spriteMap({
+          hasImage: () => present,
+        });
+        const pending = applyBundledSpriteById(map, 'park', 'dark');
+        present = true;
+        expect(await pending).toBe(true);
+        expect(map.addImage).not.toHaveBeenCalled();
+        expect(map.removeImage).not.toHaveBeenCalled();
+      });
+
+      it('leaves an existing icon in place when a missing-image request arrives late', async () => {
+        const map = spriteMap({ hasImage: () => true });
+        expect(await applyBundledSpriteById(map, 'park', 'light')).toBe(true);
+        expect(map.addImage).not.toHaveBeenCalled();
+        expect(map.removeImage).not.toHaveBeenCalled();
+      });
+
+      it('repaints icons already on the map when the theme sheet changes', async () => {
+        const images = new Map<string, { data: Uint8ClampedArray }>();
+        const map = spriteMap({
+          hasImage: (id: string) => images.has(id),
+          addImage: (id: string, imageData: { data: Uint8ClampedArray }) => {
+            images.set(id, imageData);
+          },
+          updateImage: (id: string, imageData: { data: Uint8ClampedArray }) => {
+            images.set(id, imageData);
+          },
+        });
+        await applyBundledSpriteById(map, 'park', 'light');
+        expect(images.get('park')?.data[0]).toBe(3);
+        await applyBundledSprites(map, 'dark');
+        expect(images.get('park')?.data[0]).toBe(7);
+        expect(images.get('US:I-2char')?.data[0]).toBe(7);
+        expect(map.removeImage).not.toHaveBeenCalled();
+      });
     });
   });
 

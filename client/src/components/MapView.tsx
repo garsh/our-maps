@@ -42,7 +42,7 @@ export function toSafeLngLat(coord: any) {
   };
 }
 
-function attachMissingImageResolver(map: any) {
+function attachMissingImageResolver(map: any, getTheme: () => 'light' | 'dark') {
   if (!map || typeof map.setMissingStyleImageResolver !== 'function') return;
   map.setMissingStyleImageResolver(async (id: string) => {
     if (typeof id === 'string' && id.startsWith('pin-')) {
@@ -50,7 +50,7 @@ function attachMissingImageResolver(map: any) {
       return;
     }
     if (typeof id === 'string' && isBundledSpriteId(id)) {
-      await applyBundledSpriteById(map, id);
+      await applyBundledSpriteById(map, id, getTheme());
       return;
     }
     if (!map.hasImage(id)) {
@@ -1236,6 +1236,8 @@ const MapView = ({
 }: MapViewProps) => {
 
   const mapRef = useRef<MapRef | null>(null);
+  const mapThemeRef = useRef(mapTheme);
+  mapThemeRef.current = mapTheme;
   const show3DTerrainRef = useRef(show3DTerrain);
   show3DTerrainRef.current = show3DTerrain;
 
@@ -1319,7 +1321,8 @@ const MapView = ({
     mapRef.current = instance;
     if (!instance) return;
     const mapInstance = instance.getMap();
-    attachMissingImageResolver(mapInstance);
+    const spriteTheme = (): 'light' | 'dark' => (mapThemeRef.current === 'dark' ? 'dark' : 'light');
+    attachMissingImageResolver(mapInstance, spriteTheme);
 
     const onContextLost = (e?: any) => {
       if (e && typeof e.preventDefault === 'function') {
@@ -1340,6 +1343,7 @@ const MapView = ({
 
     let canvas: HTMLCanvasElement | null = null;
     let containerResizeObserver: ResizeObserver | null = null;
+    let onStyleLoad: (() => void) | null = null;
 
     if (mapInstance && typeof mapInstance.on === 'function') {
       mapInstance.on('webglcontextlost', onContextLost);
@@ -1367,16 +1371,20 @@ const MapView = ({
         }
       } catch {}
 
-      mapInstance.on('style.load', () => {
+      onStyleLoad = () => {
         setIsMapLoaded(true);
-        const flavor: 'light' | 'dark' = mapTheme === 'dark' ? 'dark' : 'light';
-        void applyBundledSprites(mapInstance, flavor).then(() => {
+        void applyBundledSprites(mapInstance, spriteTheme()).then(() => {
           if (visiblePinsRef.current.length > 0) {
             ensurePinImages(mapInstance, visiblePinsRef.current);
           }
           mapInstance.triggerRepaint();
         });
-      });
+      };
+      mapInstance.on('style.load', onStyleLoad);
+      // The ref can attach after style.load, so the listener above would not run.
+      if (typeof mapInstance.isStyleLoaded === 'function' && mapInstance.isStyleLoaded()) {
+        onStyleLoad();
+      }
       mapInstance.once('load', () => {
         setIsMapLoaded(true);
         syncOfflineTerrain(mapInstance, show3DTerrainRef.current);
@@ -1397,6 +1405,7 @@ const MapView = ({
     mapCleanupRef.current = () => {
       if (mapInstance && typeof mapInstance.off === 'function') {
         try {
+          if (onStyleLoad) mapInstance.off('style.load', onStyleLoad);
           mapInstance.off('webglcontextlost', onContextLost);
           mapInstance.off('webglcontextrestored', onContextRestored);
           mapInstance.off('resize', onMapResize);
@@ -1416,7 +1425,7 @@ const MapView = ({
     if (mapInstance) {
       mapInstance.triggerRepaint();
     }
-  }, [mapTheme, triggerMapRemount]);
+  }, [triggerMapRemount]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -2268,7 +2277,7 @@ const MapView = ({
   const handleMapLoad = useCallback((e: any) => {
     setIsMapLoaded(true);
     const map = e.target || mapRef.current?.getMap();
-    attachMissingImageResolver(map);
+    attachMissingImageResolver(map, () => (mapThemeRef.current === 'dark' ? 'dark' : 'light'));
     updateBounds();
   }, [updateBounds]);
 
