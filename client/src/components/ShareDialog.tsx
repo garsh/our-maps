@@ -11,6 +11,17 @@ interface Contact {
   type?: 'favorite' | 'frequent' | 'other';
 }
 
+const CONTACT_TYPE_ORDER = { favorite: 0, frequent: 1, other: 2 };
+
+function compareContacts(a: Contact, b: Contact): number {
+  const typeA = a.type || 'other';
+  const typeB = b.type || 'other';
+  if (CONTACT_TYPE_ORDER[typeA] !== CONTACT_TYPE_ORDER[typeB]) {
+    return CONTACT_TYPE_ORDER[typeA] - CONTACT_TYPE_ORDER[typeB];
+  }
+  return a.name.localeCompare(b.name);
+}
+
 const fetchMockContacts = async (): Promise<Contact[]> => {
   const isTest = (globalThis as any).process?.env?.NODE_ENV === 'test' || (import.meta as any).env?.MODE === 'test';
   return new Promise(resolve => {
@@ -94,15 +105,7 @@ const fetchGoogleContacts = async (accessToken: string): Promise<Contact[]> => {
   
   if (contacts.length === 0) throw new Error('No contacts found');
   
-  contacts.sort((a, b) => {
-    const order = { 'favorite': 0, 'frequent': 1, 'other': 2 };
-    const typeA = a.type || 'other';
-    const typeB = b.type || 'other';
-    if (order[typeA] !== order[typeB]) {
-      return order[typeA] - order[typeB];
-    }
-    return a.name.localeCompare(b.name);
-  });
+  contacts.sort(compareContacts);
   
   return contacts;
 };
@@ -131,18 +134,19 @@ const mergeGoogleContactsWithOurMapsUsers = (
     }
   }
 
-  union.sort((a, b) => {
-    const order = { 'favorite': 0, 'frequent': 1, 'other': 2 };
-    const typeA = a.type || 'other';
-    const typeB = b.type || 'other';
-    if (order[typeA] !== order[typeB]) {
-      return order[typeA] - order[typeB];
-    }
-    return a.name.localeCompare(b.name);
-  });
+  union.sort(compareContacts);
 
   return union;
 };
+
+async function loadMergedContacts(fetchedContacts: Contact[]): Promise<Contact[]> {
+  const emails = fetchedContacts.map((c) => c.email);
+  const [{ existingEmails }, { users: recentUsers }] = await Promise.all([
+    apiService.filterContacts(emails),
+    apiService.searchUsers('').catch(() => ({ users: [] })),
+  ]);
+  return mergeGoogleContactsWithOurMapsUsers(fetchedContacts, existingEmails, recentUsers || []);
+}
 
 interface ShareDialogProps {
   isOpen: boolean;
@@ -259,12 +263,7 @@ export default function ShareDialog({
     onSuccess: async (tokenResponse) => {
       try {
         const fetchedContacts = await fetchGoogleContacts(tokenResponse.access_token);
-        const emails = fetchedContacts.map((c) => c.email);
-        const [{ existingEmails }, { users: recentUsers }] = await Promise.all([
-          apiService.filterContacts(emails),
-          apiService.searchUsers('').catch(() => ({ users: [] })),
-        ]);
-        const unionContacts = mergeGoogleContactsWithOurMapsUsers(fetchedContacts, existingEmails, recentUsers || []);
+        const unionContacts = await loadMergedContacts(fetchedContacts);
         
         setContacts(unionContacts);
         setShowDropdown(true);
@@ -285,12 +284,7 @@ export default function ShareDialog({
     if (!hasClientId || forceMock) {
       try {
         const mockContacts = await fetchMockContacts();
-        const emails = mockContacts.map((c) => c.email);
-        const [{ existingEmails }, { users: recentUsers }] = await Promise.all([
-          apiService.filterContacts(emails),
-          apiService.searchUsers('').catch(() => ({ users: [] })),
-        ]);
-        const unionContacts = mergeGoogleContactsWithOurMapsUsers(mockContacts, existingEmails, recentUsers || []);
+        const unionContacts = await loadMergedContacts(mockContacts);
         
         setContacts(unionContacts);
         setShowDropdown(true);

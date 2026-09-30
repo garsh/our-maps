@@ -45,6 +45,14 @@ const NO_TEXT_SELECT_STYLE: React.CSSProperties = {
 // none, then opens the dictionary bar.
 const LANDING_LAYOUT_SHELL = '.landing-page-root, .landing-container, .landing-maps-grid';
 
+const SYSTEM_LABEL_IDS = ['all', 'owned', 'shared', 'unlabelled', 'offline'] as const;
+const SYSTEM_LABEL_IDS_WITH_SEARCH = [...SYSTEM_LABEL_IDS, 'search'] as const;
+
+function isSystemLabel(id: string, includeSearch = false): boolean {
+  const ids: readonly string[] = includeSearch ? SYSTEM_LABEL_IDS_WITH_SEARCH : SYSTEM_LABEL_IDS;
+  return ids.includes(id);
+}
+
 function elementContainsText(el: Element): boolean {
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   let node = walker.nextNode();
@@ -395,7 +403,7 @@ export default function LandingPage() {
 
       if (res.labels) {
         setActiveLabelId(prev => {
-          if (['all', 'owned', 'shared', 'unlabelled', 'offline', 'search'].includes(prev)) {
+          if (isSystemLabel(prev, true)) {
             return prev;
           }
           if (!res.labels.some(l => l.id === prev)) {
@@ -599,7 +607,7 @@ export default function LandingPage() {
       const mode = systemSettings['search'] || 'last_accessed';
       return mode === 'custom' ? 'last_accessed' : mode;
     }
-    if (['all', 'owned', 'shared', 'unlabelled', 'offline'].includes(activeLabelId)) {
+    if (isSystemLabel(activeLabelId)) {
       return systemSettings[activeLabelId] || 'last_accessed';
     }
     const userLabel = labels.find(l => l.id === activeLabelId);
@@ -648,7 +656,7 @@ export default function LandingPage() {
     } else if (activeSortMode === 'created_at') {
       sorted.sort((a, b) => (b.id || '').localeCompare(a.id || ''));
     } else if (activeSortMode === 'custom') {
-      if (['all', 'owned', 'shared', 'unlabelled', 'offline'].includes(activeLabelId)) {
+      if (isSystemLabel(activeLabelId)) {
         const order = systemOrder[activeLabelId] || [];
         const orderMap = new Map(order.map((id, idx) => [id, idx]));
         sorted.sort((a, b) => {
@@ -692,7 +700,7 @@ export default function LandingPage() {
     }
     if (newMode === 'custom') {
       let hasOrder = false;
-      if (['all', 'owned', 'shared', 'unlabelled', 'offline'].includes(activeLabelId)) {
+      if (isSystemLabel(activeLabelId)) {
         hasOrder = Boolean(systemOrder[activeLabelId]?.length);
       } else {
         hasOrder = assignments.some(a => a.labelId === activeLabelId && a.position != null);
@@ -701,7 +709,7 @@ export default function LandingPage() {
       if (!hasOrder) {
         // Seed initial custom order from the current displayed order
         const seedIds = filteredMaps.map(m => m.id);
-        if (['all', 'owned', 'shared', 'unlabelled', 'offline'].includes(activeLabelId)) {
+        if (isSystemLabel(activeLabelId)) {
           const updated = { ...systemOrder, [activeLabelId]: seedIds };
           setSystemOrder(updated);
           setStoredJson('cached_system_label_map_order', updated);
@@ -725,7 +733,7 @@ export default function LandingPage() {
       }
     }
 
-    if (['all', 'owned', 'shared', 'unlabelled', 'offline', 'search'].includes(activeLabelId)) {
+    if (isSystemLabel(activeLabelId, true)) {
       const updated = { ...systemSettings, [activeLabelId]: newMode };
       setSystemSettings(updated);
       setStoredJson('cached_system_label_settings', updated);
@@ -764,7 +772,7 @@ export default function LandingPage() {
     const [moved] = reorderedIds.splice(oldIndex, 1);
     reorderedIds.splice(newIndex, 0, moved);
 
-    if (['all', 'owned', 'shared', 'unlabelled', 'offline'].includes(activeLabelId)) {
+    if (isSystemLabel(activeLabelId)) {
       const updated = { ...systemOrder, [activeLabelId]: reorderedIds };
       setSystemOrder(updated);
       setStoredJson('cached_system_label_map_order', updated);
@@ -949,7 +957,7 @@ export default function LandingPage() {
       const toolbarGap = parseFloat(window.getComputedStyle(toolbar).gap) || 4;
       const headingTextWidth = heading.scrollWidth;
       const chevronWidth = 22; // 18px icon + 4px margin
-      const hasEditBtn = !['all', 'owned', 'shared', 'unlabelled', 'offline', 'search'].includes(activeLabelId) && !isOffline;
+      const hasEditBtn = !isSystemLabel(activeLabelId, true) && !isOffline;
       const editBtn = editBtnRef.current;
       const editWidth = editBtn ? editBtn.offsetWidth + 4 : (hasEditBtn ? 32 : 0);
 
@@ -1473,7 +1481,7 @@ export default function LandingPage() {
               )}
 
               {/* If user-defined label: edit label option */}
-              {!['all', 'owned', 'shared', 'unlabelled', 'offline', 'search'].includes(activeLabelId) && !isOffline && (
+              {!isSystemLabel(activeLabelId, true) && !isOffline && (
                 <button
                   ref={editBtnRef}
                   type="button"
