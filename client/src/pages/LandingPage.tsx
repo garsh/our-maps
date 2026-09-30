@@ -38,12 +38,39 @@ const NO_TEXT_SELECT_STYLE: React.CSSProperties = {
   WebkitTouchCallout: 'none',
 };
 
+// Page background, the area around the card grid, and the gaps between cards.
+// These stay out of the long-press block so Chromebook Alt-click can open the
+// browser menu there. Any element that actually holds text stays blocked:
+// Android Chrome still selects that text on long-press when user-select is
+// none, then opens the dictionary bar.
+const LANDING_LAYOUT_SHELL = '.landing-page-root, .landing-container, .landing-maps-grid';
+
+function elementContainsText(el: Element): boolean {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    const text = node.textContent;
+    if (text && text.trim()) {
+      const parent = node.parentElement;
+      if (!parent?.closest('input, textarea, select, [contenteditable="true"]')) return true;
+    }
+    node = walker.nextNode();
+  }
+  return false;
+}
+
 function isProtectedLandingText(target: EventTarget | Node | null, root: HTMLElement | null): boolean {
   const el = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
-  if (!el) return false;
+  if (!el || !root || !root.contains(el)) return false;
   if (el.closest('input, textarea, select, [contenteditable="true"]')) return false;
   if (el.closest('[data-long-press-label], [data-no-text-select]')) return true;
-  if (root && root.contains(el)) return true;
+
+  let current: Element | null = el;
+  while (current && root.contains(current)) {
+    if (current.matches(LANDING_LAYOUT_SHELL)) return false;
+    if (elementContainsText(current)) return true;
+    current = current.parentElement;
+  }
   return false;
 }
 

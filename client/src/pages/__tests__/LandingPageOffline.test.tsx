@@ -114,6 +114,52 @@ describe('LandingPage Offline Map Access', () => {
     expect(selection.rangeCount).toBe(0);
   });
 
+  it('allows the browser menu on blank landing page and still blocks text', async () => {
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await screen.findAllByText('Downloaded Map');
+
+    for (const selector of ['.landing-page-root', '.landing-container', '.landing-maps-grid']) {
+      const blank = document.querySelector(selector) as HTMLElement;
+      const contextEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+      blank.dispatchEvent(contextEvent);
+      expect(contextEvent.defaultPrevented).toBe(false);
+    }
+
+    const heading = screen.getByRole('heading', { name: 'All Maps' });
+    const headingMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    fireEvent(heading, headingMenu);
+    expect(headingMenu.defaultPrevented).toBe(true);
+
+    const brand = screen.getByRole('heading', { name: 'OurMaps' });
+    const brandMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    fireEvent(brand, brandMenu);
+    expect(brandMenu.defaultPrevented).toBe(true);
+
+    const newMap = screen.getByRole('button', { name: 'New Map' });
+    const buttonMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    fireEvent(newMap, buttonMenu);
+    expect(buttonMenu.defaultPrevented).toBe(true);
+
+    const selectEvent = new Event('selectstart', { bubbles: true, cancelable: true });
+    fireEvent(heading, selectEvent);
+    expect(selectEvent.defaultPrevented).toBe(true);
+
+    const selection = window.getSelection()!;
+    const range = document.createRange();
+    range.selectNodeContents(heading);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+    expect(selection.rangeCount).toBe(0);
+  });
+
   it('allows text selection and context menu on inputs like search', async () => {
     render(
       <MemoryRouter>
