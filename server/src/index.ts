@@ -206,6 +206,7 @@ io.use(async (socket, next) => {
     const sessionId = parseCookies(socket.handshake.headers.cookie)[SESSION_COOKIE];
     if (sessionId) {
       socket.data.user = await getUserForSession(sessionId);
+      socket.data.sessionId = sessionId;
       return next();
     }
     const user = await authenticateToken(getSocketToken(socket));

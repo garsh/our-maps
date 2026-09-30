@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { authMiddleware, type AuthRequest } from '../auth';
 import { getDb, runInTransaction } from '../db';
 import type { LabelSortMode } from '@shared/interfaces';
+import { getMapRole, canViewMap } from '../permissions';
 
 const router = Router();
 
@@ -209,6 +210,11 @@ router.post('/:id/maps', async (req: AuthRequest, res: Response) => {
 
   try {
     const db = await getDb();
+    const role = await getMapRole(userId, mapId);
+    if (!canViewMap(role)) {
+      return res.status(404).json({ error: 'Map not found' });
+    }
+
     const label = await db.get('SELECT id FROM user_labels WHERE id = ? AND user_id = ?', labelId, userId);
     if (!label) {
       return res.status(404).json({ error: 'Label not found' });
@@ -376,6 +382,11 @@ router.post('/system/:systemLabelId/maps', async (req: AuthRequest, res: Respons
 
   try {
     const db = await getDb();
+    const role = await getMapRole(userId, mapId);
+    if (!canViewMap(role)) {
+      return res.status(404).json({ error: 'Map not found' });
+    }
+
     const maxPos = await db.get(
       'SELECT MAX(position) as maxPos FROM user_system_label_map_order WHERE user_id = ? AND system_label_id = ?',
       userId,

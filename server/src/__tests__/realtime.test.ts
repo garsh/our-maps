@@ -230,5 +230,79 @@ describe('Realtime Delta Handlers', () => {
       expect(mockSocket.data.mapRoles.get('map-1')).toBe('view');
       expect(emitted).toContainEqual({ event: 'map-role-updated', data: { mapId: 'map-1', role: 'view' } });
     });
+
+    it('disconnectSessionSocket disconnects matching session socket', () => {
+      let disconnected = false;
+      const mockSocket: any = {
+        id: 's-sess',
+        data: { sessionId: 'target-session-id' },
+        disconnect: (close: boolean) => { disconnected = close; }
+      };
+      const mockIo: any = {
+        sockets: {
+          sockets: new Map([['s-sess', mockSocket]])
+        }
+      };
+
+      realtime.disconnectSessionSocket(mockIo, 'target-session-id');
+      expect(disconnected).toBe(true);
+    });
+
+    it('disconnectUserSockets disconnects all sockets for user', () => {
+      let disconnected1 = false;
+      let disconnected2 = false;
+      const mockSocket1: any = {
+        id: 's-user-1',
+        data: { user: { id: 'user-logout-everywhere' } },
+        disconnect: (close: boolean) => { disconnected1 = close; }
+      };
+      const mockSocket2: any = {
+        id: 's-user-2',
+        data: { user: { id: 'other-user' } },
+        disconnect: (close: boolean) => { disconnected2 = close; }
+      };
+      const mockIo: any = {
+        sockets: {
+          sockets: new Map([['s1', mockSocket1], ['s2', mockSocket2]])
+        }
+      };
+
+      realtime.disconnectUserSockets(mockIo, 'user-logout-everywhere');
+      expect(disconnected1).toBe(true);
+      expect(disconnected2).toBe(false);
+    });
+  });
+
+  describe('Foreign Layer Integrity', () => {
+    it('rejects pin creation with layerId from another map', async () => {
+      const db = await getDb();
+      await db.run('INSERT INTO maps (id, name) VALUES (?, ?)', 'other-map', 'Other Map');
+      await realtime.handleLayerCreate({ mapId: 'other-map', layer: { id: 'other-layer', name: 'Other Layer', position: 0 } });
+
+      const res = await realtime.handlePinCreate({
+        mapId,
+        pin: { id: 'foreign-pin', lat: 10, lng: 10, label: 'Foreign Pin', position: 0, layerId: 'other-layer' }
+      });
+      expect(res).toBe(false);
+
+      const stored = await db.get('SELECT * FROM pins WHERE id = ?', 'foreign-pin');
+      expect(stored).toBeUndefined();
+    });
+
+    it('rejects pin update with layerId from another map', async () => {
+      const db = await getDb();
+      await realtime.handlePinCreate({ mapId, pin: { id: 'valid-pin', lat: 10, lng: 10, label: 'Valid Pin', position: 0 } });
+
+      const res = await realtime.handlePinUpdate({
+        mapId,
+        pinId: 'valid-pin',
+        updates: { layerId: 'non-existent-or-foreign-layer' }
+      });
+      expect(res).toBe(false);
+
+      const stored = await db.get('SELECT layer_id FROM pins WHERE id = ?', 'valid-pin');
+      expect(stored.layer_id).toBeNull();
+    });
   });
 });
+

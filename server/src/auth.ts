@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { getDb } from './db';
 import type { User } from '@shared/interfaces';
+import { disconnectSessionSocket, disconnectUserSockets } from './realtime';
 
 export const SESSION_COOKIE = 'ourmaps_session';
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -425,6 +426,10 @@ export async function logoutHandler(req: Request, res: Response) {
   const sessionId = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   if (sessionId) {
     await deleteSession(sessionId);
+    const io = req.app.get('io');
+    if (io) {
+      disconnectSessionSocket(io, sessionId);
+    }
   }
   clearSessionCookie(res);
   return res.json({ message: 'Signed out' });
@@ -433,6 +438,10 @@ export async function logoutHandler(req: Request, res: Response) {
 export async function logoutEverywhereHandler(req: AuthRequest, res: Response) {
   if (req.user?.id) {
     await deleteAllSessionsForUser(req.user.id);
+    const io = req.app.get('io');
+    if (io) {
+      disconnectUserSockets(io, req.user.id);
+    }
   }
   clearSessionCookie(res);
   return res.json({ message: 'Signed out everywhere' });

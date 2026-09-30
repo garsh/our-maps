@@ -766,5 +766,44 @@ describe('API Endpoints', () => {
     expect(res.body.error).toBe('Validation failed');
   });
 
+  describe('Labels map access authorization', () => {
+    it('POST /api/labels/:id/maps rejects non-existent or inaccessible private maps with 404', async () => {
+      const db = await getDb();
+      // Create user label
+      const createLabelRes = await request(app).post('/api/labels').set(authHeader).send({ name: 'Trip' });
+      expect(createLabelRes.status).toBe(201);
+      const labelId = createLabelRes.body.id;
+
+      // 1. Assign non-existent map
+      const nonExistent = await request(app).post(`/api/labels/${labelId}/maps`).set(authHeader).send({ mapId: uuid(999) });
+      expect(nonExistent.status).toBe(404);
+      expect(nonExistent.body.error).toBe('Map not found');
+
+      // 2. Assign another user's private map
+      const otherUserId = 'stranger-owner';
+      await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', otherUserId, 'stranger@example.com', 'Stranger');
+      const privateMapId = uuid(888);
+      await db.run('INSERT INTO maps (id, name, owner_id, is_public) VALUES (?, ?, ?, 0)', privateMapId, 'Private Map', otherUserId);
+
+      const privateRes = await request(app).post(`/api/labels/${labelId}/maps`).set(authHeader).send({ mapId: privateMapId });
+      expect(privateRes.status).toBe(404);
+      expect(privateRes.body.error).toBe('Map not found');
+
+      // 3. Assign owned map succeeds
+      const myMapId = uuid(777);
+      await db.run('INSERT INTO maps (id, name, owner_id, is_public) VALUES (?, ?, ?, 0)', myMapId, 'My Map', mockUser.id);
+      const successRes = await request(app).post(`/api/labels/${labelId}/maps`).set(authHeader).send({ mapId: myMapId });
+      expect(successRes.status).toBe(200);
+      expect(successRes.body.success).toBe(true);
+    });
+
+    it('POST /api/labels/system/:systemLabelId/maps rejects inaccessible maps with 404', async () => {
+      const res = await request(app).post('/api/labels/system/favorites/maps').set(authHeader).send({ mapId: uuid(999) });
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Map not found');
+    });
+  });
+
 });
+
 

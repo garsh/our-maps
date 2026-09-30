@@ -239,7 +239,9 @@ export async function ensureOnDemandFontFile(
     }
 
     const upstreamUrl = `https://protomaps.github.io/basemaps-assets/${sanitizedName.split('/').map(encodeURIComponent).join('/')}`;
-    const response = await fetch(upstreamUrl);
+    const response = await fetch(upstreamUrl, {
+      signal: AbortSignal.timeout(10000),
+    });
     if (!response.ok) return null;
 
     const buffer = Buffer.from(await response.arrayBuffer());

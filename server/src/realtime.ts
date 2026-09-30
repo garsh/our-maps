@@ -29,6 +29,12 @@ export async function handlePinCreate(data: PinCreatePayload): Promise<boolean |
     if ((countRow?.n ?? 0) >= MAX_PINS_PER_MAP) return false;
   }
 
+  const targetLayerId = pin.layerId || layerId || null;
+  if (targetLayerId) {
+    const layer = await db.get('SELECT id FROM pin_layers WHERE id = ? AND map_id = ?', targetLayerId, mapId);
+    if (!layer) return false;
+  }
+
   await db.run(
     `INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position) 
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -45,7 +51,7 @@ export async function handlePinCreate(data: PinCreatePayload): Promise<boolean |
      WHERE pins.map_id = excluded.map_id`,
     pin.id,
     mapId,
-    pin.layerId || layerId || null,
+    targetLayerId,
     pin.lat,
     pin.lng,
     pin.label || null,
@@ -67,8 +73,13 @@ export async function handlePinUpdate(data: PinUpdatePayload) {
   const params: any[] = [];
 
   if ('layerId' in updates) {
+    const targetLayerId = updates.layerId || null;
+    if (targetLayerId) {
+      const layer = await db.get('SELECT id FROM pin_layers WHERE id = ? AND map_id = ?', targetLayerId, mapId);
+      if (!layer) return false;
+    }
     setClauses.push('layer_id = ?');
-    params.push(updates.layerId || null);
+    params.push(targetLayerId);
   }
   if ('lat' in updates) {
     setClauses.push('lat = ?');
@@ -166,12 +177,18 @@ export async function handlePinsReorder(data: PinsReorderPayload) {
   const { mapId, layerId, pinIds, insertIndex } = data;
   if (!mapId || !Array.isArray(pinIds) || pinIds.length === 0) return;
 
-  await runInTransaction(async (db) => {
-    const currentIds = await loadLayerPinIds(db, mapId, layerId || null);
+  const db = await getDb();
+  if (layerId) {
+    const layer = await db.get('SELECT id FROM pin_layers WHERE id = ? AND map_id = ?', layerId, mapId);
+    if (!layer) return false;
+  }
+
+  await runInTransaction(async (database) => {
+    const currentIds = await loadLayerPinIds(database, mapId, layerId || null);
     const layerIdSet = new Set(currentIds);
     const moved = pinIds.filter((id) => layerIdSet.has(id));
     if (moved.length === 0) return;
-    await updateEntityPositions(db, 'pins', insertIdsAt(currentIds, moved, insertIndex), mapId);
+    await updateEntityPositions(database, 'pins', insertIdsAt(currentIds, moved, insertIndex), mapId);
   });
   await touchMapUpdatedAt(mapId);
 }
@@ -180,8 +197,14 @@ export async function handlePinMoveLayer(data: PinMoveLayerPayload) {
   const { mapId, pinIds, targetLayerId, destInsertIndex } = data;
   if (!mapId || !Array.isArray(pinIds) || pinIds.length === 0) return;
 
-  await runInTransaction(async (db) => {
-    const targetLayer = targetLayerId || null;
+  const targetLayer = targetLayerId || null;
+  const db = await getDb();
+  if (targetLayer) {
+    const layer = await db.get('SELECT id FROM pin_layers WHERE id = ? AND map_id = ?', targetLayer, mapId);
+    if (!layer) return false;
+  }
+
+  await runInTransaction(async (database) => {
     const chunkSize = 500;
     const existing: Array<{ id: string; layer_id: string | null }> = [];
     for (let i = 0; i < pinIds.length; i += chunkSize) {
@@ -375,6 +398,24 @@ export async function syncSocketsOnPublicChange(io: any, mapId: string, isPublic
         socket.leave(`map:${mapId}`);
         socket.emit('map-access-revoked', { mapId });
       }
+    }
+  }
+}
+
+export function disconnectSessionSocket(io: any, sessionId: string) {
+  if (!io || !io.sockets || !io.sockets.sockets || !sessionId) return;
+  for (const socket of io.sockets.sockets.values()) {
+    if (socket.data?.sessionId === sessionId) {
+      socket.disconnect(true);
+    }
+  }
+}
+
+export function disconnectUserSockets(io: any, userId: string) {
+  if (!io || !io.sockets || !io.sockets.sockets || !userId) return;
+  for (const socket of io.sockets.sockets.values()) {
+    if (socket.data?.user?.id === userId) {
+      socket.disconnect(true);
     }
   }
 }

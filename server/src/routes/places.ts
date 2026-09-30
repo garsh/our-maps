@@ -90,13 +90,16 @@ async function throttleNominatim(): Promise<void> {
     nominatimQueue = nominatimQueue
       .catch(() => {})
       .then(async () => {
-        const now = Date.now();
-        const timeSince = now - lastNominatimRequestTime;
-        if (timeSince < NOMINATIM_MIN_INTERVAL) {
-          await new Promise((r) => setTimeout(r, NOMINATIM_MIN_INTERVAL - timeSince));
+        try {
+          const now = Date.now();
+          const timeSince = now - lastNominatimRequestTime;
+          if (timeSince < NOMINATIM_MIN_INTERVAL) {
+            await new Promise((r) => setTimeout(r, NOMINATIM_MIN_INTERVAL - timeSince));
+          }
+        } finally {
+          lastNominatimRequestTime = Date.now();
+          resolve();
         }
-        lastNominatimRequestTime = Date.now();
-        resolve();
       });
   });
 }
@@ -175,7 +178,8 @@ router.get('/search', async (req: AuthRequest, res) => {
       }
       
       const response = await fetch(url, {
-        headers: { 'User-Agent': 'OurMaps-App/1.0' }
+        headers: { 'User-Agent': 'OurMaps-App/1.0' },
+        signal: AbortSignal.timeout(5000),
       });
       const data = await response.json();
       let formatted = data.map((item: any) => {
@@ -239,7 +243,8 @@ router.get('/search', async (req: AuthRequest, res) => {
         'X-Goog-Api-Key': apiKey,
         'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location'
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(5000),
     });
     const data = await response.json();
 
@@ -269,7 +274,9 @@ router.get('/search', async (req: AuthRequest, res) => {
         if (clamped && !isGlobal) {
           geocodeUrl += `&bounds=${encodeURIComponent(`${clamped.boundSouth},${clamped.boundWest}|${clamped.boundNorth},${clamped.boundEast}`)}`;
         }
-        const geoResp = await fetch(geocodeUrl);
+        const geoResp = await fetch(geocodeUrl, {
+          signal: AbortSignal.timeout(5000),
+        });
         const geoData = await geoResp.json();
         if (geoData.status === 'OK' && Array.isArray(geoData.results)) {
           const geoFormatted = geoData.results.map((item: any) => {
@@ -336,7 +343,8 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
       await throttleNominatim();
       const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
       const response = await fetch(url, {
-        headers: { 'User-Agent': 'OurMaps-App/1.0' }
+        headers: { 'User-Agent': 'OurMaps-App/1.0' },
+        signal: AbortSignal.timeout(5000),
       });
       const data = await response.json();
       const { address } = formatNominatimAddress(data);
@@ -351,7 +359,9 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
 
   try {
     const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`;
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(5000),
+    });
     const data = await response.json();
 
     if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
