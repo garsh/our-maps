@@ -531,5 +531,24 @@ describe('SearchBar', () => {
     expect(measureSearchResultsMaxHeight(anchor)).toBe(152);
     aside.remove();
   });
+
+  it('uses theme surface color for search results container background', async () => {
+    render(<SearchBar onAddPin={mockOnAddPin} pins={mockPins} />);
+    fireEvent.change(screen.getByPlaceholderText(/Search.../i), { target: { value: 'Coffee' } });
+
+    const list = await screen.findByTestId('search-results');
+    expect(list.style.background).toBe('var(--surface-color)');
+  });
+
+  it('renders pin icon on the right side with 22px size for local search results', async () => {
+    render(<SearchBar onAddPin={mockOnAddPin} pins={mockPins} />);
+    fireEvent.change(screen.getByPlaceholderText(/Search.../i), { target: { value: 'Coffee' } });
+
+    const pinIcon = await screen.findByTestId('local-pin-icon');
+    expect(pinIcon).toBeInTheDocument();
+    expect(pinIcon.style.width).toBe('22px');
+    expect(pinIcon.style.height).toBe('22px');
+    expect(pinIcon.style.borderRadius).toBe('50%');
+  });
 });
 

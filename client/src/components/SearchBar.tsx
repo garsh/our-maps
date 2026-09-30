@@ -438,7 +438,8 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
             WebkitOverflowScrolling: 'touch',
             touchAction: 'pan-y',
             overscrollBehavior: 'contain',
-            background: 'white',
+            background: 'var(--surface-color)',
+            color: 'var(--text-primary)',
             border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-md)',
             boxShadow: 'var(--shadow-lg)',
@@ -453,7 +454,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
                 <div
                   key={result.place_id}
                   onClick={() => handleResultPreview(result)}
-                  style={{ padding: '0.4rem 0.2rem', borderBottom: '1px solid #f1f1f1', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', transition: 'background 0.2s' }}
+                  style={{ padding: '0.4rem 0.4rem', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', cursor: 'pointer', transition: 'background 0.2s' }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'var(--bg-color)';
                     if (!hasFinePointer()) return;
@@ -465,20 +466,26 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
                     onHoverPin?.(null, result.pinId);
                   }}
                 >
-                  <div style={{ 
-                    background: 'rgba(72, 61, 139, 0.1)', 
-                    borderRadius: '3px', 
-                    width: '14px', 
-                    height: '14px', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    flexShrink: 0 
-                  }}>
-                    <MapPin size={10} color="var(--primary-color)" />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {renderAddressParts(result.title, result.address)}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {renderAddressParts(result.title, result.address)}
+                    </div>
+                    <div 
+                      data-testid="local-pin-icon"
+                      title="Existing Pin"
+                      style={{ 
+                        background: 'color-mix(in srgb, var(--primary-color) 12%, transparent)', 
+                        borderRadius: '50%', 
+                        width: '22px', 
+                        height: '22px', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center', 
+                        flexShrink: 0 
+                      }}
+                    >
+                      <MapPin size={13} color="var(--primary-color)" />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -491,7 +498,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
               {globalResults.map((result) => (
                 <div
                   key={result.place_id}
-                  style={{ padding: '0.4rem 0.4rem', borderBottom: '1px solid #f1f1f1', fontSize: '0.85rem', transition: 'background 0.2s', cursor: 'pointer' }}
+                  style={{ padding: '0.4rem 0.4rem', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', transition: 'background 0.2s', cursor: 'pointer' }}
                   onClick={() => handleResultPreview(result)}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'var(--bg-color)';
@@ -517,7 +524,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
                           setQuery('');
                         }}
                         style={{ 
-                          background: 'white',
+                          background: 'var(--surface-color)',
                           color: '#27ae60',
                           border: '2px solid #27ae60',
                           borderRadius: '50%',
@@ -536,7 +543,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
                           (e.currentTarget as HTMLButtonElement).style.color = 'white';
                         }}
                         onMouseLeave={(e) => {
-                          (e.currentTarget as HTMLButtonElement).style.background = 'white';
+                          (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface-color)';
                           (e.currentTarget as HTMLButtonElement).style.color = '#27ae60';
                         }}
                         title="Add to Map"
