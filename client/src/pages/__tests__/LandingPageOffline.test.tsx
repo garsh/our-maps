@@ -201,6 +201,58 @@ describe('LandingPage Offline Map Access', () => {
     fireEvent.click(screen.getByText('Downloaded Map'));
     expect(mockNavigate).toHaveBeenCalledWith('/map/map-downloaded');
     expect(mockNavigate).not.toHaveBeenCalledWith('/map/map-downloaded?mode=view');
+    expect(screen.queryAllByRole('button', { name: 'Open in view mode' })).toHaveLength(0);
+  });
+
+  it('shows a downloaded map\'s labels offline without changing them', async () => {
+    (apiService.getMaps as any).mockRejectedValue(new Error('Network Error'));
+    localStorage.setItem('cached_maps', JSON.stringify(mockMaps));
+    localStorage.setItem('cached_user_labels', JSON.stringify([
+      { id: 'label-1', name: 'Road Trips', sortMode: 'last_accessed', position: 0 },
+      { id: 'label-2', name: 'Wishlist', sortMode: 'last_accessed', position: 1 },
+    ]));
+    const assignments = [{ labelId: 'label-1', mapId: 'map-downloaded', position: 0 }];
+    localStorage.setItem('cached_map_label_assignments', JSON.stringify(assignments));
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Downloaded Map')).toBeInTheDocument();
+    });
+
+    const card = screen.getByText('Downloaded Map').closest('.card') as HTMLElement;
+    const labelButton = await waitFor(() => {
+      const button = card.querySelector('[aria-label="View labels"]');
+      expect(button).toBeTruthy();
+      return button as HTMLElement;
+    });
+    fireEvent.click(labelButton);
+
+    const roadTrips = screen.getByText('Road Trips');
+    expect(screen.queryByText('Wishlist')).not.toBeInTheDocument();
+    expect(roadTrips.parentElement?.querySelector('svg')).toBeNull();
+    expect((roadTrips.parentElement?.parentElement as HTMLElement).style.minHeight).toBe('0px');
+
+    fireEvent.click(roadTrips);
+
+    expect(JSON.parse(localStorage.getItem('cached_map_label_assignments') || '[]')).toEqual(assignments);
+    expect(apiService.assignMapLabel).not.toHaveBeenCalled();
+    expect(apiService.removeMapLabel).not.toHaveBeenCalled();
+    expect(screen.getByText('Road Trips')).toBeInTheDocument();
+    expect(screen.queryByText('Wishlist')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('Close'));
+    const unlabeledCard = screen.getByText('Online Only Map').closest('.card') as HTMLElement;
+    fireEvent.click(unlabeledCard.querySelector('[aria-label="View labels"]') as HTMLElement);
+    expect(screen.getByText('No labels on this map.')).toBeInTheDocument();
+    expect(screen.queryByText('Road Trips')).not.toBeInTheDocument();
+    expect(screen.queryByText('Wishlist')).not.toBeInTheDocument();
   });
 
   it('opens a map in view mode from the view button without also opening as editor', async () => {

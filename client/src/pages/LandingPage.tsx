@@ -788,7 +788,7 @@ export default function LandingPage() {
   };
 
   const handleToggleLabel = async (labelId: string, assigned: boolean) => {
-    if (!labelingMap) return;
+    if (!labelingMap || isOffline) return;
     const mapId = labelingMap.map.id;
 
     let nextAssignments: MapLabelAssignment[];
@@ -1925,6 +1925,7 @@ export default function LandingPage() {
           assignments={assignments}
           onClose={() => setLabelingMap(null)}
           onToggleLabel={handleToggleLabel}
+          readOnly={isOffline}
         />
       )}
 

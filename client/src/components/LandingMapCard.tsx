@@ -129,6 +129,8 @@ export function LandingMapCard({
     onMapClick?.(map.id);
   };
 
+  const labelButtonLabel = isOffline ? 'View labels' : 'Manage labels';
+
   return (
     <div
       ref={isCustomSort && !isOverlay ? setNodeRef : undefined}
@@ -329,7 +331,7 @@ export function LandingMapCard({
         onPointerDown={e => e.stopPropagation()}
       >
         {/* View Mode Action */}
-        {((!isOffline && Boolean(currentUserId)) || Boolean(downloadStatus?.isComplete)) && (
+        {!isOffline && Boolean(currentUserId) && (
           <button
             type="button"
             className="map-card-action-btn view-btn"
@@ -371,16 +373,16 @@ export function LandingMapCard({
               onOpenLabels?.(map, e);
             }}
             onPointerDown={e => e.stopPropagation()}
-            onMouseDown={e => handleTouchStart?.('Manage labels', e)}
+            onMouseDown={e => handleTouchStart?.(labelButtonLabel, e)}
             onMouseUp={handleTouchEnd}
             onMouseLeave={handleTouchEnd}
-            onTouchStart={e => handleTouchStart?.('Manage labels', e)}
+            onTouchStart={e => handleTouchStart?.(labelButtonLabel, e)}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
             onContextMenu={e => e.preventDefault()}
-            title="Manage labels"
-            aria-label="Manage labels"
+            title={labelButtonLabel}
+            aria-label={labelButtonLabel}
           >
             <Tag size={18} />
           </button>

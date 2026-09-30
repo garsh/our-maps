@@ -250,4 +250,29 @@ describe('LandingPage label persistence', () => {
       expect(apiService.deleteLabel).toHaveBeenCalledWith('label-123');
     });
   });
+
+  it('assigns a label from the map card while online', async () => {
+    (apiService.assignMapLabel as any).mockResolvedValue({
+      success: true,
+      labelId: 'label-123',
+      mapId: 'map-2',
+      position: 0,
+    });
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    const card = (await screen.findByText('Map Two')).closest('.card') as HTMLElement;
+    fireEvent.click(card.querySelector('[aria-label="Manage labels"]') as HTMLElement);
+    fireEvent.click(await screen.findByText('Road Trips'));
+
+    await waitFor(() => {
+      expect(apiService.assignMapLabel).toHaveBeenCalledWith('label-123', 'map-2');
+    });
+  });
 });

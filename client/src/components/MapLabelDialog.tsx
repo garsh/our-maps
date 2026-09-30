@@ -11,6 +11,7 @@ interface MapLabelDialogProps {
   assignments: MapLabelAssignment[];
   onClose: () => void;
   onToggleLabel: (labelId: string, assigned: boolean) => Promise<void> | void;
+  readOnly?: boolean;
 }
 
 export default function MapLabelDialog({
@@ -22,6 +23,7 @@ export default function MapLabelDialog({
   assignments,
   onClose,
   onToggleLabel,
+  readOnly = false,
 }: MapLabelDialogProps) {
   useEffect(() => {
     if (!isOpen) return;
@@ -46,8 +48,10 @@ export default function MapLabelDialog({
 
   // Labels in alphabetical order (case-insensitive)
   const sortedLabels = useMemo(() => {
-    return [...labels].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  }, [labels]);
+    const ordered = [...labels].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    if (!readOnly) return ordered;
+    return ordered.filter(label => assignedLabelIds.has(label.id));
+  }, [labels, readOnly, assignedLabelIds]);
 
   // Calculate popover positioning relative to the label icon button
   const popoverStyle = useMemo((): React.CSSProperties => {
@@ -169,10 +173,10 @@ export default function MapLabelDialog({
         </div>
 
         {/* Scrollable Label list */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '4px 6px', minHeight: '60px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '4px 6px', minHeight: readOnly ? 0 : '60px' }}>
           {sortedLabels.length === 0 ? (
             <div style={{ padding: '1.25rem 0.5rem', textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              No labels created yet.
+              {readOnly ? 'No labels on this map.' : 'No labels created yet.'}
             </div>
           ) : (
             sortedLabels.map(label => {
@@ -180,39 +184,40 @@ export default function MapLabelDialog({
               return (
                 <div
                   key={label.id}
-                  onClick={() => onToggleLabel(label.id, !isAssigned)}
+                  onClick={readOnly ? undefined : () => onToggleLabel(label.id, !isAssigned)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '10px',
                     padding: '6px 8px',
                     borderRadius: 'var(--radius-sm)',
-                    cursor: 'pointer',
+                    cursor: readOnly ? 'default' : 'pointer',
                     userSelect: 'none',
                     transition: 'background 0.1s ease',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-color)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  onMouseEnter={readOnly ? undefined : e => (e.currentTarget.style.background = 'var(--bg-color)')}
+                  onMouseLeave={readOnly ? undefined : e => (e.currentTarget.style.background = 'transparent')}
                 >
-                  {/* Distinct visible checkbox */}
-                  <div
-                    style={{
-                      width: '16px',
-                      height: '16px',
-                      borderRadius: '3px',
-                      border: isAssigned
-                        ? '1.5px solid var(--primary-color)'
-                        : '1.5px solid var(--text-secondary)',
-                      backgroundColor: isAssigned ? 'var(--primary-color)' : 'var(--surface-color)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      boxSizing: 'border-box',
-                    }}
-                  >
-                    {isAssigned && <Check size={12} color="white" strokeWidth={3} />}
-                  </div>
+                  {!readOnly && (
+                    <div
+                      style={{
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '3px',
+                        border: isAssigned
+                          ? '1.5px solid var(--primary-color)'
+                          : '1.5px solid var(--text-secondary)',
+                        backgroundColor: isAssigned ? 'var(--primary-color)' : 'var(--surface-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      {isAssigned && <Check size={12} color="white" strokeWidth={3} />}
+                    </div>
+                  )}
 
                   <span
                     style={{
