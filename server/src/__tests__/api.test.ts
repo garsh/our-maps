@@ -745,4 +745,26 @@ describe('API Endpoints', () => {
     expect(badColor.status).toBe(400);
   });
 
+  it('rejects oversized JSON payloads (>100kb) on general endpoints', async () => {
+    const hugePayload = {
+      credential: 'A'.repeat(120 * 1024), // 120 KB
+    };
+    const res = await request(app).post('/api/auth/google-login').send(hugePayload);
+    expect(res.status).toBe(413);
+  });
+
+  it('allows larger payloads on POST /api/maps', async () => {
+    const largeName = 'A'.repeat(150 * 1024); // 150 KB payload
+    const res = await request(app).post('/api/maps').set(authHeader).send({
+      id: uuid(900),
+      name: largeName,
+      layers: [],
+      pins: [],
+    });
+    // It should not be rejected by body-parser with 413. It will fail Zod validation on name length (max 1000) with 400.
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Validation failed');
+  });
+
 });
+

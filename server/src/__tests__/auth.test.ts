@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { getJwtSecret, DEV_JWT_SECRET, isMockAuthAllowed, assertMockAuthConfig, authenticateToken, AuthError, userFromGooglePayload, cleanupSessionCache, clearSessionCacheForTests } from '../auth';
+import { getJwtSecret, DEV_JWT_SECRET, isMockAuthAllowed, assertMockAuthConfig, authenticateToken, AuthError, userFromGooglePayload, cleanupSessionCache, clearSessionCacheForTests, isValidSessionId, parseCookies, getUserForSession } from '../auth';
 
 describe('JWT production requirements', () => {
   const originalNodeEnv = process.env.NODE_ENV;
@@ -135,4 +135,33 @@ describe('userFromGooglePayload', () => {
       expect(() => cleanupSessionCache()).not.toThrow();
     });
   });
+
+  describe('session ID validation and cookie parsing', () => {
+    it('isValidSessionId only accepts valid UUID strings', () => {
+      expect(isValidSessionId('12345678-1234-1234-1234-123456789abc')).toBe(true);
+      expect(isValidSessionId('abcdef01-2345-6789-abcd-ef0123456789')).toBe(true);
+      expect(isValidSessionId('not-a-uuid')).toBe(false);
+      expect(isValidSessionId('12345678-1234-1234-1234-123456789abcz')).toBe(false);
+      expect(isValidSessionId('')).toBe(false);
+      expect(isValidSessionId(null)).toBe(false);
+      expect(isValidSessionId(undefined)).toBe(false);
+      expect(isValidSessionId(12345)).toBe(false);
+    });
+
+    it('getUserForSession immediately rejects malformed session IDs without DB query', async () => {
+      await expect(getUserForSession('malformed-session-id')).rejects.toThrow('No token provided');
+      await expect(getUserForSession('')).rejects.toThrow('No token provided');
+      await expect(getUserForSession('undefined')).rejects.toThrow('No token provided');
+    });
+
+    it('parseCookies safely handles headers and ignores prototype pollution keys', () => {
+      const parsed = parseCookies('foo=bar; __proto__=evil; constructor=danger; session=abc');
+      expect(parsed.foo).toBe('bar');
+      expect(parsed.session).toBe('abc');
+      expect(Object.prototype.hasOwnProperty.call(parsed, '__proto__')).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(parsed, 'constructor')).toBe(false);
+      expect(({} as any).evil).toBeUndefined();
+    });
+  });
 });
+

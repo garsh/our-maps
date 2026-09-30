@@ -45,14 +45,14 @@ function isValidUser(user: any): user is User {
 }
 
 export function parseCookies(header?: string): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out: Record<string, string> = Object.create(null);
   if (!header) return out;
   for (const part of header.split(';')) {
     const idx = part.indexOf('=');
     if (idx === -1) continue;
     const key = part.slice(0, idx).trim();
     const value = part.slice(idx + 1).trim();
-    if (!key) continue;
+    if (!key || key === '__proto__' || key === 'constructor') continue;
     try {
       out[key] = decodeURIComponent(value);
     } catch {
@@ -105,20 +105,34 @@ async function createSession(userId: string): Promise<string> {
   return id;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isValidSessionId(sessionId: unknown): sessionId is string {
+  return typeof sessionId === 'string' && sessionId.length === 36 && UUID_REGEX.test(sessionId);
+}
+
 interface CachedSession {
   user: User;
   expiresAtMs: number;
 }
 
 const sessionCache = new Map<string, CachedSession>();
+const negativeSessionCache = new Map<string, number>();
 const SESSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const NEGATIVE_SESSION_TTL_MS = 30 * 1000; // 30 seconds for non-existent session IDs
 const MAX_SESSION_CACHE_ENTRIES = 2000;
+const MAX_NEGATIVE_CACHE_ENTRIES = 2000;
 
 export function cleanupSessionCache() {
   const now = Date.now();
   for (const [sessionId, entry] of sessionCache.entries()) {
     if (entry.expiresAtMs <= now) {
       sessionCache.delete(sessionId);
+    }
+  }
+  for (const [sessionId, expiresAt] of negativeSessionCache.entries()) {
+    if (expiresAt <= now) {
+      negativeSessionCache.delete(sessionId);
     }
   }
   while (sessionCache.size > MAX_SESSION_CACHE_ENTRIES) {
@@ -133,11 +147,24 @@ export function cleanupSessionCache() {
 
 export function clearSessionCacheForTests() {
   sessionCache.clear();
+  negativeSessionCache.clear();
 }
 
 export async function getUserForSession(sessionId: string): Promise<User> {
-  const cached = sessionCache.get(sessionId);
+  if (!isValidSessionId(sessionId)) {
+    throw new AuthError('No token provided');
+  }
+
   const now = Date.now();
+  const negativeExpiresAt = negativeSessionCache.get(sessionId);
+  if (negativeExpiresAt !== undefined) {
+    if (negativeExpiresAt > now) {
+      throw new AuthError('No token provided');
+    }
+    negativeSessionCache.delete(sessionId);
+  }
+
+  const cached = sessionCache.get(sessionId);
   if (cached) {
     if (cached.expiresAtMs > now) {
       return cached.user;
@@ -153,6 +180,11 @@ export async function getUserForSession(sessionId: string): Promise<User> {
     sessionId
   );
   if (!row) {
+    if (negativeSessionCache.size >= MAX_NEGATIVE_CACHE_ENTRIES) {
+      const oldest = negativeSessionCache.keys().next().value;
+      if (oldest !== undefined) negativeSessionCache.delete(oldest);
+    }
+    negativeSessionCache.set(sessionId, now + NEGATIVE_SESSION_TTL_MS);
     throw new AuthError('No token provided');
   }
   const dbExpiresAtMs = new Date(row.expires_at).getTime();
@@ -182,6 +214,7 @@ export async function getUserForSession(sessionId: string): Promise<User> {
 
 async function deleteSession(sessionId: string) {
   sessionCache.delete(sessionId);
+  negativeSessionCache.delete(sessionId);
   const db = await getDb();
   await db.run('DELETE FROM sessions WHERE id = ?', sessionId);
 }

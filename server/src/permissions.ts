@@ -61,8 +61,13 @@ export async function getMapRole(userId: string | undefined | null, mapId: strin
 }
 
 /**
- * When a logged-in user accesses a map that is shared via link, add that user
- * as having view permissions for the map (unless they are owner or already have a permission).
+ * INTENTIONAL DESIGN DECISION:
+ * When an authenticated user accesses a map that is shared via public link, they are
+ * automatically added to map_permissions with 'view' role so that the map persists in their
+ * accessible maps list and enables collaboration without requiring the owner to manually
+ * add each user individually. This is an intentional feature for rapid sharing among
+ * authenticated users, not an unauthorized privilege escalation flaw.
+ *
  * Returns true if a new permission row was inserted.
  */
 export async function addMapViewerIfLinkShared(

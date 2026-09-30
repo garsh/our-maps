@@ -92,6 +92,17 @@ const tileExtractLimiter = rateLimit({
 });
 app.use(['/api/maps/tiles/stream', '/maps/tiles/stream', '/api/maps/tiles/extract-size', '/maps/tiles/extract-size'], tileExtractLimiter);
 
+// High-capacity limiter for static vector tiles, fonts, and sprites (prevents volumetric DoS while allowing smooth panning)
+const mapsAssetsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many map asset requests, please try again later.' },
+  skip: () => process.env.NODE_ENV === 'test',
+});
+app.use('/maps', mapsAssetsLimiter);
+
 // CORS: exact origin match (comma-separated CORS_ORIGIN) plus LAN/dev hosts
 app.use(cors({
   origin: (origin, callback) => {
@@ -105,8 +116,17 @@ app.use(cors({
   credentials: true,
 }));
 
-// Data limits: allow large map JSON but prevent massive payloads
-app.use(express.json({ limit: '10mb' }));
+// Data limits: use conservative 100kb limit by default to prevent unauthenticated memory exhaustion DoS.
+// Large multi-pin map payloads (up to 10MB) are only permitted on the map creation endpoint.
+const defaultJsonParser = express.json({ limit: '100kb' });
+const mapCreateJsonParser = express.json({ limit: '10mb' });
+
+app.use((req, res, next) => {
+  if (req.method === 'POST' && (req.path === '/api/maps' || req.path === '/api/maps/')) {
+    return mapCreateJsonParser(req, res, next);
+  }
+  return defaultJsonParser(req, res, next);
+});
 
 // API Routes
 app.post('/api/auth/google-login', googleLoginHandler);
@@ -134,7 +154,54 @@ function getAuthedUser(socket: Socket): User {
   return socket.data.user as User;
 }
 
+interface SocketRateEntry {
+  count: number;
+  resetAtMs: number;
+}
+const socketConnectionRates = new Map<string, SocketRateEntry>();
+const SOCKET_RATE_WINDOW_MS = 60 * 1000; // 1 minute
+const SOCKET_RATE_MAX_CONNECTIONS = 120; // 120 handshakes per min per IP
+const MAX_SOCKET_RATE_ENTRIES = 5000;
+
+export function cleanupSocketRateLimits() {
+  const now = Date.now();
+  for (const [ip, entry] of socketConnectionRates.entries()) {
+    if (entry.resetAtMs <= now) {
+      socketConnectionRates.delete(ip);
+    }
+  }
+}
+
+export function clearSocketRateLimitsForTests() {
+  socketConnectionRates.clear();
+}
+
+function checkSocketRateLimit(ip: string): boolean {
+  if (process.env.NODE_ENV === 'test') return true;
+  const now = Date.now();
+  const entry = socketConnectionRates.get(ip);
+  if (!entry || entry.resetAtMs <= now) {
+    if (socketConnectionRates.size >= MAX_SOCKET_RATE_ENTRIES) {
+      const oldest = socketConnectionRates.keys().next().value;
+      if (oldest !== undefined) socketConnectionRates.delete(oldest);
+    }
+    socketConnectionRates.set(ip, { count: 1, resetAtMs: now + SOCKET_RATE_WINDOW_MS });
+    return true;
+  }
+  entry.count++;
+  return entry.count <= SOCKET_RATE_MAX_CONNECTIONS;
+}
+
 io.use(async (socket, next) => {
+  const forwarded = socket.handshake.headers?.['x-forwarded-for'];
+  const clientIp = (process.env.NODE_ENV === 'production' && typeof forwarded === 'string')
+    ? forwarded.split(',')[0].trim()
+    : socket.handshake.address;
+
+  if (!checkSocketRateLimit(clientIp)) {
+    return next(new Error('Too many connection attempts, please try again later.'));
+  }
+
   try {
     const sessionId = parseCookies(socket.handshake.headers.cookie)[SESSION_COOKIE];
     if (sessionId) {
@@ -421,12 +488,14 @@ if (process.env.NODE_ENV !== 'test') {
     console.error('[AUTH] Failed to purge expired sessions:', err);
   });
   cleanupSessionCache();
+  cleanupSocketRateLimits();
   cleanupPlanDiskCache(mapsDir);
   setInterval(() => {
     purgeExpiredSessions().catch((err) => {
       console.error('[AUTH] Failed to purge expired sessions:', err);
     });
     cleanupSessionCache();
+    cleanupSocketRateLimits();
     cleanupPlanDiskCache(mapsDir);
   }, 60 * 60 * 1000);
   server.listen(port as number, '0.0.0.0', () => {
