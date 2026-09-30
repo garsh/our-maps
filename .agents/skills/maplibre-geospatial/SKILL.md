@@ -20,6 +20,7 @@ Specialized runbook for MapLibre GL JS, PMTiles, and 3D terrain rendering in Our
 - **Tile Miss Overzooming**:
   - When an offline tile is missing, **always throw an `Error('Tile not found...')`** (or HTTP 404).
   - **NEVER return an empty or 0-byte `Uint8Array`**. Returning empty bytes signals a valid tile with 0 features, wiping out the canvas. Throwing an error allows MapLibre to overzoom and scale parent tiles (zooms 4–8) cleanly.
+  - Serve a downloaded extract first. On a miss, if `navigator.onLine`, read that tile from live `planet.pmtiles` so the basemap still draws outside the download. If that read fails or returns no bytes, throw 404. Do not skip the extract just because the browser reports online.
 
 ### 3D Terrain & DEM Protocol (`dem://`)
 - **No Static Terrain in Style**: Never declare `terrain: { source: 'terrainElevation', ... }` statically in the initial style object. Boot MapLibre in 2D mode, then activate terrain dynamically via `map.setTerrain(...)`.

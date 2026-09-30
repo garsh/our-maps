@@ -10,9 +10,12 @@ import MapView, {
 import { getHoveredPinId, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
 import { getMapViewportBounds, resetMapViewportBoundsForTests } from '../../utils/mapViewport';
 
-const { capturedMapProps, capturedSourceProps } = vi.hoisted(() => ({
+const { capturedMapProps, capturedSourceProps, protocolHandlers, liveTile, getActiveExtractPMTiles } = vi.hoisted(() => ({
   capturedMapProps: { current: null as any },
   capturedSourceProps: { current: [] as any[] },
+  protocolHandlers: new Map<string, (params: { url: string }, abort: AbortController) => Promise<any>>(),
+  liveTile: vi.fn(),
+  getActiveExtractPMTiles: vi.fn(async () => null as { getZxy: (z: number, x: number, y: number) => Promise<{ data?: ArrayBuffer } | null> } | null),
 }));
 
 // Mock react-map-gl/maplibre
@@ -153,15 +156,24 @@ vi.mock('maplibre-gl', () => {
 
   return {
     setWorkerUrl: vi.fn(),
-    addProtocol: vi.fn(),
+    addProtocol: vi.fn((protocol: string, handler: (params: { url: string }, abort: AbortController) => Promise<any>) => {
+      protocolHandlers.set(protocol, handler);
+    }),
     LngLat,
   };
 });
 
 vi.mock('pmtiles', () => ({
   Protocol: class {
-    tilev4 = vi.fn();
+    tilev4 = liveTile;
   },
+}));
+
+vi.mock('../../utils/offlineExtract', () => ({
+  getActiveExtractPMTiles,
+  getExtractTileJSON: vi.fn(async () => null),
+  preloadExtract: vi.fn(async () => null),
+  setActiveOfflineMapId: vi.fn(),
 }));
 
 describe('syncOfflineTerrain', () => {
@@ -551,6 +563,69 @@ describe('dem protocol handler', () => {
     expect(r1.data).toBe(body);
     expect(r2.data).toBe(body);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('pmtiles protocol handler', () => {
+  const tileUrl = 'pmtiles://http://localhost/maps/planet.pmtiles/15/3362/6242';
+
+  function handler() {
+    const registered = protocolHandlers.get('pmtiles');
+    if (!registered) throw new Error('pmtiles protocol was not registered');
+    return registered;
+  }
+
+  beforeEach(() => {
+    liveTile.mockReset();
+    getActiveExtractPMTiles.mockReset();
+    getActiveExtractPMTiles.mockResolvedValue(null);
+    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+  });
+
+  it('serves a tile from the downloaded extract without asking the planet archive', async () => {
+    const bytes = new Uint8Array([7, 8, 9]);
+    getActiveExtractPMTiles.mockResolvedValue({
+      getZxy: async () => ({ data: bytes.buffer }),
+    });
+
+    const result = await handler()({ url: tileUrl }, new AbortController());
+
+    expect(Array.from(result.data)).toEqual([7, 8, 9]);
+    expect(liveTile).not.toHaveBeenCalled();
+  });
+
+  it('reads the planet archive when the extract does not cover the tile', async () => {
+    getActiveExtractPMTiles.mockResolvedValue({
+      getZxy: async () => null,
+    });
+    const planet = new Uint8Array([1, 2, 3, 4]);
+    liveTile.mockResolvedValue({ data: planet });
+
+    const result = await handler()({ url: tileUrl }, new AbortController());
+
+    expect(result.data).toBe(planet);
+    expect(liveTile).toHaveBeenCalledTimes(1);
+  });
+
+  it('404s an extract miss when the planet archive has no bytes, so the parent tile can overzoom', async () => {
+    getActiveExtractPMTiles.mockResolvedValue({
+      getZxy: async () => ({ data: new ArrayBuffer(0) }),
+    });
+    liveTile.mockResolvedValue({ data: new Uint8Array() });
+
+    await expect(handler()({ url: tileUrl }, new AbortController()))
+      .rejects.toMatchObject({ status: 404, message: expect.stringContaining('Tile not found: 15/3362/6242') });
+  });
+
+  it('404s an extract miss while offline without requesting the planet archive', async () => {
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+    getActiveExtractPMTiles.mockResolvedValue({
+      getZxy: async () => null,
+    });
+
+    await expect(handler()({ url: tileUrl }, new AbortController()))
+      .rejects.toMatchObject({ status: 404 });
+    expect(liveTile).not.toHaveBeenCalled();
   });
 });
 

@@ -80,6 +80,28 @@ function throwTileNotFound(z: string | number, x: string | number, y: string | n
   throw err;
 }
 
+/**
+ * Read one tile from the live planet archive.
+ * Returns null when the browser is offline, the archive has no bytes for this
+ * tile, or the request fails. A 0-byte body is a miss: MapLibre would treat it
+ * as a valid empty tile and skip parent overzoom. Aborts propagate.
+ */
+async function readLivePlanetTile(
+  params: { url: string },
+  abortController: AbortController,
+) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return null;
+  try {
+    const result = await globalPMTilesProtocol!.tilev4(params, abortController);
+    const data = result?.data;
+    if (data instanceof Uint8Array && data.byteLength > 0) return result;
+    return null;
+  } catch (err) {
+    if (abortController.signal.aborted) throw err;
+    return null;
+  }
+}
+
 export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
   if (!mapInput) return;
   const map = typeof mapInput.getMap === 'function' ? mapInput.getMap() : mapInput;
@@ -684,8 +706,13 @@ function setupPMTilesProtocol() {
             if (result && result.data && result.data.byteLength > 0) {
               return { data: new Uint8Array(result.data) };
             }
-            // Extract is loaded: missing tiles must 404 so MapLibre overzooms a parent tile.
-            // Do not fall through to the network — navigator.onLine can be true while the server is down.
+            // This map's download does not include the tile (the camera left the
+            // extract, for example find-my-location far from the pins).
+            // Ask the live planet archive when the browser is online.
+            // navigator.onLine is not proof the server is up: a failure or an
+            // empty body still 404s so MapLibre can overzoom a parent from the extract.
+            const outsideExtract = await readLivePlanetTile(params, abortController);
+            if (outsideExtract) return outsideExtract;
             throwTileNotFound(z, x, y);
           }
         } catch (extractErr) {
@@ -696,15 +723,10 @@ function setupPMTilesProtocol() {
           console.error('Failed to read offline map extract:', extractErr);
         }
 
-        // 2. No local extract. If the browser reports online, try the live planet archive.
+        // 2. No local extract (or the extract file could not be read).
         // NEVER treat navigator.onLine as proof the server is reachable.
-        if (navigator.onLine) {
-          try {
-            return await globalPMTilesProtocol!.tilev4(params, abortController);
-          } catch {
-            // Fall through to the miss path below.
-          }
-        }
+        const live = await readLivePlanetTile(params, abortController);
+        if (live) return live;
 
         // CRITICAL FOR OFFLINE MODE:
         // 3. Tile missing offline -> 404 rather than returning a 0-byte tile!
