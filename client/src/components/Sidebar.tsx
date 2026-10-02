@@ -1225,7 +1225,7 @@ const SortablePin = memo(({
               onClick={(e) => { e.stopPropagation(); setEditingPinId(isEditing ? null : pin.id); }}
               style={{ 
                 background: 'transparent', 
-                color: isEditing ? 'var(--text-primary)' : 'var(--primary-color)', 
+                color: isEditing ? 'var(--text-primary)' : 'var(--primary-accent, var(--primary-color))', 
                 border: 'none',
                 padding: '0px 3px', 
                 cursor: 'pointer', 
@@ -1364,7 +1364,7 @@ const DefaultLayerHeader = memo(({
             <div style={{ padding: '1px 1px', marginLeft: '-2px', display: 'flex', alignItems: 'center', width: '13px', height: '13px' }}></div>
           )}
           <div onClick={() => onToggleExpand?.(null)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
-            <div style={{ color: 'var(--primary-color)', marginRight: '1px', display: 'flex' }}>
+            <div style={{ color: 'var(--primary-accent, var(--primary-color))', marginRight: '1px', display: 'flex' }}>
                 {collapsedLayerIds?.has(null) ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
             </div>
             <span style={{ fontWeight: '700', fontSize: '0.65rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -1377,7 +1377,7 @@ const DefaultLayerHeader = memo(({
               style={{ 
                 background: 'transparent', 
                 border: 'none', 
-                color: hiddenLayerIds?.has(null) ? 'var(--text-secondary)' : 'var(--primary-color)', 
+                color: hiddenLayerIds?.has(null) ? 'var(--text-secondary)' : 'var(--primary-accent, var(--primary-color))', 
                 opacity: hiddenLayerIds?.has(null) ? 0.45 : 1, 
                 cursor: 'pointer', 
                 padding: '1px 3px', 
@@ -1385,6 +1385,7 @@ const DefaultLayerHeader = memo(({
                 alignItems: 'center' 
               }}
               title={hiddenLayerIds?.has(null) ? "Show layer" : "Hide layer"}
+              aria-label={hiddenLayerIds?.has(null) ? "Show layer" : "Hide layer"}
             >
               {hiddenLayerIds?.has(null) ? <EyeOff size={11} /> : <Eye size={11} />}
             </button>
@@ -1402,7 +1403,7 @@ const DefaultLayerHeader = memo(({
               }}
               style={{ 
                 cursor: defaultPins.length > 0 ? 'pointer' : 'default', 
-                accentColor: 'var(--primary-color)', 
+                accentColor: 'var(--primary-accent, var(--primary-color))', 
                 width: '9px', 
                 height: '9px',
                 visibility: defaultPins.length > 0 ? 'visible' : 'hidden',
@@ -1595,7 +1596,7 @@ const SortableLayer = memo(({
             </div>
           )}
           <div onClick={() => onToggleExpand()} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
-            <div style={{ color: 'var(--primary-color)', marginRight: '1px', display: 'flex' }}>
+            <div style={{ color: 'var(--primary-accent, var(--primary-color))', marginRight: '1px', display: 'flex' }}>
               {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
             </div>
             <span onDoubleClick={() => !readOnly && setIsEditingName(true)} style={{ fontWeight: '700', fontSize: '0.65rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -1608,7 +1609,7 @@ const SortableLayer = memo(({
               style={{ 
                 background: 'transparent', 
                 border: 'none', 
-                color: isHidden ? 'var(--text-secondary)' : 'var(--primary-color)', 
+                color: isHidden ? 'var(--text-secondary)' : 'var(--primary-accent, var(--primary-color))', 
                 opacity: isHidden ? 0.45 : 1, 
                 cursor: 'pointer', 
                 padding: '1px 3px', 
@@ -1616,6 +1617,7 @@ const SortableLayer = memo(({
                 alignItems: 'center' 
               }}
               title={isHidden ? "Show layer" : "Hide layer"}
+              aria-label={isHidden ? "Show layer" : "Hide layer"}
             >
               {isHidden ? <EyeOff size={11} /> : <Eye size={11} />}
             </button>
@@ -1633,7 +1635,7 @@ const SortableLayer = memo(({
               }}
               style={{ 
                 cursor: layerPins.length > 0 ? 'pointer' : 'default', 
-                accentColor: 'var(--primary-color)', 
+                accentColor: 'var(--primary-accent, var(--primary-color))', 
                 width: '9px', 
                 height: '9px',
                 visibility: layerPins.length > 0 ? 'visible' : 'hidden',
@@ -1676,7 +1678,7 @@ const SortableLayer = memo(({
                     }
                     setIsEditingName(!isEditingName); 
                   }}
-                  style={{ background: 'transparent', color: isEditingName ? 'var(--text-primary)' : 'var(--primary-color)', border: 'none', padding: '0px 3px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                  style={{ background: 'transparent', color: isEditingName ? 'var(--text-primary)' : 'var(--primary-accent, var(--primary-color))', border: 'none', padding: '0px 3px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                   title={isEditingName ? "Cancel editing" : "Edit layer name"}
                 >
                   {isEditingName ? <X size={12} /> : <Pencil size={12} />}

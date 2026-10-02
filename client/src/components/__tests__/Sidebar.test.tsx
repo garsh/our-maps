@@ -1724,6 +1724,47 @@ describe('Sidebar', () => {
       vi.restoreAllMocks();
     }
   });
+
+  it('applies primary-accent styling to layer visibility button when visible and text-secondary when hidden', () => {
+    const onToggleLayerVisibility = vi.fn();
+    const mockLayers = [{ id: 'layer-1', name: 'Custom Layer', position: 0 }];
+
+    const { rerender } = render(
+      <TestWrapper
+        pins={mockPins}
+        handlers={{
+          layers: mockLayers,
+          hiddenLayerIds: new Set<string | null>(),
+          onToggleLayerVisibility,
+        }}
+      />
+    );
+
+    const defaultHideBtn = screen.getAllByRole('button', { name: 'Hide layer' })[0];
+    expect(defaultHideBtn.style.color).toContain('var(--primary-accent');
+    expect(defaultHideBtn.style.opacity).toBe('1');
+
+    const pinEditBtn = screen.getByRole('button', { name: 'Edit' });
+    expect(pinEditBtn.style.color).toContain('var(--primary-accent');
+
+    const layerEditBtn = screen.getByTitle('Edit layer name');
+    expect(layerEditBtn.style.color).toContain('var(--primary-accent');
+
+    rerender(
+      <TestWrapper
+        pins={mockPins}
+        handlers={{
+          layers: mockLayers,
+          hiddenLayerIds: new Set<string | null>([null]),
+          onToggleLayerVisibility,
+        }}
+      />
+    );
+
+    const defaultShowBtn = screen.getByRole('button', { name: 'Show layer' });
+    expect(defaultShowBtn.style.color).toBe('var(--text-secondary)');
+    expect(defaultShowBtn.style.opacity).toBe('0.45');
+  });
 });
 
 describe('pin list scroll targeting', () => {
