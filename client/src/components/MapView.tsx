@@ -1129,21 +1129,32 @@ function applyThemePaintsOnMap(map: any, flavor: 'light' | 'dark') {
 // Terrain flyTo freezes camera height and only calls _finalizeElevation when this is set.
 // Without it, street labels keep a mid-flight perspective scale after Find my location.
 const FLY_TO_TERRAIN = { freezeElevation: true as const };
-// Edge padding set to 4% of viewport width and height
-export function getMapEdgePadding() {
+// Edge padding set to 4% of visible map width and height (excluding sidebar and sheet)
+export function getMapEdgePadding(leftPadding = 0, bottomPadding = 0) {
   if (typeof window === 'undefined') {
-    return { x: 40, y: 32 };
+    const visibleWidth = Math.max(0, 1000 - leftPadding);
+    const visibleHeight = Math.max(0, 800 - bottomPadding);
+    return {
+      x: Math.round(visibleWidth * 0.04),
+      y: Math.round(visibleHeight * 0.04),
+    };
   }
+  const visibleWidth = Math.max(0, window.innerWidth - leftPadding);
+  const visibleHeight = Math.max(0, window.innerHeight - bottomPadding);
   return {
-    x: Math.round(window.innerWidth * 0.04),
-    y: Math.round(window.innerHeight * 0.04),
+    x: Math.round(visibleWidth * 0.04),
+    y: Math.round(visibleHeight * 0.04),
   };
 }
 
+// Pin icons are 28px tall anchored at the bottom tip.
+// Enforce a minimum top clearance of 36px so the northern-most pin is never clipped.
+export const PIN_HEAD_CLEARANCE = 36;
+
 export function paddedMapView(leftPadding: number, bottomPadding: number) {
-  const edge = getMapEdgePadding();
+  const edge = getMapEdgePadding(leftPadding, bottomPadding);
   return {
-    top: edge.y,
+    top: Math.max(PIN_HEAD_CLEARANCE, edge.y),
     left: leftPadding + edge.x,
     right: edge.x,
     bottom: edge.y + bottomPadding,

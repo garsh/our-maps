@@ -6,6 +6,8 @@ import MapView, {
   syncOfflineTerrain,
   resetDEMInflightForTests,
   paddedMapView,
+  getMapEdgePadding,
+  PIN_HEAD_CLEARANCE,
 } from '../MapView';
 import { getHoveredPinId, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
 import { getMapViewportBounds, resetMapViewportBoundsForTests } from '../../utils/mapViewport';
@@ -1382,6 +1384,73 @@ describe('MapView Compass and Tilt Indicator', () => {
       expect(mockSetLayoutProperty).toHaveBeenCalledWith('hills', 'visibility', 'none');
       expect(mockSetLayoutProperty).toHaveBeenCalledWith('3d-buildings', 'visibility', 'none');
       expect(mockSetLayoutProperty).toHaveBeenCalledWith('buildings', 'visibility', 'visible');
+    });
+  });
+
+  describe('visible map edge padding and pin head clearance', () => {
+    it('calculates 4% edge padding from visible map dimensions excluding sidebar and sheet', () => {
+      const originalInnerWidth = window.innerWidth;
+      const originalInnerHeight = window.innerHeight;
+      try {
+        Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 900 });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 400 });
+
+        // In landscape: 400px sidebar, 0px sheet.
+        // Visible width: 900 - 400 = 500px -> 4% = 20px
+        // Visible height: 400 - 0 = 400px -> 4% = 16px
+        const edge = getMapEdgePadding(400, 0);
+        expect(edge.x).toBe(20);
+        expect(edge.y).toBe(16);
+
+        // In portrait: 0px sidebar, 350px sheet.
+        // Visible width: 400 - 0 = 400px -> 4% = 16px
+        // Visible height: 800 - 350 = 450px -> 4% = 18px
+        Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 400 });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 });
+        const portraitEdge = getMapEdgePadding(0, 350);
+        expect(portraitEdge.x).toBe(16);
+        expect(portraitEdge.y).toBe(18);
+      } finally {
+        Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: originalInnerWidth });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: originalInnerHeight });
+      }
+    });
+
+    it('enforces PIN_HEAD_CLEARANCE for top padding on small visible heights', () => {
+      const originalInnerWidth = window.innerWidth;
+      const originalInnerHeight = window.innerHeight;
+      try {
+        // Landscape mobile: 900w x 350h, 400px sidebar
+        Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 900 });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 350 });
+
+        const pad = paddedMapView(400, 0);
+        // 4% of 350 is 14px, but top must be at least PIN_HEAD_CLEARANCE (36px)
+        expect(pad.top).toBe(PIN_HEAD_CLEARANCE);
+        expect(pad.left).toBe(400 + Math.round((900 - 400) * 0.04));
+        expect(pad.right).toBe(Math.round((900 - 400) * 0.04));
+        expect(pad.bottom).toBe(Math.round(350 * 0.04));
+      } finally {
+        Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: originalInnerWidth });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: originalInnerHeight });
+      }
+    });
+
+    it('uses 4% of visible height when it exceeds PIN_HEAD_CLEARANCE', () => {
+      const originalInnerWidth = window.innerWidth;
+      const originalInnerHeight = window.innerHeight;
+      try {
+        // Desktop large screen: 1920w x 1200h, 400px sidebar
+        Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1920 });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 1200 });
+
+        const pad = paddedMapView(400, 0);
+        // 4% of 1200 is 48px, which exceeds PIN_HEAD_CLEARANCE (36px)
+        expect(pad.top).toBe(48);
+      } finally {
+        Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: originalInnerWidth });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: originalInnerHeight });
+      }
     });
   });
 });
