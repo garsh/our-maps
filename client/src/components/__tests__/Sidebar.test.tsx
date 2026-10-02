@@ -647,6 +647,34 @@ describe('Sidebar', () => {
     expect(defaultLayerHeader?.textContent).toContain('Default Layer');
   });
 
+  it('does not render indentation placeholder on default layer header when in view mode or offline', () => {
+    // 1. Edit mode: placeholder exists to match GripVertical
+    const { rerender } = render(
+      <TestWrapper handlers={{ userRole: 'owner', editMode: true }} />
+    );
+    let headerRow = document.querySelector('#default > div') as HTMLElement;
+    expect(headerRow).not.toBeNull();
+    expect((headerRow.firstElementChild as HTMLElement).style.width).toBe('13px');
+
+    // 2. View mode (readOnly): placeholder is omitted so it left-justifies with other layers
+    rerender(
+      <TestWrapper handlers={{ userRole: 'view' }} />
+    );
+    headerRow = document.querySelector('#default > div') as HTMLElement;
+    expect(headerRow).not.toBeNull();
+    expect((headerRow.firstElementChild as HTMLElement).style.width).not.toBe('13px');
+    expect(headerRow.firstElementChild?.textContent).toContain('Default Layer');
+
+    // 3. Offline mode (readOnly): placeholder is also omitted
+    rerender(
+      <TestWrapper handlers={{ userRole: 'owner', editMode: true, isOffline: true }} />
+    );
+    headerRow = document.querySelector('#default > div') as HTMLElement;
+    expect(headerRow).not.toBeNull();
+    expect((headerRow.firstElementChild as HTMLElement).style.width).not.toBe('13px');
+    expect(headerRow.firstElementChild?.textContent).toContain('Default Layer');
+  });
+
   it('allows toggling hillshading in appearance menu', () => {
     const onToggleHillshade = vi.fn();
     render(<TestWrapper handlers={{ onToggleHillshade, showHillshade: true }} />);

@@ -1258,16 +1258,19 @@ const DefaultLayerHeader = memo(({
           boxShadow: isHighlighted ? '0 0 0 1px var(--primary-color)' : 'var(--shadow-sm)',
           transition: 'all 0.1s ease'
         }}>
-        <div style={{ 
+        <div data-no-text-select="" style={{ 
           display: 'flex', 
           alignItems: 'center', 
           padding: '0 0.15rem', 
           borderBottom: 'none',
           minHeight: '20px',
-          transition: 'all 0.1s ease'
+          transition: 'all 0.1s ease',
+          ...NO_TEXT_SELECT_STYLE
         }}>
           {/* Empty placeholder to exactly match GripVertical width and padding from regular layers */}
-          <div style={{ padding: '1px 1px', marginLeft: '-2px', display: 'flex', alignItems: 'center', width: '13px', height: '13px' }}></div>
+          {!readOnly && (
+            <div style={{ padding: '1px 1px', marginLeft: '-2px', display: 'flex', alignItems: 'center', width: '13px', height: '13px' }}></div>
+          )}
           <div onClick={() => onToggleExpand?.(null)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, padding: '1px 0' }}>
             <div style={{ color: 'var(--primary-color)', marginRight: '1px', display: 'flex' }}>
                 {collapsedLayerIds?.has(null) ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
