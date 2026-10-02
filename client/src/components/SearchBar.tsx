@@ -382,8 +382,8 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
   };
 
   return (
-    <div ref={containerRef} className="search-container" style={{ marginBottom: 0, position: 'relative', height: '28px' }}>
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', height: '28px' }}>
+    <div ref={containerRef} className="search-container" style={{ marginBottom: 0, position: 'relative', height: '28px', minHeight: '28px', flexShrink: 0 }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', height: '28px', minHeight: '28px', flexShrink: 0 }}>
         <div style={{ position: 'absolute', left: '12px', color: 'var(--primary-color)', display: 'flex' }}>
           {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
         </div>
@@ -398,6 +398,8 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
           className="input-field"
           style={{ 
             height: '28px',
+            minHeight: '28px',
+            flexShrink: 0,
             boxSizing: 'border-box',
             paddingTop: '6px',
             paddingBottom: '6px',

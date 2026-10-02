@@ -791,6 +791,7 @@ interface MapViewProps {
   isOffline?: boolean;
   onLocationTrackingChange?: (isTracking: boolean) => void;
   isMobile?: boolean;
+  isPanelMinimized?: boolean;
   mobileControlsTarget?: HTMLElement | null;
 }
 const UserLocationMarker = ({ position }: { position: { lat: number; lng: number } }) => {
@@ -1265,6 +1266,7 @@ const MapView = ({
   isOffline = false,
   onLocationTrackingChange,
   isMobile = false,
+  isPanelMinimized = false,
   mobileControlsTarget,
 }: MapViewProps) => {
 
@@ -2180,6 +2182,10 @@ const MapView = ({
     }
   }, []);
 
+  useLayoutEffect(() => {
+    updateCompassDirect();
+  }, [isPortaled, updateCompassDirect]);
+
   const updateBounds = useCallback(() => {
     if (!mapRef.current) return;
     const map = mapRef.current.getMap();
@@ -2879,7 +2885,7 @@ const MapView = ({
           display: inline-flex !important;
           flex-direction: row-reverse !important;
           align-items: center !important;
-          margin: 0 ${isMobile ? '10px' : '60px'} 10px 0 !important;
+          margin: 0 ${!isMobile ? '60px' : isPanelMinimized ? '108px' : '10px'} 10px 0 !important;
           background: var(--surface-color) !important;
           color: var(--text-secondary) !important;
           border: 1px solid var(--border-color) !important;

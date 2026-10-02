@@ -22,6 +22,7 @@ vi.mock('../utils/tileUtils', async () => {
 });
 vi.mock('../components/MapView', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../components/MapView')>();
+  const { createPortal } = await import('react-dom');
   return {
     ...actual,
     default: ({
@@ -29,13 +30,16 @@ vi.mock('../components/MapView', async (importOriginal) => {
       pins,
       targetPinId,
       hiddenLayerIds,
+      mobileControlsTarget,
     }: {
       onPinClick?: (pin: { id: string; lat: number; lng: number; label?: string }) => void;
       pins?: Array<{ id: string; lat: number; lng: number; label?: string; layerId?: string }>;
       targetPinId?: string | null;
       hiddenLayerIds?: Set<string | null>;
+      mobileControlsTarget?: HTMLElement | null;
     }) => {
       const visiblePins = (pins ?? []).filter((pin) => !hiddenLayerIds?.has(pin.layerId || null));
+      const target = mobileControlsTarget || (typeof document !== 'undefined' ? document.getElementById('mobile-map-controls') : null);
       return (
         <div data-testid="map-view" data-target-pin-id={targetPinId || ''}>
           {visiblePins.map((pin) => (
@@ -47,6 +51,13 @@ vi.mock('../components/MapView', async (importOriginal) => {
               onClick={() => onPinClick?.(pin)}
             />
           ))}
+          {target ? createPortal(
+            <>
+              <button aria-label="Find my location">Locate</button>
+              <button aria-label="Compass - Reset bearing to North">Compass</button>
+            </>,
+            target
+          ) : null}
         </div>
       );
     },
@@ -551,6 +562,84 @@ describe('App Components Error Handling', () => {
 
     expect(container.querySelector('.mobile-bottom-sheet')).toHaveStyle({ height: '0px' });
     expect(input).toHaveValue('');
+  });
+
+  it('keeps compass and location buttons in their relative positions and slides them off the bottom sheet onto the map when minimized', async () => {
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Test Map',
+      pins: [],
+      layers: [],
+      userRole: 'owner'
+    });
+
+    const originalDpr = window.devicePixelRatio;
+    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, writable: true, value: 2.75 });
+    window.innerWidth = 375;
+    window.innerHeight = 800;
+
+    try {
+      const { container } = render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/map-1']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Compass - Reset bearing to North/i })).toBeInTheDocument();
+    });
+
+    const handle = container.querySelector('.bottom-sheet-drag-handle') as HTMLElement;
+    const sheet = container.querySelector('.mobile-bottom-sheet') as HTMLElement;
+    const controls = sheet.querySelector('.mobile-map-controls') as HTMLElement;
+    const compassButton = screen.getByRole('button', { name: /Compass - Reset bearing to North/i });
+    const locatorButton = screen.getByRole('button', { name: /Find my location/i });
+
+    // When sheet is open (350px), controls are in the sheet toolbar in relative position: locator on left, compass on right
+    expect(controls.contains(compassButton)).toBe(true);
+    expect(controls.contains(locatorButton)).toBe(true);
+    expect(locatorButton.compareDocumentPosition(compassButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(controls).not.toHaveClass('is-minimized');
+
+    // Minimize sheet (close to 0px)
+    fireEvent.pointerDown(handle, { clientY: 450, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientY: 450, pointerId: 1 });
+    expect(sheet).toHaveStyle({ height: '0px' });
+
+    // Controls slide off the bottom sheet onto the map (is-minimized applied), stay in their relative positions,
+    // and clamp at their final floor position (never going below it)
+    expect(controls).toHaveClass('is-minimized');
+    expect(controls.contains(compassButton)).toBe(true);
+    expect(controls.contains(locatorButton)).toBe(true);
+    expect(locatorButton.compareDocumentPosition(compassButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // Reopen sheet back to standard height
+    fireEvent.pointerDown(handle, { clientY: 800, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientY: 800, pointerId: 1 });
+    expect(sheet).toHaveStyle({ height: '350px' });
+
+    // Controls slide back onto the bottom sheet toolbar
+    expect(controls).not.toHaveClass('is-minimized');
+    expect(controls.contains(compassButton)).toBe(true);
+    expect(controls.contains(locatorButton)).toBe(true);
+    expect(locatorButton.compareDocumentPosition(compassButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // Drag sheet down to intermediate height (40px) overlapping the buttons
+    fireEvent.pointerDown(handle, { clientY: 450, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientY: 760, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientY: 760, pointerId: 1 });
+    expect(sheet).toHaveStyle({ height: '40px' });
+    expect(controls).not.toHaveClass('is-minimized');
+    expect(controls.style.getPropertyValue('--controls-shift-y')).toBe('-11.2px');
+    expect(controls.contains(compassButton)).toBe(true);
+    expect(controls.contains(locatorButton)).toBe(true);
+    } finally {
+      Object.defineProperty(window, 'devicePixelRatio', { configurable: true, writable: true, value: originalDpr });
+    }
   });
 
   it('clears search text when the desktop sidebar is minimized', async () => {

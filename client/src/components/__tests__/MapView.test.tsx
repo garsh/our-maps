@@ -702,6 +702,33 @@ describe('MapView Compass and Tilt Indicator', () => {
     document.body.removeChild(portalTarget);
   });
 
+  it('keeps compass and location buttons in their relative positions portaled in mobileControlsTarget on mobile', () => {
+    const portalTarget = document.createElement('div');
+    portalTarget.id = 'mobile-map-controls';
+    document.body.appendChild(portalTarget);
+
+    render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        onBoundsChange={vi.fn()}
+        isMobile={true}
+        isPanelMinimized={true}
+        mobileControlsTarget={portalTarget}
+      />
+    );
+
+    const compassButton = screen.getByRole('button', { name: /Compass - Reset bearing to North/i });
+    const locatorButton = screen.getByRole('button', { name: /Find my location/i });
+
+    expect(portalTarget.contains(compassButton)).toBe(true);
+    expect(portalTarget.contains(locatorButton)).toBe(true);
+    expect(locatorButton.compareDocumentPosition(compassButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    document.body.removeChild(portalTarget);
+  });
+
   it('resets compass bearing and tilt when control button is clicked', () => {
     vi.useFakeTimers();
     render(

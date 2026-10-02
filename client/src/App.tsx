@@ -272,6 +272,15 @@ export function MapEditor() {
           if (mobile) {
             sheet.style.height = `${defaultSheet}px`;
             sheet.style.width = '';
+            const controls = document.getElementById('mobile-map-controls');
+            if (controls) {
+              if (defaultSheet <= 0) {
+                controls.classList.add('is-minimized');
+              } else {
+                controls.classList.remove('is-minimized');
+              }
+              controls.style.removeProperty('--controls-shift-y');
+            }
           } else {
             sheet.style.width = `${defaultWidth}px`;
             sheet.style.height = '';
@@ -407,6 +416,12 @@ export function MapEditor() {
       if (sheetRef.current) {
         sheetRef.current.style.height = `${newH}px`;
       }
+      const controls = document.getElementById('mobile-map-controls');
+      if (controls) {
+        const scale = mobileScale || 1.5;
+        const shift = Math.max(0, (10 - (newH - 31.2 * scale)) / scale);
+        controls.style.setProperty('--controls-shift-y', `-${Number(shift.toFixed(2))}px`);
+      }
     });
   };
   
@@ -470,10 +485,23 @@ export function MapEditor() {
     if (sheetRef.current) {
       sheetRef.current.style.height = `${finalH}px`;
     }
+    const controls = document.getElementById('mobile-map-controls');
+    if (controls) {
+      const scale = mobileScale || 1.5;
+      const shift = Math.max(0, (10 - (finalH - 31.2 * scale)) / scale);
+      if (finalH <= 0) {
+        controls.classList.add('is-minimized');
+      } else {
+        controls.classList.remove('is-minimized');
+      }
+      if (shift > 0) {
+        controls.style.setProperty('--controls-shift-y', `-${Number(shift.toFixed(2))}px`);
+      } else {
+        controls.style.removeProperty('--controls-shift-y');
+      }
+    }
     setSheetHeight(finalH);
   };
-
-
 
   const [selectedNavIds, setSelectedNavIds] = useState<Set<string>>(new Set());
   const [mobileControlsTarget, setMobileControlsTarget] = useState<HTMLDivElement | null>(null);
@@ -1313,6 +1341,11 @@ export function MapEditor() {
       const defaultSheet = standardSheetHeight();
       if (sheetRef.current) {
         sheetRef.current.style.height = `${defaultSheet}px`;
+      }
+      const controls = document.getElementById('mobile-map-controls');
+      if (controls) {
+        controls.classList.remove('is-minimized');
+        controls.style.removeProperty('--controls-shift-y');
       }
       setSheetHeight(defaultSheet);
       return true;
@@ -2242,7 +2275,7 @@ export function MapEditor() {
         )}
 
         {/* Sidebar content */}
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: isMobile ? 'visible' : 'hidden' }}>
           <div style={isMobile ? ({
             zoom: mobileScale,
             flex: 1,
@@ -2314,6 +2347,8 @@ export function MapEditor() {
               onToggle3DBuildings={handleToggle3DBuildings}
               onSearchAreaStateChange={setSearchAreaState}
               isPanelMinimized={isMobile ? sheetHeight <= 0 : sidebarWidth <= 0}
+              isDraggingSheet={isDraggingSheet}
+              sheetHeight={sheetHeight}
               mobileControlsRef={setMobileControlsTarget}
             />
           </div>
@@ -2388,6 +2423,7 @@ export function MapEditor() {
             bottomPadding={isMobile ? sheetHeight : 0}
             leftPadding={isMobile ? 0 : sidebarWidth}
             isMobile={isMobile}
+            isPanelMinimized={isMobile ? sheetHeight < (10 + 31.2 * (mobileScale || 1.5)) : sidebarWidth <= 0}
             mobileControlsTarget={mobileControlsTarget}
             mapTheme={mapTheme}
             showSatellite={showSatellite}

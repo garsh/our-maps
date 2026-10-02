@@ -493,6 +493,8 @@ interface SidebarProps {
   isHoverBlocked?: boolean;
   onSearchAreaStateChange?: (state: SearchAreaState | null) => void;
   isPanelMinimized?: boolean;
+  isDraggingSheet?: boolean;
+  sheetHeight?: number;
   mobileControlsRef?: Ref<HTMLDivElement>;
 }
 
@@ -2148,6 +2150,8 @@ const Sidebar = ({
   isHoverBlocked = false,
   onSearchAreaStateChange,
   isPanelMinimized = false,
+  isDraggingSheet = false,
+  sheetHeight,
   mobileControlsRef
 }: SidebarProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -2710,8 +2714,12 @@ const Sidebar = ({
     });
   };
 
+  const effectiveScale = mobileScale || 1.5;
+  const currentSheetHeight = sheetHeight ?? 350;
+  const shift = Math.max(0, (10 - (currentSheetHeight - 31.2 * effectiveScale)) / effectiveScale);
+
   return (
-    <aside style={{ flex: 1, minHeight: 0, height: '100%', background: 'var(--surface-color)', color: 'var(--text-primary)', display: 'flex', flexDirection: 'column', padding: isMobile ? '0.2rem 0.6rem 0.6rem 0.6rem' : '0.4rem 0.6rem 0.6rem 0.6rem', boxSizing: 'border-box', overflow: 'hidden', position: 'relative' }}>
+    <aside style={{ flex: 1, minHeight: 0, height: '100%', background: 'var(--surface-color)', color: 'var(--text-primary)', display: 'flex', flexDirection: 'column', padding: isMobile ? '0.2rem 0.6rem 0.6rem 0.6rem' : '0.4rem 0.6rem 0.6rem 0.6rem', boxSizing: 'border-box', overflow: isMobile ? 'visible' : 'hidden', position: 'relative' }}>
       <DndContext 
         sensors={sensors}
         collisionDetection={customCollisionDetection}
@@ -3073,9 +3081,9 @@ const Sidebar = ({
 
         {(isMobile || isEditMode || selectedPins.length > 0) && (
           // Above pin rows (drop targets use z-index 50) so a touch hits the results list.
-          <div className="sidebar-toolbar" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px', height: '28px', position: 'relative', zIndex: 60 }}>
+          <div className="sidebar-toolbar" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px', height: '28px', minHeight: '28px', flexShrink: 0, position: 'relative', zIndex: 60 }}>
             {isEditMode && (
-              <div style={{ flex: 1, minWidth: 0, height: '28px' }}>
+              <div style={{ flex: 1, minWidth: 0, height: '28px', minHeight: '28px', flexShrink: 0 }}>
                 <SearchBar 
                   onAddPin={onAddPin}
                   pins={pins} 
@@ -3090,8 +3098,12 @@ const Sidebar = ({
               <div
                 id="mobile-map-controls"
                 ref={mobileControlsRef}
-                className="mobile-map-controls"
-                style={isEditMode ? undefined : { marginLeft: 'auto' }}
+                className={`mobile-map-controls ${isPanelMinimized ? 'is-minimized' : ''} ${isDraggingSheet ? 'dragging' : ''}`}
+                style={{
+                  ...(isEditMode ? undefined : { marginLeft: 'auto' }),
+                  '--mobile-scale': effectiveScale,
+                  '--controls-shift-y': shift > 0 ? `-${Number(shift.toFixed(2))}px` : undefined,
+                } as React.CSSProperties}
               />
             )}
             {selectedPins.length > 0 && (

@@ -261,6 +261,22 @@ button:active {
   gap: 6px;
   flex-shrink: 0;
   pointer-events: none;
+  z-index: 2100;
+  transform: translateY(var(--controls-shift-y, 0px));
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.mobile-map-controls.is-minimized {
+  --controls-shift-y: calc(-31.2px - (10px / var(--mobile-scale, 1.5)));
+}
+
+.mobile-map-controls.dragging {
+  transition: none !important;
+}
+
+.orientation-chrome-snap .mobile-map-controls,
+.orientation-chrome-snap.mobile-map-controls {
+  transition: none !important;
 }
 
 .drag-pill {
