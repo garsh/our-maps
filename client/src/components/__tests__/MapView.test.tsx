@@ -1053,6 +1053,49 @@ describe('MapView Compass and Tilt Indicator', () => {
     }));
   });
 
+  it('does not fly to a target pin if its layer is hidden, but flies once the layer becomes visible', () => {
+    mockFlyTo.mockClear();
+    mockProject.mockReturnValue({ x: 120, y: 400 });
+    const mockPins = [
+      { id: 'pin-1', lat: 10, lng: 20, label: 'Layer Pin', color: 'blue' as const, position: 0, layerId: 'layer-1' }
+    ];
+
+    const { rerender } = render(
+      <MapView
+        pins={mockPins}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        leftPadding={400}
+        hiddenLayerIds={new Set(['layer-1'])}
+        targetPinId="pin-1"
+      />
+    );
+
+    // Initial bounds fitting runs on mount (duration: 0), but target pin flyTo (duration: 1200) should not run while hidden
+    expect(mockFlyTo).not.toHaveBeenCalledWith(expect.objectContaining({
+      duration: 1200,
+    }));
+
+    mockFlyTo.mockClear();
+
+    rerender(
+      <MapView
+        pins={mockPins}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        leftPadding={400}
+        hiddenLayerIds={new Set()}
+        targetPinId="pin-1"
+      />
+    );
+
+    expect(mockFlyTo).toHaveBeenCalledWith(expect.objectContaining({
+      center: [20, 10],
+      duration: 1200,
+      padding: expect.objectContaining({ left: paddedMapView(400, 0).left }),
+    }));
+  });
+
   it('triggers map resize and repaint when document becomes visible without context loss', () => {
     mockResize.mockClear();
     mockTriggerRepaint.mockClear();

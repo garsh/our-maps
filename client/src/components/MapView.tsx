@@ -2375,10 +2375,16 @@ const MapView = ({
       lastTargetPinId.current = null;
       return;
     }
-    if (targetPinId === lastTargetPinId.current) return;
-    lastTargetPinId.current = targetPinId;
     const pin = pins?.find((p) => p.id === targetPinId);
     if (!pin || !mapRef.current) return;
+
+    if (hiddenLayerIds?.has(pin.layerId || null)) {
+      lastTargetPinId.current = null;
+      return;
+    }
+
+    if (targetPinId === lastTargetPinId.current) return;
+    lastTargetPinId.current = targetPinId;
 
     const map = mapRef.current.getMap();
     const left = leftPaddingRef.current;
@@ -2392,7 +2398,7 @@ const MapView = ({
         ...FLY_TO_TERRAIN,
       });
     }
-  }, [targetPinId, pins]);
+  }, [targetPinId, pins, hiddenLayerIds]);
 
 
 

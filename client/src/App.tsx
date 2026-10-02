@@ -38,7 +38,7 @@ import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from
 import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, isForcedOffline, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
 
 import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer, syncCoLocatedPins } from './utils/pinHover';
-import { PIN_COLORS, nextTargetPinIdAfterClick } from './utils/mapUtils';
+import { PIN_COLORS, nextTargetPinIdAfterClick, pinsShareExactLocation } from './utils/mapUtils';
 import {
   DEFAULT_SIDEBAR_WIDTH,
   layoutOrientation,
@@ -507,6 +507,8 @@ export function MapEditor() {
   selectedNavIdsRef.current = selectedNavIds;
   const collapsedLayerIdsRef = useRef(collapsedLayerIds);
   collapsedLayerIdsRef.current = collapsedLayerIds;
+  const hiddenLayerIdsRef = useRef(hiddenLayerIds);
+  hiddenLayerIdsRef.current = hiddenLayerIds;
   const userRoleRef = useRef(userRole);
   userRoleRef.current = userRole;
   const editModeRef = useRef(editMode);
@@ -1342,6 +1344,24 @@ export function MapEditor() {
         }
         return prev;
       });
+
+      const coLocatedPins = pinsRef.current.filter(p => pinsShareExactLocation(p, pin));
+      const coLocatedLayerKeys = Array.from(new Set(coLocatedPins.map(p => p.layerId || null)));
+
+      setHiddenLayerIds(prev => {
+        if (prev.has(layerKey)) {
+          let changed = false;
+          const next = new Set(prev);
+          for (const key of coLocatedLayerKeys) {
+            if (next.has(key)) {
+              next.delete(key);
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        }
+        return prev;
+      });
     }
 
     setTargetPinId(prev => {
@@ -1357,9 +1377,28 @@ export function MapEditor() {
 
   const handlePinClick = useCallback((pin: Pin) => {
     if (Date.now() < ignoreMapClickUntil.current) return;
+    const layerKey = pin.layerId || null;
+    const isHidden = hiddenLayerIdsRef.current.has(layerKey);
+
+    const coLocatedPins = pinsRef.current.filter(p => pinsShareExactLocation(p, pin));
+    const coLocatedLayerKeys = Array.from(new Set(coLocatedPins.map(p => p.layerId || null)));
+
+    if (isHidden) {
+      setHiddenLayerIds(prev => {
+        let changed = false;
+        const next = new Set(prev);
+        for (const key of coLocatedLayerKeys) {
+          if (next.has(key)) {
+            next.delete(key);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }
     // Opening a minimized panel should reveal the tapped pin, not toggle it off.
     const restored = restorePanelIfMinimized();
-    handlePinSelect(pin.id, restored
+    handlePinSelect(pin.id, (restored || isHidden)
       ? { forceSelect: true }
       : { toggleSameLocation: true });
   }, [handlePinSelect, restorePanelIfMinimized]);

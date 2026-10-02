@@ -1,4 +1,4 @@
-import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
@@ -27,21 +27,29 @@ vi.mock('../components/MapView', async (importOriginal) => {
     default: ({
       onPinClick,
       pins,
+      targetPinId,
+      hiddenLayerIds,
     }: {
       onPinClick?: (pin: { id: string; lat: number; lng: number; label?: string }) => void;
-      pins?: Array<{ id: string; lat: number; lng: number; label?: string }>;
-    }) => (
-      <div data-testid="map-view">
-        {(pins ?? []).map((pin) => (
-          <button
-            key={pin.id}
-            type="button"
-            data-testid={`map-pin-${pin.id}`}
-            onClick={() => onPinClick?.(pin)}
-          />
-        ))}
-      </div>
-    ),
+      pins?: Array<{ id: string; lat: number; lng: number; label?: string; layerId?: string }>;
+      targetPinId?: string | null;
+      hiddenLayerIds?: Set<string | null>;
+    }) => {
+      const visiblePins = (pins ?? []).filter((pin) => !hiddenLayerIds?.has(pin.layerId || null));
+      return (
+        <div data-testid="map-view" data-target-pin-id={targetPinId || ''}>
+          {visiblePins.map((pin) => (
+            <button
+              key={pin.id}
+              type="button"
+              data-testid={`map-pin-${pin.id}`}
+              data-is-target={targetPinId === pin.id}
+              onClick={() => onPinClick?.(pin)}
+            />
+          ))}
+        </div>
+      );
+    },
   };
 });
 const { mockSocket, socketCallbacks } = vi.hoisted(() => {
@@ -1742,6 +1750,175 @@ describe('App Components Error Handling', () => {
 
       const rightSection = pillsGroup.parentElement!;
       expect(rightSection.style.flexShrink).toBe('0');
+    });
+  });
+
+  describe('pin selection in hidden layer', () => {
+    it('unhides a custom layer and highlights the pin when tapped in sidebar', async () => {
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'map-hidden-test',
+        name: 'Hidden Layer Map',
+        pins: [
+          { id: 'pin-custom', lat: 12, lng: 34, label: 'Secret Spot', position: 0, layerId: 'layer-hidden' }
+        ],
+        layers: [
+          { id: 'layer-hidden', name: 'Hidden Category', position: 0 }
+        ],
+        userRole: 'owner'
+      });
+
+      render(
+        <GoogleOAuthProvider clientId="test-client-id">
+          <MemoryRouter initialEntries={['/map/map-hidden-test']}>
+            <Routes>
+              <Route path="/map/:id" element={<MapEditor />} />
+            </Routes>
+          </MemoryRouter>
+        </GoogleOAuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Secret Spot')).toBeInTheDocument();
+      });
+
+      // Hide the layer using the eye icon in the sidebar
+      const layerHeader = screen.getByText(/Hidden Category/).closest('div[data-no-text-select]')!;
+      const hideLayerBtn = within(layerHeader).getByRole('button', { name: 'Hide layer' });
+      fireEvent.click(hideLayerBtn);
+
+      // Now the button should say "Show layer"
+      expect(within(layerHeader).getByRole('button', { name: 'Show layer' })).toBeInTheDocument();
+      // On the map, the pin should not be visible
+      expect(screen.queryByTestId('map-pin-pin-custom')).not.toBeInTheDocument();
+
+      // Tap the pin in the sidebar
+      fireEvent.click(screen.getByText('Secret Spot'));
+
+      // The layer should now be visible again
+      await waitFor(() => {
+        expect(within(layerHeader).getByRole('button', { name: 'Hide layer' })).toBeInTheDocument();
+      });
+
+      // The pin should be visible and highlighted on the map
+      const mapPin = screen.getByTestId('map-pin-pin-custom');
+      expect(mapPin).toBeInTheDocument();
+      expect(mapPin).toHaveAttribute('data-is-target', 'true');
+
+      // The pin item in sidebar should have pin-target class
+      expect(screen.getByText('Secret Spot').closest('li')).toHaveClass('pin-target');
+    });
+
+    it('unhides default layer and highlights pin when tapped in sidebar', async () => {
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'map-default-hidden-test',
+        name: 'Default Hidden Map',
+        pins: [
+          { id: 'pin-default', lat: 45, lng: 56, label: 'Default Spot', position: 0 }
+        ],
+        layers: [],
+        userRole: 'owner'
+      });
+
+      render(
+        <GoogleOAuthProvider clientId="test-client-id">
+          <MemoryRouter initialEntries={['/map/map-default-hidden-test']}>
+            <Routes>
+              <Route path="/map/:id" element={<MapEditor />} />
+            </Routes>
+          </MemoryRouter>
+        </GoogleOAuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Default Spot')).toBeInTheDocument();
+      });
+
+      // Hide the default layer
+      const hideLayerBtn = screen.getByRole('button', { name: 'Hide layer' });
+      fireEvent.click(hideLayerBtn);
+
+      // Pin should not be on map
+      expect(screen.queryByTestId('map-pin-pin-default')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Show layer' })).toBeInTheDocument();
+
+      // Tap the pin in sidebar
+      fireEvent.click(screen.getByText('Default Spot'));
+
+      // Default layer is now visible
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Hide layer' })).toBeInTheDocument();
+      });
+
+      // Pin is visible and highlighted on map
+      const mapPin = screen.getByTestId('map-pin-pin-default');
+      expect(mapPin).toBeInTheDocument();
+      expect(mapPin).toHaveAttribute('data-is-target', 'true');
+      expect(screen.getByText('Default Spot').closest('li')).toHaveClass('pin-target');
+    });
+
+    it('unhides both layers when a pin is repeated in two layers, both of which are hidden', async () => {
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'map-repeated-test',
+        name: 'Repeated Pin Map',
+        pins: [
+          { id: 'pin-day1', lat: 40.0, lng: -105.0, label: 'Hotel Night 1', position: 0, layerId: 'layer-day1' },
+          { id: 'pin-day2', lat: 40.0, lng: -105.0, label: 'Hotel Night 2', position: 0, layerId: 'layer-day2' }
+        ],
+        layers: [
+          { id: 'layer-day1', name: 'Day 1', position: 0 },
+          { id: 'layer-day2', name: 'Day 2', position: 1 }
+        ],
+        userRole: 'owner'
+      });
+
+      render(
+        <GoogleOAuthProvider clientId="test-client-id">
+          <MemoryRouter initialEntries={['/map/map-repeated-test']}>
+            <Routes>
+              <Route path="/map/:id" element={<MapEditor />} />
+            </Routes>
+          </MemoryRouter>
+        </GoogleOAuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Hotel Night 1')).toBeInTheDocument();
+        expect(screen.getByText('Hotel Night 2')).toBeInTheDocument();
+      });
+
+      // Hide both Day 1 and Day 2 layers
+      const day1Header = screen.getByText(/Day 1/).closest('div[data-no-text-select]')!;
+      const day2Header = screen.getByText(/Day 2/).closest('div[data-no-text-select]')!;
+
+      const day1HideBtn = within(day1Header).getByRole('button', { name: 'Hide layer' });
+      const day2HideBtn = within(day2Header).getByRole('button', { name: 'Hide layer' });
+
+      fireEvent.click(day1HideBtn);
+      fireEvent.click(day2HideBtn);
+
+      // Both layer headers should now show "Show layer"
+      expect(within(day1Header).getByRole('button', { name: 'Show layer' })).toBeInTheDocument();
+      expect(within(day2Header).getByRole('button', { name: 'Show layer' })).toBeInTheDocument();
+      expect(screen.queryByTestId('map-pin-pin-day1')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('map-pin-pin-day2')).not.toBeInTheDocument();
+
+      // Tap Hotel Night 1 in the sidebar
+      fireEvent.click(screen.getByText('Hotel Night 1'));
+
+      // Both layers should now be unhidden (both headers now show "Hide layer")
+      await waitFor(() => {
+        expect(within(day1Header).getByRole('button', { name: 'Hide layer' })).toBeInTheDocument();
+        expect(within(day2Header).getByRole('button', { name: 'Hide layer' })).toBeInTheDocument();
+      });
+
+      // Map should now render the pins and the target pin should be highlighted
+      const day1MapPin = screen.getByTestId('map-pin-pin-day1');
+      expect(day1MapPin).toBeInTheDocument();
+      expect(day1MapPin).toHaveAttribute('data-is-target', 'true');
+
+      // Both co-located rows in sidebar should have pin-target
+      expect(screen.getByText('Hotel Night 1').closest('li')).toHaveClass('pin-target');
+      expect(screen.getByText('Hotel Night 2').closest('li')).toHaveClass('pin-target');
     });
   });
 });
