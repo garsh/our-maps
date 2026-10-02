@@ -102,7 +102,9 @@ test('explicit download stores pin, layer, and name edits', async ({ page, brows
     await expect(page.getByText('Loading your map...')).not.toBeVisible();
 
     const searchInput = page.getByPlaceholder('Search...');
+    await expect(searchInput).toBeVisible({ timeout: 10000 });
     await searchInput.fill('Seed City');
+    await searchInput.press('Enter');
     await expect(page.getByText('Seed City').first()).toBeVisible({ timeout: 10000 });
     await page.locator('button[title="Add to Map"]').first().click();
     await waitForAutoSave(page);
@@ -168,6 +170,7 @@ test('explicit download stores pin, layer, and name edits', async ({ page, brows
     expect(otherFrozen.isExplicitDownload).toBe(true);
 
     await searchInput.fill('Remote Harbor');
+    await searchInput.press('Enter');
     await expect(page.getByText('Remote Harbor').first()).toBeVisible({ timeout: 10000 });
     await page.locator('button[title="Add to Map"]').first().click();
     await waitForAutoSave(page);

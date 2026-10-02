@@ -68,7 +68,7 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
-  skip: () => process.env.NODE_ENV === 'test',
+  skip: () => process.env.NODE_ENV === 'test' || process.env.ALLOW_MOCK_AUTH === 'true',
 });
 app.use('/api', apiLimiter);
 
@@ -78,7 +78,7 @@ const placesLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many search requests, please try again later.' },
-  skip: () => process.env.NODE_ENV === 'test',
+  skip: () => process.env.NODE_ENV === 'test' || process.env.ALLOW_MOCK_AUTH === 'true',
 });
 app.use('/api/places', placesLimiter);
 
@@ -88,7 +88,7 @@ const tileExtractLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many tile download requests, please try again later.' },
-  skip: () => process.env.NODE_ENV === 'test',
+  skip: () => process.env.NODE_ENV === 'test' || process.env.ALLOW_MOCK_AUTH === 'true',
 });
 app.use(['/api/maps/tiles/stream', '/maps/tiles/stream', '/api/maps/tiles/extract-size', '/maps/tiles/extract-size'], tileExtractLimiter);
 
@@ -99,7 +99,7 @@ const mapsAssetsLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many map asset requests, please try again later.' },
-  skip: () => process.env.NODE_ENV === 'test',
+  skip: () => process.env.NODE_ENV === 'test' || process.env.ALLOW_MOCK_AUTH === 'true',
 });
 app.use('/maps', mapsAssetsLimiter);
 
@@ -177,7 +177,7 @@ export function clearSocketRateLimitsForTests() {
 }
 
 function checkSocketRateLimit(ip: string): boolean {
-  if (process.env.NODE_ENV === 'test') return true;
+  if (process.env.NODE_ENV === 'test' || process.env.ALLOW_MOCK_AUTH === 'true') return true;
   const now = Date.now();
   const entry = socketConnectionRates.get(ip);
   if (!entry || entry.resetAtMs <= now) {

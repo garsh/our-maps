@@ -84,15 +84,19 @@ test('sidebar multi-layer creation, collapse/expand, and multi-selection flow', 
   await layerInput.fill('Favorite Spots');
   await layerInput.press('Enter');
   await expect(page.getByText('Favorite Spots')).toBeVisible();
+  await waitForAutoSave(page);
 
   // 2. Add multiple pins via search
   const searchBox = page.getByPlaceholder('Search...');
+  await expect(searchBox).toBeVisible({ timeout: 10000 });
   await searchBox.fill('Spot Alpha');
+  await searchBox.press('Enter');
   await expect(page.getByText('Spot Alpha').first()).toBeVisible({ timeout: 10000 });
   await page.locator('button[title="Add to Map"]').first().click();
   await waitForAutoSave(page);
 
   await searchBox.fill('Spot Beta');
+  await searchBox.press('Enter');
   await expect(page.getByText('Spot Beta').first()).toBeVisible({ timeout: 10000 });
   await page.locator('button[title="Add to Map"]').first().click();
   await waitForAutoSave(page);

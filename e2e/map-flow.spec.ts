@@ -25,7 +25,9 @@ test('full map creation flow', async ({ page }) => {
 
   // 2. Search for a location
   const searchInput = page.getByPlaceholder('Search...');
+  await expect(searchInput).toBeVisible({ timeout: 10000 });
   await searchInput.fill('Tokyo');
+  await searchInput.press('Enter');
   
   // 3. Add a pin from search results
   await expect(page.getByText('Test City').first()).toBeVisible({ timeout: 10000 });
@@ -56,8 +58,10 @@ test('updating an existing map', async ({ page }) => {
 
   // 1. Create a map first
   const searchInput = page.getByPlaceholder('Search...');
+  await expect(searchInput).toBeVisible({ timeout: 10000 });
   await page.route('**/places/search*', route => route.fulfill({ json: [{ place_id: '1', title: 'Initial', address: 'Initial Address', lat: '10', lon: '10', type: 'global' }] }));
   await searchInput.fill('Initial Location');
+  await searchInput.press('Enter');
   await expect(page.getByText('Initial').first()).toBeVisible({ timeout: 10000 });
   await page.locator('button[title="Add to Map"]').first().click();
   
@@ -78,6 +82,7 @@ test('updating an existing map', async ({ page }) => {
   // 3. Add another pin
   await page.route('**/places/search*', route => route.fulfill({ json: [{ place_id: '2', title: 'New', address: 'New Address', lat: '20', lon: '20', type: 'global' }] }));
   await searchInput.fill('New Location');
+  await searchInput.press('Enter');
   await expect(page.getByText('New').first()).toBeVisible({ timeout: 10000 });
   await page.locator('button[title="Add to Map"]').first().click();
 
@@ -102,7 +107,10 @@ test('rich pin metadata persistence and display', async ({ page }) => {
   
   // 1. Add a pin
   await page.route('**/places/search*', route => route.fulfill({ json: [{ place_id: '1', title: 'Metadata City', address: 'Metadata Address', lat: '10', lon: '10', type: 'global' }] }));
-  await page.getByPlaceholder('Search...').fill('Metadata City');
+  const searchInput = page.getByPlaceholder('Search...');
+  await expect(searchInput).toBeVisible({ timeout: 10000 });
+  await searchInput.fill('Metadata City');
+  await searchInput.press('Enter');
   await expect(page.getByText('Metadata City').first()).toBeVisible({ timeout: 10000 });
   await page.locator('button[title="Add to Map"]').first().click();
   await waitForAutoSave(page);
@@ -154,11 +162,14 @@ test('pin grouping and persistence', async ({ page }) => {
   const layerInput = page.getByLabel('NAME', { exact: true });
   if (await layerInput.isVisible()) {
     await layerInput.press('Enter');
+    await waitForAutoSave(page);
   }
 
   // 2. Add a pin
   const searchInput = page.getByPlaceholder('Search...');
+  await expect(searchInput).toBeVisible({ timeout: 10000 });
   await searchInput.fill('Group City');
+  await searchInput.press('Enter');
   await expect(page.getByText('Group City').first()).toBeVisible({ timeout: 10000 });
   await page.locator('button[title="Add to Map"]').first().click();
   await waitForAutoSave(page);
