@@ -93,9 +93,21 @@ const DOWNLOAD_OFFLINE_TIP = 'Available offline via download.';
 
 type AppearanceTip = { text: string; x: number; y: number; below: boolean };
 
-function ToggleSwitch({ on, color }: { on: boolean; color: string }) {
+function ToggleSwitch({
+  on,
+  color,
+  dataAttribute,
+  onClick,
+}: {
+  on: boolean;
+  color: string;
+  dataAttribute?: string;
+  onClick?: () => void;
+}) {
   return (
     <div
+      {...(dataAttribute ? { [dataAttribute]: '' } : {})}
+      onClick={onClick}
       style={{
         width: '34px',
         height: '18px',
@@ -132,11 +144,13 @@ function AppearanceRow({
   icon,
   onToggle,
   onMouseEnter,
+  onMouseMove,
   onMouseLeave,
   onTouchStart,
   onTouchMove,
   onTouchEnd,
   consumeLongPress,
+  onHideTip,
 }: {
   label: string;
   on: boolean;
@@ -146,11 +160,13 @@ function AppearanceRow({
   icon: React.ReactNode;
   onToggle: () => void;
   onMouseEnter: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onMouseMove?: (e: React.MouseEvent<HTMLDivElement>) => void;
   onMouseLeave: (e: React.MouseEvent<HTMLDivElement>) => void;
   onTouchStart: (e: React.TouchEvent<HTMLDivElement>) => void;
   onTouchMove: (e: React.TouchEvent<HTMLDivElement>) => void;
   onTouchEnd: () => void;
   consumeLongPress: () => boolean;
+  onHideTip?: () => void;
 }) {
   const rowRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -167,6 +183,7 @@ function AppearanceRow({
       onClick={(e) => {
         e.stopPropagation();
         if (consumeLongPress()) return;
+        onHideTip?.();
         if (!disabled) onToggle();
       }}
       data-appearance-row=""
@@ -185,19 +202,34 @@ function AppearanceRow({
         WebkitUserSelect: 'none',
         WebkitTouchCallout: 'none',
       }}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      onTouchCancel={onTouchEnd}
+      onMouseEnter={(e) => {
+        if (!disabled) e.currentTarget.style.background = 'var(--bg-color)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = 'transparent';
+      }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div
+        data-appearance-label=""
+        style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+        onMouseEnter={onMouseEnter}
+        onMouseMove={onMouseMove}
+        onMouseLeave={onMouseLeave}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchEnd}
+      >
         {icon}
         <span>{label}</span>
       </div>
-      <ToggleSwitch on={on} color={switchColor} />
+      <ToggleSwitch
+        on={on}
+        color={switchColor}
+        dataAttribute="data-appearance-switch"
+        onClick={() => onHideTip?.()}
+      />
     </div>
   );
 }
@@ -206,8 +238,11 @@ function useAppearanceTips(isMenuOpen: boolean) {
   const [tip, setTip] = useState<AppearanceTip | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointerPosRef = useRef<{ x: number; y: number } | null>(null);
   const longPressFiredRef = useRef(false);
   const touchRef = useRef(false);
+  const lastTouchTimeRef = useRef(0);
   const triggerRef = useRef<'hover' | 'touch' | null>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -225,22 +260,52 @@ function useAppearanceTips(isMenuOpen: boolean) {
     }
   }, []);
 
+  const clearHoverTimer = useCallback(() => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  }, []);
+
   const hideTip = useCallback(() => {
     clearHideTimer();
+    clearHoverTimer();
     triggerRef.current = null;
+    pointerPosRef.current = null;
     setTip((current) => (current ? null : current));
-  }, [clearHideTimer]);
+  }, [clearHideTimer, clearHoverTimer]);
 
-  const showTip = useCallback((text: string, el: HTMLElement) => {
-    const rect = el.getBoundingClientRect();
+  const showTip = useCallback((text: string, target: { x: number; y: number } | HTMLElement) => {
     const tipWidth = 220;
-    const center = rect.left + rect.width / 2;
-    const x = Math.max(12 + tipWidth / 2, Math.min(center, window.innerWidth - 12 - tipWidth / 2));
-    const below = rect.top < 72;
+    const halfWidth = tipWidth / 2;
+    const isTargetElement = target instanceof HTMLElement || (typeof target === 'object' && target !== null && 'nodeType' in target);
+
+    let pointerX: number;
+    let pointerY: number;
+    let below: boolean;
+    let y: number;
+
+    if (isTargetElement) {
+      const rect = (target as HTMLElement).getBoundingClientRect();
+      pointerX = rect.left + rect.width / 2;
+      pointerY = rect.top;
+      below = rect.top < 72;
+      y = below ? rect.bottom + 8 : rect.top - 6;
+    } else {
+      const pos = target as { x: number; y: number };
+      pointerX = pos.x;
+      pointerY = pos.y;
+      below = pointerY < 80;
+      y = below ? pointerY + 20 : pointerY - 10;
+    }
+
+    const windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const x = Math.max(12 + halfWidth, Math.min(pointerX, windowWidth - 12 - halfWidth));
+
     setTip({
       text,
       x,
-      y: below ? rect.bottom + 8 : rect.top - 6,
+      y,
       below,
     });
   }, []);
@@ -251,27 +316,47 @@ function useAppearanceTips(isMenuOpen: boolean) {
     return true;
   };
 
-  const tipProps = (text: string, highlight: boolean) => ({
+  const tipProps = (text: string, _highlight?: boolean) => ({
     onMouseEnter: (e: React.MouseEvent<HTMLDivElement>) => {
-      if (highlight) e.currentTarget.style.background = 'var(--bg-color)';
-      if (touchRef.current) {
+      if (touchRef.current || Date.now() - lastTouchTimeRef.current < 1000) {
         touchRef.current = false;
         return;
       }
       clearHideTimer();
-      triggerRef.current = 'hover';
-      showTip(text, e.currentTarget);
+      clearHoverTimer();
+      const pos = { x: e.clientX, y: e.clientY };
+      pointerPosRef.current = pos;
+      hoverTimerRef.current = setTimeout(() => {
+        triggerRef.current = 'hover';
+        showTip(text, pointerPosRef.current || pos);
+        hoverTimerRef.current = null;
+      }, 500);
     },
-    onMouseLeave: (e: React.MouseEvent<HTMLDivElement>) => {
-      e.currentTarget.style.background = 'transparent';
+    onMouseMove: (e: React.MouseEvent<HTMLDivElement>) => {
+      if (touchRef.current || Date.now() - lastTouchTimeRef.current < 1000) return;
+      const pos = { x: e.clientX, y: e.clientY };
+      pointerPosRef.current = pos;
+      // Require the mouse to stop moving for 0.5s before appearing:
+      if (triggerRef.current !== 'hover') {
+        clearHoverTimer();
+        hoverTimerRef.current = setTimeout(() => {
+          triggerRef.current = 'hover';
+          showTip(text, pointerPosRef.current || pos);
+          hoverTimerRef.current = null;
+        }, 500);
+      }
+    },
+    onMouseLeave: (_e: React.MouseEvent<HTMLDivElement>) => {
+      clearHoverTimer();
       if (triggerRef.current === 'hover') hideTip();
     },
     onTouchStart: (e: React.TouchEvent<HTMLDivElement>) => {
       touchRef.current = true;
+      lastTouchTimeRef.current = Date.now();
       const touch = e.touches[0];
       const el = e.currentTarget;
       clearLongPress();
-      clearHideTimer();
+      hideTip();
       longPressFiredRef.current = false;
       touchStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
       longPressTimerRef.current = setTimeout(() => {
@@ -289,18 +374,24 @@ function useAppearanceTips(isMenuOpen: boolean) {
       const dy = touch.clientY - touchStartRef.current.y;
       if (Math.hypot(dx, dy) > 10) clearLongPress();
     },
-    onTouchEnd: () => clearLongPress(),
+    onTouchEnd: () => {
+      lastTouchTimeRef.current = Date.now();
+      clearLongPress();
+    },
+    onHideTip: hideTip,
   });
 
   const hideOnScroll = () => {
+    clearHoverTimer();
     if (triggerRef.current) hideTip();
   };
 
   useEffect(() => {
     if (isMenuOpen) return;
     clearLongPress();
+    clearHoverTimer();
     hideTip();
-  }, [isMenuOpen, clearLongPress, hideTip]);
+  }, [isMenuOpen, clearLongPress, clearHoverTimer, hideTip]);
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -319,8 +410,9 @@ function useAppearanceTips(isMenuOpen: boolean) {
     return () => {
       clearLongPress();
       clearHideTimer();
+      clearHoverTimer();
     };
-  }, [clearLongPress, clearHideTimer]);
+  }, [clearLongPress, clearHideTimer, clearHoverTimer]);
 
   return { tip, hideOnScroll, consumeLongPress, tipProps };
 }
@@ -2944,7 +3036,7 @@ const Sidebar = ({
                 </div>
                 {appearanceTips.tip && (
                   <div
-                    className="touch-tooltip-bubble"
+                    className={`touch-tooltip-bubble appearance-tooltip-bubble${appearanceTips.tip.below ? ' is-below' : ''}`}
                     role="tooltip"
                     style={{
                       left: appearanceTips.tip.x,
@@ -2956,6 +3048,11 @@ const Sidebar = ({
                       lineHeight: 1.35,
                       animation: 'none',
                       transform: appearanceTips.tip.below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+                      background: mapTheme === 'dark' ? '#273142' : '#1e293b',
+                      color: '#ffffff',
+                      border: mapTheme === 'dark' ? '1px solid #4b5563' : '1px solid rgba(255, 255, 255, 0.16)',
+                      boxShadow: mapTheme === 'dark' ? '0 8px 24px rgba(0, 0, 0, 0.6)' : '0 8px 20px rgba(0, 0, 0, 0.35)',
+                      pointerEvents: 'none',
                     }}
                   >
                     {appearanceTips.tip.text}

@@ -710,6 +710,21 @@ button:active {
   box-shadow: 0 8px 24px rgba(0,0,0,0.6);
 }
 
+/* Appearance Menu Mouseover Tooltip */
+.touch-tooltip-bubble.appearance-tooltip-bubble {
+  background: #1e293b;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme='dark'] .touch-tooltip-bubble.appearance-tooltip-bubble {
+  background: #273142;
+  color: #ffffff;
+  border-color: #4b5563;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
 @keyframes tooltipFadeIn {
   from {
     opacity: 0;

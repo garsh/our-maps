@@ -769,7 +769,9 @@ describe('Sidebar', () => {
       expect(nodes[i].compareDocumentPosition(nodes[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
 
-    const row = (label: string) => screen.getByText(label).parentElement?.parentElement as HTMLElement;
+    const row = (label: string) => screen.getByText(label).closest('[data-appearance-row]') as HTMLElement;
+    const labelEl = (label: string) => screen.getByText(label).closest('[data-appearance-label]') as HTMLElement;
+    const switchEl = (label: string) => row(label).querySelector('[data-appearance-switch]') as HTMLElement;
 
     const terrainRow = row('3D Terrain');
     expect(terrainRow.style.userSelect).toBe('none');
@@ -778,30 +780,81 @@ describe('Sidebar', () => {
     fireEvent(terrainRow, contextEvent);
     expect(contextEvent.defaultPrevented).toBe(true);
 
-    fireEvent.mouseEnter(row('Dark Mode'));
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Available offline via download.');
-    fireEvent.mouseLeave(row('Dark Mode'));
-    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
-
-    fireEvent.mouseEnter(row('3D Buildings'));
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Available offline via download.');
-    fireEvent.mouseLeave(row('3D Buildings'));
-
-    fireEvent.mouseEnter(row('Hillshading'));
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
-    fireEvent.mouseLeave(row('Hillshading'));
-
-    fireEvent.mouseEnter(row('Satellite'));
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
-    fireEvent.mouseLeave(row('Satellite'));
-
-    fireEvent.mouseEnter(row('3D Terrain'));
-    expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
-    fireEvent.mouseLeave(row('3D Terrain'));
-
     vi.useFakeTimers();
     try {
-      fireEvent.touchStart(terrainRow, { touches: [{ clientX: 8, clientY: 8 }] });
+      // Hover does not appear immediately over icon/text
+      fireEvent.mouseEnter(labelEl('Dark Mode'), { clientX: 200, clientY: 150 });
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+      // Moving mouse before 500ms resets the timer
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      fireEvent.mouseMove(labelEl('Dark Mode'), { clientX: 210, clientY: 150 });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+      // Stopping mouse movement for 500ms displays tooltip at pointer position
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      const tip = screen.getByRole('tooltip');
+      expect(tip).toHaveTextContent('Available offline via download.');
+      expect(tip).toHaveClass('appearance-tooltip-bubble');
+      expect(tip.style.left).toBe('210px');
+      expect(tip.style.top).toBe('140px');
+
+      fireEvent.mouseLeave(labelEl('Dark Mode'));
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+      // Hovering over switch should NOT show tooltip
+      fireEvent.mouseEnter(switchEl('Dark Mode'), { clientX: 300, clientY: 150 });
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      fireEvent.mouseLeave(switchEl('Dark Mode'));
+
+      // Clicking switch should NOT show tooltip
+      fireEvent.click(switchEl('Dark Mode'));
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+      fireEvent.mouseEnter(labelEl('3D Buildings'));
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Available offline via download.');
+      fireEvent.mouseLeave(labelEl('3D Buildings'));
+
+      fireEvent.mouseEnter(labelEl('Hillshading'));
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
+      fireEvent.mouseLeave(labelEl('Hillshading'));
+
+      fireEvent.mouseEnter(labelEl('Satellite'));
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
+      fireEvent.mouseLeave(labelEl('Satellite'));
+
+      fireEvent.mouseEnter(labelEl('3D Terrain'));
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
+      fireEvent.mouseLeave(labelEl('3D Terrain'));
+
+      // Long press on icon/text shows tooltip on mobile
+      const terrainLabel = labelEl('3D Terrain');
+      fireEvent.touchStart(terrainLabel, { touches: [{ clientX: 8, clientY: 8 }] });
       act(() => {
         vi.advanceTimersByTime(449);
       });
@@ -813,14 +866,67 @@ describe('Sidebar', () => {
       fireEvent.click(terrainRow);
       expect(onToggle3DTerrain).not.toHaveBeenCalled();
 
-      fireEvent.touchEnd(terrainRow);
-      fireEvent.touchStart(terrainRow, { touches: [{ clientX: 8, clientY: 8 }] });
-      fireEvent.touchEnd(terrainRow);
+      // Quick tap to turn on/off does NOT cause mouseover
+      fireEvent.touchEnd(terrainLabel);
+      fireEvent.touchStart(terrainLabel, { touches: [{ clientX: 8, clientY: 8 }] });
+      fireEvent.touchEnd(terrainLabel);
+      fireEvent.click(terrainRow);
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      expect(onToggle3DTerrain).toHaveBeenCalledWith(false);
+
+      // Long press on switch does NOT show tooltip
+      fireEvent.touchStart(switchEl('3D Terrain'), { touches: [{ clientX: 8, clientY: 8 }] });
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      fireEvent.touchEnd(switchEl('3D Terrain'));
+
+      // Long-press Entry 1, then before it times out, long-press Entry 2:
+      // Entry 2 tooltip should NOT flash and quickly disappear upon release.
+      fireEvent.touchStart(terrainLabel, { touches: [{ clientX: 8, clientY: 8 }] });
       act(() => {
         vi.advanceTimersByTime(450);
       });
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
+      fireEvent.touchEnd(terrainLabel);
       fireEvent.click(terrainRow);
-      expect(onToggle3DTerrain).toHaveBeenCalledWith(false);
+
+      // Before Entry 1 times out (after 500ms of the 2500ms timeout), long-press Entry 2 ('Dark Mode')
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      const darkModeLabel = labelEl('Dark Mode');
+      const darkModeRow = row('Dark Mode');
+      // Touching Entry 2 dismisses previous tip immediately
+      fireEvent.touchStart(darkModeLabel, { touches: [{ clientX: 8, clientY: 8 }] });
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+      // Hold Entry 2 for 450ms
+      act(() => {
+        vi.advanceTimersByTime(450);
+      });
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Available offline via download.');
+
+      // Release finger from Entry 2
+      fireEvent.touchEnd(darkModeLabel);
+      fireEvent.click(darkModeRow);
+
+      // The mouseover should NOT quickly disappear upon release
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Available offline via download.');
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Available offline via download.');
+
+      // Times out after full duration
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
