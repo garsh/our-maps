@@ -141,6 +141,7 @@ export function MapEditor() {
   const inFlightDeltaCountRef = useRef(0);
   const [isSharing, setIsSharing] = useState(false);
   const [targetPinId, setTargetPinId] = useState<string | null>(null);
+  const [addedPinId, setAddedPinId] = useState<string | null>(null);
   const [boundsToFit, setBoundsToFit] = useState<[[number, number], [number, number]] | null>(null);
   const [editingPinId, setEditingPinId] = useState<string | null>(null);
 
@@ -1536,7 +1537,11 @@ export function MapEditor() {
       address,
       position: nextPosition
     };
+    // handlePinSelect reads pinsRef to expand the destination layer. State
+    // has not re-rendered yet, so include the new pin before selecting it.
+    pinsRef.current = [...currentPins, newPin];
     setPins(prev => [...prev, newPin]);
+    setAddedPinId(idVal);
     if (autoEdit) {
       handleEditPin(newPin);
     } else {
@@ -2351,6 +2356,7 @@ export function MapEditor() {
               onSetEditingPinId={handleSetEditingPinId}
               onHoverPin={handleHoverPin}
               targetPinId={targetPinId}
+              addedPinId={addedPinId}
               customColors={customColors}
               onAddCustomColor={addCustomColor}
               selectedNavIds={selectedNavIds}

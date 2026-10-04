@@ -496,6 +496,7 @@ interface SidebarProps {
   isDraggingSheet?: boolean;
   sheetHeight?: number;
   mobileControlsRef?: Ref<HTMLDivElement>;
+  addedPinId?: string | null;
 }
 
 
@@ -2152,7 +2153,8 @@ const Sidebar = ({
   isPanelMinimized = false,
   isDraggingSheet = false,
   sheetHeight,
-  mobileControlsRef
+  mobileControlsRef,
+  addedPinId
 }: SidebarProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const appearanceTips = useAppearanceTips(isMenuOpen);
@@ -2240,20 +2242,32 @@ const Sidebar = ({
     ? !collapsedLayerIds?.has(editingPinLayerId ?? null)
     : true;
 
+  // Consumed after the new row is in the list, so a later selection of that
+  // same pin follows the co-located rule again.
+  const consumedAddedPinIdRef = useRef<string | null>(null);
+
   // Auto-scroll the sidebar list to keep the active/editing pin in view.
   // Co-located pins (same exact lat/lng) are all highlighted; skip scrolling
   // if any one of those rows is already visible.
+  // Adding a pin scrolls to the new row even when a sibling at that
+  // location is already on screen.
   useEffect(() => {
     const openedFromMinimized = prevPanelMinimizedRef.current && !isPanelMinimized;
     prevPanelMinimizedRef.current = isPanelMinimized;
     if (isPanelMinimized) return;
     const primaryId = editingPinId || targetPinId;
     if (!primaryId) return;
-    const ids = editingPinId ? [editingPinId] : Array.from(targetPinIdsRef.current);
+    const scrollToAddedPin = addedPinId != null
+      && addedPinId === primaryId
+      && consumedAddedPinIdRef.current !== addedPinId;
+    const ids = (editingPinId || scrollToAddedPin) ? [primaryId] : Array.from(targetPinIdsRef.current);
 
     const timer = setTimeout(() => {
       const container = scrollContainerRef.current;
       if (!container) return;
+      if (scrollToAddedPin && document.getElementById(`pin-${addedPinId}`)) {
+        consumedAddedPinIdRef.current = addedPinId;
+      }
       const el = getPinListScrollElement(container, ids, primaryId);
       if (el) {
         scrollPinRowIntoList(
@@ -2274,6 +2288,7 @@ const Sidebar = ({
     pins.length,
     targetPinIdsKey,
     isPanelMinimized,
+    addedPinId,
   ]);
   // PWA Install State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);

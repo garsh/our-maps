@@ -1553,6 +1553,115 @@ describe('Sidebar', () => {
     expect(screen.getByText('Hotel B').closest('li')).toHaveClass('pin-target');
   });
 
+  const stubPinListGeometry = (
+    pinList: HTMLElement,
+    rows: Record<string, number>,
+  ) => {
+    Object.defineProperty(pinList, 'clientHeight', { value: 200, configurable: true });
+    Object.defineProperty(pinList, 'offsetHeight', { value: 200, configurable: true });
+    Object.defineProperty(pinList, 'scrollHeight', { value: 4000, configurable: true });
+    pinList.getBoundingClientRect = () => ({
+      x: 0, y: 0, width: 300, height: 200, top: 0, left: 0, bottom: 200, right: 300, toJSON() { return {}; },
+    });
+    for (const [id, top] of Object.entries(rows)) {
+      const el = document.getElementById(`pin-${id}`);
+      if (!el) throw new Error(`missing pin-${id}`);
+      Object.defineProperty(el, 'offsetHeight', { value: 40, configurable: true });
+      el.getBoundingClientRect = () => ({
+        x: 0, y: top, width: 300, height: 40, top, left: 0, bottom: top + 40, right: 300, toJSON() { return {}; },
+      });
+    }
+  };
+
+  it('scrolls to a pin added at an existing visible location', () => {
+    vi.useFakeTimers();
+
+    try {
+      const layers = [
+        { id: 'day-1', name: 'Day 1', position: 0 },
+        { id: 'day-2', name: 'Day 2', position: 1 },
+      ];
+      const existing = { id: 'h1', lat: 40, lng: -105, label: 'Hotel Night 1', layerId: 'day-1', position: 0 };
+      const added = { id: 'h2', lat: 40, lng: -105, label: 'Hotel Night 2', layerId: 'day-2', position: 0 };
+
+      const { rerender, container } = render(
+        <TestWrapper pins={[existing]} handlers={{ layers, targetPinId: 'h1' }} />
+      );
+
+      const pinList = container.querySelector('.pin-list') as HTMLElement;
+      const scrollTo = vi.fn();
+      pinList.scrollTo = scrollTo;
+      stubPinListGeometry(pinList, { h1: 50 });
+
+      act(() => {
+        vi.advanceTimersByTime(PIN_LIST_SCROLL_DELAY_MS);
+      });
+      scrollTo.mockClear();
+
+      rerender(
+        <TestWrapper
+          pins={[existing, added]}
+          handlers={{ layers, targetPinId: 'h2', addedPinId: 'h2' }}
+        />
+      );
+
+      pinList.scrollTo = scrollTo;
+      stubPinListGeometry(pinList, { h1: 50, h2: 500 });
+
+      act(() => {
+        vi.advanceTimersByTime(PIN_LIST_SCROLL_DELAY_MS);
+      });
+
+      expect(scrollTo).toHaveBeenCalledWith({ top: 364, behavior: 'smooth' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not scroll to an off-screen co-located pin when a sibling is already visible', () => {
+    vi.useFakeTimers();
+
+    try {
+      const layers = [
+        { id: 'day-1', name: 'Day 1', position: 0 },
+        { id: 'day-2', name: 'Day 2', position: 1 },
+      ];
+      const pins = [
+        { id: 'h1', lat: 40, lng: -105, label: 'Hotel Night 1', layerId: 'day-1', position: 0 },
+        { id: 'h2', lat: 40, lng: -105, label: 'Hotel Night 2', layerId: 'day-2', position: 0 },
+      ];
+
+      const { rerender, container } = render(
+        <TestWrapper pins={pins} handlers={{ layers, targetPinId: 'h1' }} />
+      );
+
+      const pinList = container.querySelector('.pin-list') as HTMLElement;
+      const scrollTo = vi.fn();
+      pinList.scrollTo = scrollTo;
+      stubPinListGeometry(pinList, { h1: 50, h2: 500 });
+
+      act(() => {
+        vi.advanceTimersByTime(PIN_LIST_SCROLL_DELAY_MS);
+      });
+      scrollTo.mockClear();
+
+      rerender(
+        <TestWrapper pins={pins} handlers={{ layers, targetPinId: 'h2' }} />
+      );
+
+      pinList.scrollTo = scrollTo;
+      stubPinListGeometry(pinList, { h1: 50, h2: 500 });
+
+      act(() => {
+        vi.advanceTimersByTime(PIN_LIST_SCROLL_DELAY_MS);
+      });
+
+      expect(scrollTo).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not scroll the pin list during the panel-open animation', () => {
     vi.useFakeTimers();
 
