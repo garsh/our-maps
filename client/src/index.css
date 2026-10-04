@@ -228,9 +228,11 @@ button:active {
 
 
 .bottom-sheet-drag-handle {
-  width: 100px;
+  width: 48px;
   margin: 0 auto;
-  height: 28px;
+  /* 28px tab plus 1px overlap so the sheet's top border does not show under the handle. */
+  height: 29px;
+  padding-bottom: 1px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -241,6 +243,8 @@ button:active {
   border-left: 1px solid var(--border-color);
   border-right: 1px solid var(--border-color);
   box-shadow: var(--shadow-sm);
+  /* Drop the shadow on the edge that meets the sheet. */
+  clip-path: inset(-12px -12px 0 -12px);
   position: absolute;
   top: -28px;
   left: 0;
@@ -301,6 +305,8 @@ button:active {
   border-bottom: 1px solid var(--border-color);
   border-left: none;
   box-shadow: var(--shadow-sm);
+  /* Drop the shadow on the edge that meets the sidebar. */
+  clip-path: inset(-12px -12px -12px 0);
   position: absolute;
   right: -14px;
   top: 50%;
@@ -316,10 +322,10 @@ button:active {
 }
 
 .drag-pill-vertical {
-  width: 2px;
-  height: 12px;
+  width: 4px;
+  height: 24px;
   background: var(--text-secondary);
-  border-radius: 2px;
+  border-radius: 4px;
   opacity: 0.75;
   transition: background 0.2s, opacity 0.2s, transform 0.15s;
 }
@@ -352,16 +358,13 @@ button:active {
   transition: none !important;
 }
 
-/* Touch devices: enlarge handle to match portrait pill tap target */
+/* Touch devices: keep a 28px finger thickness, but a short tab so it covers less map. */
 @media (pointer: coarse) {
   .resizer-handle {
     width: 28px;
-    height: 100px;
+    height: 48px;
     right: -28px;
     border-radius: 0 14px 14px 0;
-  }
-  .drag-pill-vertical {
-    height: 20px;
   }
 }
 
