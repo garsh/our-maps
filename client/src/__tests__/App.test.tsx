@@ -18,6 +18,7 @@ vi.mock('../utils/tileUtils', async () => {
     ...actual,
     getOfflineMap: vi.fn(async () => null),
     isMapDownloaded: vi.fn(async () => true),
+    removeMapDownload: vi.fn(async () => {}),
   };
 });
 vi.mock('../components/MapView', async (importOriginal) => {
@@ -104,6 +105,7 @@ describe('App Components Error Handling', () => {
     (apiService.getMaps as any).mockResolvedValue([]);
     (getOfflineMap as any).mockResolvedValue(null);
     sessionStorage.clear();
+    localStorage.removeItem('cached_maps');
   });
 
   it('MapEditor shows error message when map fails to load', async () => {
@@ -1502,7 +1504,7 @@ describe('App Components Error Handling', () => {
     expect(screen.queryByText(/Unable to load map offline/i)).not.toBeInTheDocument();
   });
 
-  it('retains locally cached map in offline mode and does not redirect to login when auth fails', async () => {
+  it('redirects to login when a cached map answers 401 and does not enter offline mode', async () => {
     (useAuth as any).mockReturnValue({
       user: null,
       token: null,
@@ -1518,7 +1520,7 @@ describe('App Components Error Handling', () => {
     (tileUtilsMock.getOfflineMap as any).mockResolvedValue({
       id: 'cached-private-map',
       name: 'Cached Offline Map',
-      pins: [],
+      pins: [{ id: 'pin-1', lat: 1, lng: 2, label: 'Secret trailhead', position: 0 }],
       layers: [],
       userRole: 'view'
     });
@@ -1537,17 +1539,88 @@ describe('App Components Error Handling', () => {
     );
 
     await waitFor(() => {
+      expect(screen.getByTestId('login-page')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Secret trailhead')).not.toBeInTheDocument();
+    expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
+    expect(tileUtilsMock.removeMapDownload).not.toHaveBeenCalled();
+  });
+
+  it.each(['Access denied', 'Map not found'])(
+    'leaves a cached map and drops the local copy when the server responds %s',
+    async (message) => {
+      const tileUtilsMock = await import('../utils/tileUtils');
+      (tileUtilsMock.getOfflineMap as any).mockResolvedValue({
+        id: 'revoked-map',
+        name: 'Revoked Map',
+        pins: [{ id: 'pin-1', lat: 1, lng: 2, label: 'Secret trailhead', position: 0 }],
+        layers: [],
+        userRole: 'edit'
+      });
+      (tileUtilsMock.isMapDownloaded as any).mockResolvedValue(true);
+      (apiService.getMap as any).mockRejectedValue(new Error(message));
+      localStorage.setItem('cached_maps', JSON.stringify([
+        { id: 'revoked-map', name: 'Revoked Map' },
+        { id: 'kept-map', name: 'Kept Map' },
+      ]));
+
+      render(
+        <GoogleOAuthProvider clientId="test-client-id">
+          <MemoryRouter initialEntries={['/map/revoked-map']}>
+            <Routes>
+              <Route path="/map/:id" element={<MapEditor />} />
+              <Route path="/" element={<div data-testid="home-page">Home</div>} />
+            </Routes>
+          </MemoryRouter>
+        </GoogleOAuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('home-page')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText('Secret trailhead')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Offline/i)).not.toBeInTheDocument();
+      expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
+      expect(tileUtilsMock.removeMapDownload).toHaveBeenCalledWith('revoked-map');
+      expect(JSON.parse(localStorage.getItem('cached_maps') || '[]')).toEqual([
+        { id: 'kept-map', name: 'Kept Map' },
+      ]);
+    }
+  );
+
+  it('keeps a cached map offline when the request fails before a response', async () => {
+    const tileUtilsMock = await import('../utils/tileUtils');
+    (tileUtilsMock.getOfflineMap as any).mockResolvedValue({
+      id: 'cached-private-map',
+      name: 'Cached Offline Map',
+      pins: [],
+      layers: [],
+      userRole: 'view'
+    });
+    (tileUtilsMock.isMapDownloaded as any).mockResolvedValue(true);
+    (apiService.getMap as any).mockRejectedValue(new TypeError('Failed to fetch'));
+
+    render(
+      <GoogleOAuthProvider clientId="test-client-id">
+        <MemoryRouter initialEntries={['/map/cached-private-map']}>
+          <Routes>
+            <Route path="/map/:id" element={<MapEditor />} />
+            <Route path="/login" element={<div data-testid="login-page">Login Page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </GoogleOAuthProvider>
+    );
+
+    await waitFor(() => {
       expect(screen.getByText('Cached Offline Map')).toBeInTheDocument();
     });
 
-    // Should NOT redirect to login because it hydrated locally
     expect(screen.queryByTestId('login-page')).not.toBeInTheDocument();
-    const loggedOutPill = screen.getByText('Logged Out');
-    expect(loggedOutPill).toBeInTheDocument();
-
-    // Clicking the Logged Out pill navigates to login, preserving the return location
-    fireEvent.click(loggedOutPill);
-    expect(await screen.findByTestId('login-page')).toBeInTheDocument();
+    expect(screen.getByText('Offline')).toBeInTheDocument();
+    expect(sessionStorage.getItem('ourmaps_offline')).toBe('1');
+    expect(tileUtilsMock.removeMapDownload).not.toHaveBeenCalled();
   });
 
   it('updates the public-link setting when map-public-updated arrives', async () => {

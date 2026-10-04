@@ -7,6 +7,7 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import ShareDialog from './components/ShareDialog';
 import { apiService } from './services/api'
+import { mapRequestDenial } from './services/httpError'
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import type {
@@ -32,7 +33,7 @@ import { Loader2, Map as MapIcon, RotateCw } from 'lucide-react';
 import type { SearchAreaState } from './components/SearchBar';
 import { reorderPins, reorderLayers, isSameLayer, emitPinMoveOrReorderEvents, applyRemotePinsReorder, applyRemotePinMoveLayer } from './utils/reorderUtils';
 import { generateId, mergeImportedMapData } from './utils/fileUtils';
-import { getOfflineMap, isMapDownloaded, touchMapCacheAccess, saveMapToViewCache, clearMapMetadataCache, bumpDownloadDocumentEpoch, currentDownloadDocumentEpoch, updateDownloadedMapDocument } from './utils/tileUtils';
+import { getOfflineMap, isMapDownloaded, removeMapDownload, touchMapCacheAccess, saveMapToViewCache, clearMapMetadataCache, bumpDownloadDocumentEpoch, currentDownloadDocumentEpoch, updateDownloadedMapDocument } from './utils/tileUtils';
 import { preloadExtract, setActiveOfflineMapId } from './utils/offlineExtract';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
 import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, isForcedOffline, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
@@ -76,6 +77,16 @@ function getNextPinPosition(allPins: Pin[], targetLayerId?: string): number {
     if (isSameLayer(p.layerId, targetLayerId) && p.position > max) max = p.position;
   }
   return max + 1;
+}
+
+/** Drop a map the server refused: home-list summary, IndexedDB document, and extract. */
+function forgetDeniedMap(mapId: string) {
+  const cached = getStoredJson<Array<{ id?: string }>>('cached_maps', []);
+  if (Array.isArray(cached)) {
+    const next = cached.filter((map) => map?.id !== mapId);
+    if (next.length !== cached.length) setStoredJson('cached_maps', next);
+  }
+  void removeMapDownload(mapId);
 }
 
 export function MapEditor() {
@@ -978,11 +989,13 @@ export function MapEditor() {
 
       socket.on('map-deleted', (data: { mapId: string }) => {
         if (data.mapId !== id) return;
+        forgetDeniedMap(data.mapId);
         navigate('/', { replace: true });
       });
 
       socket.on('map-access-revoked', (data: { mapId: string }) => {
         if (data.mapId !== id) return;
+        forgetDeniedMap(data.mapId);
         alert('Your access to this map has been revoked.');
         navigate('/', { replace: true });
       });
@@ -1216,12 +1229,26 @@ export function MapEditor() {
     } catch (err: any) {
       if (epoch !== loadEpochRef.current) return;
       setIsSyncing(false);
-      const isAuthError = err?.message?.includes('Authentication required') || err?.message?.includes('Unauthorized');
+      const denial = mapRequestDenial(err);
+      if (denial === 401) {
+        setPins([]);
+        setLayers([]);
+        redirectedToLogin = true;
+        navigate('/login', { replace: true });
+        return;
+      }
+      if (denial === 403 || denial === 404) {
+        setPins([]);
+        setLayers([]);
+        forgetDeniedMap(mapId);
+        navigate('/', { replace: true });
+        return;
+      }
       if (hasHydratedLocally) {
         applyOffline(true, true);
         return;
       }
-      if (isAuthError || !user) {
+      if (!user) {
         redirectedToLogin = true;
         navigate('/login', { replace: true });
         return;

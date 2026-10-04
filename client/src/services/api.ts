@@ -1,4 +1,5 @@
 import type { MapData, MapPermission, UserLabel, MapLabelAssignment, SystemLabelSetting, SystemLabelMapOrder, LabelSortMode } from '@shared/interfaces';
+import { HttpError } from './httpError';
 import { getOfflineMap, saveMapToViewCache, getMapETag, touchMapCacheAccess, pruneViewCache, currentDownloadDocumentEpoch, type BoundingBox } from '../utils/tileUtils';
 import { tileWorkerManager } from '../utils/tileWorkerManager';
 
@@ -57,12 +58,12 @@ const handleResponse = async <T>(res: Response, logoutCb?: (() => void) | null, 
     const err = await res.json().catch(() => ({}));
     console.error('[API] Unauthorized:', err.error);
     logoutCb?.();
-    throw new Error(err.error || 'Unauthorized: Please sign in again');
+    throw new HttpError(err.error || 'Unauthorized: Please sign in again', 401);
   }
   if (!res.ok) {
-    if (res.status === 404) throw new Error('Map not found');
+    if (res.status === 404) throw new HttpError('Map not found', 404);
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || fallbackErrMsg);
+    throw new HttpError(err.error || fallbackErrMsg, res.status);
   }
   return res.json();
 };

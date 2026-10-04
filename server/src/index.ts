@@ -176,6 +176,22 @@ export function clearSocketRateLimitsForTests() {
   socketConnectionRates.clear();
 }
 
+/**
+ * Caddy appends the real client address. The first X-Forwarded-For entry is
+ * whatever the caller sent, so the trusted hop is the last entry.
+ */
+export function socketClientIp(
+  forwarded: string | string[] | undefined,
+  fallback: string,
+  trustProxy: boolean
+): string {
+  if (!trustProxy) return fallback;
+  const raw = Array.isArray(forwarded) ? forwarded.join(',') : forwarded;
+  if (typeof raw !== 'string') return fallback;
+  const parts = raw.split(',').map((part) => part.trim()).filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : fallback;
+}
+
 function checkSocketRateLimit(ip: string): boolean {
   if (process.env.NODE_ENV === 'test' || process.env.ALLOW_MOCK_AUTH === 'true') return true;
   const now = Date.now();
@@ -194,9 +210,11 @@ function checkSocketRateLimit(ip: string): boolean {
 
 io.use(async (socket, next) => {
   const forwarded = socket.handshake.headers?.['x-forwarded-for'];
-  const clientIp = (process.env.NODE_ENV === 'production' && typeof forwarded === 'string')
-    ? forwarded.split(',')[0].trim()
-    : socket.handshake.address;
+  const clientIp = socketClientIp(
+    forwarded,
+    socket.handshake.address,
+    process.env.NODE_ENV === 'production'
+  );
 
   if (!checkSocketRateLimit(clientIp)) {
     return next(new Error('Too many connection attempts, please try again later.'));
