@@ -321,5 +321,31 @@ describe('mapUtils', () => {
       expect(await reverseGeocode(30, 40)).toBe('Retry St');
       expect(fetchMock).toHaveBeenCalledTimes(3);
     });
+
+    it('returns null when the caller aborts and still allows a later lookup', async () => {
+      const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            const err = new Error('The user aborted a request.');
+            err.name = 'AbortError';
+            reject(err);
+          });
+        });
+      });
+      global.fetch = fetchMock as any;
+
+      const controller = new AbortController();
+      const pending = reverseGeocode(4, 5, controller.signal);
+      controller.abort();
+      await expect(pending).resolves.toBeNull();
+
+      fetchMock.mockReset();
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({ address: 'After abort' }),
+      });
+      await expect(reverseGeocode(4, 5)).resolves.toBe('After abort');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
   });
 });

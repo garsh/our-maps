@@ -14,7 +14,30 @@ export function clearGeocodeCacheForTests(): void {
   geoInflight.clear();
 }
 
-export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
+function rememberGeocode(key: string, address: string): void {
+  while (geoCache.size >= GEO_CACHE_MAX) {
+    const oldest = geoCache.keys().next().value;
+    if (oldest === undefined) break;
+    geoCache.delete(oldest);
+  }
+  geoCache.set(key, address);
+}
+
+async function fetchGeocode(lat: number, lng: number, key: string, signal?: AbortSignal): Promise<string | null> {
+  try {
+    const address = await apiService.reverseGeocode(lat, lng, signal);
+    if (signal?.aborted) return null;
+    if (address) rememberGeocode(key, address);
+    return address;
+  } catch (error: any) {
+    if (signal?.aborted || error?.name === 'AbortError') return null;
+    console.error('Reverse geocoding failed with error:', error);
+    return null;
+  }
+}
+
+export async function reverseGeocode(lat: number, lng: number, signal?: AbortSignal): Promise<string | null> {
+  if (signal?.aborted) return null;
   const key = geocodeCacheKey(lat, lng);
   const cached = geoCache.get(key);
   if (cached !== undefined) {
@@ -23,29 +46,17 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string |
     return cached;
   }
 
+  // A caller that can abort must own its request. Sharing it with the
+  // unsignaled in-flight map would cancel a lookup someone else still needs.
+  if (signal) return fetchGeocode(lat, lng, key, signal);
+
   const inflight = geoInflight.get(key);
   if (inflight) return inflight;
 
-  const pending = (async () => {
-    try {
-      const address = await apiService.reverseGeocode(lat, lng);
-      if (address) {
-        while (geoCache.size >= GEO_CACHE_MAX) {
-          const oldest = geoCache.keys().next().value;
-          if (oldest === undefined) break;
-          geoCache.delete(oldest);
-        }
-        geoCache.set(key, address);
-      }
-      return address;
-    } catch (error) {
-      console.error('Reverse geocoding failed with error:', error);
-      return null;
-    } finally {
-      geoInflight.delete(key);
-    }
-  })();
-
+  const pending = fetchGeocode(lat, lng, key);
   geoInflight.set(key, pending);
+  pending.finally(() => {
+    if (geoInflight.get(key) === pending) geoInflight.delete(key);
+  });
   return pending;
 }

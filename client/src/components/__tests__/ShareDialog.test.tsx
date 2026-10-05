@@ -242,6 +242,7 @@ describe('ShareDialog Dark Mode & Styling', () => {
     vi.mocked(apiService.filterContacts).mockResolvedValue({
       existingEmails: ['alice@example.com']
     });
+    vi.mocked(apiService.searchUsers).mockReset();
     vi.mocked(apiService.searchUsers).mockResolvedValue({
       users: [
         { name: 'Sam Shared', email: 'sam@example.com', photoUrl: '', type: 'other' }
@@ -263,5 +264,10 @@ describe('ShareDialog Dark Mode & Styling', () => {
 
     // Google contact who does not have an account
     expect(screen.queryByText('Bob Barker')).not.toBeInTheDocument();
+
+    // Opening the dialog and loading contacts share one collaborator search.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(apiService.searchUsers).toHaveBeenCalledTimes(1);
+    expect(apiService.searchUsers).toHaveBeenCalledWith('');
   });
 });

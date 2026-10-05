@@ -17,6 +17,7 @@ describe('legacyStorage classification', () => {
         expect(isKnownOpfsEntry('offline-extracts')).toBe(true);
         expect(isKnownCacheName('api-cache')).toBe(true);
         expect(isKnownCacheName('elevation-tiles-cache')).toBe(true);
+        expect(isKnownCacheName('esri-satellite-cache')).toBe(true);
         expect(isKnownCacheName('workbox-precache-v2-https://example')).toBe(true);
         expect(isKnownLocalStorageKey('token')).toBe(true);
         expect(isKnownLocalStorageKey('cached_maps')).toBe(true);

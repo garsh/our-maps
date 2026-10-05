@@ -34,7 +34,7 @@ Critical project rules and operational runbooks for OurMaps.
 
 ## 3. Offline Regional Bounding Box Downloads
 
-- Regional bounding box downloads must cover zoom levels 1 to 15 for the area containing pins (plus margin).
+- Regional bounding box downloads must cover zoom levels 0 through 15 for the area containing pins (plus margin). The tile limit, size estimate, and extract stream all use that same range.
 - Guaranteed highway, road, and terrain connectivity without missing gaps.
 - **Do not** add sparse/pin-only tile downloads at zooms 1–15.
 - Tile cap bound is 50,000,000 tiles (`DEFAULT_MAX_EXTRACT_TILES`). Do not artificially lower or add arbitrary concurrency caps.

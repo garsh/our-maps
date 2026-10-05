@@ -140,6 +140,20 @@ export default defineConfig({
             },
           },
           {
+            urlPattern: /^https:\/\/server\.arcgisonline\.com\/ArcGIS\/rest\/services\/World_Imagery\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'esri-satellite-cache',
+              expiration: {
+                maxEntries: 1500,
+                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
             urlPattern: /^https:\/\/s3\.amazonaws\.com\/elevation-tiles-prod\/terrarium\/.*/i,
             handler: 'CacheFirst',
             options: {

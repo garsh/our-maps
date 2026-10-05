@@ -838,11 +838,22 @@ const PinMarker = memo(({
   const iconPath = pin.icon && pin.icon !== 'default' ? ICON_SVG_PATHS[pin.icon as Exclude<PinIcon, 'default'>] : null;
 
   const lastGeocodeCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+  const geocodeAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      geocodeAbortRef.current?.abort();
+    };
+  }, []);
 
   const handleDragEnd = useCallback(async (e: any) => {
     const newLat = e.lngLat.lat;
     const newLng = e.lngLat.lng;
     lastGeocodeCoordsRef.current = { lat: newLat, lng: newLng };
+
+    geocodeAbortRef.current?.abort();
+    const controller = new AbortController();
+    geocodeAbortRef.current = controller;
 
     // 1. Immediately update lat/lng so pin position moves optimistically and syncs over socket
     onUpdatePin(pin.id, {
@@ -851,7 +862,8 @@ const PinMarker = memo(({
     });
 
     // 2. Fetch address in background and guard against coordinate mismatch
-    const newAddress = await reverseGeocode(newLat, newLng);
+    const newAddress = await reverseGeocode(newLat, newLng, controller.signal);
+    if (controller.signal.aborted) return;
     if (newAddress && lastGeocodeCoordsRef.current?.lat === newLat && lastGeocodeCoordsRef.current?.lng === newLng) {
       onUpdatePin(pin.id, {
         address: newAddress,

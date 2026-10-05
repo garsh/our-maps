@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Share2, Trash2, X, User as UserIcon, ShieldCheck, Users, Loader2, Link2, Check, ChevronDown } from 'lucide-react';
 import type { MapPermission } from '@shared/interfaces';
 import { useGoogleLogin } from '@react-oauth/google';
@@ -36,77 +36,78 @@ const fetchMockContacts = async (): Promise<Contact[]> => {
   });
 };
 
+function isStarredContact(conn: any): boolean {
+  if (!conn.memberships) return false;
+  return conn.memberships.some((m: any) =>
+    m.contactGroupMembership?.contactGroupResourceName === 'contactGroups/starred' ||
+    m.contactGroupMembership?.contactGroupId === 'starred'
+  );
+}
+
+async function fetchContactList(
+  url: string,
+  accessToken: string,
+  listKey: 'connections' | 'otherContacts',
+  typeFor: (conn: any) => Contact['type'],
+  failureLabel: string,
+): Promise<Contact[]> {
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const list = data[listKey];
+    if (!Array.isArray(list)) return [];
+    const contacts: Contact[] = [];
+    for (const conn of list) {
+      const email = conn.emailAddresses?.[0]?.value;
+      if (!email) continue;
+      contacts.push({
+        name: conn.names?.[0]?.displayName || email,
+        email,
+        photoUrl: conn.photos?.[0]?.url,
+        type: typeFor(conn),
+      });
+    }
+    return contacts;
+  } catch (err) {
+    console.warn(failureLabel, err);
+    return [];
+  }
+}
+
 const fetchGoogleContacts = async (accessToken: string): Promise<Contact[]> => {
+  const [primary, other] = await Promise.all([
+    fetchContactList(
+      'https://people.googleapis.com/v1/people/me/connections?personFields=names,emailAddresses,photos,memberships&pageSize=1000',
+      accessToken,
+      'connections',
+      (conn) => (isStarredContact(conn) ? 'favorite' : 'frequent'),
+      'Failed to fetch primary contacts',
+    ),
+    fetchContactList(
+      'https://people.googleapis.com/v1/otherContacts?readMask=names,emailAddresses,photos&pageSize=1000',
+      accessToken,
+      'otherContacts',
+      () => 'other',
+      'Failed to fetch other contacts',
+    ),
+  ]);
+
   const contacts: Contact[] = [];
   const seenEmails = new Set<string>();
-  
-  try {
-    const res = await fetch('https://people.googleapis.com/v1/people/me/connections?personFields=names,emailAddresses,photos,memberships&pageSize=1000', {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.connections) {
-        data.connections.forEach((conn: any) => {
-          const email = conn.emailAddresses?.[0]?.value;
-          if (email) {
-            const lower = email.toLowerCase();
-            if (!seenEmails.has(lower)) {
-              seenEmails.add(lower);
-              let isFavorite = false;
-              if (conn.memberships) {
-                isFavorite = conn.memberships.some((m: any) => 
-                  m.contactGroupMembership?.contactGroupResourceName === 'contactGroups/starred' ||
-                  m.contactGroupMembership?.contactGroupId === 'starred'
-                );
-              }
-              contacts.push({
-                name: conn.names?.[0]?.displayName || email,
-                email: email,
-                photoUrl: conn.photos?.[0]?.url,
-                type: isFavorite ? 'favorite' : 'frequent'
-              });
-            }
-          }
-        });
-      }
-    }
-  } catch (err) {
-    console.warn('Failed to fetch primary contacts', err);
+  for (const contact of [...primary, ...other]) {
+    const lower = contact.email.toLowerCase();
+    if (seenEmails.has(lower)) continue;
+    seenEmails.add(lower);
+    contacts.push(contact);
   }
 
-  try {
-    const resOther = await fetch('https://people.googleapis.com/v1/otherContacts?readMask=names,emailAddresses,photos&pageSize=1000', {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    if (resOther.ok) {
-      const dataOther = await resOther.json();
-      if (dataOther.otherContacts) {
-        dataOther.otherContacts.forEach((conn: any) => {
-          const email = conn.emailAddresses?.[0]?.value;
-          if (email) {
-            const lower = email.toLowerCase();
-            if (!seenEmails.has(lower)) {
-              seenEmails.add(lower);
-              contacts.push({
-                name: conn.names?.[0]?.displayName || email,
-                email: email,
-                photoUrl: conn.photos?.[0]?.url,
-                type: 'other'
-              });
-            }
-          }
-        });
-      }
-    }
-  } catch (err) {
-    console.warn('Failed to fetch other contacts', err);
-  }
-  
   if (contacts.length === 0) throw new Error('No contacts found');
-  
+
   contacts.sort(compareContacts);
-  
+
   return contacts;
 };
 
@@ -139,13 +140,10 @@ const mergeGoogleContactsWithOurMapsUsers = (
   return union;
 };
 
-async function loadMergedContacts(fetchedContacts: Contact[]): Promise<Contact[]> {
+async function loadMergedContacts(fetchedContacts: Contact[], recentUsers: Contact[]): Promise<Contact[]> {
   const emails = fetchedContacts.map((c) => c.email);
-  const [{ existingEmails }, { users: recentUsers }] = await Promise.all([
-    apiService.filterContacts(emails),
-    apiService.searchUsers('').catch(() => ({ users: [] })),
-  ]);
-  return mergeGoogleContactsWithOurMapsUsers(fetchedContacts, existingEmails, recentUsers || []);
+  const { existingEmails } = await apiService.filterContacts(emails);
+  return mergeGoogleContactsWithOurMapsUsers(fetchedContacts, existingEmails, recentUsers);
 }
 
 interface ShareDialogProps {
@@ -193,6 +191,19 @@ export default function ShareDialog({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchAbortControllerRef = useRef<AbortController | null>(null);
+  const collaboratorSearchRef = useRef<Promise<Contact[]> | null>(null);
+
+  const loadCollaborators = useCallback(() => {
+    if (!collaboratorSearchRef.current) {
+      collaboratorSearchRef.current = apiService.searchUsers('')
+        .then(({ users }) => (users || []) as Contact[])
+        .catch(() => {
+          collaboratorSearchRef.current = null;
+          return [] as Contact[];
+        });
+    }
+    return collaboratorSearchRef.current;
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -213,6 +224,20 @@ export default function ShareDialog({
       setFilteredContacts(contacts.filter(c => c.name.toLowerCase().includes(lower) || c.email.toLowerCase().includes(lower)));
     } else if (contacts) {
       setFilteredContacts(contacts);
+    } else if (!email.trim()) {
+      let cancelled = false;
+      const searchTimer = setTimeout(async () => {
+        const users = await loadCollaborators();
+        if (cancelled) return;
+        setFilteredContacts(users);
+        if (users.length > 0 && typeof document !== 'undefined' && document.activeElement === inputRef.current) {
+          setShowDropdown(true);
+        }
+      }, 300);
+      return () => {
+        cancelled = true;
+        clearTimeout(searchTimer);
+      };
     } else {
       searchAbortControllerRef.current?.abort();
       const controller = new AbortController();
@@ -224,7 +249,7 @@ export default function ShareDialog({
           if (!controller.signal.aborted) {
             setFilteredContacts(users);
             if (users.length > 0) {
-              if (email.length > 0 && !(users.length === 1 && users[0].email === email)) {
+              if (!(users.length === 1 && users[0].email === email)) {
                 setShowDropdown(true);
               } else if (typeof document !== 'undefined' && document.activeElement === inputRef.current) {
                 setShowDropdown(true);
@@ -242,7 +267,7 @@ export default function ShareDialog({
         controller.abort();
       };
     }
-  }, [isOpen, email, contacts]);
+  }, [isOpen, email, contacts, loadCollaborators]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -262,8 +287,11 @@ export default function ShareDialog({
     scope: 'https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/contacts.other.readonly',
     onSuccess: async (tokenResponse) => {
       try {
-        const fetchedContacts = await fetchGoogleContacts(tokenResponse.access_token);
-        const unionContacts = await loadMergedContacts(fetchedContacts);
+        const [fetchedContacts, recentUsers] = await Promise.all([
+          fetchGoogleContacts(tokenResponse.access_token),
+          loadCollaborators(),
+        ]);
+        const unionContacts = await loadMergedContacts(fetchedContacts, recentUsers);
         
         setContacts(unionContacts);
         setShowDropdown(true);
@@ -283,8 +311,11 @@ export default function ShareDialog({
     setIsConnectingContacts(true);
     if (!hasClientId || forceMock) {
       try {
-        const mockContacts = await fetchMockContacts();
-        const unionContacts = await loadMergedContacts(mockContacts);
+        const [mockContacts, recentUsers] = await Promise.all([
+          fetchMockContacts(),
+          loadCollaborators(),
+        ]);
+        const unionContacts = await loadMergedContacts(mockContacts, recentUsers);
         
         setContacts(unionContacts);
         setShowDropdown(true);

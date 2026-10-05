@@ -2465,7 +2465,7 @@ const Sidebar = ({
         };
     }
 
-    const totalCount = countTiles(bbox, 1, 15);
+    const totalCount = countTiles(bbox, 0, 15);
     if (totalCount > MAX_EXTRACT_TILES) {
       alert(`This map area is too large to download for offline use (${totalCount.toLocaleString()} tiles exceeds the maximum limit of ${MAX_EXTRACT_TILES.toLocaleString()} tiles). Please narrow your map area or remove distant pins.`);
       return;
@@ -2473,7 +2473,7 @@ const Sidebar = ({
 
     setIsPreparingDownload(true);
     try {
-      const extract = await apiService.estimateExtract(bbox, 1, 15);
+      const extract = await apiService.estimateExtract(bbox, 0, 15);
       if (!extract || !extract.bytes || extract.bytes <= 0) {
         throw new Error('Unable to estimate download size from server.');
       }

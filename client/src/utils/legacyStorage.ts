@@ -14,6 +14,7 @@ const KNOWN_CACHE_NAMES = new Set([
   'api-cache',
   'protomaps-assets-cache',
   'elevation-tiles-cache',
+  'esri-satellite-cache',
   'fonts-cache',
   'sprites-cache',
 ]);
