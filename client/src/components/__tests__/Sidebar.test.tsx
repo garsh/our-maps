@@ -1423,10 +1423,21 @@ describe('Sidebar', () => {
       scrollTop: 1000 // Initial drag starts at bottom of list
     } as any;
 
+    const rectFor = (contentTop: number) => vi.fn(() => ({
+      top: contentTop - mockScrollContainer.scrollTop,
+      bottom: contentTop - mockScrollContainer.scrollTop + 50,
+      left: 0,
+      right: 300,
+      height: 50,
+      width: 300,
+    }));
+    const p1Rect = rectFor(0);
+    const p2Rect = rectFor(50);
+    const p3Rect = rectFor(1000);
     const droppableContainers = [
-      { id: 'p1', disabled: false, node: { current: { getBoundingClientRect: () => ({ top: 0 - mockScrollContainer.scrollTop, bottom: 50 - mockScrollContainer.scrollTop, left: 0, right: 300, height: 50, width: 300 }) } }, data: { current: { type: 'pin', pin: pins[0] } } },
-      { id: 'p2', disabled: false, node: { current: { getBoundingClientRect: () => ({ top: 50 - mockScrollContainer.scrollTop, bottom: 100 - mockScrollContainer.scrollTop, left: 0, right: 300, height: 50, width: 300 }) } }, data: { current: { type: 'pin', pin: pins[1] } } },
-      { id: 'p3', disabled: false, node: { current: { getBoundingClientRect: () => ({ top: 1000 - mockScrollContainer.scrollTop, bottom: 1050 - mockScrollContainer.scrollTop, left: 0, right: 300, height: 50, width: 300 }) } }, data: { current: { type: 'pin', pin: pins[2] } } },
+      { id: 'p1', disabled: false, node: { current: { getBoundingClientRect: p1Rect } }, data: { current: { type: 'pin', pin: pins[0] } } },
+      { id: 'p2', disabled: false, node: { current: { getBoundingClientRect: p2Rect } }, data: { current: { type: 'pin', pin: pins[1] } } },
+      { id: 'p3', disabled: false, node: { current: { getBoundingClientRect: p3Rect } }, data: { current: { type: 'pin', pin: pins[2] } } },
     ];
 
     const active = { id: 'p3', data: { current: { type: 'pin', pin: pins[2] } } };
@@ -1458,6 +1469,66 @@ describe('Sidebar', () => {
     });
     // At scrollTop = 0 and pointer at y=35 -> matches p1 (viewport top: 0, bottom: 50)!
     expect(topCollision[0].id).toBe('p1');
+    expect(p1Rect).toHaveBeenCalledTimes(1);
+    expect(p2Rect).toHaveBeenCalledTimes(1);
+    expect(p3Rect).toHaveBeenCalledTimes(1);
+  });
+
+  it('shifts cached pin rows on scroll and remeasures sticky layer headers', () => {
+    const pins = [
+      { id: 'p1', lat: 10, lng: 20, label: 'Pin 1', position: 0, layerId: 'layer-a' },
+      { id: 'p2', lat: 11, lng: 21, label: 'Pin 2', position: 0, layerId: 'layer-b' },
+    ];
+    const collisionCacheRef = { current: null };
+    const mockScrollContainer = {
+      getBoundingClientRect: () => ({ top: 0, bottom: 500, left: 0, right: 300, width: 300, height: 500 }),
+      scrollTop: 0,
+    } as any;
+
+    const rectAt = (top: number, height: number) => ({
+      top,
+      bottom: top + height,
+      left: 0,
+      right: 300,
+      height,
+      width: 300,
+    });
+    // Header B sticks to the top of the list. Shifting its first measurement would leave it at y=20.
+    const headerARect = vi.fn(() => rectAt(0 - mockScrollContainer.scrollTop, 20));
+    const headerBRect = vi.fn(() => rectAt(mockScrollContainer.scrollTop === 0 ? 200 : 0, 20));
+    const pinARect = vi.fn(() => rectAt(20 - mockScrollContainer.scrollTop, 40));
+    const pinBRect = vi.fn(() => rectAt(220 - mockScrollContainer.scrollTop, 40));
+    const droppableContainers = [
+      { id: 'layer-a', disabled: false, node: { current: { getBoundingClientRect: headerARect } }, data: { current: { type: 'layer', layer: { id: 'layer-a' } } } },
+      { id: 'p1', disabled: false, node: { current: { getBoundingClientRect: pinARect } }, data: { current: { type: 'pin', pin: pins[0] } } },
+      { id: 'layer-b', disabled: false, node: { current: { getBoundingClientRect: headerBRect } }, data: { current: { type: 'layer', layer: { id: 'layer-b' } } } },
+      { id: 'p2', disabled: false, node: { current: { getBoundingClientRect: pinBRect } }, data: { current: { type: 'pin', pin: pins[1] } } },
+    ];
+    const active = { id: 'p2', data: { current: { type: 'pin', pin: pins[1] } } };
+    const run = () => computeCustomCollisionDetection({
+      droppableContainers,
+      pointerCoordinates: { x: 50, y: 10 },
+      active,
+      collisionRect: null,
+    }, {
+      layers: [
+        { id: 'layer-a', name: 'A', position: 0 },
+        { id: 'layer-b', name: 'B', position: 1 },
+      ],
+      scrollContainer: mockScrollContainer,
+      collisionCacheRef,
+    });
+
+    run();
+    mockScrollContainer.scrollTop = 180;
+    const scrolled = run();
+    run();
+
+    expect(pinARect).toHaveBeenCalledTimes(1);
+    expect(pinBRect).toHaveBeenCalledTimes(1);
+    expect(headerARect).toHaveBeenCalledTimes(2);
+    expect(headerBRect).toHaveBeenCalledTimes(2);
+    expect(scrolled[0].id).toBe('layer-b');
   });
 
   it('shows Sign In option at top of menu when user is not authenticated', () => {
