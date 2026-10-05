@@ -1531,6 +1531,43 @@ describe('Sidebar', () => {
     expect(scrolled[0].id).toBe('layer-b');
   });
 
+  it('moves the insertion line with the ghost center when it sits above the pointer', () => {
+    const pins = [
+      { id: 'p1', lat: 10, lng: 20, label: 'Pin 1', position: 0 },
+      { id: 'p2', lat: 11, lng: 21, label: 'Pin 2', position: 1 },
+    ];
+    const collisionCacheRef = { current: null };
+    const mockScrollContainer = {
+      getBoundingClientRect: () => ({ top: 0, bottom: 500, left: 0, right: 300, width: 300, height: 500 }),
+      scrollTop: 0,
+    } as any;
+    const droppableContainers = [
+      { id: 'p1', disabled: false, node: { current: { getBoundingClientRect: () => ({ top: 100, bottom: 140, left: 0, right: 300, height: 40, width: 300 }) } }, data: { current: { type: 'pin', pin: pins[0] } } },
+      { id: 'p2', disabled: false, node: { current: { getBoundingClientRect: () => ({ top: 140, bottom: 180, left: 0, right: 300, height: 40, width: 300 }) } }, data: { current: { type: 'pin', pin: pins[1] } } },
+    ];
+    const active = { id: 'p1', data: { current: { type: 'pin', pin: pins[0] } } };
+    const run = (y: number, pointerOffsetY?: number) => computeCustomCollisionDetection({
+      droppableContainers,
+      pointerCoordinates: { x: 50, y },
+      active,
+      collisionRect: null,
+    }, {
+      layers: [],
+      scrollContainer: mockScrollContainer,
+      collisionCacheRef,
+      pointerOffsetY,
+    });
+
+    // p2's zone starts at its midpoint, y=160. The shared edge still belongs to p1.
+    expect(run(161)[0].id).toBe('p2');
+    // Ghost center is 10px above the pointer, so that finger is still before p2.
+    collisionCacheRef.current = null;
+    expect(run(161, -10)[0].id).toBe('p1');
+    // The line switches once the ghost center reaches the midpoint.
+    collisionCacheRef.current = null;
+    expect(run(171, -10)[0].id).toBe('p2');
+  });
+
   it('shows Sign In option at top of menu when user is not authenticated', () => {
     const onSignIn = vi.fn();
     render(

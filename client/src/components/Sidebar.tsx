@@ -1920,6 +1920,9 @@ export function computeCustomCollisionDetection(
     layers: PinLayer[];
     scrollContainer: HTMLElement | null;
     collisionCacheRef: { current: CollisionCache | null };
+    // Added to the pointer so the hit matches the ghost center. Negative when
+    // that center is above the pointer.
+    pointerOffsetY?: number;
   }
 ) {
   const { droppableContainers, pointerCoordinates, active, collisionRect } = args;
@@ -2124,7 +2127,9 @@ export function computeCustomCollisionDetection(
   }
 
   const collisions: any[] = [];
-  const py = pointerCoordinates?.y;
+  const pointerOffsetY = options.pointerOffsetY ?? 0;
+  const rawPointerY = pointerCoordinates?.y;
+  const py = rawPointerY == null ? undefined : rawPointerY + pointerOffsetY;
   const px = pointerCoordinates?.x;
 
   if (py !== undefined && px !== undefined) {
@@ -2774,9 +2779,22 @@ const Sidebar = ({
   );
 
   const collisionCacheRef = useRef<CollisionCache | null>(null);
+  const dragGhostRef = useRef<HTMLDivElement | null>(null);
+  // Pointer the overlay was last rendered for. The ghost DOM during collision
+  // still belongs to this value, not to the pointer being rendered now.
+  const renderedPointerYRef = useRef<number | null>(null);
+  const ghostOffsetSampleRef = useRef<{ steady: number; pointer: number } | null>(null);
+  const ghostCenterOffsetRef = useRef(0);
+
+  const clearDragCollision = () => {
+    collisionCacheRef.current = null;
+    ghostCenterOffsetRef.current = 0;
+    renderedPointerYRef.current = null;
+    ghostOffsetSampleRef.current = null;
+  };
 
   const handleDragStart = (event: DragStartEvent) => {
-    collisionCacheRef.current = null;
+    clearDragCollision();
     const { active } = event;
     if (active.data.current?.type === 'pin') {
       setActivePin(active.data.current.pin);
@@ -2787,14 +2805,14 @@ const Sidebar = ({
   };
 
   const handleDragEndInternal = (event: DragEndEvent) => {
-    collisionCacheRef.current = null;
+    clearDragCollision();
     setActivePin(null);
     setActiveLayer(null);
     onDragEnd(event);
   };
 
   const handleDragCancelInternal = () => {
-    collisionCacheRef.current = null;
+    clearDragCollision();
     setActivePin(null);
     setActiveLayer(null);
     onDragCancel?.();
@@ -2806,10 +2824,40 @@ const Sidebar = ({
   const isAnyPinDragging = !!activePinId;
 
   const customCollisionDetection = (args: any) => {
+    const pointerY = args.pointerCoordinates?.y;
+    // Strict Mode replays this render. The second pass would pair the unmoved
+    // ghost with the pointer stored on the first pass.
+    const replay = typeof pointerY === 'number' && pointerY === renderedPointerYRef.current;
+    if (!replay) {
+      const ghost = dragGhostRef.current;
+      const renderedPointer = renderedPointerYRef.current;
+      // The ghost on screen was placed for the previous pointer. Pairing it
+      // with the pointer being rendered now is short by this move and pushes
+      // the insertion line late while dragging downward.
+      if (ghost && typeof renderedPointer === 'number') {
+        const rect = ghost.getBoundingClientRect();
+        if (rect.height > 0) {
+          const steady = rect.top + rect.height / 2 - renderedPointer;
+          const prior = ghostOffsetSampleRef.current;
+          if (
+            prior != null &&
+            Math.abs(renderedPointer - prior.pointer) >= 1 &&
+            Math.abs(steady - prior.steady) <= 1.5
+          ) {
+            ghostCenterOffsetRef.current = steady;
+          }
+          ghostOffsetSampleRef.current = { steady, pointer: renderedPointer };
+        }
+      }
+      if (typeof pointerY === 'number') {
+        renderedPointerYRef.current = pointerY;
+      }
+    }
     return computeCustomCollisionDetection(args, {
       layers,
       scrollContainer: scrollContainerRef.current,
-      collisionCacheRef
+      collisionCacheRef,
+      pointerOffsetY: ghostCenterOffsetRef.current,
     });
   };
 
@@ -3493,7 +3541,7 @@ const Sidebar = ({
               const dragOverlayScale = isMobile ? (mobileScale ?? 1) : 1.25;
               if (activePin) {
                 return (
-                  <div style={{ width: '200px', position: 'relative', transform: `scale(${dragOverlayScale})`, transformOrigin: 'top left' }}>
+                  <div ref={dragGhostRef} style={{ width: '200px', position: 'relative', transform: `scale(${dragOverlayScale})`, transformOrigin: 'top left' }}>
                     {/* Bundle visual: a stack of items if multiple are selected */}
                     {isAnySelectedDragging && selectedNavIds && selectedNavIds.size > 1 ? (
                         <>
@@ -3534,7 +3582,7 @@ const Sidebar = ({
               }
               if (activeLayer) {
                 return (
-                  <div style={{ width: '240px', background: 'var(--surface-color)', color: 'var(--text-primary)', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.25, boxShadow: 'var(--shadow-md)', marginLeft: '12px', transform: `scale(${dragOverlayScale})`, transformOrigin: 'top left' }}>
+                  <div ref={dragGhostRef} style={{ width: '240px', background: 'var(--surface-color)', color: 'var(--text-primary)', border: '1px solid var(--primary-color)', borderRadius: 'var(--radius-sm)', padding: '0.2rem', opacity: 0.25, boxShadow: 'var(--shadow-md)', marginLeft: '12px', transform: `scale(${dragOverlayScale})`, transformOrigin: 'top left' }}>
                     <div style={{ fontWeight: '700', fontSize: '0.65rem' }}>{activeLayer.name}</div>
                   </div>
                 );
