@@ -465,7 +465,7 @@ describe('App Components Error Handling', () => {
     expect(screen.getByText(/Rename Map/i)).toBeInTheDocument();
   });
 
-  it('resizes mobile bottom sheet to standard size on handle tap unless already at standard size', async () => {
+  it('resizes the mobile bottom sheet on handle tap and clears search when minimized', async () => {
     (apiService.getMap as any).mockResolvedValue({
       id: 'map-1',
       name: 'Test Map',
@@ -503,10 +503,15 @@ describe('App Components Error Handling', () => {
     // Standard height for 800px height is Math.min(350, Math.round(800 * 0.45)) = 350px
     expect(sheet.style.height).toBe('350px');
 
-    // 1. Tapping when at standard height (350px) should close it to 0px
+    const input = screen.getByPlaceholderText(/Search.../i);
+    fireEvent.change(input, { target: { value: 'Coffee' } });
+    expect(input).toHaveValue('Coffee');
+
+    // 1. Tapping when at standard height (350px) should close it to 0px and clear search
     fireEvent.pointerDown(handle, { clientY: 450, pointerId: 1 });
     fireEvent.pointerUp(handle, { clientY: 450, pointerId: 1 });
     expect(sheet.style.height).toBe('0px');
+    expect(input).toHaveValue('');
 
     // 2. Tapping when closed (0px) should open it back to standard height (350px)
     fireEvent.pointerDown(handle, { clientY: 800, pointerId: 1 });
@@ -526,44 +531,6 @@ describe('App Components Error Handling', () => {
 
     const pinList = container.querySelector('.pin-list');
     expect(pinList?.classList.contains('pin-hover-blocked')).toBe(true);
-  });
-
-  it('clears search text when the mobile panel is minimized', async () => {
-    (apiService.getMap as any).mockResolvedValue({
-      id: 'map-1',
-      name: 'Test Map',
-      pins: [],
-      layers: [],
-      userRole: 'owner'
-    });
-
-    window.innerWidth = 375;
-    window.innerHeight = 800;
-
-    const { container } = render(
-      <GoogleOAuthProvider clientId="test-client-id">
-        <MemoryRouter initialEntries={['/map/map-1']}>
-          <Routes>
-            <Route path="/map/:id" element={<MapEditor />} />
-          </Routes>
-        </MemoryRouter>
-      </GoogleOAuthProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText(/Search.../i)).toBeInTheDocument();
-    });
-
-    const input = screen.getByPlaceholderText(/Search.../i);
-    fireEvent.change(input, { target: { value: 'Coffee' } });
-    expect(input).toHaveValue('Coffee');
-
-    const handle = container.querySelector('.bottom-sheet-drag-handle') as HTMLElement;
-    fireEvent.pointerDown(handle, { clientY: 450, pointerId: 1 });
-    fireEvent.pointerUp(handle, { clientY: 450, pointerId: 1 });
-
-    expect(container.querySelector('.mobile-bottom-sheet')).toHaveStyle({ height: '0px' });
-    expect(input).toHaveValue('');
   });
 
   it('keeps compass and location buttons in their relative positions and slides them off the bottom sheet onto the map when minimized', async () => {
@@ -644,9 +611,12 @@ describe('App Components Error Handling', () => {
     }
   });
 
-  it('clears search text when the desktop sidebar is minimized', async () => {
-    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1280 });
-    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 });
+  it('clears desktop search, clips a minimized sidebar, and renders the options menu outside the header clip', async () => {
+    const setViewport = (width: number, height: number) => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+      Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: height });
+    };
+    setViewport(1280, 800);
 
     (apiService.getMap as any).mockResolvedValue({
       id: 'map-1',
@@ -670,6 +640,17 @@ describe('App Components Error Handling', () => {
       expect(screen.getByPlaceholderText(/Search.../i)).toBeInTheDocument();
     });
 
+    fireEvent.click(screen.getByLabelText('More options'));
+    const menu = await screen.findByTestId('map-options-menu');
+    expect(menu).toHaveTextContent('Edit Mode');
+    expect(menu).toHaveTextContent('Appearance');
+    const openClip = container.querySelector('.sidebar-header-clip') as HTMLElement;
+    expect(openClip).toBeTruthy();
+    expect(openClip).not.toContainElement(menu);
+    expect(document.body.contains(menu)).toBe(true);
+    fireEvent.click(screen.getByLabelText('More options'));
+    expect(screen.queryByTestId('map-options-menu')).not.toBeInTheDocument();
+
     const input = screen.getByPlaceholderText(/Search.../i);
     fireEvent.change(input, { target: { value: 'Coffee' } });
     expect(input).toHaveValue('Coffee');
@@ -687,84 +668,29 @@ describe('App Components Error Handling', () => {
     expect(headerClip.contains(resizer)).toBe(false);
     expect(header).toContainElement(screen.getByLabelText('More options'));
     expect(resizer.parentElement).toContainElement(headerClip);
-  });
 
-  it('clips header chrome when a landscape-phone sidebar is minimized', async () => {
-    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 900 });
-    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 400 });
-
-    (apiService.getMap as any).mockResolvedValue({
-      id: 'map-1',
-      name: 'Test Map',
-      pins: [],
-      layers: [],
-      userRole: 'owner'
-    });
-
-    const { container } = render(
-      <GoogleOAuthProvider clientId="test-client-id">
-        <MemoryRouter initialEntries={['/map/map-1']}>
-          <Routes>
-            <Route path="/map/:id" element={<MapEditor />} />
-          </Routes>
-        </MemoryRouter>
-      </GoogleOAuthProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('More options')).toBeInTheDocument();
-    });
-
-    const resizer = container.querySelector('.resizer-handle') as HTMLElement;
     fireEvent.click(resizer);
+    expect((resizer.parentElement as HTMLElement).style.width).toBe('400px');
 
-    const sheet = resizer.parentElement as HTMLElement;
+    await act(async () => {
+      setViewport(900, 400);
+      window.dispatchEvent(new Event('resize'));
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    });
+
+    const landscapeResizer = container.querySelector('.resizer-handle') as HTMLElement;
+    fireEvent.click(landscapeResizer);
+
+    const sheet = landscapeResizer.parentElement as HTMLElement;
     expect(sheet.style.width).toBe('0px');
     expect(sheet.querySelector('.bottom-sheet-drag-handle')).toBeNull();
 
-    const header = container.querySelector('header') as HTMLElement;
-    const headerClip = container.querySelector('.sidebar-header-clip') as HTMLElement;
-    expect(headerClip).toHaveStyle({ overflow: 'hidden', minWidth: '0px', width: '100%', maxWidth: '100%' });
-    expect(headerClip).toContainElement(header);
-    expect(headerClip.contains(resizer)).toBe(false);
-    expect(header).toContainElement(screen.getByLabelText('More options'));
-  });
-
-  it('renders the map options menu outside the desktop header clip', async () => {
-    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1280 });
-    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 });
-
-    (apiService.getMap as any).mockResolvedValue({
-      id: 'map-1',
-      name: 'Test Map',
-      pins: [],
-      layers: [],
-      userRole: 'owner'
-    });
-
-    const { container } = render(
-      <GoogleOAuthProvider clientId="test-client-id">
-        <MemoryRouter initialEntries={['/map/map-1']}>
-          <Routes>
-            <Route path="/map/:id" element={<MapEditor />} />
-          </Routes>
-        </MemoryRouter>
-      </GoogleOAuthProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('More options')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByLabelText('More options'));
-
-    const menu = await screen.findByTestId('map-options-menu');
-    expect(menu).toHaveTextContent('Edit Mode');
-    expect(menu).toHaveTextContent('Appearance');
-    const headerClip = container.querySelector('.sidebar-header-clip') as HTMLElement;
-    expect(headerClip).toBeTruthy();
-    expect(headerClip).not.toContainElement(menu);
-    expect(document.body.contains(menu)).toBe(true);
+    const landscapeHeader = container.querySelector('header') as HTMLElement;
+    const landscapeClip = container.querySelector('.sidebar-header-clip') as HTMLElement;
+    expect(landscapeClip).toHaveStyle({ overflow: 'hidden', minWidth: '0px', width: '100%', maxWidth: '100%' });
+    expect(landscapeClip).toContainElement(landscapeHeader);
+    expect(landscapeClip.contains(landscapeResizer)).toBe(false);
+    expect(landscapeHeader).toContainElement(screen.getByLabelText('More options'));
   });
 
   it('opens the minimized mobile panel to default size and highlights the tapped pin', async () => {

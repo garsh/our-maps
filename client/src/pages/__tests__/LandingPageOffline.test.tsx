@@ -64,7 +64,7 @@ describe('LandingPage Offline Map Access', () => {
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
 
-  it('does not let a long-press select the owner or date on a map card', async () => {
+  it('blocks long-press selection on landing page text and allows it in search inputs', async () => {
     render(
       <MemoryRouter>
         <ThemeProvider>
@@ -82,48 +82,26 @@ describe('LandingPage Offline Map Access', () => {
       fireEvent(label, contextEvent);
       expect(contextEvent.defaultPrevented).toBe(true);
     }
-  });
 
-  it('does not let a long-press select map titles or general landing page text, preventing context menu and clearing selection', async () => {
-    render(
-      <MemoryRouter>
-        <ThemeProvider>
-          <LandingPage />
-        </ThemeProvider>
-      </MemoryRouter>
-    );
-
-    const title = (await screen.findAllByText('Downloaded Map'))[0];
+    const title = screen.getAllByText('Downloaded Map')[0];
     expect(title.style.userSelect).toBe('none');
     expect(title.style.webkitUserSelect).toBe('none');
 
-    const contextEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
-    fireEvent(title, contextEvent);
-    expect(contextEvent.defaultPrevented).toBe(true);
+    const titleMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    fireEvent(title, titleMenu);
+    expect(titleMenu.defaultPrevented).toBe(true);
 
-    const selectEvent = new Event('selectstart', { bubbles: true, cancelable: true });
-    fireEvent(title, selectEvent);
-    expect(selectEvent.defaultPrevented).toBe(true);
+    const titleSelect = new Event('selectstart', { bubbles: true, cancelable: true });
+    fireEvent(title, titleSelect);
+    expect(titleSelect.defaultPrevented).toBe(true);
 
     const selection = window.getSelection()!;
-    const range = document.createRange();
-    range.selectNodeContents(title);
+    const titleRange = document.createRange();
+    titleRange.selectNodeContents(title);
     selection.removeAllRanges();
-    selection.addRange(range);
+    selection.addRange(titleRange);
     document.dispatchEvent(new Event('selectionchange'));
     expect(selection.rangeCount).toBe(0);
-  });
-
-  it('allows the browser menu on blank landing page and still blocks text', async () => {
-    render(
-      <MemoryRouter>
-        <ThemeProvider>
-          <LandingPage />
-        </ThemeProvider>
-      </MemoryRouter>
-    );
-
-    await screen.findAllByText('Downloaded Map');
 
     for (const selector of ['.landing-page-root', '.landing-container', '.landing-maps-grid']) {
       const blank = document.querySelector(selector) as HTMLElement;
@@ -147,39 +125,27 @@ describe('LandingPage Offline Map Access', () => {
     fireEvent(newMap, buttonMenu);
     expect(buttonMenu.defaultPrevented).toBe(true);
 
-    const selectEvent = new Event('selectstart', { bubbles: true, cancelable: true });
-    fireEvent(heading, selectEvent);
-    expect(selectEvent.defaultPrevented).toBe(true);
+    const headingSelect = new Event('selectstart', { bubbles: true, cancelable: true });
+    fireEvent(heading, headingSelect);
+    expect(headingSelect.defaultPrevented).toBe(true);
 
-    const selection = window.getSelection()!;
-    const range = document.createRange();
-    range.selectNodeContents(heading);
+    const headingRange = document.createRange();
+    headingRange.selectNodeContents(heading);
     selection.removeAllRanges();
-    selection.addRange(range);
+    selection.addRange(headingRange);
     document.dispatchEvent(new Event('selectionchange'));
     expect(selection.rangeCount).toBe(0);
-  });
 
-  it('allows text selection and context menu on inputs like search', async () => {
-    render(
-      <MemoryRouter>
-        <ThemeProvider>
-          <LandingPage />
-        </ThemeProvider>
-      </MemoryRouter>
-    );
-
-    const select = await screen.findByLabelText('Filter maps by label');
-    fireEvent.change(select, { target: { value: 'search' } });
+    fireEvent.change(screen.getByLabelText('Filter maps by label'), { target: { value: 'search' } });
 
     const searchInput = await screen.findByPlaceholderText('Search all maps...');
-    const contextEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
-    fireEvent(searchInput, contextEvent);
-    expect(contextEvent.defaultPrevented).toBe(false);
+    const searchMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    fireEvent(searchInput, searchMenu);
+    expect(searchMenu.defaultPrevented).toBe(false);
 
-    const selectEvent = new Event('selectstart', { bubbles: true, cancelable: true });
-    fireEvent(searchInput, selectEvent);
-    expect(selectEvent.defaultPrevented).toBe(false);
+    const searchSelect = new Event('selectstart', { bubbles: true, cancelable: true });
+    fireEvent(searchInput, searchSelect);
+    expect(searchSelect.defaultPrevented).toBe(false);
   });
 
   it('allows opening maps with download when offline', async () => {

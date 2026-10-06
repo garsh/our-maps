@@ -660,73 +660,38 @@ describe('MapView Compass and Tilt Indicator', () => {
     resetMapViewportBoundsForTests();
   });
 
-  it('renders combined compass/tilt control and locator buttons in lower-right corner', () => {
-    render(
-      <MapView
-        pins={[]}
-        onMapClick={vi.fn()}
-        onUpdatePin={vi.fn()}
-        onBoundsChange={vi.fn()}
-      />
-    );
-
-    const compassButton = screen.getByRole('button', { name: /Compass - Reset bearing to North/i });
-    const locatorButton = screen.getByRole('button', { name: /Find my location/i });
-
-    expect(compassButton).toBeInTheDocument();
-    expect(locatorButton).toBeInTheDocument();
-  });
-
-  it('portals compass and location buttons into mobileControlsTarget on mobile', () => {
+  it('portals compass and location buttons into mobileControlsTarget and keeps their order when minimized', () => {
     const portalTarget = document.createElement('div');
     portalTarget.id = 'mobile-map-controls';
     document.body.appendChild(portalTarget);
 
-    render(
-      <MapView
-        pins={[]}
-        onMapClick={vi.fn()}
-        onUpdatePin={vi.fn()}
-        onBoundsChange={vi.fn()}
-        isMobile={true}
-        mobileControlsTarget={portalTarget}
-      />
-    );
+    const viewProps = {
+      pins: [],
+      onMapClick: vi.fn(),
+      onUpdatePin: vi.fn(),
+      onBoundsChange: vi.fn(),
+      isMobile: true,
+      mobileControlsTarget: portalTarget,
+    };
 
-    const compassButton = screen.getByRole('button', { name: /Compass - Reset bearing to North/i });
-    const locatorButton = screen.getByRole('button', { name: /Find my location/i });
+    try {
+      const { rerender } = render(<MapView {...viewProps} />);
 
-    expect(portalTarget.contains(compassButton)).toBe(true);
-    expect(portalTarget.contains(locatorButton)).toBe(true);
+      const compassButton = screen.getByRole('button', { name: /Compass - Reset bearing to North/i });
+      const locatorButton = screen.getByRole('button', { name: /Find my location/i });
+      expect(portalTarget.contains(compassButton)).toBe(true);
+      expect(portalTarget.contains(locatorButton)).toBe(true);
 
-    document.body.removeChild(portalTarget);
-  });
+      rerender(<MapView {...viewProps} isPanelMinimized />);
 
-  it('keeps compass and location buttons in their relative positions portaled in mobileControlsTarget on mobile', () => {
-    const portalTarget = document.createElement('div');
-    portalTarget.id = 'mobile-map-controls';
-    document.body.appendChild(portalTarget);
-
-    render(
-      <MapView
-        pins={[]}
-        onMapClick={vi.fn()}
-        onUpdatePin={vi.fn()}
-        onBoundsChange={vi.fn()}
-        isMobile={true}
-        isPanelMinimized={true}
-        mobileControlsTarget={portalTarget}
-      />
-    );
-
-    const compassButton = screen.getByRole('button', { name: /Compass - Reset bearing to North/i });
-    const locatorButton = screen.getByRole('button', { name: /Find my location/i });
-
-    expect(portalTarget.contains(compassButton)).toBe(true);
-    expect(portalTarget.contains(locatorButton)).toBe(true);
-    expect(locatorButton.compareDocumentPosition(compassButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-
-    document.body.removeChild(portalTarget);
+      const compassMinimized = screen.getByRole('button', { name: /Compass - Reset bearing to North/i });
+      const locatorMinimized = screen.getByRole('button', { name: /Find my location/i });
+      expect(portalTarget.contains(compassMinimized)).toBe(true);
+      expect(portalTarget.contains(locatorMinimized)).toBe(true);
+      expect(locatorMinimized.compareDocumentPosition(compassMinimized) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    } finally {
+      document.body.removeChild(portalTarget);
+    }
   });
 
   it('resets compass bearing and tilt when control button is clicked', () => {

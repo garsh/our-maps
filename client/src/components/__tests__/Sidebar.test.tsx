@@ -468,31 +468,40 @@ describe('Sidebar', () => {
     vi.unstubAllGlobals();
   });
 
-  it('omits origin and includes intermediate pins as waypoints when location tracking is on', () => {
+  it('routes to three pins from the current location with Go and the selection menu', () => {
     const mockPins = [
         { id: '1', lat: 35.0, lng: -97.0, label: 'Oklahoma', position: 0 },
         { id: '2', lat: 37.0, lng: -97.5, label: 'Wichita', position: 1 },
         { id: '3', lat: 39.0, lng: -98.0, label: 'Kansas', position: 2 }
     ] as any;
-    
+
     const openMock = vi.fn();
     vi.stubGlobal('open', openMock);
-    
+
     render(<TestWrapper pins={mockPins} selectedNavIds={new Set(['1', '2', '3'])} isTrackingLocation={true} />);
-    
-    const goBtn = screen.getByText(/Go \(3\)/i);
-    fireEvent.click(goBtn);
-    
+
+    fireEvent.click(screen.getByText(/Go \(3\)/i));
+
     expect(openMock).toHaveBeenCalledTimes(1);
-    const url = openMock.mock.calls[0][0];
-    // Should NOT contain an origin parameter or dir_action=navigate
-    expect(url).not.toContain('origin=');
-    expect(url).not.toContain('dir_action=navigate');
-    // Destination is the last pin
-    expect(url).toContain('destination=39,-98');
-    // Waypoints include all previous pins (pin 1 and pin 2)
-    expect(url).toContain('waypoints=35,-97|37,-97.5');
-    
+    const goUrl = openMock.mock.calls[0][0];
+    expect(goUrl).not.toContain('origin=');
+    expect(goUrl).not.toContain('dir_action=navigate');
+    expect(goUrl).toContain('destination=39,-98');
+    expect(goUrl).toContain('waypoints=35,-97|37,-97.5');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    const route = screen.getByRole('button', { name: 'Route to 3 pins' });
+    const unselect = screen.getByRole('button', { name: 'Unselect all pins' });
+    expect(unselect.compareDocumentPosition(route) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(route);
+
+    expect(openMock).toHaveBeenCalledTimes(2);
+    const menuUrl = openMock.mock.calls[1][0];
+    expect(menuUrl).not.toContain('origin=');
+    expect(menuUrl).toContain('destination=39,-98');
+    expect(menuUrl).toContain('waypoints=35,-97|37,-97.5');
+    expect(screen.queryByTestId('selection-actions-menu')).not.toBeInTheDocument();
+
     vi.unstubAllGlobals();
   });
 
@@ -704,39 +713,44 @@ describe('Sidebar', () => {
     expect(headerRow.firstElementChild?.textContent).toContain('Default Layer');
   });
 
-  it('allows toggling hillshading in appearance menu', () => {
+  it('toggles appearance options and keeps the menu open', () => {
     const onToggleHillshade = vi.fn();
-    render(<TestWrapper handlers={{ onToggleHillshade, showHillshade: true }} />);
-
-    const moreBtn = screen.getByLabelText(/more options/i);
-    fireEvent.click(moreBtn);
-
-    expect(screen.getByText('Appearance')).toBeInTheDocument();
-    const hillshadeOption = screen.getByText('Hillshading');
-    expect(hillshadeOption).toBeInTheDocument();
-
-    fireEvent.click(hillshadeOption);
-    expect(onToggleHillshade).toHaveBeenCalledWith(false);
-  });
-
-  it('allows toggling 3D terrain and 3D buildings in appearance menu', () => {
     const onToggle3DTerrain = vi.fn();
     const onToggle3DBuildings = vi.fn();
-    render(<TestWrapper handlers={{ onToggle3DTerrain, show3DTerrain: true, onToggle3DBuildings, show3DBuildings: true }} />);
+    const onThemeChange = vi.fn();
+    const onToggleSatellite = vi.fn();
+    render(<TestWrapper handlers={{
+      onToggleHillshade,
+      showHillshade: true,
+      onToggle3DTerrain,
+      show3DTerrain: true,
+      onToggle3DBuildings,
+      show3DBuildings: true,
+      onThemeChange,
+      mapTheme: 'light',
+      onToggleSatellite,
+      showSatellite: false,
+    }} />);
 
-    const moreBtn = screen.getByLabelText(/more options/i);
-    fireEvent.click(moreBtn);
-
+    fireEvent.click(screen.getByLabelText(/more options/i));
     expect(screen.getByText('Appearance')).toBeInTheDocument();
-    const terrainOption = screen.getByText('3D Terrain');
-    expect(terrainOption).toBeInTheDocument();
-    fireEvent.click(terrainOption);
+
+    fireEvent.click(screen.getByText('Hillshading'));
+    expect(onToggleHillshade).toHaveBeenCalledWith(false);
+
+    fireEvent.click(screen.getByText('3D Terrain'));
     expect(onToggle3DTerrain).toHaveBeenCalledWith(false);
 
-    const buildingsOption = screen.getByText('3D Buildings');
-    expect(buildingsOption).toBeInTheDocument();
-    fireEvent.click(buildingsOption);
+    fireEvent.click(screen.getByText('3D Buildings'));
     expect(onToggle3DBuildings).toHaveBeenCalledWith(false);
+
+    fireEvent.click(screen.getByText('Dark Mode'));
+    expect(onThemeChange).toHaveBeenCalledWith('dark');
+    expect(screen.getByText('Dark Mode')).toBeInTheDocument();
+    expect(screen.getByText('Hillshading')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Satellite'));
+    expect(onToggleSatellite).toHaveBeenCalledWith(true);
   });
 
   it('toggles 3D terrain when clicked in more options menu', () => {
@@ -751,39 +765,6 @@ describe('Sidebar', () => {
 
     fireEvent.click(terrainOption);
     expect(onToggle3DTerrain).toHaveBeenCalledWith(false);
-  });
-
-  it('keeps appearance menu open when dark mode is toggled', () => {
-    const onThemeChange = vi.fn();
-    render(<TestWrapper handlers={{ onThemeChange, mapTheme: 'light' }} />);
-
-    const moreBtn = screen.getByLabelText(/more options/i);
-    fireEvent.click(moreBtn);
-
-    expect(screen.getByText('Appearance')).toBeInTheDocument();
-    const darkModeOption = screen.getByText('Dark Mode');
-    expect(darkModeOption).toBeInTheDocument();
-
-    fireEvent.click(darkModeOption);
-    expect(onThemeChange).toHaveBeenCalledWith('dark');
-    // Verify menu is still open and showing appearance options
-    expect(screen.getByText('Dark Mode')).toBeInTheDocument();
-    expect(screen.getByText('Hillshading')).toBeInTheDocument();
-  });
-
-  it('allows toggling satellite mode in appearance menu', () => {
-    const onToggleSatellite = vi.fn();
-    render(<TestWrapper handlers={{ onToggleSatellite, showSatellite: false }} />);
-
-    const moreBtn = screen.getByLabelText(/more options/i);
-    fireEvent.click(moreBtn);
-
-    expect(screen.getByText('Appearance')).toBeInTheDocument();
-    const satelliteOption = screen.getByText('Satellite');
-    expect(satelliteOption).toBeInTheDocument();
-
-    fireEvent.click(satelliteOption);
-    expect(onToggleSatellite).toHaveBeenCalledWith(true);
   });
 
   it('orders appearance options and describes offline behavior on hover and long-press', () => {
@@ -1209,11 +1190,6 @@ describe('Sidebar', () => {
     });
   });
 
-  it('renders SearchBar within sidebar', () => {
-    render(<TestWrapper />);
-    expect(screen.getByPlaceholderText('Search...')).toBeInTheDocument();
-  });
-
   it('hides SearchBar in view mode and when the user cannot edit', () => {
     const { rerender } = render(<TestWrapper handlers={{ userRole: 'owner', editMode: false }} />);
     expect(screen.queryByPlaceholderText('Search...')).not.toBeInTheDocument();
@@ -1487,32 +1463,6 @@ describe('Sidebar', () => {
 
     expect(screen.getByRole('button', { name: /Go \(1\)/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Actions for selected pins' })).not.toBeInTheDocument();
-  });
-
-  it('routes to several pins from the current location when tracking is on', () => {
-    const pins = [
-      { id: '1', lat: 35.0, lng: -97.0, label: 'Oklahoma', position: 0 },
-      { id: '2', lat: 37.0, lng: -97.5, label: 'Wichita', position: 1 },
-      { id: '3', lat: 39.0, lng: -98.0, label: 'Kansas', position: 2 },
-    ];
-    const openMock = vi.fn();
-    vi.stubGlobal('open', openMock);
-
-    render(<TestWrapper pins={pins} selectedNavIds={new Set(['1', '2', '3'])} isTrackingLocation={true} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
-    const route = screen.getByRole('button', { name: 'Route to 3 pins' });
-    const unselect = screen.getByRole('button', { name: 'Unselect all pins' });
-    expect(unselect.compareDocumentPosition(route) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    fireEvent.click(route);
-
-    expect(openMock).toHaveBeenCalledTimes(1);
-    const url = openMock.mock.calls[0][0];
-    expect(url).not.toContain('origin=');
-    expect(url).toContain('destination=39,-98');
-    expect(url).toContain('waypoints=35,-97|37,-97.5');
-    expect(screen.queryByTestId('selection-actions-menu')).not.toBeInTheDocument();
-
-    vi.unstubAllGlobals();
   });
 
   it('asks before deleting one selected pin and Escape cancels', () => {
