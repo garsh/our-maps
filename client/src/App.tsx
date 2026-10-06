@@ -1619,31 +1619,28 @@ export function MapEditor() {
     const pinsToMove = currentPins.filter(p => pinIdSet.has(p.id));
     if (pinsToMove.length === 0) return;
 
-    const startLayersMap = new Map<string, string | undefined>();
-    pinsToMove.forEach(p => startLayersMap.set(p.id, p.layerId));
-
     const pinsInTargetLayer = currentPins.filter(p => !pinIdSet.has(p.id) && isSameLayer(p.layerId, targetLayerId));
     let nextPos = getNextPinPosition(pinsInTargetLayer, targetLayerId);
+    const orderedIds: string[] = [];
 
     const updatedPins = currentPins.map(p => {
-      if (pinIdSet.has(p.id)) {
-        const assignedPos = nextPos++;
-        return { ...p, layerId: targetLayerId, position: assignedPos };
-      }
-      return p;
+      if (!pinIdSet.has(p.id)) return p;
+      orderedIds.push(p.id);
+      const assignedPos = nextPos++;
+      return { ...p, layerId: targetLayerId, position: assignedPos };
     });
 
     setPins(updatedPins);
 
     if (mapId) {
-      emitReorderDelta(
-        currentPins,
-        pinIds,
-        startLayersMap,
-        targetLayerId
-      );
+      emitDelta('pin-move-layer', {
+        mapId,
+        pinIds: orderedIds,
+        targetLayerId: targetLayerId === undefined ? null : targetLayerId,
+        destInsertIndex: pinsInTargetLayer.length,
+      });
     }
-  }, [editMode, isOffline, mapId, emitReorderDelta]);
+  }, [editMode, isOffline, mapId, emitDelta]);
 
   const addLayer = useCallback((): PinLayer | undefined => {
     if (!editMode || isOffline) return;

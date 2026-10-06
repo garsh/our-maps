@@ -160,17 +160,53 @@ async function updateEntityPositions(
 }
 
 async function loadLayerPinIds(db: any, mapId: string, layerId: string | null): Promise<string[]> {
+  const rows = await loadLayerPinRows(db, mapId, layerId);
+  return rows.map((r) => r.id);
+}
+
+async function loadLayerPinRows(
+  db: any,
+  mapId: string,
+  layerId: string | null
+): Promise<Array<{ id: string; position: number }>> {
   const rows = layerId
     ? await db.all(
-        'SELECT id FROM pins WHERE map_id = ? AND layer_id = ? ORDER BY position ASC, id ASC',
+        'SELECT id, position FROM pins WHERE map_id = ? AND layer_id = ? ORDER BY position ASC, id ASC',
         mapId,
         layerId
       )
     : await db.all(
-        'SELECT id FROM pins WHERE map_id = ? AND layer_id IS NULL ORDER BY position ASC, id ASC',
+        'SELECT id, position FROM pins WHERE map_id = ? AND layer_id IS NULL ORDER BY position ASC, id ASC',
         mapId
       );
-  return rows.map((r: { id: string }) => r.id);
+  return rows.map((r: { id: string; position: number | null }) => ({
+    id: r.id,
+    position: r.position ?? 0,
+  }));
+}
+
+async function updateMovedPinPositions(
+  db: any,
+  mapId: string,
+  layerId: string | null,
+  pinIds: string[],
+  startPosition: number
+) {
+  const chunkSize = 500;
+  for (let chunkStart = 0; chunkStart < pinIds.length; chunkStart += chunkSize) {
+    const chunk = pinIds.slice(chunkStart, chunkStart + chunkSize);
+    const whenClauses = chunk.map(() => 'WHEN ? THEN ?').join(' ');
+    const inPlaceholders = chunk.map(() => '?').join(', ');
+    const params: any[] = [layerId];
+    chunk.forEach((id, idx) => {
+      params.push(id, startPosition + chunkStart + idx);
+    });
+    params.push(mapId, ...chunk);
+    await db.run(
+      `UPDATE pins SET layer_id = ?, position = CASE id ${whenClauses} END WHERE map_id = ? AND id IN (${inPlaceholders})`,
+      ...params
+    );
+  }
 }
 
 export async function handlePinsReorder(data: PinsReorderPayload) {
@@ -206,24 +242,43 @@ export async function handlePinMoveLayer(data: PinMoveLayerPayload) {
 
   await runInTransaction(async (database) => {
     const chunkSize = 500;
-    const existing: Array<{ id: string; layer_id: string | null }> = [];
+    const found = new Set<string>();
     for (let i = 0; i < pinIds.length; i += chunkSize) {
       const chunk = pinIds.slice(i, i + chunkSize);
       const placeholders = chunk.map(() => '?').join(', ');
-      const rows = await db.all(
-        `SELECT id, layer_id FROM pins WHERE map_id = ? AND id IN (${placeholders})`,
+      const rows = await database.all(
+        `SELECT id FROM pins WHERE map_id = ? AND id IN (${placeholders})`,
         mapId,
         ...chunk
       );
-      existing.push(...rows);
+      for (const row of rows) found.add(row.id);
     }
-    if (existing.length === 0) return;
+    const moved: string[] = [];
+    const seen = new Set<string>();
+    for (const id of pinIds) {
+      if (seen.has(id) || !found.has(id)) continue;
+      seen.add(id);
+      moved.push(id);
+    }
+    if (moved.length === 0) return;
 
-    const existingIds = existing.map((row) => row.id);
-    for (let i = 0; i < existingIds.length; i += chunkSize) {
-      const chunk = existingIds.slice(i, i + chunkSize);
+    const destRows = await loadLayerPinRows(database, mapId, targetLayer);
+    const staying = destRows.filter((row) => !seen.has(row.id));
+    const appends = destInsertIndex >= staying.length;
+
+    if (appends) {
+      let maxPosition = -1;
+      for (const row of staying) {
+        if (row.position > maxPosition) maxPosition = row.position;
+      }
+      await updateMovedPinPositions(database, mapId, targetLayer, moved, maxPosition + 1);
+      return;
+    }
+
+    for (let i = 0; i < moved.length; i += chunkSize) {
+      const chunk = moved.slice(i, i + chunkSize);
       const placeholders = chunk.map(() => '?').join(', ');
-      await db.run(
+      await database.run(
         `UPDATE pins SET layer_id = ? WHERE map_id = ? AND id IN (${placeholders})`,
         targetLayer,
         mapId,
@@ -231,16 +286,14 @@ export async function handlePinMoveLayer(data: PinMoveLayerPayload) {
       );
     }
 
-    const destIds = await loadLayerPinIds(db, mapId, targetLayer);
-    const moved = existingIds.filter((id) => destIds.includes(id));
-    await updateEntityPositions(db, 'pins', insertIdsAt(destIds, moved, destInsertIndex), mapId);
-
-    const sourceLayers = new Set(existing.map((row) => row.layer_id ?? null));
-    for (const src of sourceLayers) {
-      if (src === targetLayer) continue;
-      const remaining = await loadLayerPinIds(db, mapId, src);
-      await updateEntityPositions(db, 'pins', remaining, mapId);
-    }
+    // The block landed among pins already in the layer, so that layer's order changed.
+    const stayingIds = staying.map((row) => row.id);
+    await updateEntityPositions(
+      database,
+      'pins',
+      insertIdsAt(stayingIds, moved, destInsertIndex),
+      mapId
+    );
   });
   await touchMapUpdatedAt(mapId);
 }

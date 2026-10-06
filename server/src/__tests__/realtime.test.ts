@@ -119,7 +119,7 @@ describe('Realtime Delta Handlers', () => {
     expect(pins[1].layer_id).toBeNull();
   });
 
-  it('handlePinMoveLayer moves pins across layers atomically with position reordering', async () => {
+  it('handlePinMoveLayer appends a pin and keeps the positions of pins that stay', async () => {
     const db = await getDb();
     await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-src', name: 'Source Layer', position: 0 } });
     await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-dst', name: 'Dest Layer', position: 1 } });
@@ -139,9 +139,271 @@ describe('Realtime Delta Handlers', () => {
     expect(movedPin.layer_id).toBe('layer-dst');
     expect(movedPin.position).toBe(1);
 
+    const stayingDest = await db.get('SELECT position FROM pins WHERE id = ?', 'p-dst-1');
+    expect(stayingDest.position).toBe(0);
+
     const remainingSrc = await db.get('SELECT layer_id, position FROM pins WHERE id = ?', 'p-src-2');
     expect(remainingSrc.layer_id).toBe('layer-src');
-    expect(remainingSrc.position).toBe(0);
+    expect(remainingSrc.position).toBe(1);
+  });
+
+  it('handlePinMoveLayer appends after the destination max and keeps a gapped source position', async () => {
+    const db = await getDb();
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-src', name: 'Source Layer', position: 0 } });
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-dst', name: 'Dest Layer', position: 1 } });
+
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-1', layerId: 'layer-src', lat: 1, lng: 1, label: 'Src 1', position: 0 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-2', layerId: 'layer-src', lat: 2, lng: 2, label: 'Src 2', position: 4 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-dst-1', layerId: 'layer-dst', lat: 3, lng: 3, label: 'Dst 1', position: 5 } });
+
+    await realtime.handlePinMoveLayer({
+      mapId,
+      pinIds: ['p-src-1'],
+      targetLayerId: 'layer-dst',
+      destInsertIndex: 1,
+    });
+
+    const movedPin = await db.get('SELECT layer_id, position FROM pins WHERE id = ?', 'p-src-1');
+    expect(movedPin.layer_id).toBe('layer-dst');
+    expect(movedPin.position).toBe(6);
+
+    const stayingDest = await db.get('SELECT position FROM pins WHERE id = ?', 'p-dst-1');
+    expect(stayingDest.position).toBe(5);
+
+    const remainingSrc = await db.get('SELECT position FROM pins WHERE id = ?', 'p-src-2');
+    expect(remainingSrc.position).toBe(4);
+  });
+
+  it('handlePinMoveLayer rewrites the destination when the block is inserted in the middle', async () => {
+    const db = await getDb();
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-src', name: 'Source Layer', position: 0 } });
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-dst', name: 'Dest Layer', position: 1 } });
+
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-1', layerId: 'layer-src', lat: 1, lng: 1, label: 'Src 1', position: 0 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-2', layerId: 'layer-src', lat: 2, lng: 2, label: 'Src 2', position: 4 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-dst-1', layerId: 'layer-dst', lat: 3, lng: 3, label: 'Dst 1', position: 0 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-dst-2', layerId: 'layer-dst', lat: 4, lng: 4, label: 'Dst 2', position: 5 } });
+
+    await realtime.handlePinMoveLayer({
+      mapId,
+      pinIds: ['p-src-1'],
+      targetLayerId: 'layer-dst',
+      destInsertIndex: 0,
+    });
+
+    const dest = await db.all(
+      'SELECT id, position FROM pins WHERE layer_id = ? ORDER BY position ASC, id ASC',
+      'layer-dst'
+    );
+    expect(dest.map((row: { id: string; position: number }) => [row.id, row.position])).toEqual([
+      ['p-src-1', 0],
+      ['p-dst-1', 1],
+      ['p-dst-2', 2],
+    ]);
+
+    const remainingSrc = await db.get('SELECT position FROM pins WHERE id = ?', 'p-src-2');
+    expect(remainingSrc.position).toBe(4);
+  });
+
+  async function positionsInLayer(layerId: string | null) {
+    const db = await getDb();
+    const rows = layerId
+      ? await db.all(
+          'SELECT id, position FROM pins WHERE map_id = ? AND layer_id = ? ORDER BY position ASC, id ASC',
+          mapId,
+          layerId
+        )
+      : await db.all(
+          'SELECT id, position FROM pins WHERE map_id = ? AND layer_id IS NULL ORDER BY position ASC, id ASC',
+          mapId
+        );
+    return rows.map((row: { id: string; position: number }) => [row.id, row.position]);
+  }
+
+  it('handlePinMoveLayer appends a block in payload order and leaves another layer gapped', async () => {
+    const db = await getDb();
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-src', name: 'Source Layer', position: 0 } });
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-dst', name: 'Dest Layer', position: 1 } });
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-other', name: 'Other Layer', position: 2 } });
+
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-1', layerId: 'layer-src', lat: 1, lng: 1, label: 'Src 1', position: 0 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-2', layerId: 'layer-src', lat: 2, lng: 2, label: 'Src 2', position: 1 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-3', layerId: 'layer-src', lat: 3, lng: 3, label: 'Src 3', position: 4 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-dst-1', layerId: 'layer-dst', lat: 4, lng: 4, label: 'Dst 1', position: 5 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-other-1', layerId: 'layer-other', lat: 5, lng: 5, label: 'Other 1', position: 2 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-other-2', layerId: 'layer-other', lat: 6, lng: 6, label: 'Other 2', position: 9 } });
+
+    await realtime.handlePinMoveLayer({
+      mapId,
+      pinIds: ['p-src-2', 'p-src-1'],
+      targetLayerId: 'layer-dst',
+      destInsertIndex: 1,
+    });
+
+    expect(await positionsInLayer('layer-dst')).toEqual([
+      ['p-dst-1', 5],
+      ['p-src-2', 6],
+      ['p-src-1', 7],
+    ]);
+    const remainingSrc = await db.get('SELECT layer_id, position FROM pins WHERE id = ?', 'p-src-3');
+    expect(remainingSrc.layer_id).toBe('layer-src');
+    expect(remainingSrc.position).toBe(4);
+    expect(await positionsInLayer('layer-other')).toEqual([
+      ['p-other-1', 2],
+      ['p-other-2', 9],
+    ]);
+  });
+
+  it('handlePinMoveLayer moves a pin already in the destination to the end without packing the others', async () => {
+    const db = await getDb();
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-src', name: 'Source Layer', position: 0 } });
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-dst', name: 'Dest Layer', position: 1 } });
+
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-dst-a', layerId: 'layer-dst', lat: 1, lng: 1, label: 'A', position: 0 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-dst-m', layerId: 'layer-dst', lat: 2, lng: 2, label: 'M', position: 3 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-dst-b', layerId: 'layer-dst', lat: 3, lng: 3, label: 'B', position: 5 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-1', layerId: 'layer-src', lat: 4, lng: 4, label: 'Src 1', position: 1 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-2', layerId: 'layer-src', lat: 5, lng: 5, label: 'Src 2', position: 4 } });
+
+    await realtime.handlePinMoveLayer({
+      mapId,
+      pinIds: ['p-dst-b', 'p-src-1'],
+      targetLayerId: 'layer-dst',
+      destInsertIndex: 2,
+    });
+
+    expect(await positionsInLayer('layer-dst')).toEqual([
+      ['p-dst-a', 0],
+      ['p-dst-m', 3],
+      ['p-dst-b', 4],
+      ['p-src-1', 5],
+    ]);
+    const remainingSrc = await db.get('SELECT layer_id, position FROM pins WHERE id = ?', 'p-src-2');
+    expect(remainingSrc.layer_id).toBe('layer-src');
+    expect(remainingSrc.position).toBe(4);
+  });
+
+  it('handlePinMoveLayer appends when destInsertIndex is past the end and ignores unknown or duplicate ids', async () => {
+    const db = await getDb();
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-src', name: 'Source Layer', position: 0 } });
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-dst', name: 'Dest Layer', position: 1 } });
+
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-1', layerId: 'layer-src', lat: 1, lng: 1, label: 'Src 1', position: 0 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-2', layerId: 'layer-src', lat: 2, lng: 2, label: 'Src 2', position: 4 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-dst-1', layerId: 'layer-dst', lat: 3, lng: 3, label: 'Dst 1', position: 5 } });
+
+    await realtime.handlePinMoveLayer({
+      mapId,
+      pinIds: ['missing', 'p-src-1', 'p-src-1'],
+      targetLayerId: 'layer-dst',
+      destInsertIndex: 50,
+    });
+
+    expect(await positionsInLayer('layer-dst')).toEqual([
+      ['p-dst-1', 5],
+      ['p-src-1', 6],
+    ]);
+    const remainingSrc = await db.get('SELECT layer_id, position FROM pins WHERE id = ?', 'p-src-2');
+    expect(remainingSrc.layer_id).toBe('layer-src');
+    expect(remainingSrc.position).toBe(4);
+    const count = await db.get('SELECT COUNT(*) as n FROM pins WHERE map_id = ?', mapId);
+    expect(count.n).toBe(3);
+
+    await realtime.handlePinMoveLayer({
+      mapId,
+      pinIds: ['missing'],
+      targetLayerId: 'layer-dst',
+      destInsertIndex: 0,
+    });
+    expect(await positionsInLayer('layer-dst')).toEqual([
+      ['p-dst-1', 5],
+      ['p-src-1', 6],
+    ]);
+    expect((await db.get('SELECT position FROM pins WHERE id = ?', 'p-src-2')).position).toBe(4);
+  });
+
+  it('handlePinMoveLayer appends onto the default layer after its max position', async () => {
+    const db = await getDb();
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-src', name: 'Source Layer', position: 0 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-def-1', lat: 1, lng: 1, label: 'Default 1', position: 0 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-def-2', lat: 2, lng: 2, label: 'Default 2', position: 7 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-1', layerId: 'layer-src', lat: 3, lng: 3, label: 'Src 1', position: 2 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-2', layerId: 'layer-src', lat: 4, lng: 4, label: 'Src 2', position: 4 } });
+
+    await realtime.handlePinMoveLayer({
+      mapId,
+      pinIds: ['p-src-1'],
+      targetLayerId: null,
+      destInsertIndex: 2,
+    });
+
+    expect(await positionsInLayer(null)).toEqual([
+      ['p-def-1', 0],
+      ['p-def-2', 7],
+      ['p-src-1', 8],
+    ]);
+    const remainingSrc = await db.get('SELECT layer_id, position FROM pins WHERE id = ?', 'p-src-2');
+    expect(remainingSrc.layer_id).toBe('layer-src');
+    expect(remainingSrc.position).toBe(4);
+  });
+
+  it('handlePinMoveLayer rewrites the destination when the block is inserted between gapped pins', async () => {
+    const db = await getDb();
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-src', name: 'Source Layer', position: 0 } });
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-dst', name: 'Dest Layer', position: 1 } });
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-other', name: 'Other Layer', position: 2 } });
+
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-dst-1', layerId: 'layer-dst', lat: 1, lng: 1, label: 'Dst 1', position: 0 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-dst-2', layerId: 'layer-dst', lat: 2, lng: 2, label: 'Dst 2', position: 5 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-1', layerId: 'layer-src', lat: 3, lng: 3, label: 'Src 1', position: 2 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-src-2', layerId: 'layer-src', lat: 4, lng: 4, label: 'Src 2', position: 4 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-other-1', layerId: 'layer-other', lat: 5, lng: 5, label: 'Other', position: 9 } });
+
+    await realtime.handlePinMoveLayer({
+      mapId,
+      pinIds: ['p-src-1'],
+      targetLayerId: 'layer-dst',
+      destInsertIndex: 1,
+    });
+
+    expect(await positionsInLayer('layer-dst')).toEqual([
+      ['p-dst-1', 0],
+      ['p-src-1', 1],
+      ['p-dst-2', 2],
+    ]);
+    const remainingSrc = await db.get('SELECT layer_id, position FROM pins WHERE id = ?', 'p-src-2');
+    expect(remainingSrc.layer_id).toBe('layer-src');
+    expect(remainingSrc.position).toBe(4);
+    expect(await positionsInLayer('layer-other')).toEqual([['p-other-1', 9]]);
+  });
+
+  it('handlePinsReorder packs only the named layer and ignores a pin from another layer', async () => {
+    const db = await getDb();
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-a', name: 'Layer A', position: 0 } });
+    await realtime.handleLayerCreate({ mapId, layer: { id: 'layer-b', name: 'Layer B', position: 1 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-a-1', layerId: 'layer-a', lat: 1, lng: 1, label: 'A1', position: 0 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-a-2', layerId: 'layer-a', lat: 2, lng: 2, label: 'A2', position: 5 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-b-1', layerId: 'layer-b', lat: 3, lng: 3, label: 'B1', position: 2 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'p-b-2', layerId: 'layer-b', lat: 4, lng: 4, label: 'B2', position: 9 } });
+
+    await realtime.handlePinsReorder({
+      mapId,
+      layerId: 'layer-a',
+      pinIds: ['p-a-1', 'p-b-1'],
+      insertIndex: 1,
+    });
+
+    expect(await positionsInLayer('layer-a')).toEqual([
+      ['p-a-2', 0],
+      ['p-a-1', 1],
+    ]);
+    const untouched = await db.get('SELECT layer_id, position FROM pins WHERE id = ?', 'p-b-1');
+    expect(untouched.layer_id).toBe('layer-b');
+    expect(untouched.position).toBe(2);
+    expect(await positionsInLayer('layer-b')).toEqual([
+      ['p-b-1', 2],
+      ['p-b-2', 9],
+    ]);
   });
 
   it('handlePinCreate does not move a pin that already belongs to another map', async () => {

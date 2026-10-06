@@ -80,20 +80,54 @@ export function reorderPins(
         }
     }
 
-    const updatedMovedPins = movedPins.map(p => ({ 
-        ...p, 
-        layerId: overLayerId === 'default' ? undefined : overLayerId
+    const destLayerId = overLayerId === 'default' ? undefined : overLayerId;
+    const updatedMovedPins = movedPins.map(p => ({
+        ...p,
+        layerId: destLayerId
     }));
-    
+
     const result = [...otherPins];
     result.splice(Math.max(0, targetIndex), 0, ...updatedMovedPins);
 
-    const layerPositions = new Map<string | null, number>();
-    return result.map((p) => {
-        const layerKey = p.layerId || null;
-        const pos = layerPositions.get(layerKey) || 0;
-        layerPositions.set(layerKey, pos + 1);
-        return { ...p, position: pos };
+    const crossesLayer = movedPins.some(p => !isSameLayer(p.layerId, destLayerId));
+
+    if (crossesLayer) {
+        const movedIdSet = new Set(movedPins.map(p => p.id));
+        const destPins = result.filter(p => isSameLayer(p.layerId, destLayerId));
+        let firstMoved = -1;
+        let lastStaying = -1;
+        destPins.forEach((p, i) => {
+            if (movedIdSet.has(p.id)) {
+                if (firstMoved === -1) firstMoved = i;
+            } else {
+                lastStaying = i;
+            }
+        });
+
+        // A drop at the end keeps existing destination positions.
+        if (firstMoved === -1 || firstMoved > lastStaying) {
+            let maxPosition = -1;
+            for (const p of destPins) {
+                if (!movedIdSet.has(p.id) && p.position > maxPosition) maxPosition = p.position;
+            }
+            let nextPosition = maxPosition + 1;
+            const assigned = new Map<string, number>();
+            for (const p of destPins) {
+                if (movedIdSet.has(p.id)) assigned.set(p.id, nextPosition++);
+            }
+            return result.map(p => {
+                const position = assigned.get(p.id);
+                if (position === undefined) return p;
+                return { ...p, position };
+            });
+        }
+    }
+
+    // Same-layer reorder and a middle insert rewrite this layer only.
+    let position = 0;
+    return result.map(p => {
+        if (!isSameLayer(p.layerId, destLayerId)) return p;
+        return { ...p, position: position++ };
     });
 }
 
@@ -148,52 +182,49 @@ export function applyRemotePinMoveLayer(
   targetLayerId: string | undefined,
   destInsertIndex: number
 ): Pin[] {
-  const movedSet = new Set(pinIds);
-  const sourceLayerIds = new Set(
-    pins.filter((p) => movedSet.has(p.id)).map((p) => p.layerId)
-  );
+  const seen = new Set<string>();
+  const movedPins: Pin[] = [];
+  for (const id of pinIds) {
+    if (seen.has(id)) continue;
+    const pin = pins.find((p) => p.id === id);
+    if (!pin) continue;
+    seen.add(id);
+    movedPins.push(pin);
+  }
+  if (movedPins.length === 0) return pins;
 
   const destExisting = pins
-    .filter((p) => !movedSet.has(p.id) && isSameLayer(p.layerId, targetLayerId))
+    .filter((p) => !seen.has(p.id) && isSameLayer(p.layerId, targetLayerId))
     .sort(comparePinPositions);
-  const movedPins = pinIds
-    .map((id) => pins.find((p) => p.id === id))
-    .filter((p): p is Pin => !!p)
-    .map((p) => ({ ...p, layerId: targetLayerId }));
-  const destOrder = insertIdsAt(destExisting.map((p) => p.id), movedPins.map((p) => p.id), destInsertIndex);
-  const destMap = new Map<string, Pin>([
-    ...destExisting.map((p) => [p.id, p] as const),
-    ...movedPins.map((p) => [p.id, p] as const),
-  ]);
-  const destReordered = destOrder.map((id, idx) => ({
-    ...destMap.get(id)!,
-    layerId: targetLayerId,
-    position: idx,
-  }));
-  const destIdSet = new Set(destOrder);
+  const appends = destInsertIndex >= destExisting.length;
 
-  const rest: Pin[] = [];
-  const bySource = new Map<string | undefined, Pin[]>();
-  for (const p of pins) {
-    if (destIdSet.has(p.id) || movedSet.has(p.id)) continue;
-    if (sourceLayerIds.has(p.layerId) && !isSameLayer(p.layerId, targetLayerId)) {
-      const list = bySource.get(p.layerId) || [];
-      list.push(p);
-      bySource.set(p.layerId, list);
-    } else {
-      rest.push(p);
+  const positionById = new Map<string, number>();
+  if (appends) {
+    let maxPosition = -1;
+    for (const p of destExisting) {
+      if (p.position > maxPosition) maxPosition = p.position;
     }
+    let nextPosition = maxPosition + 1;
+    for (const p of movedPins) positionById.set(p.id, nextPosition++);
+  } else {
+    const destOrder = insertIdsAt(
+      destExisting.map((p) => p.id),
+      movedPins.map((p) => p.id),
+      destInsertIndex
+    );
+    destOrder.forEach((id, idx) => positionById.set(id, idx));
   }
 
-  const reindexedSources: Pin[] = [];
-  bySource.forEach((list) => {
-    list.sort(comparePinPositions);
-    list.forEach((p, idx) => {
-      reindexedSources.push({ ...p, position: idx });
-    });
+  return pins.map((p) => {
+    const position = positionById.get(p.id);
+    const moved = seen.has(p.id);
+    if (!moved && position === undefined) return p;
+    return {
+      ...p,
+      layerId: moved ? targetLayerId : p.layerId,
+      position: position === undefined ? p.position : position,
+    };
   });
-
-  return [...rest, ...destReordered, ...reindexedSources];
 }
 
 /**
@@ -222,7 +253,8 @@ export function emitPinMoveOrReorderEvents(
   const destIds = destLayerPins.map((p) => p.id);
 
   if (changedLayerPins.length > 0) {
-    const movedSet = new Set(changedLayerPins);
+    // The whole dropped block, including pins that were already in the destination.
+    const movedSet = new Set(movedPinIds);
     const compactIds = destIds.filter((id) => movedSet.has(id));
     if (compactIds.length === 0) {
       if (callback) callback({ success: true });

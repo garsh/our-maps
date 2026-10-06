@@ -2083,5 +2083,150 @@ describe('App Components Error Handling', () => {
       expect(screen.getByText('Hotel Night 2').closest('li')).toHaveClass('pin-target');
     });
   });
+
+  describe('pin-move-layer from the menu and the pin editor', () => {
+    const layers = [
+      { id: 'dest', name: 'Dest Layer', position: 0 },
+      { id: 'src', name: 'Source Layer', position: 1 },
+      { id: 'other', name: 'Other Layer', position: 2 },
+    ];
+
+    function renderOwnerMap(pins: Array<Record<string, unknown>>) {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1280 });
+      Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 });
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'map-1',
+        name: 'Test Map',
+        pins,
+        layers,
+        userRole: 'owner',
+      });
+      render(
+        <GoogleOAuthProvider clientId="test-client-id">
+          <MemoryRouter initialEntries={['/map/map-1']}>
+            <Routes>
+              <Route path="/map/:id" element={<MapEditor />} />
+            </Routes>
+          </MemoryRouter>
+        </GoogleOAuthProvider>
+      );
+    }
+
+    function pinRowLabels() {
+      const names = ['Stay A', 'Mid', 'Gap B', 'Stay D', 'Move C', 'Other Low', 'Other High', 'Stay B'];
+      return screen.getAllByRole('listitem')
+        .map((li) => names.find((name) => within(li).queryByText(name)))
+        .filter((name): name is string => Boolean(name));
+    }
+
+    function selectPin(label: string) {
+      const row = screen.getByText(label).closest('li');
+      const checkbox = row?.querySelector('input[type="checkbox"]');
+      if (!checkbox) throw new Error(`No checkbox for ${label}`);
+      fireEvent.click(checkbox);
+    }
+
+    function pinMoveCalls() {
+      return mockSocket.emit.mock.calls.filter((call) => call[0] === 'pin-move-layer');
+    }
+
+    it('sends pin-move-layer in stored list order when Move selected to… appends a mixed selection', async () => {
+      // Move C is ahead of Gap B in the stored list, and behind it in the sidebar selection order.
+      renderOwnerMap([
+        { id: 'c', lat: 5, lng: 5, label: 'Move C', layerId: 'src', position: 1 },
+        { id: 'a', lat: 1, lng: 1, label: 'Stay A', layerId: 'dest', position: 0 },
+        { id: 'd', lat: 4, lng: 4, label: 'Stay D', layerId: 'src', position: 4 },
+        { id: 'm', lat: 2, lng: 2, label: 'Mid', layerId: 'dest', position: 3 },
+        { id: 'b', lat: 3, lng: 3, label: 'Gap B', layerId: 'dest', position: 5 },
+        { id: 'o1', lat: 6, lng: 6, label: 'Other Low', layerId: 'other', position: 2 },
+        { id: 'o2', lat: 7, lng: 7, label: 'Other High', layerId: 'other', position: 9 },
+      ]);
+
+      await waitFor(() => {
+        expect(screen.getByText('Move C')).toBeInTheDocument();
+      });
+      expect(pinRowLabels()).toEqual([
+        'Stay A', 'Mid', 'Gap B', 'Move C', 'Stay D', 'Other Low', 'Other High',
+      ]);
+
+      selectPin('Gap B');
+      selectPin('Move C');
+      fireEvent.click(screen.getByLabelText('More options'));
+      const menu = await screen.findByTestId('map-options-menu');
+      fireEvent.click(within(menu).getByText('Dest Layer'));
+
+      await waitFor(() => {
+        expect(pinMoveCalls()).toHaveLength(1);
+      });
+      expect(pinMoveCalls()[0][1]).toEqual({
+        mapId: 'map-1',
+        pinIds: ['c', 'b'],
+        targetLayerId: 'dest',
+        destInsertIndex: 2,
+      });
+      expect(mockSocket.emit.mock.calls.some((call) => call[0] === 'pins-reorder')).toBe(false);
+      expect(pinRowLabels()).toEqual([
+        'Stay A', 'Mid', 'Move C', 'Gap B', 'Stay D', 'Other Low', 'Other High',
+      ]);
+    });
+
+    it('sends pin-move-layer when the selected pin is already in the target layer', async () => {
+      renderOwnerMap([
+        { id: 'a', lat: 1, lng: 1, label: 'Stay A', layerId: 'dest', position: 0 },
+        { id: 'm', lat: 2, lng: 2, label: 'Mid', layerId: 'dest', position: 3 },
+        { id: 'b', lat: 3, lng: 3, label: 'Gap B', layerId: 'dest', position: 5 },
+      ]);
+
+      await waitFor(() => {
+        expect(screen.getByText('Gap B')).toBeInTheDocument();
+      });
+
+      selectPin('Gap B');
+      fireEvent.click(screen.getByLabelText('More options'));
+      const menu = await screen.findByTestId('map-options-menu');
+      fireEvent.click(within(menu).getByText('Dest Layer'));
+
+      await waitFor(() => {
+        expect(pinMoveCalls()).toHaveLength(1);
+      });
+      expect(pinMoveCalls()[0][1]).toEqual({
+        mapId: 'map-1',
+        pinIds: ['b'],
+        targetLayerId: 'dest',
+        destInsertIndex: 2,
+      });
+      expect(mockSocket.emit.mock.calls.some((call) => call[0] === 'pins-reorder')).toBe(false);
+      expect(pinRowLabels()).toEqual(['Stay A', 'Mid', 'Gap B']);
+    });
+
+    it('sends pin-move-layer when the pin editor moves one pin onto a gapped layer', async () => {
+      renderOwnerMap([
+        { id: 'a', lat: 1, lng: 1, label: 'Stay A', layerId: 'dest', position: 0 },
+        { id: 'b', lat: 2, lng: 2, label: 'Stay B', layerId: 'dest', position: 5 },
+        { id: 'c', lat: 3, lng: 3, label: 'Move C', layerId: 'src', position: 2 },
+        { id: 'd', lat: 4, lng: 4, label: 'Stay D', layerId: 'src', position: 4 },
+      ]);
+
+      await waitFor(() => {
+        expect(screen.getByText('Move C')).toBeInTheDocument();
+      });
+
+      const row = screen.getByText('Move C').closest('li')!;
+      fireEvent.click(within(row).getByLabelText('Edit'));
+      fireEvent.change(within(row).getByRole('combobox'), { target: { value: 'dest' } });
+
+      await waitFor(() => {
+        expect(pinMoveCalls()).toHaveLength(1);
+      });
+      expect(pinMoveCalls()[0][1]).toEqual({
+        mapId: 'map-1',
+        pinIds: ['c'],
+        targetLayerId: 'dest',
+        destInsertIndex: 2,
+      });
+      expect(mockSocket.emit.mock.calls.some((call) => call[0] === 'pins-reorder')).toBe(false);
+      expect(pinRowLabels()).toEqual(['Stay A', 'Stay B', 'Move C', 'Stay D']);
+    });
+  });
 });
 
