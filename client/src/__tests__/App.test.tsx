@@ -720,20 +720,26 @@ describe('App Components Error Handling', () => {
       expect(screen.getByText('Pin 1')).toBeInTheDocument();
     });
 
-    const handle = container.querySelector('.bottom-sheet-drag-handle') as HTMLElement;
-    const sheet = container.querySelector('.mobile-bottom-sheet') as HTMLElement;
-    fireEvent.pointerDown(handle, { clientY: 450, pointerId: 1 });
-    fireEvent.pointerUp(handle, { clientY: 450, pointerId: 1 });
-    expect(sheet.style.height).toBe('0px');
+    // The sheet tap ignores map clicks for 450ms. Advance that window without waiting.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const handle = container.querySelector('.bottom-sheet-drag-handle') as HTMLElement;
+      const sheet = container.querySelector('.mobile-bottom-sheet') as HTMLElement;
+      fireEvent.pointerDown(handle, { clientY: 450, pointerId: 1 });
+      fireEvent.pointerUp(handle, { clientY: 450, pointerId: 1 });
+      expect(sheet.style.height).toBe('0px');
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    });
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
 
-    fireEvent.click(screen.getByTestId('map-pin-pin-1'));
+      fireEvent.click(screen.getByTestId('map-pin-pin-1'));
 
-    expect(sheet.style.height).toBe('350px');
-    expect(screen.getByText('Pin 1').closest('li')).toHaveClass('pin-target');
+      expect(sheet.style.height).toBe('350px');
+      expect(screen.getByText('Pin 1').closest('li')).toHaveClass('pin-target');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('opens the minimized desktop sidebar to default size and highlights the clicked pin', async () => {
@@ -1129,22 +1135,33 @@ describe('App Components Error Handling', () => {
       userRole: 'owner',
     });
 
-    render(
-      <GoogleOAuthProvider clientId="test-client-id">
-        <MemoryRouter initialEntries={['/map/map-1']}>
-          <Routes>
-            <Route path="/map/:id" element={<MapEditor />} />
-          </Routes>
-        </MemoryRouter>
-      </GoogleOAuthProvider>
-    );
+    // Successful load leaves offline mode after a 300ms debounce.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      render(
+        <GoogleOAuthProvider clientId="test-client-id">
+          <MemoryRouter initialEntries={['/map/map-1']}>
+            <Routes>
+              <Route path="/map/:id" element={<MapEditor />} />
+            </Routes>
+          </MemoryRouter>
+        </GoogleOAuthProvider>
+      );
 
-    await waitFor(() => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+
       expect(screen.getByText('Synced')).toBeInTheDocument();
-    });
-    expect(screen.queryByText('Offline')).not.toBeInTheDocument();
-    expect(screen.queryByText('Syncing...')).not.toBeInTheDocument();
-    expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
+      expect(screen.queryByText('Offline')).not.toBeInTheDocument();
+      expect(screen.queryByText('Syncing...')).not.toBeInTheDocument();
+      expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not set offline mode when socket disconnects while document is hidden in background', async () => {
