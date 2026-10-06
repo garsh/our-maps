@@ -52,6 +52,18 @@ describe('Sidebar', () => {
     );
   };
 
+  const selectionActionsButton = () => {
+    const button = screen.getByLabelText('Actions for selected pins');
+    expect(button.tagName).toBe('BUTTON');
+    return button;
+  };
+
+  const selectionMenu = () => screen.getByTestId('selection-actions-menu');
+
+  const menuButton = (name: string) => within(selectionMenu()).getByRole('button', { name });
+
+  const deletePinsDialog = () => screen.getByTestId('delete-pins-dialog');
+
   it('reveals edit fields when Edit button is clicked', () => {
     render(<TestWrapper />);
     
@@ -172,17 +184,17 @@ describe('Sidebar', () => {
     const customColorBtn = screen.getByLabelText('Custom color picker');
     fireEvent.click(customColorBtn);
 
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByText('Custom Color')).toBeInTheDocument();
+    const dialog = screen.getByText('Custom Color').closest('[role="dialog"]') as HTMLElement;
+    expect(dialog).toBeTruthy();
 
     const hexInput = screen.getByLabelText('Hex Code');
     fireEvent.change(hexInput, { target: { value: '123456' } });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Set' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Set' }));
 
     expect(onUpdatePin).toHaveBeenCalledWith('1', { color: '#123456' });
     expect(onAddCustomColor).toHaveBeenCalledWith('#123456');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.querySelector('[role="dialog"]')).not.toBeInTheDocument();
   });
 
   it('calls onUpdatePin with icon and its default color when an icon is selected', () => {
@@ -489,9 +501,9 @@ describe('Sidebar', () => {
     expect(goUrl).toContain('destination=39,-98');
     expect(goUrl).toContain('waypoints=35,-97|37,-97.5');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
-    const route = screen.getByRole('button', { name: 'Route to 3 pins' });
-    const unselect = screen.getByRole('button', { name: 'Unselect all pins' });
+    fireEvent.click(selectionActionsButton());
+    const route = menuButton('Route to 3 pins');
+    const unselect = menuButton('Unselect all pins');
     expect(unselect.compareDocumentPosition(route) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(route);
 
@@ -538,14 +550,14 @@ describe('Sidebar', () => {
     const { rerender } = render(
       <TestWrapper pins={pins} selectedNavIds={new Set(['1'])} isTrackingLocation={true} />
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
-    expect(screen.getByRole('button', { name: 'Route to 1 pin' })).toBeInTheDocument();
+    fireEvent.click(selectionActionsButton());
+    expect(menuButton('Route to 1 pin')).toBeInTheDocument();
 
     rerender(<TestWrapper pins={pins} selectedNavIds={new Set(['1', '2'])} isTrackingLocation={true} />);
-    expect(screen.getByRole('button', { name: 'Route to 2 pins' })).toBeInTheDocument();
+    expect(menuButton('Route to 2 pins')).toBeInTheDocument();
 
     rerender(<TestWrapper pins={pins} selectedNavIds={new Set(['1', '2'])} isTrackingLocation={false} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Route between 2 pins' }));
+    fireEvent.click(menuButton('Route between 2 pins'));
 
     expect(openMock).toHaveBeenCalledTimes(1);
     const url = openMock.mock.calls[0][0];
@@ -782,6 +794,7 @@ describe('Sidebar', () => {
     const row = (label: string) => screen.getByText(label).closest('[data-appearance-row]') as HTMLElement;
     const labelEl = (label: string) => screen.getByText(label).closest('[data-appearance-label]') as HTMLElement;
     const switchEl = (label: string) => row(label).querySelector('[data-appearance-switch]') as HTMLElement;
+    const tooltip = () => document.querySelector('[role="tooltip"]');
 
     const terrainRow = row('3D Terrain');
     expect(terrainRow.style.userSelect).toBe('none');
@@ -794,7 +807,7 @@ describe('Sidebar', () => {
     try {
       // Hover does not appear immediately over icon/text
       fireEvent.mouseEnter(labelEl('Dark Mode'), { clientX: 200, clientY: 150 });
-      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      expect(tooltip()).not.toBeInTheDocument();
 
       // Moving mouse before 500ms resets the timer
       act(() => {
@@ -804,27 +817,27 @@ describe('Sidebar', () => {
       act(() => {
         vi.advanceTimersByTime(300);
       });
-      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      expect(tooltip()).not.toBeInTheDocument();
 
       // Stopping mouse movement for 500ms displays tooltip at pointer position
       act(() => {
         vi.advanceTimersByTime(200);
       });
-      const tip = screen.getByRole('tooltip');
+      const tip = tooltip();
       expect(tip).toHaveTextContent('Available offline via download.');
       expect(tip).toHaveClass('appearance-tooltip-bubble');
       expect(tip.style.left).toBe('210px');
       expect(tip.style.top).toBe('140px');
 
       fireEvent.mouseLeave(labelEl('Dark Mode'));
-      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      expect(tooltip()).not.toBeInTheDocument();
 
       // Hovering over switch should NOT show tooltip
       fireEvent.mouseEnter(switchEl('Dark Mode'), { clientX: 300, clientY: 150 });
       act(() => {
         vi.advanceTimersByTime(600);
       });
-      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      expect(tooltip()).not.toBeInTheDocument();
       fireEvent.mouseLeave(switchEl('Dark Mode'));
 
       // Clicking switch should NOT show tooltip
@@ -832,34 +845,34 @@ describe('Sidebar', () => {
       act(() => {
         vi.advanceTimersByTime(600);
       });
-      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      expect(tooltip()).not.toBeInTheDocument();
 
       fireEvent.mouseEnter(labelEl('3D Buildings'));
       act(() => {
         vi.advanceTimersByTime(500);
       });
-      expect(screen.getByRole('tooltip')).toHaveTextContent('Available offline via download.');
+      expect(tooltip()).toHaveTextContent('Available offline via download.');
       fireEvent.mouseLeave(labelEl('3D Buildings'));
 
       fireEvent.mouseEnter(labelEl('Hillshading'));
       act(() => {
         vi.advanceTimersByTime(500);
       });
-      expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
+      expect(tooltip()).toHaveTextContent('Not available offline except where previously viewed.');
       fireEvent.mouseLeave(labelEl('Hillshading'));
 
       fireEvent.mouseEnter(labelEl('Satellite'));
       act(() => {
         vi.advanceTimersByTime(500);
       });
-      expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
+      expect(tooltip()).toHaveTextContent('Not available offline except where previously viewed.');
       fireEvent.mouseLeave(labelEl('Satellite'));
 
       fireEvent.mouseEnter(labelEl('3D Terrain'));
       act(() => {
         vi.advanceTimersByTime(500);
       });
-      expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
+      expect(tooltip()).toHaveTextContent('Not available offline except where previously viewed.');
       fireEvent.mouseLeave(labelEl('3D Terrain'));
 
       // Long press on icon/text shows tooltip on mobile
@@ -868,11 +881,11 @@ describe('Sidebar', () => {
       act(() => {
         vi.advanceTimersByTime(449);
       });
-      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      expect(tooltip()).not.toBeInTheDocument();
       act(() => {
         vi.advanceTimersByTime(1);
       });
-      expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
+      expect(tooltip()).toHaveTextContent('Not available offline except where previously viewed.');
       fireEvent.click(terrainRow);
       expect(onToggle3DTerrain).not.toHaveBeenCalled();
 
@@ -884,7 +897,7 @@ describe('Sidebar', () => {
       act(() => {
         vi.advanceTimersByTime(500);
       });
-      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      expect(tooltip()).not.toBeInTheDocument();
       expect(onToggle3DTerrain).toHaveBeenCalledWith(false);
 
       // Long press on switch does NOT show tooltip
@@ -892,7 +905,7 @@ describe('Sidebar', () => {
       act(() => {
         vi.advanceTimersByTime(500);
       });
-      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      expect(tooltip()).not.toBeInTheDocument();
       fireEvent.touchEnd(switchEl('3D Terrain'));
 
       // Long-press Entry 1, then before it times out, long-press Entry 2:
@@ -901,7 +914,7 @@ describe('Sidebar', () => {
       act(() => {
         vi.advanceTimersByTime(450);
       });
-      expect(screen.getByRole('tooltip')).toHaveTextContent('Not available offline except where previously viewed.');
+      expect(tooltip()).toHaveTextContent('Not available offline except where previously viewed.');
       fireEvent.touchEnd(terrainLabel);
       fireEvent.click(terrainRow);
 
@@ -913,30 +926,30 @@ describe('Sidebar', () => {
       const darkModeRow = row('Dark Mode');
       // Touching Entry 2 dismisses previous tip immediately
       fireEvent.touchStart(darkModeLabel, { touches: [{ clientX: 8, clientY: 8 }] });
-      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      expect(tooltip()).not.toBeInTheDocument();
 
       // Hold Entry 2 for 450ms
       act(() => {
         vi.advanceTimersByTime(450);
       });
-      expect(screen.getByRole('tooltip')).toHaveTextContent('Available offline via download.');
+      expect(tooltip()).toHaveTextContent('Available offline via download.');
 
       // Release finger from Entry 2
       fireEvent.touchEnd(darkModeLabel);
       fireEvent.click(darkModeRow);
 
       // The mouseover should NOT quickly disappear upon release
-      expect(screen.getByRole('tooltip')).toHaveTextContent('Available offline via download.');
+      expect(tooltip()).toHaveTextContent('Available offline via download.');
       act(() => {
         vi.advanceTimersByTime(1000);
       });
-      expect(screen.getByRole('tooltip')).toHaveTextContent('Available offline via download.');
+      expect(tooltip()).toHaveTextContent('Available offline via download.');
 
       // Times out after full duration
       act(() => {
         vi.advanceTimersByTime(1500);
       });
-      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      expect(tooltip()).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
@@ -1359,8 +1372,8 @@ describe('Sidebar', () => {
     const mapMenu = screen.getByTestId('map-options-menu');
     expect(within(mapMenu).queryByText('MOVE SELECTED TO...')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
-    const menu = screen.getByTestId('selection-actions-menu');
+    fireEvent.click(selectionActionsButton());
+    const menu = selectionMenu();
     const moveButton = within(menu).getByRole('button', { name: 'Move' });
     expect(moveButton).toBeDisabled();
     const select = within(menu).getByLabelText('Move 2 pins to layer...') as HTMLSelectElement;
@@ -1389,8 +1402,8 @@ describe('Sidebar', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Unselect all pins' }));
+    fireEvent.click(selectionActionsButton());
+    fireEvent.click(menuButton('Unselect all pins'));
 
     expect(onToggleNavIds).toHaveBeenCalledWith(['1', '2'], false);
     expect(screen.queryByTestId('selection-actions-menu')).not.toBeInTheDocument();
@@ -1412,8 +1425,8 @@ describe('Sidebar', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
-    const menu = screen.getByTestId('selection-actions-menu');
+    fireEvent.click(selectionActionsButton());
+    const menu = selectionMenu();
     const select = within(menu).getByLabelText('Move 1 pin to layer...') as HTMLSelectElement;
     const defaultOption = Array.from(select.options).find((item) => item.textContent === 'Default Layer');
     fireEvent.change(select, { target: { value: defaultOption?.value } });
@@ -1438,16 +1451,17 @@ describe('Sidebar', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete 2 pins' }));
-    expect(screen.getByRole('heading', { name: 'Delete 2 pins?' })).toBeInTheDocument();
-    expect(screen.getByText('These pins will be removed from the map.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(selectionActionsButton());
+    fireEvent.click(menuButton('Delete 2 pins'));
+    const dialog = deletePinsDialog();
+    expect(within(dialog).getByRole('heading', { name: 'Delete 2 pins?' })).toBeInTheDocument();
+    expect(within(dialog).getByText('These pins will be removed from the map.')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(onRemovePin).not.toHaveBeenCalled();
     expect(screen.queryByTestId('delete-pins-dialog')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete 2 pins' }));
-    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    fireEvent.click(menuButton('Delete 2 pins'));
+    fireEvent.click(within(deletePinsDialog()).getByRole('button', { name: 'OK' }));
     expect(onRemovePin).toHaveBeenCalledTimes(2);
     expect(onRemovePin).toHaveBeenNthCalledWith(1, '1');
     expect(onRemovePin).toHaveBeenNthCalledWith(2, '2');
@@ -1461,8 +1475,8 @@ describe('Sidebar', () => {
       />
     );
 
-    expect(screen.getByRole('button', { name: /Go \(1\)/ })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Actions for selected pins' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Go \(1\)/).tagName).toBe('BUTTON');
+    expect(screen.queryByLabelText('Actions for selected pins')).not.toBeInTheDocument();
   });
 
   it('asks before deleting one selected pin and Escape cancels', () => {
@@ -1477,17 +1491,18 @@ describe('Sidebar', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete 1 pin' }));
-    expect(screen.getByRole('heading', { name: 'Delete this pin?' })).toBeInTheDocument();
-    expect(screen.getByText('This pin will be removed from the map.')).toBeInTheDocument();
+    fireEvent.click(selectionActionsButton());
+    fireEvent.click(menuButton('Delete 1 pin'));
+    const dialog = deletePinsDialog();
+    expect(within(dialog).getByRole('heading', { name: 'Delete this pin?' })).toBeInTheDocument();
+    expect(within(dialog).getByText('This pin will be removed from the map.')).toBeInTheDocument();
 
-    fireEvent.keyDown(screen.getByTestId('delete-pins-dialog'), { key: 'Escape' });
+    fireEvent.keyDown(dialog, { key: 'Escape' });
     expect(onRemovePin).not.toHaveBeenCalled();
     expect(screen.queryByTestId('delete-pins-dialog')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete 1 pin' }));
-    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    fireEvent.click(menuButton('Delete 1 pin'));
+    fireEvent.click(within(deletePinsDialog()).getByRole('button', { name: 'OK' }));
     expect(onRemovePin).toHaveBeenCalledTimes(1);
     expect(onRemovePin).toHaveBeenCalledWith('1');
   });
@@ -1507,8 +1522,8 @@ describe('Sidebar', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
-    const menu = screen.getByTestId('selection-actions-menu');
+    fireEvent.click(selectionActionsButton());
+    const menu = selectionMenu();
     const select = within(menu).getByLabelText('Move 2 pins to layer...') as HTMLSelectElement;
     const moveButton = within(menu).getByRole('button', { name: 'Move' });
     fireEvent.change(select, { target: { value: 'layer-1' } });
@@ -1518,10 +1533,10 @@ describe('Sidebar', () => {
     expect(moveButton).toBeDisabled();
 
     fireEvent.change(select, { target: { value: 'layer-1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    fireEvent.click(selectionActionsButton());
     expect(screen.queryByTestId('selection-actions-menu')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    fireEvent.click(selectionActionsButton());
     const reopened = screen.getByTestId('selection-actions-menu');
     expect(within(reopened).getByLabelText('Move 2 pins to layer...')).toHaveValue('');
     expect(within(reopened).getByRole('button', { name: 'Move' })).toBeDisabled();
@@ -1534,8 +1549,8 @@ describe('Sidebar', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
-    expect(screen.getByTestId('selection-actions-menu')).toBeInTheDocument();
+    fireEvent.click(selectionActionsButton());
+    expect(selectionMenu()).toBeInTheDocument();
     fireEvent.mouseDown(document.body);
     expect(screen.queryByTestId('selection-actions-menu')).not.toBeInTheDocument();
   });
@@ -1557,8 +1572,8 @@ describe('Sidebar', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
-    const menu = screen.getByTestId('selection-actions-menu');
+    fireEvent.click(selectionActionsButton());
+    const menu = selectionMenu();
     fireEvent.change(within(menu).getByLabelText('Move 2 pins to layer...'), { target: { value: 'layer-1' } });
     fireEvent.click(within(menu).getByRole('button', { name: 'Move' }));
 

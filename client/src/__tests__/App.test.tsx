@@ -559,14 +559,15 @@ describe('App Components Error Handling', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Compass - Reset bearing to North/i })).toBeInTheDocument();
+      const host = container.querySelector('.mobile-map-controls');
+      expect(within(host as HTMLElement).getByRole('button', { name: /Compass - Reset bearing to North/i })).toBeInTheDocument();
     });
 
     const handle = container.querySelector('.bottom-sheet-drag-handle') as HTMLElement;
     const sheet = container.querySelector('.mobile-bottom-sheet') as HTMLElement;
     const controls = sheet.querySelector('.mobile-map-controls') as HTMLElement;
-    const compassButton = screen.getByRole('button', { name: /Compass - Reset bearing to North/i });
-    const locatorButton = screen.getByRole('button', { name: /Find my location/i });
+    const compassButton = within(controls).getByRole('button', { name: /Compass - Reset bearing to North/i });
+    const locatorButton = within(controls).getByRole('button', { name: /Find my location/i });
 
     // When sheet is open (350px), controls are in the sheet toolbar in relative position: locator on left, compass on right
     expect(controls.contains(compassButton)).toBe(true);
@@ -1922,19 +1923,20 @@ describe('App Components Error Handling', () => {
       });
 
       // Hide the default layer
-      const hideLayerBtn = screen.getByRole('button', { name: 'Hide layer' });
+      const defaultHeader = screen.getByText(/Default Layer/).closest('div[data-no-text-select]') as HTMLElement;
+      const hideLayerBtn = within(defaultHeader).getByRole('button', { name: 'Hide layer' });
       fireEvent.click(hideLayerBtn);
 
       // Pin should not be on map
       expect(screen.queryByTestId('map-pin-pin-default')).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Show layer' })).toBeInTheDocument();
+      expect(within(defaultHeader).getByRole('button', { name: 'Show layer' })).toBeInTheDocument();
 
       // Tap the pin in sidebar
       fireEvent.click(screen.getByText('Default Spot'));
 
       // Default layer is now visible
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Hide layer' })).toBeInTheDocument();
+        expect(within(defaultHeader).getByRole('button', { name: 'Hide layer' })).toBeInTheDocument();
       });
 
       // Pin is visible and highlighted on map
@@ -2040,8 +2042,8 @@ describe('App Components Error Handling', () => {
 
     function pinRowLabels() {
       const names = ['Stay A', 'Mid', 'Gap B', 'Stay D', 'Move C', 'Other Low', 'Other High', 'Stay B'];
-      return screen.getAllByRole('listitem')
-        .map((li) => names.find((name) => within(li).queryByText(name)))
+      return Array.from(document.querySelectorAll('li.pin-list-item'))
+        .map((li) => names.find((name) => within(li as HTMLElement).queryByText(name)))
         .filter((name): name is string => Boolean(name));
     }
 
@@ -2061,7 +2063,9 @@ describe('App Components Error Handling', () => {
     }
 
     function moveSelectionTo(layerName: string) {
-      fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+      const actions = screen.getByLabelText('Actions for selected pins');
+      expect(actions.tagName).toBe('BUTTON');
+      fireEvent.click(actions);
       const menu = screen.getByTestId('selection-actions-menu');
       const select = within(menu).getByLabelText(/Move \d+ pins? to layer\.\.\./) as HTMLSelectElement;
       const option = Array.from(select.options).find((item) => item.textContent === layerName);
@@ -2108,7 +2112,7 @@ describe('App Components Error Handling', () => {
       ]);
       expect(pinCheckbox('Move C').checked).toBe(false);
       expect(pinCheckbox('Gap B').checked).toBe(false);
-      expect(screen.queryByRole('button', { name: /Go \(/ })).not.toBeInTheDocument();
+      expect(screen.queryByText(/Go \(/)).not.toBeInTheDocument();
     });
 
     it('sends pin-move-layer when the selected pin is already in the target layer', async () => {
@@ -2151,9 +2155,12 @@ describe('App Components Error Handling', () => {
 
       selectPin('Stay A');
       selectPin('Gap B');
-      fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Delete 2 pins' }));
-      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+      const actions = screen.getByLabelText('Actions for selected pins');
+      expect(actions.tagName).toBe('BUTTON');
+      fireEvent.click(actions);
+      const menu = screen.getByTestId('selection-actions-menu');
+      fireEvent.click(within(menu).getByRole('button', { name: 'Delete 2 pins' }));
+      fireEvent.click(within(screen.getByTestId('delete-pins-dialog')).getByRole('button', { name: 'OK' }));
 
       await waitFor(() => {
         expect(screen.queryByText('Stay A')).not.toBeInTheDocument();
