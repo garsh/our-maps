@@ -518,6 +518,35 @@ describe('Sidebar', () => {
     vi.unstubAllGlobals();
   });
 
+  it('routes from the selection menu with the same action as Go', () => {
+    const pins = [
+      { id: '1', lat: 35.0, lng: -97.0, label: 'Oklahoma', position: 0 },
+      { id: '2', lat: 39.0, lng: -98.0, label: 'Kansas', position: 1 },
+    ];
+    const openMock = vi.fn();
+    vi.stubGlobal('open', openMock);
+
+    const { rerender } = render(
+      <TestWrapper pins={pins} selectedNavIds={new Set(['1'])} isTrackingLocation={true} />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    expect(screen.getByRole('button', { name: 'Route to 1 pin' })).toBeInTheDocument();
+
+    rerender(<TestWrapper pins={pins} selectedNavIds={new Set(['1', '2'])} isTrackingLocation={true} />);
+    expect(screen.getByRole('button', { name: 'Route to 2 pins' })).toBeInTheDocument();
+
+    rerender(<TestWrapper pins={pins} selectedNavIds={new Set(['1', '2'])} isTrackingLocation={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Route between 2 pins' }));
+
+    expect(openMock).toHaveBeenCalledTimes(1);
+    const url = openMock.mock.calls[0][0];
+    expect(url).toContain('origin=35,-97');
+    expect(url).toContain('destination=39,-98');
+    expect(screen.queryByTestId('selection-actions-menu')).not.toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+  });
+
   it('shows Rename Map option at the top of menu and updates map name on submit', async () => {
     const onMapNameChange = vi.fn();
     render(<TestWrapper handlers={{ onMapNameChange }} />);
@@ -1331,6 +1360,7 @@ describe('Sidebar', () => {
 
   it('calls onMovePinsToLayer with batched pin IDs when moving selected pins', () => {
     const onMovePinsToLayer = vi.fn();
+    const onToggleNavIds = vi.fn();
     const pins = [
       { id: '1', lat: 10, lng: 20, label: 'Pin 1', position: 0 },
       { id: '2', lat: 11, lng: 21, label: 'Pin 2', position: 1 },
@@ -1344,16 +1374,247 @@ describe('Sidebar', () => {
         handlers={{ 
           layers,
           onMovePinsToLayer,
+          onToggleNavIds,
         }} 
       />
     );
 
     fireEvent.click(screen.getByLabelText(/more options/i));
-    const menu = screen.getByTestId('map-options-menu');
-    expect(within(menu).getByText('MOVE SELECTED TO...')).toBeInTheDocument();
-    fireEvent.click(within(menu).getByText('Custom Layer'));
+    const mapMenu = screen.getByTestId('map-options-menu');
+    expect(within(mapMenu).queryByText('MOVE SELECTED TO...')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    const menu = screen.getByTestId('selection-actions-menu');
+    const moveButton = within(menu).getByRole('button', { name: 'Move' });
+    expect(moveButton).toBeDisabled();
+    const select = within(menu).getByLabelText('Move 2 pins to layer...') as HTMLSelectElement;
+    expect(select).toHaveValue('');
+    fireEvent.change(select, { target: { value: 'layer-1' } });
+    expect(moveButton).toBeEnabled();
+    fireEvent.click(moveButton);
 
     expect(onMovePinsToLayer).toHaveBeenCalledWith(['1', '2'], 'layer-1');
+    expect(onToggleNavIds).toHaveBeenCalledWith(['1', '2'], false);
+    expect(screen.queryByTestId('selection-actions-menu')).not.toBeInTheDocument();
+  });
+
+  it('unselects every pin from the selection menu', () => {
+    const onToggleNavIds = vi.fn();
+    const pins = [
+      { id: '1', lat: 10, lng: 20, label: 'Pin 1', position: 0 },
+      { id: '2', lat: 11, lng: 21, label: 'Pin 2', position: 1 },
+    ];
+
+    render(
+      <TestWrapper
+        pins={pins}
+        selectedNavIds={new Set(['1', '2'])}
+        handlers={{ onToggleNavIds }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unselect all pins' }));
+
+    expect(onToggleNavIds).toHaveBeenCalledWith(['1', '2'], false);
+    expect(screen.queryByTestId('selection-actions-menu')).not.toBeInTheDocument();
+  });
+
+  it('moves selected pins to the default layer only after Move is pressed', () => {
+    const onMovePinsToLayer = vi.fn();
+    const onToggleNavIds = vi.fn();
+    const pins = [
+      { id: '1', lat: 10, lng: 20, label: 'Pin 1', layerId: 'layer-1', position: 0 },
+    ];
+    const layers = [{ id: 'layer-1', name: 'Custom Layer', position: 0 }];
+
+    render(
+      <TestWrapper
+        pins={pins}
+        selectedNavIds={new Set(['1'])}
+        handlers={{ layers, onMovePinsToLayer, onToggleNavIds }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    const menu = screen.getByTestId('selection-actions-menu');
+    const select = within(menu).getByLabelText('Move 1 pin to layer...') as HTMLSelectElement;
+    const defaultOption = Array.from(select.options).find((item) => item.textContent === 'Default Layer');
+    fireEvent.change(select, { target: { value: defaultOption?.value } });
+    fireEvent.click(within(menu).getByRole('button', { name: 'Move' }));
+
+    expect(onMovePinsToLayer).toHaveBeenCalledWith(['1'], undefined);
+    expect(onToggleNavIds).toHaveBeenCalledWith(['1'], false);
+  });
+
+  it('deletes selected pins after OK and leaves them in place on Cancel', () => {
+    const onRemovePin = vi.fn();
+    const pins = [
+      { id: '1', lat: 10, lng: 20, label: 'Pin 1', position: 0 },
+      { id: '2', lat: 11, lng: 21, label: 'Pin 2', position: 1 },
+    ];
+
+    render(
+      <TestWrapper
+        pins={pins}
+        selectedNavIds={new Set(['1', '2'])}
+        handlers={{ onRemovePin }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete 2 pins' }));
+    expect(screen.getByRole('heading', { name: 'Delete 2 pins?' })).toBeInTheDocument();
+    expect(screen.getByText('These pins will be removed from the map.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onRemovePin).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('delete-pins-dialog')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete 2 pins' }));
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    expect(onRemovePin).toHaveBeenCalledTimes(2);
+    expect(onRemovePin).toHaveBeenNthCalledWith(1, '1');
+    expect(onRemovePin).toHaveBeenNthCalledWith(2, '2');
+  });
+
+  it('hides selection actions when the map is read-only', () => {
+    render(
+      <TestWrapper
+        selectedNavIds={new Set(['1'])}
+        handlers={{ editMode: false }}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /Go \(1\)/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Actions for selected pins' })).not.toBeInTheDocument();
+  });
+
+  it('routes to several pins from the current location when tracking is on', () => {
+    const pins = [
+      { id: '1', lat: 35.0, lng: -97.0, label: 'Oklahoma', position: 0 },
+      { id: '2', lat: 37.0, lng: -97.5, label: 'Wichita', position: 1 },
+      { id: '3', lat: 39.0, lng: -98.0, label: 'Kansas', position: 2 },
+    ];
+    const openMock = vi.fn();
+    vi.stubGlobal('open', openMock);
+
+    render(<TestWrapper pins={pins} selectedNavIds={new Set(['1', '2', '3'])} isTrackingLocation={true} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    const route = screen.getByRole('button', { name: 'Route to 3 pins' });
+    const unselect = screen.getByRole('button', { name: 'Unselect all pins' });
+    expect(unselect.compareDocumentPosition(route) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(route);
+
+    expect(openMock).toHaveBeenCalledTimes(1);
+    const url = openMock.mock.calls[0][0];
+    expect(url).not.toContain('origin=');
+    expect(url).toContain('destination=39,-98');
+    expect(url).toContain('waypoints=35,-97|37,-97.5');
+    expect(screen.queryByTestId('selection-actions-menu')).not.toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('asks before deleting one selected pin and Escape cancels', () => {
+    const onRemovePin = vi.fn();
+    const pins = [{ id: '1', lat: 10, lng: 20, label: 'Pin 1', position: 0 }];
+
+    render(
+      <TestWrapper
+        pins={pins}
+        selectedNavIds={new Set(['1'])}
+        handlers={{ onRemovePin }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete 1 pin' }));
+    expect(screen.getByRole('heading', { name: 'Delete this pin?' })).toBeInTheDocument();
+    expect(screen.getByText('This pin will be removed from the map.')).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByTestId('delete-pins-dialog'), { key: 'Escape' });
+    expect(onRemovePin).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('delete-pins-dialog')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete 1 pin' }));
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    expect(onRemovePin).toHaveBeenCalledTimes(1);
+    expect(onRemovePin).toHaveBeenCalledWith('1');
+  });
+
+  it('starts the layer choice blank again when the selection menu is reopened', () => {
+    const pins = [
+      { id: '1', lat: 10, lng: 20, label: 'Pin 1', position: 0 },
+      { id: '2', lat: 11, lng: 21, label: 'Pin 2', position: 1 },
+    ];
+    const layers = [{ id: 'layer-1', name: 'Custom Layer', position: 0 }];
+
+    render(
+      <TestWrapper
+        pins={pins}
+        selectedNavIds={new Set(['1', '2'])}
+        handlers={{ layers }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    const menu = screen.getByTestId('selection-actions-menu');
+    const select = within(menu).getByLabelText('Move 2 pins to layer...') as HTMLSelectElement;
+    const moveButton = within(menu).getByRole('button', { name: 'Move' });
+    fireEvent.change(select, { target: { value: 'layer-1' } });
+    expect(moveButton).toBeEnabled();
+
+    fireEvent.change(select, { target: { value: '' } });
+    expect(moveButton).toBeDisabled();
+
+    fireEvent.change(select, { target: { value: 'layer-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    expect(screen.queryByTestId('selection-actions-menu')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    const reopened = screen.getByTestId('selection-actions-menu');
+    expect(within(reopened).getByLabelText('Move 2 pins to layer...')).toHaveValue('');
+    expect(within(reopened).getByRole('button', { name: 'Move' })).toBeDisabled();
+  });
+
+  it('closes the selection menu on a click outside it', () => {
+    render(
+      <TestWrapper
+        selectedNavIds={new Set(['1'])}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    expect(screen.getByTestId('selection-actions-menu')).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByTestId('selection-actions-menu')).not.toBeInTheDocument();
+  });
+
+  it('updates each pin when a batched layer move is not provided', () => {
+    const onUpdatePin = vi.fn();
+    const onToggleNavIds = vi.fn();
+    const pins = [
+      { id: '1', lat: 10, lng: 20, label: 'Pin 1', position: 0 },
+      { id: '2', lat: 11, lng: 21, label: 'Pin 2', position: 1 },
+    ];
+    const layers = [{ id: 'layer-1', name: 'Custom Layer', position: 0 }];
+
+    render(
+      <TestWrapper
+        pins={pins}
+        selectedNavIds={new Set(['1', '2'])}
+        handlers={{ layers, onUpdatePin, onToggleNavIds }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+    const menu = screen.getByTestId('selection-actions-menu');
+    fireEvent.change(within(menu).getByLabelText('Move 2 pins to layer...'), { target: { value: 'layer-1' } });
+    fireEvent.click(within(menu).getByRole('button', { name: 'Move' }));
+
+    expect(onUpdatePin).toHaveBeenCalledWith('1', { layerId: 'layer-1' });
+    expect(onUpdatePin).toHaveBeenCalledWith('2', { layerId: 'layer-1' });
+    expect(onToggleNavIds).toHaveBeenCalledWith(['1', '2'], false);
   });
 
   it('caches collision detection geometry to avoid repeated getBoundingClientRect layout thrashing', () => {

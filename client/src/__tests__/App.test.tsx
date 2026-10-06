@@ -2119,18 +2119,32 @@ describe('App Components Error Handling', () => {
         .filter((name): name is string => Boolean(name));
     }
 
-    function selectPin(label: string) {
+    function pinCheckbox(label: string) {
       const row = screen.getByText(label).closest('li');
       const checkbox = row?.querySelector('input[type="checkbox"]');
       if (!checkbox) throw new Error(`No checkbox for ${label}`);
-      fireEvent.click(checkbox);
+      return checkbox as HTMLInputElement;
+    }
+
+    function selectPin(label: string) {
+      fireEvent.click(pinCheckbox(label));
     }
 
     function pinMoveCalls() {
       return mockSocket.emit.mock.calls.filter((call) => call[0] === 'pin-move-layer');
     }
 
-    it('sends pin-move-layer in stored list order when Move selected to… appends a mixed selection', async () => {
+    function moveSelectionTo(layerName: string) {
+      fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+      const menu = screen.getByTestId('selection-actions-menu');
+      const select = within(menu).getByLabelText(/Move \d+ pins? to layer\.\.\./) as HTMLSelectElement;
+      const option = Array.from(select.options).find((item) => item.textContent === layerName);
+      if (!option) throw new Error(`No layer option ${layerName}`);
+      fireEvent.change(select, { target: { value: option.value } });
+      fireEvent.click(within(menu).getByRole('button', { name: 'Move' }));
+    }
+
+    it('sends pin-move-layer in stored list order when Move appends a mixed selection', async () => {
       // Move C is ahead of Gap B in the stored list, and behind it in the sidebar selection order.
       renderOwnerMap([
         { id: 'c', lat: 5, lng: 5, label: 'Move C', layerId: 'src', position: 1 },
@@ -2151,9 +2165,7 @@ describe('App Components Error Handling', () => {
 
       selectPin('Gap B');
       selectPin('Move C');
-      fireEvent.click(screen.getByLabelText('More options'));
-      const menu = await screen.findByTestId('map-options-menu');
-      fireEvent.click(within(menu).getByText('Dest Layer'));
+      moveSelectionTo('Dest Layer');
 
       await waitFor(() => {
         expect(pinMoveCalls()).toHaveLength(1);
@@ -2168,6 +2180,9 @@ describe('App Components Error Handling', () => {
       expect(pinRowLabels()).toEqual([
         'Stay A', 'Mid', 'Move C', 'Gap B', 'Stay D', 'Other Low', 'Other High',
       ]);
+      expect(pinCheckbox('Move C').checked).toBe(false);
+      expect(pinCheckbox('Gap B').checked).toBe(false);
+      expect(screen.queryByRole('button', { name: /Go \(/ })).not.toBeInTheDocument();
     });
 
     it('sends pin-move-layer when the selected pin is already in the target layer', async () => {
@@ -2182,9 +2197,7 @@ describe('App Components Error Handling', () => {
       });
 
       selectPin('Gap B');
-      fireEvent.click(screen.getByLabelText('More options'));
-      const menu = await screen.findByTestId('map-options-menu');
-      fireEvent.click(within(menu).getByText('Dest Layer'));
+      moveSelectionTo('Dest Layer');
 
       await waitFor(() => {
         expect(pinMoveCalls()).toHaveLength(1);
@@ -2197,6 +2210,34 @@ describe('App Components Error Handling', () => {
       });
       expect(mockSocket.emit.mock.calls.some((call) => call[0] === 'pins-reorder')).toBe(false);
       expect(pinRowLabels()).toEqual(['Stay A', 'Mid', 'Gap B']);
+    });
+
+    it('deletes every selected pin', async () => {
+      renderOwnerMap([
+        { id: 'a', lat: 1, lng: 1, label: 'Stay A', layerId: 'dest', position: 0 },
+        { id: 'b', lat: 3, lng: 3, label: 'Gap B', layerId: 'dest', position: 5 },
+        { id: 'c', lat: 5, lng: 5, label: 'Move C', layerId: 'src', position: 1 },
+      ]);
+
+      await waitFor(() => {
+        expect(screen.getByText('Stay A')).toBeInTheDocument();
+      });
+
+      selectPin('Stay A');
+      selectPin('Gap B');
+      fireEvent.click(screen.getByRole('button', { name: 'Actions for selected pins' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete 2 pins' }));
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+
+      await waitFor(() => {
+        expect(screen.queryByText('Stay A')).not.toBeInTheDocument();
+      });
+      expect(screen.queryByText('Gap B')).not.toBeInTheDocument();
+      expect(screen.getByText('Move C')).toBeInTheDocument();
+      const deletedIds = mockSocket.emit.mock.calls
+        .filter((call) => call[0] === 'pin-delete')
+        .map((call) => call[1].pinId);
+      expect(deletedIds).toEqual(['a', 'b']);
     });
 
     it('sends pin-move-layer when the pin editor moves one pin onto a gapped layer', async () => {

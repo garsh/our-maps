@@ -88,6 +88,23 @@ class MouseSensor extends PointerSensor {
 
 const MOUSE_SENSOR_OPTIONS = { activationConstraint: { distance: 5 } };
 const MAP_OPTIONS_MENU_WIDTH = 220;
+const SELECTION_MENU_WIDTH = 280;
+/** Empty select value. Default Layer is SELECTION_DEFAULT_LAYER so blank stays unset. */
+const SELECTION_DEFAULT_LAYER = '__default__';
+const SELECTION_MENU_ROW_STYLE: CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  background: 'transparent',
+  border: 'none',
+  borderBottom: '1px solid var(--border-color)',
+  color: 'var(--text-primary)',
+  fontWeight: 600,
+  fontSize: '0.85rem',
+  fontFamily: 'inherit',
+  textAlign: 'left',
+  padding: '10px 16px',
+  cursor: 'pointer',
+};
 const VIEWED_OFFLINE_TIP = 'Not available offline except where previously viewed.';
 const DOWNLOAD_OFFLINE_TIP = 'Available offline via download.';
 
@@ -2246,11 +2263,18 @@ const Sidebar = ({
   addedPinId
 }: SidebarProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSelectionMenuOpen, setIsSelectionMenuOpen] = useState(false);
+  const [moveLayerId, setMoveLayerId] = useState('');
+  const [showDeletePinsDialog, setShowDeletePinsDialog] = useState(false);
   const appearanceTips = useAppearanceTips(isMenuOpen);
   const [menuCoords, setMenuCoords] = useState({ top: 0, left: 0 });
+  const [selectionMenuCoords, setSelectionMenuCoords] = useState({ top: 0, left: 0 });
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const menuDropdownRef = useRef<HTMLDivElement>(null);
+  const goGroupRef = useRef<HTMLDivElement>(null);
+  const selectionMenuRef = useRef<HTMLDivElement>(null);
+  const deletePinsDialogRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -2626,10 +2650,17 @@ const Sidebar = ({
         return;
       }
       const target = event.target as Node;
-      if (menuRef.current?.contains(target) || menuDropdownRef.current?.contains(target)) {
-        return;
+      const inMapMenu = !!(menuRef.current?.contains(target) || menuDropdownRef.current?.contains(target));
+      if (!inMapMenu) setIsMenuOpen(false);
+      const inSelection = !!(
+        goGroupRef.current?.contains(target) ||
+        selectionMenuRef.current?.contains(target) ||
+        deletePinsDialogRef.current?.contains(target)
+      );
+      if (selectionMenuRef.current && !inSelection) {
+        setIsSelectionMenuOpen(false);
+        setMoveLayerId('');
       }
-      setIsMenuOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -2653,6 +2684,25 @@ const Sidebar = ({
       window.removeEventListener('scroll', updateMenuCoords, true);
     };
   }, [isMenuOpen]);
+
+  useLayoutEffect(() => {
+    if (!isSelectionMenuOpen) return;
+    const updateSelectionMenuCoords = () => {
+      const group = goGroupRef.current;
+      if (!group) return;
+      const rect = group.getBoundingClientRect();
+      const margin = 8;
+      const left = Math.max(margin, Math.min(rect.right - SELECTION_MENU_WIDTH, window.innerWidth - SELECTION_MENU_WIDTH - margin));
+      setSelectionMenuCoords({ top: rect.bottom + 4, left });
+    };
+    updateSelectionMenuCoords();
+    window.addEventListener('resize', updateSelectionMenuCoords);
+    window.addEventListener('scroll', updateSelectionMenuCoords, true);
+    return () => {
+      window.removeEventListener('resize', updateSelectionMenuCoords);
+      window.removeEventListener('scroll', updateSelectionMenuCoords, true);
+    };
+  }, [isSelectionMenuOpen, sheetHeight]);
 
   const handleExportClick = () => {
     setExportFileName(`${mapName.replace(/\s+/g, '_')}_export.json`);
@@ -2743,7 +2793,13 @@ const Sidebar = ({
       });
   }, [pins, selectedNavIds, layerIndexMap]);
 
+  const closeSelectionMenu = () => {
+    setIsSelectionMenuOpen(false);
+    setMoveLayerId('');
+  };
+
   const handleNavigate = () => {
+    closeSelectionMenu();
     if (selectedPins.length === 0) return;
     
     let url = '';
@@ -2768,6 +2824,67 @@ const Sidebar = ({
     
     window.open(url, '_blank');
   };
+
+  const handleToggleSelectionMenu = () => {
+    setIsMenuOpen(false);
+    if (isSelectionMenuOpen) {
+      closeSelectionMenu();
+      return;
+    }
+    setIsSelectionMenuOpen(true);
+  };
+
+  const clearSelection = () => {
+    const ids = selectedNavIds && selectedNavIds.size > 0
+      ? Array.from(selectedNavIds)
+      : selectedPins.map(p => p.id);
+    if (ids.length > 0) onToggleNavIds?.(ids, false);
+  };
+
+  const handleMoveSelected = () => {
+    if (!moveLayerId || selectedPins.length === 0) return;
+    const targetLayerId = moveLayerId === SELECTION_DEFAULT_LAYER ? undefined : moveLayerId;
+    const pinIds = selectedPins.map(p => p.id);
+    if (onMovePinsToLayer) {
+      onMovePinsToLayer(pinIds, targetLayerId);
+    } else {
+      pinIds.forEach(id => onUpdatePin(id, { layerId: targetLayerId }));
+    }
+    clearSelection();
+    closeSelectionMenu();
+  };
+
+  const handleUnselectAll = () => {
+    clearSelection();
+    closeSelectionMenu();
+  };
+
+  const movePinsPrompt = `Move ${selectedPins.length} ${selectedPins.length === 1 ? 'pin' : 'pins'} to layer...`;
+  const routeLabel = selectedPins.length === 1
+    ? 'Route to 1 pin'
+    : isTrackingLocation
+      ? `Route to ${selectedPins.length} pins`
+      : `Route between ${selectedPins.length} pins`;
+  const moveLayerLabel = moveLayerId === ''
+    ? movePinsPrompt
+    : moveLayerId === SELECTION_DEFAULT_LAYER
+      ? 'Default Layer'
+      : (layers.find(layer => layer.id === moveLayerId)?.name ?? movePinsPrompt);
+
+  const handleConfirmDeletePins = () => {
+    const pinIds = selectedPins.map(p => p.id);
+    pinIds.forEach(id => onRemovePin(id));
+    setShowDeletePinsDialog(false);
+    closeSelectionMenu();
+  };
+
+  useEffect(() => {
+    if (selectedPins.length === 0 || readOnly) {
+      setIsSelectionMenuOpen(false);
+      setMoveLayerId('');
+      setShowDeletePinsDialog(false);
+    }
+  }, [selectedPins.length, readOnly]);
 
   const isDefaultAllSelected = useMemo(
     () => defaultPins.length > 0 && defaultPins.every(p => selectedNavIds?.has(p.id)),
@@ -2889,7 +3006,10 @@ const Sidebar = ({
             <div style={{ position: 'relative' }} ref={menuRef}>
               <button 
                 ref={menuButtonRef}
-                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                onClick={() => {
+                  closeSelectionMenu();
+                  setIsMenuOpen(!isMenuOpen);
+                }}
                 aria-label="More options"
                 style={{
                   background: 'none',
@@ -3081,44 +3201,6 @@ const Sidebar = ({
                       <span style={{ fontSize: '0.72rem', fontWeight: '500', color: 'var(--text-muted, #888)', opacity: 0.85 }}>Ctrl-Shft-L</span>
                     </div>
                   )}
-                  {selectedPins.length > 0 && !readOnly && (
-                    <>
-                      <div style={{ padding: '8px 16px', fontSize: '0.65rem', fontWeight: '800', color: '#999', background: '#fcfcfc', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)' }}>MOVE SELECTED TO...</div>
-                      <div 
-                        style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
-                        onClick={() => {
-                          if (onMovePinsToLayer) {
-                            onMovePinsToLayer(selectedPins.map(p => p.id), undefined);
-                          } else {
-                            selectedPins.forEach(p => onUpdatePin(p.id, { layerId: undefined }));
-                          }
-                          setIsMenuOpen(false);
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        Default Layer
-                      </div>
-                      {layers.map(layer => (
-                        <div 
-                          key={layer.id}
-                          style={{ padding: '10px 16px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}
-                          onClick={() => {
-                            if (onMovePinsToLayer) {
-                              onMovePinsToLayer(selectedPins.map(p => p.id), layer.id);
-                            } else {
-                              selectedPins.forEach(p => onUpdatePin(p.id, { layerId: layer.id }));
-                            }
-                            setIsMenuOpen(false);
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          {layer.name}
-                        </div>
-                      ))}
-                    </>
-                  )}
                   <div
                     style={{
                       padding: '4px 16px',
@@ -3254,34 +3336,225 @@ const Sidebar = ({
               />
             )}
             {selectedPins.length > 0 && (
-              <button 
-                onClick={handleNavigate}
-                style={{ 
-                  fontSize: '0.65rem', 
-                  background: 'var(--success-color)', 
-                  color: 'white', 
-                  border: 'none', 
-                  padding: '0 10px', 
-                  borderRadius: '50px', 
-                  cursor: 'pointer', 
-                  fontWeight: '700', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '4px',
+              <div
+                ref={goGroupRef}
+                style={{
+                  display: 'flex',
+                  alignItems: 'stretch',
                   flexShrink: 0,
                   height: '28px',
-                  boxSizing: 'border-box',
-                  whiteSpace: 'nowrap',
-                  marginLeft: readOnly && !isMobile ? 'auto' : undefined
+                  borderRadius: '50px',
+                  overflow: 'hidden',
+                  background: 'var(--success-color)',
+                  marginLeft: readOnly && !isMobile ? 'auto' : undefined,
                 }}
               >
-                <Navigation size={10} /> Go ({selectedPins.length})
-              </button>
+                <button
+                  type="button"
+                  onClick={handleNavigate}
+                  style={{
+                    fontSize: '0.65rem',
+                    background: 'transparent',
+                    color: 'white',
+                    border: 'none',
+                    padding: '0 10px',
+                    cursor: 'pointer',
+                    fontWeight: '700',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <Navigation size={10} /> Go ({selectedPins.length})
+                </button>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    aria-label="Actions for selected pins"
+                    aria-expanded={isSelectionMenuOpen}
+                    aria-haspopup="dialog"
+                    title="Actions for selected pins"
+                    onClick={handleToggleSelectionMenu}
+                    style={{
+                      background: 'transparent',
+                      color: 'white',
+                      border: 'none',
+                      borderLeft: '1px solid rgba(255,255,255,0.35)',
+                      padding: '0 8px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <ChevronDown size={12} />
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )}
 
+        {isSelectionMenuOpen && !readOnly && selectedPins.length > 0 && typeof document !== 'undefined' && createPortal(
+          <div
+            ref={selectionMenuRef}
+            data-testid="selection-actions-menu"
+            style={{
+              position: 'fixed',
+              top: selectionMenuCoords.top,
+              left: selectionMenuCoords.left,
+              width: SELECTION_MENU_WIDTH,
+              background: 'var(--surface-color)',
+              color: 'var(--text-primary)',
+              textAlign: 'left',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: 'var(--shadow-lg)',
+              zIndex: 4000,
+            }}
+          >
+            <button
+              type="button"
+              onClick={handleUnselectAll}
+              style={SELECTION_MENU_ROW_STYLE}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-color)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              Unselect all pins
+            </button>
+            <button
+              type="button"
+              onClick={handleNavigate}
+              style={SELECTION_MENU_ROW_STYLE}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-color)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              {routeLabel}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDeletePinsDialog(true)}
+              style={SELECTION_MENU_ROW_STYLE}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-color)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              Delete {selectedPins.length} {selectedPins.length === 1 ? 'pin' : 'pins'}
+            </button>
+            <div
+              // 7px left + the box border and 8px padding lines the label up with the 16px rows.
+              // 2px vertical padding plus that border and 7px padding keeps this row the same height.
+              style={{ ...SELECTION_MENU_ROW_STYLE, position: 'relative', display: 'flex', alignItems: 'center', gap: '10px', padding: '2px 16px 2px 7px' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-color)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '7px 8px',
+                  background: 'var(--surface-color)',
+                }}
+              >
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{moveLayerLabel}</span>
+                <ChevronDown size={14} style={{ flexShrink: 0 }} />
+              </div>
+              <button
+                type="button"
+                disabled={moveLayerId === ''}
+                onClick={handleMoveSelected}
+                style={{
+                  position: 'relative',
+                  zIndex: 1,
+                  flexShrink: 0,
+                  alignSelf: 'stretch',
+                  padding: '7px 12px',
+                  border: `1px solid ${moveLayerId === '' ? 'var(--border-color)' : 'var(--primary-color)'}`,
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.85rem',
+                  lineHeight: 1.2,
+                  fontWeight: 600,
+                  fontFamily: 'inherit',
+                  cursor: moveLayerId === '' ? 'default' : 'pointer',
+                  background: moveLayerId === '' ? 'var(--bg-color)' : 'var(--primary-color)',
+                  color: moveLayerId === '' ? 'var(--text-secondary)' : 'white',
+                }}
+              >
+                Move
+              </button>
+              <select
+                id="selection-move-layer"
+                aria-label={movePinsPrompt}
+                value={moveLayerId}
+                onChange={(e) => setMoveLayerId(e.target.value)}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  margin: 0,
+                  opacity: 0,
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="">{movePinsPrompt}</option>
+                <option value={SELECTION_DEFAULT_LAYER}>Default Layer</option>
+                {layers.map(layer => (
+                  <option key={layer.id} value={layer.id}>{layer.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>,
+          document.body
+        )}
 
+        {showDeletePinsDialog && selectedPins.length > 0 && typeof document !== 'undefined' && createPortal(
+          <div
+            ref={deletePinsDialogRef}
+            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '20px' }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowDeletePinsDialog(false);
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="delete-pins-title"
+              data-testid="delete-pins-dialog"
+              style={{ background: 'var(--surface-color)', borderRadius: 'var(--radius-lg)', padding: '32px', maxWidth: '440px', width: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}
+            >
+              <h3 id="delete-pins-title" style={{ margin: '0 0 16px 0', fontSize: '1.3rem', fontWeight: '900', color: 'var(--text-primary)' }}>
+                {selectedPins.length === 1 ? 'Delete this pin?' : `Delete ${selectedPins.length} pins?`}
+              </h3>
+              <p style={{ margin: '0 0 24px 0', fontSize: '0.95rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+                {selectedPins.length === 1 ? 'This pin will be removed from the map.' : 'These pins will be removed from the map.'}
+              </p>
+              <div style={{ display: 'flex', gap: '16px' }}>
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => setShowDeletePinsDialog(false)}
+                  style={{ flex: 1, padding: '12px', background: '#f5f5f5', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', fontWeight: '800', cursor: 'pointer', color: '#444' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeletePins}
+                  style={{ flex: 1, padding: '12px', background: 'var(--error-color)', color: 'white', border: 'none', borderRadius: 'var(--radius-md)', fontWeight: '800', cursor: 'pointer' }}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
         <div 
           ref={scrollContainerRef}

@@ -1563,6 +1563,8 @@ export function MapEditor() {
     const currentPins = pinsRef.current;
 
     const remainingPins = currentPins.filter(p => p.id !== targetId);
+    // A batch of deletes calls this again before the next render.
+    pinsRef.current = remainingPins;
     setPins(remainingPins);
 
     if (getHoveredPinId() === targetId) clearHoveredPin();
