@@ -7,7 +7,7 @@ import { apiService } from '../services/api';
 import { Map as MapIcon, LogIn, LogOut, WifiOff, CloudSync, Loader2, Trash2, Upload, Sun, Moon, ChevronDown, Check, ArrowUpDown, Search, X, Pencil } from 'lucide-react';
 import { getMapDownloadStatuses, unionCachedMapsWithDownloads, type MapDownloadStatus } from '../utils/tileUtils';
 import { landingStatusFromWorker, tileWorkerManager } from '../utils/tileWorkerManager';
-import { getStoredJson, setStoredJson } from '../utils/storageUtils';
+import { getAccountScope, readAccountJson as getStoredJson, subscribeAccountScope, writeAccountJson as setStoredJson } from '../utils/accountScope';
 import { setForcedOffline } from '../utils/offlineSession';
 import { deleteUnrecognizedStorage, findUnrecognizedStorage, type LeftoverStorageItem } from '../utils/legacyStorage';
 import type { UserLabel, MapLabelAssignment, LabelSortMode } from '@shared/interfaces';
@@ -344,6 +344,7 @@ export default function LandingPage() {
     try {
       const mapIds = mapList ? mapList.map(m => m.id) : (maps.length > 0 ? maps.map(m => m.id) : undefined);
       const statusMap = await getMapDownloadStatuses(mapIds);
+      if (getAccountScope().mode === 'hidden') return;
 
       // Immediately reflect any active or in-flight downloads from the worker manager
       const targetIds = mapList ? mapList.map(m => m.id) : maps.map(m => m.id);
@@ -384,7 +385,7 @@ export default function LandingPage() {
     labelsAbortRef.current = controller;
     try {
       const res = await apiService.getLabels(controller.signal);
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || getAccountScope().mode === 'hidden') return;
       setLabels(res.labels);
       setAssignments(res.assignments);
       const settingsMap: Record<string, LabelSortMode> = {};
@@ -426,10 +427,21 @@ export default function LandingPage() {
     }
   }, [user]);
 
+  const clearPrivateHome = () => {
+    setMaps([]);
+    setLabels([]);
+    setAssignments([]);
+    setSystemSettings({});
+    setSystemOrder({});
+    setDownloadStatuses(new Map());
+    setForcedOffline(false);
+    setIsOffline(false);
+  };
+
   const fetchMaps = async () => {
     try {
       const data = await apiService.getMaps({ ignoreNavigatorOnline: true });
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || getAccountScope().mode === 'hidden') return;
       reachedServerRef.current = true;
       setForcedOffline(false);
       setMaps(data);
@@ -441,14 +453,21 @@ export default function LandingPage() {
       if (error?.message?.includes('Unauthorized')) {
         try {
           await logout();
-        } catch {}
+        } catch {
+          // Session is already gone.
+        }
+      }
+      if (!isMountedRef.current) return;
+      if (getAccountScope().mode === 'hidden') {
+        clearPrivateHome();
+        return;
       }
       reachedServerRef.current = false;
       setForcedOffline(true);
       setIsOffline(true);
       await applyCachedMaps();
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   };
 
@@ -492,14 +511,23 @@ export default function LandingPage() {
   }, []);
 
   useEffect(() => {
-    fetchMaps();
+    if (authLoading) return;
+
+    if (user || getAccountScope().mode !== 'hidden') {
+      void fetchMaps();
+    } else {
+      clearPrivateHome();
+      setLoading(false);
+    }
 
     const handleOnline = () => {
+      if (getAccountScope().mode === 'hidden') return;
       setForcedOffline(false);
       setIsOffline(false);
       fetchMapsRef.current();
     };
     const handleOffline = () => {
+      if (getAccountScope().mode === 'hidden') return;
       reachedServerRef.current = false;
       setForcedOffline(true);
       setIsOffline(true);
@@ -521,6 +549,7 @@ export default function LandingPage() {
 
     const unsubscribe = tileWorkerManager.subscribe((state) => {
       setDownloadStatuses((prev) => {
+        if (getAccountScope().mode === 'hidden') return prev;
         const newStatus = landingStatusFromWorker(state);
 
         const current = prev.get(state.mapId);
@@ -557,15 +586,30 @@ export default function LandingPage() {
       window.removeEventListener('scroll', handleDismissTooltip);
       unsubscribe();
     };
+  }, [authLoading, user]);
+
+  useEffect(() => {
+    return subscribeAccountScope(() => {
+      if (getAccountScope().mode === 'hidden') clearPrivateHome();
+    });
   }, []);
 
   useEffect(() => {
-    if (!user) {
-      setForcedOffline(true);
-      setIsOffline(true);
-      void applyCachedMaps();
+    if (authLoading || user) return;
+    if (getAccountScope().mode === 'hidden') {
+      clearPrivateHome();
+      return;
     }
-  }, [user]);
+    // Session could not be checked. Show this account's copies, including labels
+    // that the first render skipped while the scope was still hidden.
+    setLabels(getStoredJson<UserLabel[]>('cached_user_labels', []));
+    setAssignments(getStoredJson<MapLabelAssignment[]>('cached_map_label_assignments', []));
+    setSystemSettings(getStoredJson<Record<string, LabelSortMode>>('cached_system_label_settings', {}));
+    setSystemOrder(getStoredJson<Record<string, string[]>>('cached_system_label_map_order', {}));
+    setForcedOffline(true);
+    setIsOffline(true);
+    void applyCachedMaps();
+  }, [user, authLoading]);
 
 
   const handleDelete = async (id: string) => {

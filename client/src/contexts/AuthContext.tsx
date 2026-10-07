@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { googleLogout } from '@react-oauth/google';
 import type { User } from '@shared/interfaces';
 import { apiService } from '../services/api';
+import { installAccountScopeFromStorage, noteSessionUnreachable, noteSignedInAccount, noteSignedOut } from '../utils/accountScope';
+import { claimUnownedMapDocuments } from '../utils/tileUtils';
 
 interface AuthContextType {
   user: User | null;
@@ -18,10 +20,27 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const userRef = useRef<User | null>(null);
+  // Before children read caches. Online stays hidden until me() confirms.
+  useState(() => {
+    installAccountScopeFromStorage();
+    return null;
+  });
+
+  const adoptUser = (next: User | null) => {
+    userRef.current = next;
+    if (next?.id) {
+      const previous = noteSignedInAccount(next.id);
+      void claimUnownedMapDocuments(next.id, previous);
+    } else {
+      noteSignedOut();
+    }
+    setUser(next);
+  };
 
   const clearLocalSession = () => {
     googleLogout();
-    setUser(null);
+    adoptUser(null);
     setIsLoading(false);
   };
 
@@ -53,7 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     try {
       const data = await apiService.loginWithGoogle(credential);
-      setUser(data.user);
+      adoptUser(data.user);
     } catch (err) {
       console.error('[AUTH] Login with custom JWT failed:', err);
       clearLocalSession();
@@ -70,9 +89,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const loadSession = async () => {
       try {
         const data = await apiService.me();
-        setUser(prev => prev ?? (data?.user || null));
+        if (userRef.current) return;
+        if (data?.user) adoptUser(data.user);
+        else adoptUser(null);
       } catch {
-        setUser(prev => prev ?? null);
+        if (!userRef.current) noteSessionUnreachable();
       } finally {
         setIsLoading(false);
       }
@@ -85,7 +106,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setIsLoading(true);
       try {
         const data = await apiService.mockLogin();
-        setUser(data.user);
+        adoptUser(data.user);
       } catch (err) {
         console.error('[AUTH] Mock login failed:', err);
         clearLocalSession();

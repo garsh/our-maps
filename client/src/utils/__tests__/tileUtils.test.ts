@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getYRange, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, saveMapToViewCache, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB, stripMapCachePii, unionCachedMapsWithDownloads, updateDownloadedMapDocument, bumpDownloadDocumentEpoch, currentDownloadDocumentEpoch, touchMapCacheAccess } from '../tileUtils';
+import { getYRange, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, saveMapToViewCache, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB, stripMapCachePii, unionCachedMapsWithDownloads, updateDownloadedMapDocument, bumpDownloadDocumentEpoch, currentDownloadDocumentEpoch, touchMapCacheAccess, claimUnownedMapDocuments, getMapETag } from '../tileUtils';
+import { noteSignedInAccount, noteSignedOut, resetAccountScopeForTests } from '../accountScope';
 import type { Pin } from '@shared/interfaces';
 
 const { mockExtracts, mockPartSizes, mockMetaBytes } = vi.hoisted(() => ({
@@ -29,6 +30,7 @@ describe('tileUtils', () => {
     let deletedStores: string[];
 
     beforeEach(() => {
+        resetAccountScopeForTests();
         resetDBForTesting();
         mockExtracts.clear();
         mockPartSizes.clear();
@@ -553,5 +555,56 @@ describe('tileUtils', () => {
         expect(cached[0].id).toBe('map-new');
         expect(cached[0].name).toBe('Brand New Map');
         expect(cached[0].lastAccessedAt).toBeTruthy();
+    });
+
+    it('keeps an offline map for the account that saved it', async () => {
+        const doc = { id: 'acct-map', name: 'Secret', layers: [], pins: [] };
+        noteSignedInAccount('user-a');
+        await saveMapOffline(doc as any);
+        mockExtracts.add('acct-map');
+
+        noteSignedInAccount('user-b');
+        expect(await getOfflineMap('acct-map')).toBeNull();
+        expect(await getMapETag('acct-map')).toBeNull();
+        await removeMapDownload('acct-map');
+        expect(mockExtracts.has('acct-map')).toBe(true);
+
+        noteSignedOut();
+        expect(await getOfflineMap('acct-map')).toBeNull();
+
+        noteSignedInAccount('user-a');
+        expect((await getOfflineMap('acct-map'))?.name).toBe('Secret');
+        expect(mockExtracts.has('acct-map')).toBe(true);
+        await removeMapDownload('acct-map');
+        expect(await getOfflineMap('acct-map')).toBeNull();
+        expect(mockExtracts.has('acct-map')).toBe(false);
+    });
+
+    it('detaches only the active account from a shared offline copy', async () => {
+        noteSignedInAccount('user-a');
+        await saveMapOffline({ id: 'both-map', name: 'Shared', layers: [], pins: [] } as any);
+        mockExtracts.add('both-map');
+        noteSignedInAccount('user-b');
+        await saveMapToViewCache({ id: 'both-map', name: 'Shared', layers: [], pins: [] } as any);
+        await removeMapDownload('both-map');
+        expect(await getOfflineMap('both-map')).toBeNull();
+        expect(mockExtracts.has('both-map')).toBe(true);
+
+        noteSignedInAccount('user-a');
+        expect((await getOfflineMap('both-map'))?.name).toBe('Shared');
+        await removeAllDownloads();
+        expect(mockExtracts.has('both-map')).toBe(false);
+        expect((global as any).indexedDB.deleteDatabase).not.toHaveBeenCalled();
+        noteSignedInAccount('user-b');
+        expect(await getOfflineMap('both-map')).toBeNull();
+    });
+
+    it('claims unsigned documents for the previous account when a different person signs in', async () => {
+        await saveMapOffline({ id: 'orphan-map', name: 'Orphan', layers: [], pins: [] } as any);
+        await claimUnownedMapDocuments('user-b', 'user-a');
+        noteSignedInAccount('user-b');
+        expect(await getOfflineMap('orphan-map')).toBeNull();
+        noteSignedInAccount('user-a');
+        expect((await getOfflineMap('orphan-map'))?.name).toBe('Orphan');
     });
 });

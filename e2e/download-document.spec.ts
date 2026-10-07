@@ -40,11 +40,19 @@ async function accessMapRecord({ dbName, mapId, mapData }: {
           return;
         }
         const existing = getReq.result || { id: mapId, layers: [], pins: [] };
+        const accountId = localStorage.getItem('ourmaps_account_id');
+        const priorIds = Array.isArray(existing.accountUserIds)
+          ? existing.accountUserIds.filter((id: unknown) => typeof id === 'string' && id)
+          : [];
+        const accountUserIds = accountId && !priorIds.includes(accountId)
+          ? [...priorIds, accountId]
+          : priorIds;
         const putReq = store.put({
           ...existing,
           ...mapData,
           id: mapId,
           isExplicitDownload: true,
+          ...(accountUserIds.length > 0 ? { accountUserIds } : {}),
           totalTiles: existing.totalTiles ?? 12,
           completedTiles: existing.completedTiles ?? 12,
           extractTotalBytes: existing.extractTotalBytes ?? 999,

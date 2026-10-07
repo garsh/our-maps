@@ -1,3 +1,5 @@
+import { isAccountScopedStorageKey } from './accountScope';
+
 type LeftoverKind = 'indexeddb' | 'opfs' | 'cache' | 'localStorage';
 
 export interface LeftoverStorageItem {
@@ -35,6 +37,8 @@ const KNOWN_LOCAL_STORAGE_KEYS = new Set([
   'ourmaps_3d_terrain',
   'ourmaps_3d_buildings',
   'ourmaps_satellite',
+  'ourmaps_account_id',
+  'ourmaps_signed_out',
 ]);
 
 const KNOWN_LOCAL_STORAGE_PREFIXES = [
@@ -62,6 +66,7 @@ export function isKnownCacheName(name: string): boolean {
 
 export function isKnownLocalStorageKey(key: string): boolean {
   if (KNOWN_LOCAL_STORAGE_KEYS.has(key)) return true;
+  if (isAccountScopedStorageKey(key)) return true;
   return KNOWN_LOCAL_STORAGE_PREFIXES.some((prefix) => key.startsWith(prefix));
 }
 

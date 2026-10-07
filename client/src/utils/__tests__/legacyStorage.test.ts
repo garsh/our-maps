@@ -26,6 +26,10 @@ describe('legacyStorage classification', () => {
         expect(isKnownLocalStorageKey('ourmaps_3d')).toBe(true);
         expect(isKnownLocalStorageKey('ourmaps_visibility_abc')).toBe(true);
         expect(isKnownLocalStorageKey('customColors')).toBe(true);
+        expect(isKnownLocalStorageKey('ourmaps_account_id')).toBe(true);
+        expect(isKnownLocalStorageKey('ourmaps_signed_out')).toBe(true);
+        expect(isKnownLocalStorageKey('cached_maps::user-1')).toBe(true);
+        expect(isKnownLocalStorageKey('cached_selected_label::user-1')).toBe(true);
     });
 
     it('treats older names as unrecognized', () => {
@@ -70,6 +74,9 @@ describe('findUnrecognizedStorage', () => {
         });
         localStorage.setItem('token', 'abc');
         localStorage.setItem('cached_maps', '[]');
+        localStorage.setItem('cached_maps::user-1', '[]');
+        localStorage.setItem('ourmaps_account_id', 'user-1');
+        localStorage.setItem('ourmaps_signed_out', '1');
         localStorage.setItem('stale_tile_index', '1');
     });
 

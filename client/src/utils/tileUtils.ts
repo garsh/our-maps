@@ -1,6 +1,6 @@
 import type { Pin, PinLayer, MapData } from '@shared/interfaces';
 import { extractExists, getExtractResumeInfo, getPartFileSize, removeAllExtracts, removeExtract } from './extractStore';
-import { getStoredJson, setStoredJson } from './storageUtils';
+import { getAccountScope, readAccountJson, removeAccountJson, subscribeAccountScope, writeAccountJson } from './accountScope';
 
 export interface BoundingBox {
     north: number;
@@ -30,6 +30,50 @@ export function invalidateMapMetadataCache(mapId: string): void {
 /** Clear the entire cache — called when transitioning back online. */
 export function clearMapMetadataCache(): void {
   mapMetadataCache.clear();
+}
+
+subscribeAccountScope(() => {
+  mapMetadataCache.clear();
+});
+
+type StoredMapRecord = MapData & {
+  isExplicitDownload?: boolean;
+  etag?: string;
+  accountUserIds?: string[];
+  lastAccessedAt?: number;
+  totalTiles?: number;
+  completedTiles?: number;
+  extractTotalBytes?: number;
+};
+
+function accountIdsOf(record: object | null | undefined): string[] {
+  if (!record || !('accountUserIds' in record)) return [];
+  const ids = record.accountUserIds;
+  return Array.isArray(ids) ? ids.filter((id) => typeof id === 'string' && id) : [];
+}
+
+/** `open` (tests, pre-migration offline) can read every record. A signed-out scope cannot. */
+function canReadMapRecord(record: object | null | undefined): boolean {
+  if (!record) return false;
+  const active = getAccountScope();
+  if (active.mode === 'open') return true;
+  if (active.mode === 'hidden') return false;
+  return accountIdsOf(record).includes(active.userId);
+}
+
+function stampAccountIds(existing: object | null | undefined): string[] | undefined {
+  const active = getAccountScope();
+  if (active.mode !== 'account') {
+    const ids = accountIdsOf(existing);
+    return ids.length > 0 ? ids : undefined;
+  }
+  return [...new Set([...accountIdsOf(existing), active.userId])];
+}
+
+function applyAccountStamp<T extends object>(record: T, existing: object | null | undefined): T {
+  const ids = stampAccountIds(existing);
+  if (!ids) return record;
+  return { ...record, accountUserIds: ids };
 }
 
 let downloadDocumentEpoch = 0;
@@ -73,11 +117,8 @@ export async function updateDownloadedMapDocument(
             const store = tx.objectStore(MAP_STORE);
             const getReq = store.get(mapId);
             getReq.onsuccess = () => {
-                const existing = getReq.result as (MapData & {
-                    isExplicitDownload?: boolean;
-                    etag?: string;
-                }) | undefined;
-                if (!existing?.isExplicitDownload) {
+                const existing = getReq.result as StoredMapRecord | undefined;
+                if (!existing?.isExplicitDownload || !canReadMapRecord(existing)) {
                     resolve(false);
                     return;
                 }
@@ -166,18 +207,28 @@ export function stripMapCachePii(mapData: MapData): MapData {
 
 export async function saveMapOffline(mapData: MapData): Promise<void> {
     if (typeof indexedDB === 'undefined') return;
+    if (getAccountScope().mode === 'hidden') return;
     invalidateMapMetadataCache(mapData.id);
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(MAP_STORE, 'readwrite');
         const store = transaction.objectStore(MAP_STORE);
-        const req = store.put({
-            ...stripMapCachePii(mapData),
-            isExplicitDownload: true,
-            lastAccessedAt: Date.now(),
-        });
-        req.onsuccess = () => resolve();
-        req.onerror = () => reject(req.error);
+        const getReq = store.get(mapData.id);
+        getReq.onsuccess = () => {
+            const existing = getReq.result as StoredMapRecord | undefined;
+            const req = store.put(applyAccountStamp({
+                ...stripMapCachePii(mapData),
+                isExplicitDownload: true,
+                lastAccessedAt: Date.now(),
+                etag: existing?.etag,
+                totalTiles: mapData.totalTiles ?? existing?.totalTiles,
+                completedTiles: mapData.completedTiles ?? existing?.completedTiles,
+                extractTotalBytes: mapData.extractTotalBytes ?? existing?.extractTotalBytes,
+            }, existing));
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+        };
+        getReq.onerror = () => reject(getReq.error);
         transaction.onerror = () => reject(transaction.error);
     });
 }
@@ -185,7 +236,7 @@ export async function saveMapOffline(mapData: MapData): Promise<void> {
 export async function getOfflineMap(mapId: string): Promise<MapData | null> {
     if (!mapId || typeof indexedDB === 'undefined') return null;
     const cached = mapMetadataCache.get(mapId);
-    if (cached) return cached;
+    if (cached) return canReadMapRecord(cached) ? cached : null;
     try {
         const db = await openDB();
         return new Promise((resolve, reject) => {
@@ -193,9 +244,13 @@ export async function getOfflineMap(mapId: string): Promise<MapData | null> {
             const store = transaction.objectStore(MAP_STORE);
             const request = store.get(mapId);
             request.onsuccess = () => {
-                const result: MapData | null = request.result || null;
-                if (result) mapMetadataCache.set(mapId, result);
-                resolve(result);
+                const result: StoredMapRecord | null = request.result || null;
+                if (result && canReadMapRecord(result)) {
+                    mapMetadataCache.set(mapId, result);
+                    resolve(result);
+                    return;
+                }
+                resolve(null);
             };
             request.onerror = () => reject(request.error);
         });
@@ -215,6 +270,7 @@ const VIEW_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  */
 export async function saveMapToViewCache(mapData: MapData, etag?: string): Promise<void> {
     if (typeof indexedDB === 'undefined') return;
+    if (getAccountScope().mode === 'hidden') return;
     invalidateMapMetadataCache(mapData.id);
     try {
         const db = await openDB();
@@ -224,15 +280,9 @@ export async function saveMapToViewCache(mapData: MapData, etag?: string): Promi
             // Preserve isExplicitDownload if the record already exists
             const getReq = store.get(mapData.id);
             getReq.onsuccess = () => {
-                const existing = getReq.result as (MapData & {
-                    isExplicitDownload?: boolean;
-                    etag?: string;
-                    totalTiles?: number;
-                    completedTiles?: number;
-                    extractTotalBytes?: number;
-                }) | undefined;
+                const existing = getReq.result as StoredMapRecord | undefined;
                 const stripped = stripMapCachePii(mapData);
-                const putReq = store.put({
+                const putReq = store.put(applyAccountStamp({
                     ...stripped,
                     isExplicitDownload: Boolean(existing?.isExplicitDownload),
                     etag: etag ?? existing?.etag ?? null,
@@ -240,7 +290,7 @@ export async function saveMapToViewCache(mapData: MapData, etag?: string): Promi
                     totalTiles: stripped.totalTiles ?? existing?.totalTiles,
                     completedTiles: stripped.completedTiles ?? existing?.completedTiles,
                     extractTotalBytes: stripped.extractTotalBytes ?? existing?.extractTotalBytes,
-                });
+                }, existing));
                 putReq.onsuccess = () => resolve();
                 putReq.onerror = () => reject(putReq.error);
             };
@@ -260,7 +310,10 @@ export async function getMapETag(mapId: string): Promise<string | null> {
         return new Promise((resolve) => {
             const tx = db.transaction(MAP_STORE, 'readonly');
             const req = tx.objectStore(MAP_STORE).get(mapId);
-            req.onsuccess = () => resolve((req.result as any)?.etag ?? null);
+            req.onsuccess = () => {
+                const result = req.result as StoredMapRecord | undefined;
+                resolve(result && canReadMapRecord(result) ? result.etag ?? null : null);
+            };
             req.onerror = () => resolve(null);
         });
     } catch {
@@ -281,7 +334,7 @@ export async function touchMapCacheAccess(mapId: string, summary?: Partial<Cache
     if (!mapId) return;
     const nowIso = new Date().toISOString();
     try {
-        const cachedMaps = getStoredJson<CachedMapSummary[]>('cached_maps', []);
+        const cachedMaps = readAccountJson<CachedMapSummary[]>('cached_maps', []);
         if (cachedMaps && cachedMaps.length > 0) {
             let found = false;
             const updated = cachedMaps.map((m) => {
@@ -292,7 +345,7 @@ export async function touchMapCacheAccess(mapId: string, summary?: Partial<Cache
                 return m;
             });
             if (found) {
-                setStoredJson('cached_maps', updated);
+                writeAccountJson('cached_maps', updated);
             } else if (summary?.name) {
                 updated.unshift({
                     id: mapId,
@@ -301,10 +354,10 @@ export async function touchMapCacheAccess(mapId: string, summary?: Partial<Cache
                     ownerName: summary.ownerName || '',
                     lastAccessedAt: nowIso,
                 });
-                setStoredJson('cached_maps', updated);
+                writeAccountJson('cached_maps', updated);
             }
         } else if (summary?.name) {
-            setStoredJson('cached_maps', [{
+            writeAccountJson('cached_maps', [{
                 id: mapId,
                 name: summary.name,
                 ownerId: summary.ownerId || '',
@@ -324,8 +377,9 @@ export async function touchMapCacheAccess(mapId: string, summary?: Partial<Cache
             const store = tx.objectStore(MAP_STORE);
             const getReq = store.get(mapId);
             getReq.onsuccess = () => {
-                if (!getReq.result) { resolve(); return; }
-                const putReq = store.put({ ...getReq.result, lastAccessedAt: Date.now() });
+                const existing = getReq.result as StoredMapRecord | undefined;
+                if (!existing || !canReadMapRecord(existing)) { resolve(); return; }
+                const putReq = store.put({ ...existing, lastAccessedAt: Date.now() });
                 putReq.onsuccess = () => resolve();
                 putReq.onerror = () => resolve();
             };
@@ -355,7 +409,7 @@ export async function pruneViewCache(): Promise<void> {
         });
 
         const now = Date.now();
-        const viewOnly = all.filter(m => !m.isExplicitDownload);
+        const viewOnly = all.filter(m => !m.isExplicitDownload && canReadMapRecord(m));
         const toDelete: string[] = [];
 
         // Evict stale entries
@@ -375,14 +429,23 @@ export async function pruneViewCache(): Promise<void> {
 
         if (toDelete.length === 0) return;
 
+        const active = getAccountScope();
         await new Promise<void>((resolve, reject) => {
             const tx = db.transaction(MAP_STORE, 'readwrite');
             const store = tx.objectStore(MAP_STORE);
-            for (const id of toDelete) store.delete(id);
-            tx.oncomplete = () => {
-                for (const id of toDelete) invalidateMapMetadataCache(id);
-                resolve();
-            };
+            for (const id of toDelete) {
+                const record = all.find((map) => map.id === id);
+                const remaining = active.mode === 'account'
+                    ? accountIdsOf(record).filter((accountId) => accountId !== active.userId)
+                    : [];
+                if (record && remaining.length > 0) {
+                    store.put({ ...record, accountUserIds: remaining });
+                } else {
+                    store.delete(id);
+                }
+                invalidateMapMetadataCache(id);
+            }
+            tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
     } catch {
@@ -390,7 +453,7 @@ export async function pruneViewCache(): Promise<void> {
     }
 }
 
-async function listOfflineMaps(): Promise<(MapData & { lastAccessedAt?: number })[]> {
+async function listStoredMaps(): Promise<StoredMapRecord[]> {
     if (typeof indexedDB === 'undefined') return [];
     try {
         const db = await openDB();
@@ -398,11 +461,43 @@ async function listOfflineMaps(): Promise<(MapData & { lastAccessedAt?: number }
             const transaction = db.transaction(MAP_STORE, 'readonly');
             const store = transaction.objectStore(MAP_STORE);
             const request = store.getAll();
-            request.onsuccess = () => resolve((request.result as (MapData & { lastAccessedAt?: number })[]) || []);
+            request.onsuccess = () => resolve((request.result as StoredMapRecord[]) || []);
             request.onerror = () => reject(request.error);
         });
     } catch {
         return [];
+    }
+}
+
+async function listOfflineMaps(): Promise<StoredMapRecord[]> {
+    const maps = await listStoredMaps();
+    return maps.filter((map) => canReadMapRecord(map));
+}
+
+/**
+ * Give unsigned IndexedDB documents to an account.
+ * Orphans belong to the previous account when a different person signs in.
+ */
+export async function claimUnownedMapDocuments(userId: string, previousUserId: string | null): Promise<void> {
+    if (!userId || typeof indexedDB === 'undefined') return;
+    const owner = !previousUserId || previousUserId === userId ? userId : previousUserId;
+    try {
+        const db = await openDB();
+        const maps = await listStoredMaps();
+        const unowned = maps.filter((map) => accountIdsOf(map).length === 0);
+        if (unowned.length === 0) return;
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(MAP_STORE, 'readwrite');
+            const store = tx.objectStore(MAP_STORE);
+            for (const map of unowned) {
+                store.put({ ...map, accountUserIds: [owner] });
+            }
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+        clearMapMetadataCache();
+    } catch {
+        // Non-critical: the next signed-in read still refuses unsigned documents.
     }
 }
 
@@ -508,9 +603,16 @@ async function clearLegacyTileStores(db: IDBDatabase): Promise<void> {
 }
 
 export async function removeAllDownloads(): Promise<void> {
+    const active = getAccountScope();
+    if (active.mode === 'account') {
+        await removeActiveAccountDownloads(active.userId);
+        return;
+    }
+    if (active.mode === 'hidden') return;
+
     await removeAllExtracts();
+    removeAccountJson('cached_download_statuses');
     if (typeof localStorage !== 'undefined') {
-        localStorage.removeItem('cached_download_statuses');
         localStorage.removeItem('customColors');
     }
     if (typeof indexedDB === 'undefined') return;
@@ -534,17 +636,71 @@ export async function removeAllDownloads(): Promise<void> {
     });
 }
 
+async function removeActiveAccountDownloads(userId: string): Promise<void> {
+    removeAccountJson('cached_download_statuses');
+    if (typeof indexedDB === 'undefined') return;
+    const maps = await listStoredMaps();
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(MAP_STORE, 'readwrite');
+        const store = tx.objectStore(MAP_STORE);
+        for (const map of maps) {
+            const ids = accountIdsOf(map);
+            if (!ids.includes(userId)) continue;
+            const remaining = ids.filter((id) => id !== userId);
+            if (remaining.length === 0) {
+                store.delete(map.id);
+                void removeExtract(map.id);
+            } else {
+                store.put({ ...map, accountUserIds: remaining });
+            }
+        }
+        tx.oncomplete = () => {
+            clearMapMetadataCache();
+            resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
+    });
+}
+
 export async function removeMapDownload(mapId: string): Promise<void> {
     if (!mapId) return;
     invalidateMapMetadataCache(mapId);
-    await removeExtract(mapId);
-    if (typeof indexedDB === 'undefined') return;
+    const active = getAccountScope();
+    if (active.mode === 'hidden') return;
+    if (typeof indexedDB === 'undefined') {
+        if (active.mode === 'open') await removeExtract(mapId);
+        return;
+    }
 
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
         const tx = db.transaction(MAP_STORE, 'readwrite');
-        tx.objectStore(MAP_STORE).delete(mapId);
-        tx.oncomplete = () => resolve();
+        const store = tx.objectStore(MAP_STORE);
+        const getReq = store.get(mapId);
+        getReq.onsuccess = () => {
+            const existing = getReq.result as StoredMapRecord | undefined;
+            if (active.mode === 'account') {
+                if (!existing || !canReadMapRecord(existing)) {
+                    resolve();
+                    return;
+                }
+                const remaining = accountIdsOf(existing).filter((id) => id !== active.userId);
+                if (remaining.length === 0) {
+                    store.delete(mapId);
+                    void removeExtract(mapId);
+                } else {
+                    store.put({ ...existing, accountUserIds: remaining });
+                }
+                resolve();
+                return;
+            }
+            store.delete(mapId);
+            void removeExtract(mapId);
+            resolve();
+        };
+        getReq.onerror = () => reject(getReq.error);
         tx.onerror = () => reject(tx.error);
         tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
     });

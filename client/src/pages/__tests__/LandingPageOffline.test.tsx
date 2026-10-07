@@ -8,6 +8,7 @@ import { ThemeProvider } from '../../contexts/ThemeContext';
 import * as tileUtils from '../../utils/tileUtils';
 import { tileWorkerManager } from '../../utils/tileWorkerManager';
 import * as legacyStorage from '../../utils/legacyStorage';
+import { noteSignedOut, resetAccountScopeForTests } from '../../utils/accountScope';
 
 vi.mock('../../services/api');
 vi.mock('../../contexts/AuthContext');
@@ -42,6 +43,7 @@ describe('LandingPage Offline Map Access', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resetAccountScopeForTests();
     sessionStorage.clear();
     (useAuth as any).mockReturnValue({
       user: mockUser,
@@ -630,6 +632,7 @@ describe('LandingPage Offline Map Access', () => {
   });
 
   it('shows Sign In button instead of Retry Sync when unauthenticated and offline', async () => {
+    noteSignedOut();
     (useAuth as any).mockReturnValue({
       user: null,
       token: null,
@@ -651,22 +654,19 @@ describe('LandingPage Offline Map Access', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Downloaded Map')).toBeInTheDocument();
+      expect(screen.getByText('Sign In')).toBeInTheDocument();
     });
 
-    // Should show Sign In button instead of Retry Sync
-    expect(screen.getByText('Sign In')).toBeInTheDocument();
     expect(screen.queryByText('Retry Sync')).not.toBeInTheDocument();
+    expect(screen.queryByText('Downloaded Map')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Logged Out')).not.toBeInTheDocument();
+    expect(screen.getByText('No maps yet')).toBeInTheDocument();
 
-    // Clicking Sign In navigates to /login
     fireEvent.click(screen.getByText('Sign In'));
     expect(mockNavigate).toHaveBeenCalledWith('/login');
-
-    // Non-downloaded maps should show "Logged Out" badge
-    expect(screen.getByTitle('Logged Out')).toBeInTheDocument();
   });
 
-  it('immediately transitions to Sign In button and Logged Out pills upon sign out', async () => {
+  it('hides saved maps and shows Sign In after sign out', async () => {
     let authUser: any = mockUser;
     (useAuth as any).mockImplementation(() => ({
       user: authUser,
@@ -676,6 +676,7 @@ describe('LandingPage Offline Map Access', () => {
       login: vi.fn(),
       logout: vi.fn(() => {
         authUser = null;
+        noteSignedOut();
       }),
       logoutEverywhere: vi.fn(),
     }));
@@ -708,12 +709,14 @@ describe('LandingPage Offline Map Access', () => {
       </MemoryRouter>
     );
 
-    // New Map should be replaced with Sign In
+    await waitFor(() => {
+      expect(screen.queryByText('Downloaded Map')).not.toBeInTheDocument();
+      expect(screen.queryByText('Online Only Map')).not.toBeInTheDocument();
+    });
     expect(screen.queryByText('New Map')).not.toBeInTheDocument();
     expect(screen.getByText('Sign In')).toBeInTheDocument();
-
-    // Undownloaded maps should now show "Logged Out"
-    expect(screen.getByTitle('Logged Out')).toBeInTheDocument();
+    expect(screen.queryByTitle('Logged Out')).not.toBeInTheDocument();
+    expect(screen.getByText('No maps yet')).toBeInTheDocument();
   });
 
   it('sorts maps by lastAccessedAt so most recently accessed appears first', async () => {

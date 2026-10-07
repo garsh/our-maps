@@ -1,7 +1,7 @@
 import { removeMapDownload, removeAllDownloads, getDownloadStats, getOfflineMap, saveMapOffline, getPinsBoundingBox, type BoundingBox, type MapDownloadStatus } from './tileUtils';
 import { extractExists, getExtractResumeInfo, getPartFileSize } from './extractStore';
 import { invalidateExtractPMTiles } from './offlineExtract';
-import { getStoredJson, setStoredJson } from './storageUtils';
+import { readAccountJson, writeAccountJson } from './accountScope';
 import type { Pin } from '@shared/interfaces';
 
 const CACHED_DOWNLOAD_STATUSES_KEY = 'cached_download_statuses';
@@ -9,10 +9,10 @@ const CACHED_DOWNLOAD_STATUSES_KEY = 'cached_download_statuses';
 /** Landing reads this cache before the async OPFS scan. Keep it current even when Landing is unmounted. */
 function rememberDownloadStatus(mapId: string, status: MapDownloadStatus | null) {
   if (typeof localStorage === 'undefined') return;
-  const cached = getStoredJson<Record<string, MapDownloadStatus>>(CACHED_DOWNLOAD_STATUSES_KEY, {});
+  const cached = readAccountJson<Record<string, MapDownloadStatus>>(CACHED_DOWNLOAD_STATUSES_KEY, {});
   if (status) cached[mapId] = status;
   else delete cached[mapId];
-  setStoredJson(CACHED_DOWNLOAD_STATUSES_KEY, cached);
+  writeAccountJson(CACHED_DOWNLOAD_STATUSES_KEY, cached);
 }
 
 interface DownloadByteStats {

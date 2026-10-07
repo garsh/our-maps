@@ -36,6 +36,7 @@ import { generateId, mergeImportedMapData } from './utils/fileUtils';
 import { getOfflineMap, isMapDownloaded, removeMapDownload, touchMapCacheAccess, saveMapToViewCache, clearMapMetadataCache, bumpDownloadDocumentEpoch, currentDownloadDocumentEpoch, updateDownloadedMapDocument } from './utils/tileUtils';
 import { preloadExtract, setActiveOfflineMapId } from './utils/offlineExtract';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
+import { readAccountJson, writeAccountJson } from './utils/accountScope';
 import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, isForcedOffline, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
 
 import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer, syncCoLocatedPins } from './utils/pinHover';
@@ -81,10 +82,10 @@ function getNextPinPosition(allPins: Pin[], targetLayerId?: string): number {
 
 /** Drop a map the server refused: home-list summary, IndexedDB document, and extract. */
 function forgetDeniedMap(mapId: string) {
-  const cached = getStoredJson<Array<{ id?: string }>>('cached_maps', []);
+  const cached = readAccountJson<Array<{ id?: string }>>('cached_maps', []);
   if (Array.isArray(cached)) {
     const next = cached.filter((map) => map?.id !== mapId);
-    if (next.length !== cached.length) setStoredJson('cached_maps', next);
+    if (next.length !== cached.length) writeAccountJson('cached_maps', next);
   }
   void removeMapDownload(mapId);
 }
