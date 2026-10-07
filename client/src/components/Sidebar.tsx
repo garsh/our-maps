@@ -30,6 +30,7 @@ import {
   Palette,
   Mountain,
   Box,
+  Train,
   Sun,
   Moon,
   Globe,
@@ -507,6 +508,8 @@ interface SidebarProps {
   onToggle3DTerrain?: (enabled: boolean) => void;
   show3DBuildings?: boolean;
   onToggle3DBuildings?: (enabled: boolean) => void;
+  showTransit?: boolean;
+  onToggleTransit?: (enabled: boolean) => void;
   isOffline?: boolean;
   isHoverBlocked?: boolean;
   onSearchAreaStateChange?: (state: SearchAreaState | null) => void;
@@ -2255,6 +2258,8 @@ const Sidebar = ({
   onToggle3DTerrain,
   show3DBuildings = true,
   onToggle3DBuildings,
+  showTransit = false,
+  onToggleTransit,
   isOffline = false,
   isHoverBlocked = false,
   onSearchAreaStateChange,
@@ -3237,6 +3242,15 @@ const Sidebar = ({
                     switchColor={show3DBuildings ? '#3b82f6' : '#e2e8f0'}
                     icon={<Box size={15} style={{ color: show3DBuildings ? '#1d4ed8' : '#64748b' }} />}
                     onToggle={() => onToggle3DBuildings?.(!show3DBuildings)}
+                    consumeLongPress={appearanceTips.consumeLongPress}
+                    {...appearanceTips.tipProps(DOWNLOAD_OFFLINE_TIP, true)}
+                  />
+                  <AppearanceRow
+                    label="Transit"
+                    on={showTransit}
+                    switchColor={showTransit ? '#3b82f6' : '#e2e8f0'}
+                    icon={<Train size={15} color={showTransit ? '#1d4ed8' : '#64748b'} style={{ color: showTransit ? '#1d4ed8' : '#64748b' }} />}
+                    onToggle={() => onToggleTransit?.(!showTransit)}
                     consumeLongPress={appearanceTips.consumeLongPress}
                     {...appearanceTips.tipProps(DOWNLOAD_OFFLINE_TIP, true)}
                   />

@@ -37,6 +37,7 @@ const KNOWN_LOCAL_STORAGE_KEYS = new Set([
   'ourmaps_3d_terrain',
   'ourmaps_3d_buildings',
   'ourmaps_satellite',
+  'ourmaps_transit',
   'ourmaps_account_id',
   'ourmaps_signed_out',
 ]);

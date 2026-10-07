@@ -8,6 +8,7 @@ import MapView, {
   paddedMapView,
   getMapEdgePadding,
   PIN_HEAD_CLEARANCE,
+  themePaintUpdates,
 } from '../MapView';
 import { getHoveredPinId, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
 import { getMapViewportBounds, resetMapViewportBoundsForTests } from '../../utils/mapViewport';
@@ -1377,6 +1378,89 @@ describe('MapView Compass and Tilt Indicator', () => {
       expect(mockSetLayoutProperty).toHaveBeenCalledWith('3d-buildings', 'visibility', 'none');
       expect(mockSetLayoutProperty).toHaveBeenCalledWith('buildings', 'visibility', 'visible');
     });
+  });
+
+  it('updates transit layers and roads_rail visibility with mutual exclusion', async () => {
+    mockSetLayoutProperty.mockClear();
+
+    const { rerender } = render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        showTransit={false}
+      />
+    );
+
+    act(() => {
+      capturedMapProps.current.onLoad({ target: mockMapInstance.getMap() });
+    });
+
+    mockSetLayoutProperty.mockClear();
+
+    rerender(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        showTransit={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('roads_rail', 'visibility', 'none');
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-rail', 'visibility', 'visible');
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-subway', 'visibility', 'visible');
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-tram', 'visibility', 'visible');
+    });
+
+    mockSetLayoutProperty.mockClear();
+
+    rerender(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+        showTransit={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('roads_rail', 'visibility', 'visible');
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-rail', 'visibility', 'none');
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-subway', 'visibility', 'none');
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-tram', 'visibility', 'none');
+    });
+  });
+
+  it('themePaintUpdates provides distinct styling for transit layers across light and dark modes', () => {
+    expect(themePaintUpdates({ id: 'transit-rail' }, 'light')).toEqual({ 'line-color': '#475569' });
+    expect(themePaintUpdates({ id: 'transit-rail' }, 'dark')).toEqual({ 'line-color': '#94a3b8' });
+
+    expect(themePaintUpdates({ id: 'transit-subway' }, 'light')).toEqual({ 'line-color': '#0284c7' });
+    expect(themePaintUpdates({ id: 'transit-subway' }, 'dark')).toEqual({ 'line-color': '#38bdf8' });
+
+    expect(themePaintUpdates({ id: 'transit-tram' }, 'light')).toEqual({ 'line-color': '#d97706' });
+    expect(themePaintUpdates({ id: 'transit-tram' }, 'dark')).toEqual({ 'line-color': '#fbbf24' });
+  });
+
+  it('inserts transit-rail, transit-subway, and transit-tram immediately after roads_rail in mapStyle', () => {
+    render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+      />
+    );
+
+    const style = capturedMapProps.current.mapStyle;
+    expect(style).toBeDefined();
+    const layerIds = style.layers.map((l: any) => l.id);
+    const railIndex = layerIds.indexOf('roads_rail');
+    expect(railIndex).toBeGreaterThan(-1);
+    expect(layerIds[railIndex + 1]).toBe('transit-rail');
+    expect(layerIds[railIndex + 2]).toBe('transit-subway');
+    expect(layerIds[railIndex + 3]).toBe('transit-tram');
   });
 
   describe('visible map edge padding and pin head clearance', () => {

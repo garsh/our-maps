@@ -195,6 +195,15 @@ export function MapEditor() {
     setStoredBoolean('ourmaps_satellite', enabled);
   }, []);
 
+  const [showTransit, setShowTransit] = useState<boolean>(() => {
+    return getStoredBoolean('ourmaps_transit', false);
+  });
+
+  const handleToggleTransit = useCallback((enabled: boolean) => {
+    setShowTransit(enabled);
+    setStoredBoolean('ourmaps_transit', enabled);
+  }, []);
+
   // Mobile layout states
   const [isMobile, setIsMobile] = useState(viewportIsMobile);
   const isMobileRef = useRef(isMobile);
@@ -2378,6 +2387,8 @@ export function MapEditor() {
               onToggle3DTerrain={handleToggle3DTerrain}
               show3DBuildings={show3DBuildings}
               onToggle3DBuildings={handleToggle3DBuildings}
+              showTransit={showTransit}
+              onToggleTransit={handleToggleTransit}
               onSearchAreaStateChange={setSearchAreaState}
               isPanelMinimized={isMobile ? sheetHeight <= 0 : sidebarWidth <= 0}
               isDraggingSheet={isDraggingSheet}
@@ -2463,6 +2474,7 @@ export function MapEditor() {
             showHillshade={showHillshade}
             show3DTerrain={show3DTerrain}
             show3DBuildings={show3DBuildings}
+            showTransit={showTransit}
             onLocationTrackingChange={setIsTrackingLocation}
           />
         </div>

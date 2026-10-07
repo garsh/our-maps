@@ -766,6 +766,7 @@ describe('Sidebar', () => {
     const onToggleHillshade = vi.fn();
     const onToggle3DTerrain = vi.fn();
     const onToggle3DBuildings = vi.fn();
+    const onToggleTransit = vi.fn();
     const onThemeChange = vi.fn();
     const onToggleSatellite = vi.fn();
     render(<TestWrapper handlers={{
@@ -775,6 +776,8 @@ describe('Sidebar', () => {
       show3DTerrain: true,
       onToggle3DBuildings,
       show3DBuildings: true,
+      onToggleTransit,
+      showTransit: true,
       onThemeChange,
       mapTheme: 'light',
       onToggleSatellite,
@@ -793,9 +796,13 @@ describe('Sidebar', () => {
     fireEvent.click(screen.getByText('3D Buildings'));
     expect(onToggle3DBuildings).toHaveBeenCalledWith(false);
 
+    fireEvent.click(screen.getByText('Transit'));
+    expect(onToggleTransit).toHaveBeenCalledWith(false);
+
     fireEvent.click(screen.getByText('Dark Mode'));
     expect(onThemeChange).toHaveBeenCalledWith('dark');
     expect(screen.getByText('Dark Mode')).toBeInTheDocument();
+    expect(screen.getByText('Transit')).toBeInTheDocument();
     expect(screen.getByText('Hillshading')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Satellite'));
@@ -816,13 +823,30 @@ describe('Sidebar', () => {
     expect(onToggle3DTerrain).toHaveBeenCalledWith(false);
   });
 
+  it('toggles Transit and verifies knob position and callback', () => {
+    const onToggleTransit = vi.fn();
+    const { rerender } = render(<TestWrapper handlers={{ onToggleTransit, showTransit: true }} />);
+
+    fireEvent.click(screen.getByLabelText(/more options/i));
+    const transitOption = screen.getByText('Transit');
+    const row = transitOption.parentElement?.parentElement as HTMLElement;
+    const switchKnob = row.lastElementChild?.firstElementChild as HTMLElement;
+    expect(switchKnob.style.left).toBe('18px');
+
+    fireEvent.click(transitOption);
+    expect(onToggleTransit).toHaveBeenCalledWith(false);
+
+    rerender(<TestWrapper handlers={{ onToggleTransit, showTransit: false }} />);
+    expect(switchKnob.style.left).toBe('2px');
+  });
+
   it('orders appearance options and describes offline behavior on hover and long-press', () => {
     const onToggle3DTerrain = vi.fn();
     render(<TestWrapper handlers={{ onToggle3DTerrain, show3DTerrain: true }} />);
 
     fireEvent.click(screen.getByLabelText(/more options/i));
 
-    const labels = ['Dark Mode', '3D Buildings', 'Hillshading', '3D Terrain', 'Satellite'];
+    const labels = ['Dark Mode', '3D Buildings', 'Transit', 'Hillshading', '3D Terrain', 'Satellite'];
     const nodes = labels.map((label) => screen.getByText(label));
     for (let i = 0; i < nodes.length - 1; i++) {
       expect(nodes[i].compareDocumentPosition(nodes[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -890,6 +914,13 @@ describe('Sidebar', () => {
       });
       expect(tooltip()).toHaveTextContent('Available offline via download.');
       fireEvent.mouseLeave(labelEl('3D Buildings'));
+
+      fireEvent.mouseEnter(labelEl('Transit'));
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(tooltip()).toHaveTextContent('Available offline via download.');
+      fireEvent.mouseLeave(labelEl('Transit'));
 
       fireEvent.mouseEnter(labelEl('Hillshading'));
       act(() => {

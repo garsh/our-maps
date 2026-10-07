@@ -32,17 +32,19 @@ vi.mock('../components/MapView', async (importOriginal) => {
       targetPinId,
       hiddenLayerIds,
       mobileControlsTarget,
+      showTransit,
     }: {
       onPinClick?: (pin: { id: string; lat: number; lng: number; label?: string }) => void;
       pins?: Array<{ id: string; lat: number; lng: number; label?: string; layerId?: string }>;
       targetPinId?: string | null;
       hiddenLayerIds?: Set<string | null>;
       mobileControlsTarget?: HTMLElement | null;
+      showTransit?: boolean;
     }) => {
       const visiblePins = (pins ?? []).filter((pin) => !hiddenLayerIds?.has(pin.layerId || null));
       const target = mobileControlsTarget || (typeof document !== 'undefined' ? document.getElementById('mobile-map-controls') : null);
       return (
-        <div data-testid="map-view" data-target-pin-id={targetPinId || ''}>
+        <div data-testid="map-view" data-target-pin-id={targetPinId || ''} data-show-transit={String(showTransit ?? false)}>
           {visiblePins.map((pin) => (
             <button
               key={pin.id}
@@ -2217,6 +2219,85 @@ describe('App Components Error Handling', () => {
       });
       expect(mockSocket.emit.mock.calls.some((call) => call[0] === 'pins-reorder')).toBe(false);
       expect(pinRowLabels()).toEqual(['Stay A', 'Stay B', 'Move C', 'Stay D']);
+    });
+  });
+
+  describe('Transit Appearance Setting', () => {
+    it('initial default render has transit disabled', async () => {
+      localStorage.removeItem('ourmaps_transit');
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'map-1',
+        name: 'Test Map',
+        pins: [],
+        layers: [],
+        userRole: 'owner',
+      });
+
+      renderWithProviders(<MapEditor />, {
+        initialEntries: ['/map/map-1'],
+        routePath: '/map/:id',
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('map-view')).toHaveAttribute('data-show-transit', 'false');
+      });
+    });
+
+    it('localStorage hydration initializes transit state when ourmaps_transit is true', async () => {
+      localStorage.setItem('ourmaps_transit', 'true');
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'map-1',
+        name: 'Test Map',
+        pins: [],
+        layers: [],
+        userRole: 'owner',
+      });
+
+      renderWithProviders(<MapEditor />, {
+        initialEntries: ['/map/map-1'],
+        routePath: '/map/:id',
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('map-view')).toHaveAttribute('data-show-transit', 'true');
+      });
+      localStorage.removeItem('ourmaps_transit');
+    });
+
+    it('toggle action updates state and writes ourmaps_transit to localStorage', async () => {
+      localStorage.removeItem('ourmaps_transit');
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'map-1',
+        name: 'Test Map',
+        pins: [],
+        layers: [],
+        userRole: 'owner',
+      });
+
+      renderWithProviders(<MapEditor />, {
+        initialEntries: ['/map/map-1'],
+        routePath: '/map/:id',
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('map-view')).toHaveAttribute('data-show-transit', 'false');
+      });
+
+      fireEvent.click(screen.getByLabelText(/more options/i));
+      const transitOption = screen.getByText('Transit');
+      fireEvent.click(transitOption);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('map-view')).toHaveAttribute('data-show-transit', 'true');
+      });
+      expect(localStorage.getItem('ourmaps_transit')).toBe('true');
+
+      fireEvent.click(transitOption);
+      await waitFor(() => {
+        expect(screen.getByTestId('map-view')).toHaveAttribute('data-show-transit', 'false');
+      });
+      expect(localStorage.getItem('ourmaps_transit')).toBe('false');
+      localStorage.removeItem('ourmaps_transit');
     });
   });
 });

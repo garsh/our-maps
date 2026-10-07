@@ -788,6 +788,7 @@ interface MapViewProps {
   showHillshade?: boolean;
   show3DTerrain?: boolean;
   show3DBuildings?: boolean;
+  showTransit?: boolean;
   isOffline?: boolean;
   onLocationTrackingChange?: (isTracking: boolean) => void;
   isMobile?: boolean;
@@ -1015,11 +1016,21 @@ const PinOverlays = memo(({
 const LIGHT_MINOR_ROAD_COLOR = ['interpolate', ['linear'], ['zoom'], 10, '#e2dfd7', 13.5, '#d4d0c7', 15.5, '#ffffff'];
 const DARK_MINOR_ROAD_COLOR = ['interpolate', ['linear'], ['zoom'], 9, '#36465e', 13, '#3e506c', 15.5, '#485b7a'];
 
-function themePaintUpdates(layer: { id?: string; type?: string }, flavor: 'light' | 'dark'): Record<string, any> | null {
+export function themePaintUpdates(layer: { id?: string; type?: string }, flavor: 'light' | 'dark'): Record<string, any> | null {
   const id = layer.id || '';
   const type = layer.type;
   if (!id || id === 'esri-satellite') return null;
   const dark = flavor === 'dark';
+
+  if (id === 'transit-rail') {
+    return { 'line-color': dark ? '#94a3b8' : '#475569' };
+  }
+  if (id === 'transit-subway') {
+    return { 'line-color': dark ? '#38bdf8' : '#0284c7' };
+  }
+  if (id === 'transit-tram') {
+    return { 'line-color': dark ? '#fbbf24' : '#d97706' };
+  }
 
   if (id === 'background') {
     return {
@@ -1275,6 +1286,7 @@ const MapView = ({
   showHillshade = true,
   show3DTerrain = true,
   show3DBuildings = true,
+  showTransit = false,
   isOffline = false,
   onLocationTrackingChange,
   isMobile = false,
@@ -1687,6 +1699,51 @@ const MapView = ({
     }
   }, [show3DBuildings]);
 
+  // Dynamically toggle transit layers vs roads_rail visibility without rebuilding MapLibre style
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const map = mapRef.current.getMap();
+    if (!map) return;
+
+    const syncTransit = () => {
+      try {
+        if (typeof map.getLayer === 'function' && typeof map.setLayoutProperty === 'function') {
+          const transitTarget = showTransit ? 'visible' : 'none';
+          const roadsRailTarget = showTransit ? 'none' : 'visible';
+
+          if (map.getLayer('roads_rail')) {
+            const current = typeof map.getLayoutProperty === 'function'
+              ? map.getLayoutProperty('roads_rail', 'visibility')
+              : undefined;
+            if (current !== roadsRailTarget) {
+              map.setLayoutProperty('roads_rail', 'visibility', roadsRailTarget);
+            }
+          }
+
+          const transitLayers = ['transit-rail', 'transit-subway', 'transit-tram'];
+          for (const layerId of transitLayers) {
+            if (map.getLayer(layerId)) {
+              const current = typeof map.getLayoutProperty === 'function'
+                ? map.getLayoutProperty(layerId, 'visibility')
+                : undefined;
+              if (current !== transitTarget) {
+                map.setLayoutProperty(layerId, 'visibility', transitTarget);
+              }
+            }
+          }
+        }
+      } catch {}
+    };
+
+    if (typeof map.getLayer === 'function' && map.getLayer('transit-rail')) {
+      syncTransit();
+    } else if (typeof map.once === 'function') {
+      map.once('styledata', syncTransit);
+    } else {
+      syncTransit();
+    }
+  }, [showTransit]);
+
   // Ensure MapLibre terrain state stays in sync across theme and layer changes without tearing down terrain
   useEffect(() => {
     if (!mapRef.current) return;
@@ -1763,6 +1820,9 @@ const MapView = ({
 
       if (l.id === 'buildings') {
         l.layout['visibility'] = show3DBuildings ? 'none' : 'visible';
+      }
+      if (l.id === 'roads_rail') {
+        l.layout['visibility'] = showTransit ? 'none' : 'visible';
       }
 
       if (validFlavor === 'light') {
@@ -2035,6 +2095,84 @@ const MapView = ({
       customLayers.splice(insertIndex, 0, hillshadeLayer);
     } else {
       customLayers.push(hillshadeLayer);
+    }
+
+    // Transit infrastructure layers (active when showTransit is toggled on)
+    const transitRailLayer = {
+      id: 'transit-rail',
+      type: 'line',
+      source: 'protomaps',
+      'source-layer': 'roads',
+      filter: [
+        'all',
+        ['==', ['get', 'kind'], 'rail'],
+        ['in', ['get', 'kind_detail'], ['literal', ['rail', 'narrow_gauge', 'preserved', 'monorail', 'funicular']]],
+        ['!', ['in', ['get', 'service'], ['literal', ['siding', 'crossover', 'yard']]]],
+      ],
+      layout: {
+        visibility: showTransit ? 'visible' : 'none',
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': validFlavor === 'dark' ? '#94a3b8' : '#475569',
+        'line-dasharray': [2, 2],
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.8, 12, 2.0, 16, 3.5],
+      },
+    };
+
+    const transitSubwayLayer = {
+      id: 'transit-subway',
+      type: 'line',
+      source: 'protomaps',
+      'source-layer': 'roads',
+      filter: [
+        'all',
+        ['==', ['get', 'kind'], 'rail'],
+        ['==', ['get', 'kind_detail'], 'subway'],
+      ],
+      layout: {
+        visibility: showTransit ? 'visible' : 'none',
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': validFlavor === 'dark' ? '#38bdf8' : '#0284c7',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1.2, 13, 2.5, 16, 4.5],
+      },
+    };
+
+    const transitTramLayer = {
+      id: 'transit-tram',
+      type: 'line',
+      source: 'protomaps',
+      'source-layer': 'roads',
+      filter: [
+        'all',
+        ['==', ['get', 'kind'], 'rail'],
+        ['in', ['get', 'kind_detail'], ['literal', ['tram', 'light_rail']]],
+      ],
+      layout: {
+        visibility: showTransit ? 'visible' : 'none',
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': validFlavor === 'dark' ? '#fbbf24' : '#d97706',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.0, 14, 2.0, 16, 3.5],
+      },
+    };
+
+    const railIndex = customLayers.findIndex((l: any) => l.id === 'roads_rail');
+    if (railIndex !== -1) {
+      customLayers.splice(railIndex + 1, 0, transitRailLayer, transitSubwayLayer, transitTramLayer);
+    } else {
+      const labelIdx = customLayers.findIndex((l: any) => l.type === 'symbol');
+      if (labelIdx !== -1) {
+        customLayers.splice(labelIdx, 0, transitRailLayer, transitSubwayLayer, transitTramLayer);
+      } else {
+        customLayers.push(transitRailLayer, transitSubwayLayer, transitTramLayer);
+      }
     }
 
     return {
