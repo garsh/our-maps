@@ -118,6 +118,43 @@ describe('Sidebar', () => {
     expect(nameInput.selectionEnd).toBe('Layer 1'.length);
   });
 
+  it('links URLs in the open pin description', () => {
+    const description = 'Notes at https://example.com/trail. Also www.park.org/map';
+    const pin = {
+      id: '1',
+      lat: 10,
+      lng: 20,
+      label: 'Test Pin',
+      description,
+      address: '1 Main St',
+      position: 0,
+    };
+    const onPinClick = vi.fn();
+
+    const closed = render(<TestWrapper pins={[pin]} handlers={{ onPinClick }} />);
+    expect(screen.getByText(description)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'https://example.com/trail' })).not.toBeInTheDocument();
+    closed.unmount();
+
+    render(<TestWrapper pins={[pin]} handlers={{ onPinClick, targetPinId: '1' }} />);
+    const link = screen.getByRole('link', { name: 'https://example.com/trail' });
+    expect(link).toHaveAttribute('href', 'https://example.com/trail');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(screen.getByRole('link', { name: 'www.park.org/map' })).toHaveAttribute('href', 'https://www.park.org/map');
+
+    const item = screen.getByText('Test Pin').closest('li') as HTMLElement;
+    expect(item.textContent).toContain('Notes at ');
+    expect(item.textContent).toContain('. Also ');
+
+    fireEvent.click(link);
+    expect(onPinClick).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText('Edit'));
+    expect(screen.queryByRole('link', { name: 'https://example.com/trail' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/description/i)).toHaveValue(description);
+  });
+
   it('calls onUpdatePin when description is changed', () => {
     const onUpdatePin = vi.fn();
     render(<TestWrapper handlers={{ onUpdatePin }} />);

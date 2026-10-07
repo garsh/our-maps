@@ -113,6 +113,21 @@ button:active {
   outline-offset: 1px;
 }
 
+.pin-description-link {
+  color: var(--primary-accent);
+  text-decoration-line: underline;
+  text-underline-offset: 2px;
+}
+
+.pin-description-link:hover {
+  color: var(--primary-hover);
+}
+
+.pin-description-link:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 1px;
+}
+
 .input-field {
   width: 100%;
   padding: 12px 16px;

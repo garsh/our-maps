@@ -74,6 +74,7 @@ import { comparePinPositions } from '../utils/reorderUtils';
 import { getMapViewportBounds } from '../utils/mapViewport';
 import { PIN_COLORS, resolvePinColorCode, formatColorName, DEFAULT_ICON_COLORS, getCoLocatedPinIds } from '../utils/mapUtils';
 import { CustomColorPicker } from './CustomColorPicker';
+import { LinkifiedText } from './LinkifiedText';
 
 class MouseSensor extends PointerSensor {
   static activators = [
@@ -1293,9 +1294,10 @@ const SortablePin = memo(({
               color: 'var(--text-primary)',
               lineHeight: '1.3',
               whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere',
               ...(pin.address ? { borderTop: '1px solid var(--divider-color)', marginTop: '0.3rem', paddingTop: '8px' } : {})
             }}>
-              {pin.description}
+              <LinkifiedText text={pin.description} />
             </div>
           )}
         </div>
