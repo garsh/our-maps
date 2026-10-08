@@ -1,11 +1,18 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import LandingPage from '../LandingPage';
 import { apiService } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 import * as tileUtils from '../../utils/tileUtils';
+import {
+  accountStorageKey,
+  getAccountScope,
+  installAccountScopeFromStorage,
+  noteSignedInAccount,
+  resetAccountScopeForTests,
+} from '../../utils/accountScope';
 
 vi.mock('../../services/api');
 vi.mock('../../contexts/AuthContext');
@@ -22,6 +29,20 @@ vi.mock('../../utils/tileUtils', async () => {
   };
 });
 
+function setOnline(online: boolean) {
+  Object.defineProperty(navigator, 'onLine', { configurable: true, value: online });
+}
+
+function renderLanding() {
+  return render(
+    <MemoryRouter>
+      <ThemeProvider>
+        <LandingPage />
+      </ThemeProvider>
+    </MemoryRouter>
+  );
+}
+
 describe('LandingPage label persistence', () => {
   const mockUser = { id: 'user-1', email: 'test@test.com', name: 'Test User' };
   const mockMaps = [
@@ -36,6 +57,8 @@ describe('LandingPage label persistence', () => {
     vi.clearAllMocks();
     localStorage.clear();
     sessionStorage.clear();
+    setOnline(true);
+    resetAccountScopeForTests();
     (useAuth as any).mockReturnValue({
       user: mockUser,
       token: 'mock-token',
@@ -54,6 +77,11 @@ describe('LandingPage label persistence', () => {
     });
     (tileUtils.getMapDownloadStatuses as any).mockResolvedValue(new Map());
     (tileUtils.unionCachedMapsWithDownloads as any).mockImplementation(async (cached: typeof mockMaps) => cached);
+  });
+
+  afterEach(() => {
+    setOnline(true);
+    resetAccountScopeForTests();
   });
 
   it('defaults to "all" when no label has been previously selected', async () => {
@@ -274,5 +302,73 @@ describe('LandingPage label persistence', () => {
     await waitFor(() => {
       expect(apiService.assignMapLabel).toHaveBeenCalledWith('label-123', 'map-2');
     });
+  });
+
+  it('restores the account filter after an online load opens the scope without replacing it', async () => {
+    localStorage.setItem('ourmaps_account_id', 'user-1');
+    localStorage.setItem(accountStorageKey('cached_selected_label', 'user-1'), JSON.stringify('shared'));
+    installAccountScopeFromStorage();
+    expect(getAccountScope()).toEqual({ mode: 'hidden' });
+
+    renderLanding();
+
+    const select = await screen.findByLabelText('Filter maps by label') as HTMLSelectElement;
+    expect(select.value).toBe('all');
+    expect(JSON.parse(localStorage.getItem(accountStorageKey('cached_selected_label', 'user-1')) || '""')).toBe('shared');
+
+    act(() => {
+      noteSignedInAccount('user-1');
+    });
+
+    await waitFor(() => {
+      expect(select.value).toBe('shared');
+    });
+    expect(JSON.parse(localStorage.getItem(accountStorageKey('cached_selected_label', 'user-1')) || '""')).toBe('shared');
+  });
+
+  it('shows the same filter when the landing page is opened again', async () => {
+    noteSignedInAccount('user-1');
+    const first = renderLanding();
+
+    const select = await screen.findByLabelText('Filter maps by label') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'unlabelled' } });
+
+    await waitFor(() => {
+      expect(JSON.parse(localStorage.getItem(accountStorageKey('cached_selected_label', 'user-1')) || '""')).toBe('unlabelled');
+      expect(screen.queryByText('Map One')).not.toBeInTheDocument();
+    });
+
+    first.unmount();
+    renderLanding();
+
+    const restored = await screen.findByLabelText('Filter maps by label') as HTMLSelectElement;
+    expect(restored.value).toBe('unlabelled');
+    expect(screen.getByText('Map Two')).toBeInTheDocument();
+    expect(screen.queryByText('Map One')).not.toBeInTheDocument();
+  });
+
+  it('keeps the saved filter when the account is known but the session user is not', async () => {
+    noteSignedInAccount('user-1');
+    localStorage.setItem(accountStorageKey('cached_selected_label', 'user-1'), JSON.stringify('owned'));
+    localStorage.setItem(accountStorageKey('cached_maps', 'user-1'), JSON.stringify(mockMaps));
+    (useAuth as any).mockReturnValue({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      isLoading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      logoutEverywhere: vi.fn(),
+    });
+
+    renderLanding();
+
+    const select = await screen.findByLabelText('Filter maps by label') as HTMLSelectElement;
+    await waitFor(() => {
+      expect(select.value).toBe('owned');
+    });
+    expect(JSON.parse(localStorage.getItem(accountStorageKey('cached_selected_label', 'user-1')) || '""')).toBe('owned');
+    expect(screen.getByText('Map One')).toBeInTheDocument();
+    expect(screen.queryByText('Map Two')).not.toBeInTheDocument();
   });
 });

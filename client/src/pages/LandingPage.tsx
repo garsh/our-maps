@@ -53,6 +53,22 @@ function isSystemLabel(id: string, includeSearch = false): boolean {
   return ids.includes(id);
 }
 
+function accountScopeKey(scope: ReturnType<typeof getAccountScope>): string {
+  return scope.mode === 'account' ? `account:${scope.userId}` : scope.mode;
+}
+
+/** Last non-search filter. A hidden scope has nothing to read, so this returns "all". */
+function readSavedLabelSelection(): string {
+  const saved = getStoredJson<string | null>('cached_selected_label', null);
+  if (!saved || saved === 'search') return 'all';
+  return saved;
+}
+
+/** All, Downloaded, and Search. Every other filter is cleared when signed out. */
+function isAnonymousLabel(id: string): boolean {
+  return id === 'all' || id === 'offline' || id === 'search';
+}
+
 function elementContainsText(el: Element): boolean {
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   let node = walker.nextNode();
@@ -119,10 +135,11 @@ export default function LandingPage() {
   const [assignments, setAssignments] = useState<MapLabelAssignment[]>(() => getStoredJson<MapLabelAssignment[]>('cached_map_label_assignments', []));
   const [systemSettings, setSystemSettings] = useState<Record<string, LabelSortMode>>(() => getStoredJson<Record<string, LabelSortMode>>('cached_system_label_settings', {}));
   const [systemOrder, setSystemOrder] = useState<Record<string, string[]>>(() => getStoredJson<Record<string, string[]>>('cached_system_label_map_order', {}));
+  // Scope whose saved filter is already the one in state. Until then, don't write.
+  const selectedLabelScopeRef = useRef<string | null>(null);
   const [activeLabelId, setActiveLabelId] = useState<string>(() => {
-    const saved = getStoredJson<string | null>('cached_selected_label', null);
-    if (!saved || saved === 'search') return 'all';
-    return saved;
+    if (getAccountScope().mode === 'hidden') return 'all';
+    return readSavedLabelSelection();
   });
   const [labelingMap, setLabelingMap] = useState<{ map: MapSummary; anchorRect: DOMRect } | null>(null);
   const [showCreateLabelModal, setShowCreateLabelModal] = useState(false);
@@ -168,19 +185,28 @@ export default function LandingPage() {
     };
   }, []);
 
-  // Remember the last selected label across visits (ignoring transient search mode)
+  // Remember the last selected label across visits. Search is temporary.
+  // An online load starts hidden, so the first value is "all" and must not be saved.
+  // The scope subscription restores the saved filter when that scope opens.
   useEffect(() => {
-    if (activeLabelId && activeLabelId !== 'search') {
-      setStoredJson('cached_selected_label', activeLabelId);
+    const current = getAccountScope();
+    if (current.mode === 'hidden') return;
+    const key = accountScopeKey(current);
+    if (selectedLabelScopeRef.current !== key) {
+      selectedLabelScopeRef.current = key;
+      if (readSavedLabelSelection() !== activeLabelId) return;
     }
+    if (activeLabelId === 'search') return;
+    setStoredJson('cached_selected_label', activeLabelId);
   }, [activeLabelId]);
 
-  // If user is not authenticated once auth check finishes, revert user-only labels to 'all'
+  // Signed out, keep only All, Downloaded, and Search. The same account keeps
+  // its filter while the session cannot be checked (offline, or me() never returns).
   useEffect(() => {
-    if (!authLoading && !user) {
-      if (activeLabelId !== 'all' && activeLabelId !== 'offline' && activeLabelId !== 'search') {
-        setActiveLabelId('all');
-      }
+    if (authLoading || user) return;
+    if (getAccountScope().mode === 'account') return;
+    if (!isAnonymousLabel(activeLabelId)) {
+      setActiveLabelId('all');
     }
   }, [user, authLoading, activeLabelId]);
 
@@ -590,7 +616,15 @@ export default function LandingPage() {
 
   useEffect(() => {
     return subscribeAccountScope(() => {
-      if (getAccountScope().mode === 'hidden') clearPrivateHome();
+      const next = getAccountScope();
+      if (next.mode === 'hidden') {
+        clearPrivateHome();
+        selectedLabelScopeRef.current = null;
+        setActiveLabelId(prev => (isAnonymousLabel(prev) ? prev : 'all'));
+        return;
+      }
+      selectedLabelScopeRef.current = accountScopeKey(next);
+      setActiveLabelId(readSavedLabelSelection());
     });
   }, []);
 
@@ -646,6 +680,12 @@ export default function LandingPage() {
     navigate('/map/new');
   };
 
+  const accountScope = getAccountScope();
+  const accountUserId = user?.id ?? (accountScope.mode === 'account' ? accountScope.userId : undefined);
+  // Owned, shared, and custom labels stay available for this account when the
+  // session user has not loaded yet, so a restored filter still has its option.
+  const showAccountFilters = Boolean(user) || accountScope.mode === 'account';
+
   const activeSortMode: LabelSortMode = useMemo(() => {
     if (activeLabelId === 'search') {
       const mode = systemSettings['search'] || 'last_accessed';
@@ -662,8 +702,8 @@ export default function LandingPage() {
     const labeledMapIds = new Set(assignments.map(a => a.mapId));
     const counts: Record<string, number> = {
       all: maps.length,
-      owned: maps.filter(m => m.ownerId === user?.id).length,
-      shared: maps.filter(m => m.ownerId !== user?.id).length,
+      owned: maps.filter(m => m.ownerId === accountUserId).length,
+      shared: maps.filter(m => m.ownerId !== accountUserId).length,
       unlabelled: maps.filter(m => !labeledMapIds.has(m.id)).length,
       offline: maps.filter(m => downloadStatuses.get(m.id)?.isComplete).length,
     };
@@ -671,7 +711,7 @@ export default function LandingPage() {
       counts[l.id] = assignments.filter(a => a.labelId === l.id).length;
     }
     return counts;
-  }, [maps, user, downloadStatuses, labels, assignments]);
+  }, [maps, accountUserId, downloadStatuses, labels, assignments]);
 
   const filteredMaps = useMemo(() => {
     let list = maps;
@@ -681,9 +721,9 @@ export default function LandingPage() {
         list = list.filter(m => m.name.toLowerCase().includes(q) || (m.ownerName || '').toLowerCase().includes(q));
       }
     } else if (activeLabelId === 'owned') {
-      list = list.filter(m => m.ownerId === user?.id);
+      list = list.filter(m => m.ownerId === accountUserId);
     } else if (activeLabelId === 'shared') {
-      list = list.filter(m => m.ownerId !== user?.id);
+      list = list.filter(m => m.ownerId !== accountUserId);
     } else if (activeLabelId === 'unlabelled') {
       const labeledMapIds = new Set(assignments.map(a => a.mapId));
       list = list.filter(m => !labeledMapIds.has(m.id));
@@ -735,7 +775,7 @@ export default function LandingPage() {
     }
 
     return sorted;
-  }, [maps, activeLabelId, user, downloadStatuses, assignments, searchQuery, activeSortMode, systemOrder]);
+  }, [maps, activeLabelId, accountUserId, downloadStatuses, assignments, searchQuery, activeSortMode, systemOrder]);
 
   const handleSortModeChange = async (newMode: LabelSortMode) => {
     setShowSortDropdown(false);
@@ -1423,7 +1463,7 @@ export default function LandingPage() {
                       }}
                     >
                       <option value="all">All Maps ({labelCounts.all || 0})</option>
-                      {Boolean(user) && (
+                      {showAccountFilters && (
                         <>
                           <option value="owned">Owned by Me ({labelCounts.owned || 0})</option>
                           <option value="shared">Shared with Me ({labelCounts.shared || 0})</option>
@@ -1432,7 +1472,7 @@ export default function LandingPage() {
                       <option value="unlabelled">Unlabelled Maps ({labelCounts.unlabelled || 0})</option>
                       <option value="offline">Downloaded ({labelCounts.offline || 0})</option>
                       <option value="search">Search</option>
-                      {Boolean(user) && labels.map(l => (
+                      {showAccountFilters && labels.map(l => (
                         <option key={l.id} value={l.id}>
                           {l.name} ({labelCounts[l.id] || 0})
                         </option>
@@ -1503,7 +1543,7 @@ export default function LandingPage() {
                     }}
                   >
                     <option value="all">All Maps ({labelCounts.all || 0})</option>
-                    {Boolean(user) && (
+                    {showAccountFilters && (
                       <>
                         <option value="owned">Owned by Me ({labelCounts.owned || 0})</option>
                         <option value="shared">Shared with Me ({labelCounts.shared || 0})</option>
@@ -1512,7 +1552,7 @@ export default function LandingPage() {
                     <option value="unlabelled">Unlabelled Maps ({labelCounts.unlabelled || 0})</option>
                     <option value="offline">Downloaded ({labelCounts.offline || 0})</option>
                     <option value="search">Search</option>
-                    {Boolean(user) && labels.map(l => (
+                    {showAccountFilters && labels.map(l => (
                       <option key={l.id} value={l.id}>
                         {l.name} ({labelCounts[l.id] || 0})
                       </option>
