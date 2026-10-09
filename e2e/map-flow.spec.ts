@@ -1,4 +1,6 @@
 import { test, expect, login, waitForAutoSave, deleteCurrentMap } from './helpers';
+test.afterEach(async ({ page }) => {
+});
 
 test('full map creation flow', async ({ page }) => {
   await login(page);
@@ -46,7 +48,6 @@ test('full map creation flow', async ({ page }) => {
   await page.reload();
   await expect(page.getByText('Loading your map...')).not.toBeVisible({ timeout: 15000 });
   await expect(page.locator('aside')).toContainText('Test City', { timeout: 15000 });
-  await deleteCurrentMap(page);
 });
 
 test('updating an existing map', async ({ page }) => {
@@ -95,7 +96,6 @@ test('updating an existing map', async ({ page }) => {
   await expect(page.locator('h1')).toContainText('Updated Map Name', { timeout: 10000 });
   await expect(page.locator('aside')).toContainText('Initial', { timeout: 10000 });
   await expect(page.locator('aside')).toContainText('New', { timeout: 10000 });
-  await deleteCurrentMap(page);
 });
 
 test('rich pin metadata persistence and display', async ({ page }) => {
@@ -132,7 +132,6 @@ test('rich pin metadata persistence and display', async ({ page }) => {
   await page.getByRole('button', { name: 'Edit' }).first().click();
   await expect(page.getByLabel('Description')).toHaveValue('This is a great place to test metadata.', { timeout: 10000 });
 
-  await deleteCurrentMap(page);
 });
 
 test('pin grouping and persistence', async ({ page }) => {
