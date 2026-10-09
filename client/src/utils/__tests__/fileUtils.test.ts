@@ -339,5 +339,97 @@ describe('fileUtils', () => {
       expect(merged.skippedPins).toBe(2);
       expect(merged.pins).toHaveLength(3);
     });
+
+    it('does not merge layers with the same name', () => {
+      const existingLayers: PinLayer[] = [
+        { id: 'existing-trails', name: 'Trails', position: 0 }
+      ];
+      const existingPins: Pin[] = [
+        { id: 'pin-1', lat: 10, lng: 20, label: 'Trailhead A', position: 0, layerId: 'existing-trails' }
+      ];
+      const merged = mergeImportedMapData(existingLayers, existingPins, {
+        layers: [{ id: 'imported-trails', name: 'Trails', position: 0 }],
+        pins: [{ id: 'pin-2', lat: 11, lng: 21, label: 'Trailhead B', position: 0, layerId: 'imported-trails' }]
+      });
+
+      expect(merged.layers).toHaveLength(2);
+      expect(merged.layers[0].id).toBe('existing-trails');
+      expect(merged.layers[0].name).toBe('Trails');
+      expect(merged.layers[1].id).not.toBe('existing-trails');
+      expect(merged.layers[1].name).toBe('Trails');
+      expect(merged.pins).toHaveLength(2);
+      expect(merged.pins[0].layerId).toBe('existing-trails');
+      expect(merged.pins[1].layerId).toBe(merged.layers[1].id);
+    });
+
+    it('appends pins in the default layer to the existing default layer', () => {
+      const existingPins: Pin[] = [
+        { id: 'pin-d1', lat: 1, lng: 1, label: 'Default 1', position: 0 },
+        { id: 'pin-d2', lat: 2, lng: 2, label: 'Default 2', position: 4 }
+      ];
+      const merged = mergeImportedMapData([], existingPins, {
+        pins: [
+          { id: 'pin-imp-d1', lat: 3, lng: 3, label: 'Imported Default 1', position: 0 },
+          { id: 'pin-imp-d2', lat: 4, lng: 4, label: 'Imported Default 2', position: 1 }
+        ]
+      });
+
+      expect(merged.pins).toHaveLength(4);
+      expect(merged.addedPins[0].position).toBe(5);
+      expect(merged.addedPins[1].position).toBe(6);
+    });
+
+    it('imports pins and layers into an existing map with pins and layers', () => {
+      const existingLayers: PinLayer[] = [
+        { id: 'l-exist-1', name: 'Restaurants', position: 0 },
+        { id: 'l-exist-2', name: 'Parks', position: 1 },
+      ];
+      const existingPins: Pin[] = [
+        { id: 'p-exist-1', lat: 10, lng: 10, label: 'Diner', position: 0, layerId: 'l-exist-1' },
+        { id: 'p-exist-2', lat: 20, lng: 20, label: 'Central Park', position: 0, layerId: 'l-exist-2' },
+        { id: 'p-exist-3', lat: 30, lng: 30, label: 'Home', position: 2 },
+      ];
+
+      const importedMap: Partial<MapData> = {
+        name: 'Should Be Ignored',
+        layers: [
+          { id: 'imp-l-1', name: 'Restaurants', position: 0 },
+          { id: 'imp-l-2', name: 'Museums', position: 1 },
+        ],
+        pins: [
+          { id: 'imp-p-1', lat: 11, lng: 11, label: 'Bistro', position: 0, layerId: 'imp-l-1' },
+          { id: 'imp-p-2', lat: 22, lng: 22, label: 'Art Gallery', position: 0, layerId: 'imp-l-2' },
+          { id: 'imp-p-3', lat: 33, lng: 33, label: 'Library', position: 0 },
+        ]
+      };
+
+      const result = mergeImportedMapData(existingLayers, existingPins, importedMap);
+
+      expect(result.layers).toHaveLength(4);
+      expect(result.layers[0]).toEqual(existingLayers[0]);
+      expect(result.layers[1]).toEqual(existingLayers[1]);
+      expect(result.addedLayers).toHaveLength(2);
+
+      expect(result.addedLayers[0].name).toBe('Restaurants');
+      expect(result.addedLayers[0].id).not.toBe('l-exist-1');
+      expect(result.addedLayers[0].position).toBe(2);
+
+      expect(result.addedLayers[1].name).toBe('Museums');
+      expect(result.addedLayers[1].position).toBe(3);
+
+      expect(result.pins).toHaveLength(6);
+      expect(result.pins.slice(0, 3)).toEqual(existingPins);
+      expect(result.addedPins).toHaveLength(3);
+
+      expect(result.addedPins[0].label).toBe('Bistro');
+      expect(result.addedPins[0].layerId).toBe(result.addedLayers[0].id);
+
+      expect(result.addedPins[1].label).toBe('Art Gallery');
+      expect(result.addedPins[1].layerId).toBe(result.addedLayers[1].id);
+
+      expect(result.addedPins[2].label).toBe('Library');
+      expect(result.addedPins[2].layerId).toBeUndefined();
+      expect(result.addedPins[2].position).toBe(3);
+    });
   });
 });

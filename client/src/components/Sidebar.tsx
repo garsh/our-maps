@@ -2447,6 +2447,9 @@ const Sidebar = ({
   const [exportFileName, setExportFileName] = useState('');
   const [exportFormat, setExportFormat] = useState<'json' | 'geojson' | 'kml'>('json');
 
+  // Import Modal State
+  const [showImportConfirmModal, setShowImportConfirmModal] = useState(false);
+
   // Rename Modal State
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameInput, setRenameInput] = useState(mapName === 'Unnamed Map' ? '' : mapName);
@@ -2729,9 +2732,7 @@ const Sidebar = ({
     setShowExportModal(false);
   };
 
-  const handleImportClick = () => {
-    setIsMenuOpen(false);
-    if (pins.length > 0 || layers.length > 0) return;
+  const triggerFileInput = () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json,.geojson,.kml';
@@ -2747,6 +2748,15 @@ const Sidebar = ({
       }
     };
     input.click();
+  };
+
+  const handleImportClick = () => {
+    setIsMenuOpen(false);
+    if (pins.length === 0 && layers.length === 0) {
+      triggerFileInput();
+    } else {
+      setShowImportConfirmModal(true);
+    }
   };
 
   const mouseSensor = useSensor(MouseSensor, MOUSE_SENSOR_OPTIONS);
@@ -3146,6 +3156,16 @@ const Sidebar = ({
                   {!readOnly && (
                     <div 
                       style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={handleImportClick}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      Import
+                    </div>
+                  )}
+                  {!readOnly && (
+                    <div 
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
                       onClick={() => {
                         setRenameInput(mapName === 'Unnamed Map' ? '' : mapName);
                         setShowRenameModal(true);
@@ -3165,16 +3185,6 @@ const Sidebar = ({
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
                       Share
-                    </div>
-                  )}
-                  {!readOnly && pins.length === 0 && layers.length === 0 && (
-                    <div 
-                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
-                      onClick={handleImportClick}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      Import
                     </div>
                   )}
                   {deferredPrompt && (
@@ -3728,6 +3738,110 @@ const Sidebar = ({
                   style={{ flex: 1, padding: '12px', background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: 'var(--radius-md)', fontWeight: '800', cursor: 'pointer', boxShadow: '0 4px 10px rgba(72, 61, 139, 0.3)' }}
                 >
                   Export
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {/* Import Confirmation Modal (Portaled) */}
+        {showImportConfirmModal && typeof document !== 'undefined' && createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0,0,0,0.6)',
+              backdropFilter: 'blur(2px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 99999,
+              padding: '20px'
+            }}
+            onClick={() => setShowImportConfirmModal(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowImportConfirmModal(false);
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="import-confirm-title"
+              data-testid="import-confirm-dialog"
+              style={{
+                background: 'var(--surface-color)',
+                borderRadius: 'var(--radius-lg)',
+                padding: '32px',
+                maxWidth: '440px',
+                width: '100%',
+                boxShadow: '0 20px 50px rgba(0,0,0,0.3)'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3
+                id="import-confirm-title"
+                style={{
+                  margin: '0 0 16px 0',
+                  fontSize: '1.3rem',
+                  fontWeight: '900',
+                  color: 'var(--text-primary)'
+                }}
+              >
+                Are you sure?
+              </h3>
+              <p
+                style={{
+                  margin: '0 0 24px 0',
+                  fontSize: '0.95rem',
+                  color: 'var(--text-primary)',
+                  lineHeight: 1.4
+                }}
+              >
+                Layers and pins will be added to the current map.
+              </p>
+              <div style={{ display: 'flex', gap: '16px' }}>
+                <button
+                  type="button"
+                  autoFocus
+                  data-testid="import-cancel-button"
+                  onClick={() => setShowImportConfirmModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    background: '#f5f5f5',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-md)',
+                    fontWeight: '800',
+                    cursor: 'pointer',
+                    color: '#444'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  data-testid="import-confirm-button"
+                  onClick={() => {
+                    setShowImportConfirmModal(false);
+                    triggerFileInput();
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    background: 'var(--primary-color)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: 'var(--radius-md)',
+                    fontWeight: '800',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 10px rgba(72, 61, 139, 0.3)'
+                  }}
+                >
+                  Import
                 </button>
               </div>
             </div>

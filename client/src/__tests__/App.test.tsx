@@ -272,6 +272,103 @@ describe('App Components Error Handling', () => {
     }
   });
 
+  it('imports pins and layers into an existing map with pins/layers and ignores imported map name', async () => {
+    mockSocket.connected = true;
+    (apiService.getMap as any).mockResolvedValue({
+      id: 'map-1',
+      name: 'Existing Map Name',
+      pins: [
+        { id: 'pin-existing', lat: 1, lng: 2, label: 'Existing Pin', position: 0 }
+      ],
+      layers: [
+        { id: 'layer-existing', name: 'Existing Layer', position: 0 }
+      ],
+      userRole: 'owner'
+    });
+
+    let fileInput: HTMLInputElement | null = null;
+    const realCreateElement = document.createElement.bind(document);
+    const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tagName: string, options?: any) => {
+      const el = realCreateElement(tagName, options);
+      if (tagName === 'input') fileInput = el as HTMLInputElement;
+      return el;
+    });
+
+    try {
+      render(
+        <GoogleOAuthProvider clientId="test-client-id">
+          <MemoryRouter initialEntries={['/map/map-1']}>
+            <Routes>
+              <Route path="/map/:id" element={<MapEditor />} />
+            </Routes>
+          </MemoryRouter>
+        </GoogleOAuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/Synced/i)).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByLabelText(/more options/i));
+      fireEvent.click(screen.getByText('Import'));
+
+      // Confirmation dialog should be displayed
+      const dialog = screen.getByTestId('import-confirm-dialog');
+      expect(dialog).toBeInTheDocument();
+      expect(within(dialog).getByText('Layers and pins will be added to the current map.')).toBeInTheDocument();
+
+      // Confirm import in dialog
+      fileInput = null;
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+      expect(fileInput).toBeTruthy();
+
+      const file = new File([JSON.stringify({
+        name: 'New Imported Title',
+        layers: [{ id: 'imp-layer', name: 'Existing Layer', position: 0 }],
+        pins: [
+          { id: 'imp-pin-1', lat: 10, lng: 20, label: 'Imported In Existing Name Layer', position: 0, layerId: 'imp-layer' },
+          { id: 'imp-pin-2', lat: 11, lng: 21, label: 'Imported Default Pin', position: 0 }
+        ]
+      })], 'map.json', { type: 'application/json' });
+
+      await act(async () => {
+        await fileInput!.onchange?.({ target: { files: [file] } } as any);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Imported In Existing Name Layer')).toBeInTheDocument();
+        expect(screen.getByText('Imported Default Pin')).toBeInTheDocument();
+      });
+
+      // Existing pin is still there
+      expect(screen.getByText('Existing Pin')).toBeInTheDocument();
+
+      // Map name is unchanged (ignored imported name)
+      expect(screen.getByText('Existing Map Name')).toBeInTheDocument();
+      expect(screen.queryByText('New Imported Title')).not.toBeInTheDocument();
+      expect(mockSocket.emit).not.toHaveBeenCalledWith('map-name-update', expect.anything());
+
+      // Layer-create emitted for new layer (not merged with existing layer of same name)
+      expect(mockSocket.emit).toHaveBeenCalledWith('layer-create', expect.objectContaining({
+        mapId: 'map-1',
+        layer: expect.objectContaining({ name: 'Existing Layer', id: expect.not.stringMatching('layer-existing') })
+      }), expect.any(Function));
+
+      // Pin-create emitted for both new pins
+      expect(mockSocket.emit).toHaveBeenCalledWith('pin-create', expect.objectContaining({
+        mapId: 'map-1',
+        pin: expect.objectContaining({ label: 'Imported In Existing Name Layer' })
+      }), expect.any(Function));
+      expect(mockSocket.emit).toHaveBeenCalledWith('pin-create', expect.objectContaining({
+        mapId: 'map-1',
+        layerId: null,
+        pin: expect.objectContaining({ label: 'Imported Default Pin' })
+      }), expect.any(Function));
+    } finally {
+      createSpy.mockRestore();
+    }
+  });
+
   it('allows hovering over remaining pins immediately after deleting a pin', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 

@@ -1826,7 +1826,8 @@ export function MapEditor() {
 
   const handleImport = useCallback((data: Partial<MapData>) => {
     if (!editModeRef.current || isOfflineRef.current) return;
-    if (pinsRef.current.length > 0 || layersRef.current.length > 0) return;
+
+    const isBlankMap = pinsRef.current.length === 0 && layersRef.current.length === 0;
 
     const merged = mergeImportedMapData(layersRef.current, pinsRef.current, data);
     if (merged.addedLayers.length === 0 && merged.addedPins.length === 0) {
@@ -1840,13 +1841,13 @@ export function MapEditor() {
     setPins(merged.pins);
 
     const currentName = mapNameRef.current;
-    if (data.name && currentName === 'Unnamed Map') {
+    if (isBlankMap && data.name && currentName === 'Unnamed Map') {
       setMapName(data.name);
     }
 
     const currentMapId = mapIdRef.current;
     if (currentMapId) {
-      if (data.name && currentName === 'Unnamed Map') {
+      if (isBlankMap && data.name && currentName === 'Unnamed Map') {
         emitDelta('map-name-update', { mapId: currentMapId, name: data.name });
       }
       merged.addedLayers.forEach(layer => {

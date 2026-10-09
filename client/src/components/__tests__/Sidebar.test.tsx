@@ -1082,18 +1082,129 @@ describe('Sidebar', () => {
     expect(screen.queryByLabelText('Edit')).not.toBeInTheDocument();
   });
 
-  it('hides Import when the map already has pins', () => {
+  it('shows Import right after Export when the map already has pins', () => {
     render(<TestWrapper />);
 
     fireEvent.click(screen.getByLabelText(/more options/i));
-    expect(screen.queryByText('Import')).not.toBeInTheDocument();
+    const exportItem = screen.getByText('Export');
+    const importItem = screen.getByText('Import');
+    expect(exportItem).toBeInTheDocument();
+    expect(importItem).toBeInTheDocument();
+    expect(exportItem.compareDocumentPosition(importItem) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('shows Import when the map has no pins or layers', () => {
-    render(<TestWrapper pins={[]} />);
+  it('shows confirmation dialog when importing into a map with pins and cancels or confirms', () => {
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
 
-    fireEvent.click(screen.getByLabelText(/more options/i));
-    expect(screen.getByText('Import')).toBeInTheDocument();
+    try {
+      render(<TestWrapper pins={[{ id: '1', lat: 10, lng: 20, label: 'Existing Pin', position: 0 }]} />);
+
+      fireEvent.click(screen.getByLabelText(/more options/i));
+      fireEvent.click(screen.getByText('Import'));
+
+      const dialog = screen.getByTestId('import-confirm-dialog');
+      expect(dialog).toBeInTheDocument();
+      expect(within(dialog).getByRole('heading', { name: 'Are you sure?' })).toBeInTheDocument();
+      expect(within(dialog).getByText('Layers and pins will be added to the current map.')).toBeInTheDocument();
+      expect(clickSpy).not.toHaveBeenCalled();
+
+      // Cancel button dismisses
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByTestId('import-confirm-dialog')).not.toBeInTheDocument();
+      expect(clickSpy).not.toHaveBeenCalled();
+
+      // Re-open and confirm
+      fireEvent.click(screen.getByLabelText(/more options/i));
+      fireEvent.click(screen.getByText('Import'));
+      const reopenedDialog = screen.getByTestId('import-confirm-dialog');
+      fireEvent.click(within(reopenedDialog).getByRole('button', { name: 'Import' }));
+
+      expect(screen.queryByTestId('import-confirm-dialog')).not.toBeInTheDocument();
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      clickSpy.mockRestore();
+    }
+  });
+
+  it('shows Import without confirmation dialog when map has no pins or layers', () => {
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+
+    try {
+      render(<TestWrapper pins={[]} handlers={{ layers: [] }} />);
+
+      fireEvent.click(screen.getByLabelText(/more options/i));
+      const importItem = screen.getByText('Import');
+      expect(importItem).toBeInTheDocument();
+
+      fireEvent.click(importItem);
+      expect(screen.queryByTestId('import-confirm-dialog')).not.toBeInTheDocument();
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      clickSpy.mockRestore();
+    }
+  });
+
+  it('imports pins and layers into an existing map with pins and layers after confirming', async () => {
+    const onImport = vi.fn();
+    let fileInput: HTMLInputElement | null = null;
+    const realCreateElement = document.createElement.bind(document);
+    const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tagName: string, options?: any) => {
+      const el = realCreateElement(tagName, options);
+      if (tagName === 'input' && (el as HTMLInputElement).type !== 'checkbox') {
+        fileInput = el as HTMLInputElement;
+      }
+      return el;
+    });
+
+    try {
+      const existingLayers = [{ id: 'layer-1', name: 'Existing Layer', position: 0 }];
+      const existingPins = [
+        { id: 'pin-1', lat: 10, lng: 20, label: 'Existing Pin 1', position: 0, layerId: 'layer-1' },
+        { id: 'pin-2', lat: 11, lng: 21, label: 'Existing Pin 2', position: 0 }
+      ];
+
+      render(
+        <TestWrapper
+          pins={existingPins}
+          handlers={{ layers: existingLayers, onImport }}
+        />
+      );
+
+      fireEvent.click(screen.getByLabelText(/more options/i));
+      fireEvent.click(screen.getByText('Import'));
+
+      const dialog = screen.getByTestId('import-confirm-dialog');
+      expect(dialog).toBeInTheDocument();
+      expect(within(dialog).getByText('Layers and pins will be added to the current map.')).toBeInTheDocument();
+
+      fileInput = null;
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+      expect(fileInput).toBeTruthy();
+
+      const fileData = {
+        name: 'Ignored Title',
+        layers: [{ id: 'imp-layer', name: 'Imported Layer', position: 0 }],
+        pins: [
+          { id: 'imp-pin-1', lat: 30, lng: 40, label: 'Imported Pin 1', position: 0, layerId: 'imp-layer' },
+          { id: 'imp-pin-2', lat: 31, lng: 41, label: 'Imported Pin 2', position: 0 }
+        ]
+      };
+      const file = new File([JSON.stringify(fileData)], 'imported.json', { type: 'application/json' });
+
+      await act(async () => {
+        await fileInput!.onchange?.({ target: { files: [file] } } as any);
+      });
+
+      expect(onImport).toHaveBeenCalledTimes(1);
+      const passedData = onImport.mock.calls[0][0];
+      expect(passedData.pins).toHaveLength(2);
+      expect(passedData.layers).toHaveLength(1);
+      expect(passedData.layers[0].name).toBe('Imported Layer');
+      expect(passedData.pins[0].label).toBe('Imported Pin 1');
+      expect(passedData.pins[1].label).toBe('Imported Pin 2');
+    } finally {
+      createSpy.mockRestore();
+    }
   });
 
   it('calls onRemoveLayer when Delete Layer button is confirmed', () => {
