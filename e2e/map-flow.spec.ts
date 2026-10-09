@@ -1,5 +1,6 @@
 import { test, expect, login, waitForAutoSave, deleteCurrentMap } from './helpers';
 test.afterEach(async ({ page }) => {
+  await deleteCurrentMap(page);
 });
 
 test('full map creation flow', async ({ page }) => {
