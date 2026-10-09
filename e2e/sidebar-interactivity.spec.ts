@@ -1,5 +1,9 @@
 import { test, expect, login, waitForAutoSave, deleteCurrentMap } from './helpers';
 
+test.afterEach(async ({ page }) => {
+  await deleteCurrentMap(page);
+});
+
 test('sidebar items are interactible', async ({ page }) => {
   // Mock places reverse geocode
   await page.route('**/places/reverse-geocode*', route => route.fulfill({ 
@@ -36,7 +40,6 @@ test('sidebar items are interactible', async ({ page }) => {
   await expect(page.getByLabel('Name', { exact: true })).not.toBeVisible();
   
   // 7. Cleanup test map
-  await deleteCurrentMap(page);
 });
 
 test('sidebar multi-layer creation, collapse/expand, and multi-selection flow', async ({ page }) => {
@@ -114,6 +117,5 @@ test('sidebar multi-layer creation, collapse/expand, and multi-selection flow', 
   await expect(page.getByRole('button', { name: /Go\s*\(\s*1\s*\)/i })).toBeVisible();
 
   // 4. Cleanup
-  await deleteCurrentMap(page);
 });
 
