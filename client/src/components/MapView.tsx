@@ -1031,6 +1031,16 @@ export function themePaintUpdates(layer: { id?: string; type?: string }, flavor:
   if (id === 'transit-tram') {
     return { 'line-color': dark ? '#fbbf24' : '#d97706' };
   }
+  if (id === 'transit-route') {
+    return {
+      'line-color': ['coalesce', ['get', 'colour'], ['get', 'colour_fallback']],
+    };
+  }
+  if (id === 'transit-route-casing') {
+    return {
+      'line-color': dark ? '#182230' : '#e0ded7',
+    };
+  }
 
   if (id === 'background') {
     return {
@@ -1720,7 +1730,7 @@ const MapView = ({
             }
           }
 
-          const transitLayers = ['transit-rail', 'transit-subway', 'transit-tram'];
+          const transitLayers = ['transit-rail', 'transit-subway', 'transit-tram', 'transit-route-casing', 'transit-route'];
           for (const layerId of transitLayers) {
             if (map.getLayer(layerId)) {
               const current = typeof map.getLayoutProperty === 'function'
@@ -2163,15 +2173,67 @@ const MapView = ({
       },
     };
 
+    // Several routes can share one way. Slot offsets those copies so the strokes stay apart.
+    const transitRouteFilter = [
+      'all',
+      ['in', ['get', 'route'], ['literal', ['subway', 'light_rail', 'tram', 'monorail', 'funicular']]],
+      ['<', ['get', 'slot'], 4],
+    ];
+    const transitRouteOffset = ['*', ['get', 'slot'], 1.5];
+    const transitRouteColor = ['coalesce', ['get', 'colour'], ['get', 'colour_fallback']];
+
+    const transitRouteCasingLayer = {
+      id: 'transit-route-casing',
+      type: 'line',
+      source: 'protomaps',
+      'source-layer': 'transit',
+      filter: transitRouteFilter,
+      layout: {
+        visibility: showTransit ? 'visible' : 'none',
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': validFlavor === 'dark' ? '#182230' : '#e0ded7',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 9, 3.2, 13, 4.5, 16, 6.5],
+        'line-offset': transitRouteOffset,
+      },
+    };
+
+    const transitRouteLayer = {
+      id: 'transit-route',
+      type: 'line',
+      source: 'protomaps',
+      'source-layer': 'transit',
+      filter: transitRouteFilter,
+      layout: {
+        visibility: showTransit ? 'visible' : 'none',
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': transitRouteColor,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1.2, 13, 2.5, 16, 4.5],
+        'line-offset': transitRouteOffset,
+      },
+    };
+
+    const transitStack = [
+      transitRailLayer,
+      transitSubwayLayer,
+      transitTramLayer,
+      transitRouteCasingLayer,
+      transitRouteLayer,
+    ];
     const railIndex = customLayers.findIndex((l: any) => l.id === 'roads_rail');
     if (railIndex !== -1) {
-      customLayers.splice(railIndex + 1, 0, transitRailLayer, transitSubwayLayer, transitTramLayer);
+      customLayers.splice(railIndex + 1, 0, ...transitStack);
     } else {
       const labelIdx = customLayers.findIndex((l: any) => l.type === 'symbol');
       if (labelIdx !== -1) {
-        customLayers.splice(labelIdx, 0, transitRailLayer, transitSubwayLayer, transitTramLayer);
+        customLayers.splice(labelIdx, 0, ...transitStack);
       } else {
-        customLayers.push(transitRailLayer, transitSubwayLayer, transitTramLayer);
+        customLayers.push(...transitStack);
       }
     }
 

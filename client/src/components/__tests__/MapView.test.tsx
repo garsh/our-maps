@@ -1412,6 +1412,8 @@ describe('MapView Compass and Tilt Indicator', () => {
       expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-rail', 'visibility', 'visible');
       expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-subway', 'visibility', 'visible');
       expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-tram', 'visibility', 'visible');
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-route-casing', 'visibility', 'visible');
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-route', 'visibility', 'visible');
     });
 
     mockSetLayoutProperty.mockClear();
@@ -1430,6 +1432,8 @@ describe('MapView Compass and Tilt Indicator', () => {
       expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-rail', 'visibility', 'none');
       expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-subway', 'visibility', 'none');
       expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-tram', 'visibility', 'none');
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-route-casing', 'visibility', 'none');
+      expect(mockSetLayoutProperty).toHaveBeenCalledWith('transit-route', 'visibility', 'none');
     });
   });
 
@@ -1442,9 +1446,16 @@ describe('MapView Compass and Tilt Indicator', () => {
 
     expect(themePaintUpdates({ id: 'transit-tram' }, 'light')).toEqual({ 'line-color': '#d97706' });
     expect(themePaintUpdates({ id: 'transit-tram' }, 'dark')).toEqual({ 'line-color': '#fbbf24' });
+
+    const routeColor = ['coalesce', ['get', 'colour'], ['get', 'colour_fallback']];
+    expect(themePaintUpdates({ id: 'transit-route' }, 'light')).toEqual({ 'line-color': routeColor });
+    expect(themePaintUpdates({ id: 'transit-route' }, 'dark')).toEqual({ 'line-color': routeColor });
+
+    expect(themePaintUpdates({ id: 'transit-route-casing' }, 'light')).toEqual({ 'line-color': '#e0ded7' });
+    expect(themePaintUpdates({ id: 'transit-route-casing' }, 'dark')).toEqual({ 'line-color': '#182230' });
   });
 
-  it('inserts transit-rail, transit-subway, and transit-tram immediately after roads_rail in mapStyle', () => {
+  it('inserts transit layers immediately after roads_rail in mapStyle', () => {
     render(
       <MapView
         pins={[]}
@@ -1461,6 +1472,30 @@ describe('MapView Compass and Tilt Indicator', () => {
     expect(layerIds[railIndex + 1]).toBe('transit-rail');
     expect(layerIds[railIndex + 2]).toBe('transit-subway');
     expect(layerIds[railIndex + 3]).toBe('transit-tram');
+    expect(layerIds[railIndex + 4]).toBe('transit-route-casing');
+    expect(layerIds[railIndex + 5]).toBe('transit-route');
+
+    const casing = style.layers[railIndex + 4];
+    const route = style.layers[railIndex + 5];
+    const routeFilter = [
+      'all',
+      ['in', ['get', 'route'], ['literal', ['subway', 'light_rail', 'tram', 'monorail', 'funicular']]],
+      ['<', ['get', 'slot'], 4],
+    ];
+    expect(casing['source-layer']).toBe('transit');
+    expect(route['source-layer']).toBe('transit');
+    expect(casing.filter).toEqual(routeFilter);
+    expect(route.filter).toEqual(routeFilter);
+    expect(casing.layout['line-cap']).toBe('round');
+    expect(casing.layout['line-join']).toBe('round');
+    expect(route.layout['line-cap']).toBe('round');
+    expect(route.layout['line-join']).toBe('round');
+    expect(casing.paint['line-color']).toBe('#e0ded7');
+    expect(route.paint['line-color']).toEqual(['coalesce', ['get', 'colour'], ['get', 'colour_fallback']]);
+    expect(casing.paint['line-width']).toEqual(['interpolate', ['linear'], ['zoom'], 9, 3.2, 13, 4.5, 16, 6.5]);
+    expect(route.paint['line-width']).toEqual(['interpolate', ['linear'], ['zoom'], 9, 1.2, 13, 2.5, 16, 4.5]);
+    expect(casing.paint['line-offset']).toEqual(['*', ['get', 'slot'], 1.5]);
+    expect(route.paint['line-offset']).toEqual(['*', ['get', 'slot'], 1.5]);
   });
 
   describe('visible map edge padding and pin head clearance', () => {
