@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Compression, PMTiles } from 'pmtiles';
-import { handleExtractSize, handleTileStream, parseExtractResumeOffset } from '../tileStream';
+import { handleExtractSize, handleTileStream, parseExtractResumeOffset, computeBboxFromPins } from '../tileStream';
 import { buildPmtilesBuffer } from '../pmtilesArchive';
 import { clearMapFilePathCache } from '../mapFiles';
 import { BufferSource } from './testHelpers';
@@ -238,5 +238,156 @@ describe('tileStream handler', () => {
     await handleTileStream(tooFarReq, tooFarRes, [sharedDir]);
     expect(goneStatus).toBe(416);
     expect(goneJson.bytes).toBe(full.length);
+  });
+
+  describe('computeBboxFromPins', () => {
+    it('returns null for empty pins array', () => {
+      expect(computeBboxFromPins([])).toBeNull();
+      expect(computeBboxFromPins(null as any)).toBeNull();
+    });
+
+    it('returns padded bounding box for a single pin', () => {
+      const bbox = computeBboxFromPins([{ lat: 40.0, lng: -74.0 }]);
+      expect(bbox).not.toBeNull();
+      expect(bbox!.north).toBeCloseTo(40.05);
+      expect(bbox!.south).toBeCloseTo(39.95);
+      expect(bbox!.east).toBeCloseTo(-73.95);
+      expect(bbox!.west).toBeCloseTo(-74.05);
+    });
+
+    it('returns padded bounding box covering multiple pins', () => {
+      const bbox = computeBboxFromPins([
+        { lat: 10.0, lng: 20.0 },
+        { lat: 15.0, lng: 30.0 },
+      ]);
+      expect(bbox).not.toBeNull();
+      expect(bbox!.north).toBeGreaterThan(15.0);
+      expect(bbox!.south).toBeLessThan(10.0);
+      expect(bbox!.east).toBeGreaterThan(30.0);
+      expect(bbox!.west).toBeLessThan(20.0);
+    });
+  });
+
+  describe('GET request extract handling', () => {
+    it('handles GET request with bounding box query parameters', async () => {
+      const chunks: Buffer[] = [];
+      const headers: Record<string, string> = {};
+      let ended = false;
+      const req: any = {
+        method: 'GET',
+        params: { id: 'map-abc' },
+        query: { north: '10', south: '-10', east: '10', west: '-10', minZoom: '1', maxZoom: '2' },
+        headers: {},
+        on: () => {}
+      };
+      const res: any = {
+        writableEnded: false,
+        destroyed: false,
+        headersSent: false,
+        setHeader: (k: string, v: string) => { headers[k] = v; },
+        write: (chunk: Buffer) => {
+          chunks.push(Buffer.from(chunk));
+          return true;
+        },
+        end: () => { ended = true; res.writableEnded = true; },
+        status: () => res,
+        json: () => res,
+        destroy: () => { res.destroyed = true; },
+      };
+
+      await handleTileStream(req, res, [sharedDir]);
+      const body = Buffer.concat(chunks);
+      expect(ended).toBe(true);
+      expect(headers['Content-Type']).toBe('application/vnd.pmtiles');
+      expect(headers['Content-Disposition']).toBe('attachment; filename="map-abc.pmtiles"');
+      expect(headers['Accept-Ranges']).toBe('bytes');
+      expect(Number(headers['X-Total-Tiles'])).toBeGreaterThan(0);
+      expect(Number(headers['X-Extract-Bytes'])).toBe(body.length);
+      expect(body.toString('ascii', 0, 7)).toBe('PMTiles');
+    });
+
+    it('handles GET request with derived bounding box', async () => {
+      const chunks: Buffer[] = [];
+      const headers: Record<string, string> = {};
+      let ended = false;
+      const req: any = {
+        method: 'GET',
+        params: { id: 'my-pins-map' },
+        query: { minZoom: '1', maxZoom: '2' },
+        derivedBbox: { north: 10, south: -10, east: 10, west: -10 },
+        headers: {},
+        on: () => {}
+      };
+      const res: any = {
+        writableEnded: false,
+        destroyed: false,
+        headersSent: false,
+        setHeader: (k: string, v: string) => { headers[k] = v; },
+        write: (chunk: Buffer) => { chunks.push(Buffer.from(chunk)); return true; },
+        end: () => { ended = true; res.writableEnded = true; },
+        status: () => res,
+        json: () => res,
+        destroy: () => { res.destroyed = true; },
+      };
+
+      await handleTileStream(req, res, [sharedDir]);
+      expect(ended).toBe(true);
+      expect(headers['Content-Disposition']).toBe('attachment; filename="my-pins-map.pmtiles"');
+      expect(chunks.length).toBeGreaterThan(0);
+    });
+
+    it('returns 206 Partial Content on GET with Range header', async () => {
+      const fullChunks: Buffer[] = [];
+      const fullReq: any = {
+        method: 'GET',
+        params: { id: 'range-map' },
+        query: { north: '10', south: '-10', east: '10', west: '-10', minZoom: '1', maxZoom: '2' },
+        headers: {},
+        on: () => {}
+      };
+      const fullRes: any = {
+        writableEnded: false,
+        destroyed: false,
+        headersSent: false,
+        setHeader: () => {},
+        write: (chunk: Buffer) => { fullChunks.push(Buffer.from(chunk)); return true; },
+        end: () => { fullRes.writableEnded = true; },
+        status: () => fullRes,
+        json: () => fullRes,
+        destroy: () => {},
+      };
+      await handleTileStream(fullReq, fullRes, [sharedDir]);
+      const fullBody = Buffer.concat(fullChunks);
+      const offset = 100;
+
+      const resumeChunks: Buffer[] = [];
+      const resumeHeaders: Record<string, string> = {};
+      let statusCode = 200;
+      const resumeReq: any = {
+        method: 'GET',
+        params: { id: 'range-map' },
+        query: { north: '10', south: '-10', east: '10', west: '-10', minZoom: '1', maxZoom: '2' },
+        headers: { range: `bytes=${offset}-` },
+        on: () => {}
+      };
+      const resumeRes: any = {
+        writableEnded: false,
+        destroyed: false,
+        headersSent: false,
+        setHeader: (k: string, v: string) => { resumeHeaders[k] = v; },
+        write: (chunk: Buffer) => { resumeChunks.push(Buffer.from(chunk)); return true; },
+        end: () => { resumeRes.writableEnded = true; },
+        status: (code: number) => { statusCode = code; return resumeRes; },
+        json: () => resumeRes,
+        destroy: () => {},
+      };
+
+      await handleTileStream(resumeReq, resumeRes, [sharedDir]);
+      expect(statusCode).toBe(206);
+      expect(resumeHeaders['Content-Range']).toBe(`bytes ${offset}-${fullBody.length - 1}/${fullBody.length}`);
+      expect(Number(resumeHeaders['Content-Length'])).toBe(fullBody.length - offset);
+      const partialBody = Buffer.concat(resumeChunks);
+      expect(partialBody.equals(fullBody.subarray(offset))).toBe(true);
+    });
   });
 });

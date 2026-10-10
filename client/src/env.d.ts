@@ -14,3 +14,49 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+interface BackgroundFetchUIOptions {
+  icons?: Array<{ src: string; sizes?: string; type?: string }>;
+  title?: string;
+}
+
+interface BackgroundFetchOptions extends BackgroundFetchUIOptions {
+  downloadTotal?: number;
+}
+
+interface BackgroundFetchRegistration extends EventTarget {
+  readonly id: string;
+  readonly uploadTotal: number;
+  readonly uploaded: number;
+  readonly downloadTotal: number;
+  readonly downloaded: number;
+  readonly result: '' | 'success' | 'failure';
+  readonly failureReason: '' | 'error' | 'abort';
+  readonly recordsAvailable: boolean;
+  abort(): Promise<boolean>;
+  match(request: RequestInfo, options?: any): Promise<BackgroundFetchRecord | undefined>;
+  matchAll(request?: RequestInfo, options?: any): Promise<BackgroundFetchRecord[]>;
+  updateUI(options: BackgroundFetchUIOptions): Promise<void>;
+}
+
+interface BackgroundFetchRecord {
+  readonly request: Request;
+  readonly responseReady: Promise<Response>;
+}
+
+interface BackgroundFetchManager {
+  fetch(id: string, requests: RequestInfo | RequestInfo[], options?: BackgroundFetchOptions): Promise<BackgroundFetchRegistration>;
+  get(id: string): Promise<BackgroundFetchRegistration | undefined>;
+  getIds(): Promise<string[]>;
+}
+
+interface ServiceWorkerRegistration {
+  readonly backgroundFetch?: BackgroundFetchManager;
+}
+
+interface Window {
+  BackgroundFetchManager?: {
+    prototype: BackgroundFetchManager;
+    new(): BackgroundFetchManager;
+  };
+}

@@ -7,6 +7,16 @@ import { addMapViewerIfLinkShared, resolveMapAccess } from '../permissions';
 import { MapCreateSchema, ShareSchema, PinSchema, LayerSchema } from '../schemas';
 import { revokeUserMapAccess, updateUserMapRole, syncSocketsOnPublicChange } from '../realtime';
 import { z } from 'zod';
+import path from 'path';
+import { buildCandidateMapsDirs } from '../mapFiles';
+import { handleTileStream, computeBboxFromPins } from '../tileStream';
+
+const candidateMapsDirs = buildCandidateMapsDirs({
+  extraRoots: [
+    path.resolve(__dirname, '../..'),
+    path.resolve(__dirname, '../../..'),
+  ],
+});
 
 const router = Router();
 
@@ -247,6 +257,57 @@ router.get('/:id/permissions', optionalAuthMiddleware, async (req: AuthRequest, 
     userRole: role,
     isPublic: Boolean(map.is_public)
   });
+});
+
+// GET map extract as .pmtiles
+router.get('/:id/extract.pmtiles', optionalAuthMiddleware, async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
+  const mapId = req.params.id;
+  console.log(`[TILE_STREAM_SERVER][route] GET /api/maps/${mapId}/extract.pmtiles initiated by user=${userId || 'anonymous'}, query=${JSON.stringify(req.query)}`);
+  const db = await getDb();
+
+  const map = await db.get(`
+    SELECT m.id, m.owner_id, m.is_public,
+           mp.role as permission_role
+    FROM maps m
+    LEFT JOIN map_permissions mp ON m.id = mp.map_id AND mp.user_id = ?
+    WHERE m.id = ?
+  `, userId || null, mapId);
+
+  if (!map) {
+    console.warn(`[TILE_STREAM_SERVER][route] Map ${mapId} not found in database`);
+    return res.status(404).json({ error: 'Map not found' });
+  }
+
+  const newlyAdded = await addMapViewerIfLinkShared(userId, mapId, map);
+  const { role } = resolveMapAccess(userId, map, {
+    newlyGrantedView: newlyAdded,
+  });
+  if (!role) {
+    console.warn(`[TILE_STREAM_SERVER][route] Access denied for map ${mapId} (user=${userId || 'anonymous'})`);
+    return res.status(userId ? 403 : 401).json({ error: 'Access denied' });
+  }
+
+  const { north, south, east, west } = req.query;
+  const hasExplicitBbox = north !== undefined && south !== undefined && east !== undefined && west !== undefined;
+
+  if (!hasExplicitBbox) {
+    const pins: Array<{ lat: number; lng: number }> = await db.all(
+      'SELECT lat, lng FROM pins WHERE map_id = ?',
+      mapId
+    );
+    const derived = computeBboxFromPins(pins);
+    if (!derived) {
+      console.warn(`[TILE_STREAM_SERVER][route] Map ${mapId} has no pins and no bounding box was specified`);
+      return res.status(400).json({ error: 'Map has no pins and no bounding box was specified' });
+    }
+    console.log(`[TILE_STREAM_SERVER][route] Map ${mapId}: derived bbox from ${pins.length} pins:`, derived);
+    (req as any).derivedBbox = derived;
+  } else {
+    console.log(`[TILE_STREAM_SERVER][route] Map ${mapId}: using explicit bbox query params:`, { north, south, east, west });
+  }
+
+  return handleTileStream(req, res, candidateMapsDirs);
 });
 
 // Helper to batch-query existing entity IDs in chunks (eliminates sequential N+1 round-trips)

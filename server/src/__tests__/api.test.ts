@@ -804,6 +804,38 @@ describe('API Endpoints', () => {
     });
   });
 
+  describe('GET /api/maps/:id/extract.pmtiles', () => {
+    it('returns 404 for non-existent map', async () => {
+      const res = await request(app).get(`/api/maps/${uuid(9999)}/extract.pmtiles`).set(authHeader);
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Map not found');
+    });
+
+    it('returns 401/403 for unauthorized access to private map', async () => {
+      const db = await getDb();
+      const strangerId = 'stranger-extract';
+      await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', strangerId, 'stranger@extract.com', 'Stranger');
+      const privateMapId = uuid(9991);
+      await db.run('INSERT INTO maps (id, name, owner_id, is_public) VALUES (?, ?, ?, 0)', privateMapId, 'Private Map', strangerId);
+
+      const resUnauth = await request(app).get(`/api/maps/${privateMapId}/extract.pmtiles`);
+      expect(resUnauth.status).toBe(401);
+
+      const resForbidden = await request(app).get(`/api/maps/${privateMapId}/extract.pmtiles`).set(authHeader);
+      expect(resForbidden.status).toBe(403);
+    });
+
+    it('returns 400 when map has no pins and no bounding box is provided', async () => {
+      const db = await getDb();
+      const emptyMapId = uuid(9992);
+      await db.run('INSERT INTO maps (id, name, owner_id, is_public) VALUES (?, ?, ?, 1)', emptyMapId, 'Empty Map', mockUser.id);
+
+      const res = await request(app).get(`/api/maps/${emptyMapId}/extract.pmtiles`).set(authHeader);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('no pins');
+    });
+  });
+
 });
 
 

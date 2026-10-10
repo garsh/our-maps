@@ -1,14 +1,38 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 // Load server/.env first; fall back to the root-level .env (used in dev)
 dotenv.config();
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), override: false });
+
+// Tee server logs to server/server.log in development so they are inspectable
+if (process.env.NODE_ENV !== 'production' || process.env.SERVER_LOG_FILE) {
+  const logFilePath = process.env.SERVER_LOG_FILE || path.resolve(__dirname, '../server.log');
+  const logStream = fs.createWriteStream(logFilePath, { flags: 'a' });
+  const formatArg = (a: any) =>
+    typeof a === 'object' && a !== null ? (a instanceof Error ? a.stack || a.message : JSON.stringify(a)) : String(a);
+  const origLog = console.log.bind(console);
+  const origWarn = console.warn.bind(console);
+  const origError = console.error.bind(console);
+  console.log = (...args: any[]) => {
+    origLog(...args);
+    try { logStream.write(`[${new Date().toISOString()}] [LOG] ${args.map(formatArg).join(' ')}\n`); } catch {}
+  };
+  console.warn = (...args: any[]) => {
+    origWarn(...args);
+    try { logStream.write(`[${new Date().toISOString()}] [WARN] ${args.map(formatArg).join(' ')}\n`); } catch {}
+  };
+  console.error = (...args: any[]) => {
+    origError(...args);
+    try { logStream.write(`[${new Date().toISOString()}] [ERROR] ${args.map(formatArg).join(' ')}\n`); } catch {}
+  };
+}
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
-import fs from 'fs';
 import http from 'http';
 import { Server, Socket } from 'socket.io';
 import mapsRouter from './routes/maps';
@@ -90,7 +114,13 @@ const tileExtractLimiter = rateLimit({
   message: { error: 'Too many tile download requests, please try again later.' },
   skip: () => process.env.NODE_ENV === 'test' || process.env.ALLOW_MOCK_AUTH === 'true',
 });
-app.use(['/api/maps/tiles/stream', '/maps/tiles/stream', '/api/maps/tiles/extract-size', '/maps/tiles/extract-size'], tileExtractLimiter);
+app.use([
+  '/api/maps/tiles/stream',
+  '/maps/tiles/stream',
+  '/api/maps/tiles/extract-size',
+  '/maps/tiles/extract-size',
+  /^\/api\/maps\/[^/]+\/extract\.pmtiles$/
+], tileExtractLimiter);
 
 // High-capacity limiter for static vector tiles, fonts, and sprites (prevents volumetric DoS while allowing smooth panning)
 const mapsAssetsLimiter = rateLimit({

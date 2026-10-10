@@ -321,15 +321,63 @@ function writeChunk(res: Response, chunk: Buffer): Promise<void> {
   });
 }
 
+export function computeBboxFromPins(pins: Array<{ lat: number; lng: number }>): BoundingBox | null {
+  if (!pins || pins.length === 0) {
+    return null;
+  }
+  let north = -90;
+  let south = 90;
+  let east = -180;
+  let west = 180;
+  for (const p of pins) {
+    if (p.lat > north) north = p.lat;
+    if (p.lat < south) south = p.lat;
+    if (p.lng > east) east = p.lng;
+    if (p.lng < west) west = p.lng;
+  }
+  const latMargin = Math.max(0.05, (north - south) * 0.1);
+  const lngMargin = Math.max(0.05, (east - west) * 0.1);
+  return {
+    north: Math.min(85.0511, north + latMargin),
+    south: Math.max(-85.0511, south - latMargin),
+    east: Math.min(180, east + lngMargin),
+    west: Math.max(-180, west - lngMargin),
+  };
+}
+
 function parseExtractRequest(req: Request): { bbox: BoundingBox; startZoom: number; endZoom: number } | { error: string } {
-  const { bbox, minZoom = 0, maxZoom = 15 } = req.body || {};
-  const validated = validateExtractBbox(bbox);
+  let rawBbox: any;
+  let minZoomVal: any = 0;
+  let maxZoomVal: any = 15;
+
+  if (req.method === 'GET') {
+    const q = req.query;
+    if (q.north !== undefined && q.south !== undefined && q.east !== undefined && q.west !== undefined) {
+      rawBbox = {
+        north: Number(q.north),
+        south: Number(q.south),
+        east: Number(q.east),
+        west: Number(q.west),
+      };
+    } else if ((req as any).derivedBbox) {
+      rawBbox = (req as any).derivedBbox;
+    }
+    if (q.minZoom !== undefined) minZoomVal = q.minZoom;
+    if (q.maxZoom !== undefined) maxZoomVal = q.maxZoom;
+  } else {
+    const body = req.body || {};
+    rawBbox = body.bbox;
+    if (body.minZoom !== undefined) minZoomVal = body.minZoom;
+    if (body.maxZoom !== undefined) maxZoomVal = body.maxZoom;
+  }
+
+  const validated = validateExtractBbox(rawBbox);
   if (!validated.valid) {
     return { error: validated.error };
   }
-  const minZNum = Number(minZoom);
+  const minZNum = Number(minZoomVal);
   const startZoom = Math.max(0, Math.min(15, Number.isFinite(minZNum) ? minZNum : 0));
-  const endZoom = Math.max(startZoom, Math.min(15, Number(maxZoom) || 15));
+  const endZoom = Math.max(startZoom, Math.min(15, Number(maxZoomVal) || 15));
 
   const estimatedTiles = countExtractTiles(validated.bbox, startZoom, endZoom);
   const maxAllowed = getMaxExtractTiles();
@@ -418,9 +466,10 @@ export async function handleTileStream(req: Request, res: Response, candidateMap
 
   const { bbox: extractBbox, startZoom, endZoom } = parsed;
   const rawResumeOffset = parseExtractResumeOffset(req);
-  const mapIdTag = (req.body && req.body.mapId) ? `[mapId=${req.body.mapId}] ` : '';
+  const resolvedMapId = req.params?.id || req.body?.mapId;
+  const mapIdTag = resolvedMapId ? `[mapId=${resolvedMapId}] ` : '';
 
-  console.log(`${mapIdTag}[TILE_STREAM_SERVER] New stream request received: rawResumeOffset=${rawResumeOffset} bytes, bbox=${JSON.stringify(extractBbox)}, zooms=${startZoom}-${endZoom}`);
+  console.log(`${mapIdTag}[TILE_STREAM_SERVER] New stream request (${req.method}): rawResumeOffset=${rawResumeOffset} bytes, bbox=${JSON.stringify(extractBbox)}, zooms=${startZoom}-${endZoom}`);
 
   let isAborted = false;
   req.on('close', () => {
@@ -452,6 +501,11 @@ export async function handleTileStream(req: Request, res: Response, candidateMap
     } else {
       console.log(`${mapIdTag}[TILE_STREAM_SERVER] Starting fresh stream (200 OK) for ${plan.totalBytes} bytes`);
     }
+    // Content-Disposition for file download
+    const mapId = String(req.params?.id || req.body?.mapId || 'extract');
+    const sanitizedMapId = mapId.replace(/\.pmtiles$/i, '').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filename = `${sanitizedMapId || 'extract'}.pmtiles`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Type', 'application/vnd.pmtiles');
     res.setHeader('Content-Length', remaining.toString());
     res.setHeader('Accept-Ranges', 'bytes');

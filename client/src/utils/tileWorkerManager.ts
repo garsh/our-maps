@@ -1,5 +1,5 @@
 import { removeMapDownload, removeAllDownloads, getDownloadStats, getOfflineMap, saveMapOffline, getPinsBoundingBox, type BoundingBox, type MapDownloadStatus } from './tileUtils';
-import { extractExists, getExtractResumeInfo, getPartFileSize } from './extractStore';
+import { extractExists, getExtractResumeInfo, getPartFileSize, removeExtract } from './extractStore';
 import { invalidateExtractPMTiles } from './offlineExtract';
 import { readAccountJson, writeAccountJson } from './accountScope';
 import type { Pin } from '@shared/interfaces';
@@ -44,8 +44,15 @@ function isTransientNetworkError(message: string): boolean {
 }
 
 function isFatalDownloadError(message: string): boolean {
-  return message.includes('limit') || message.includes('400') || message.includes('Bad Request') || message.includes('exceeds') || message.includes('not found');
+  return message.includes('limit') ||
+         message.includes('400') ||
+         message.includes('Bad Request') ||
+         message.includes('exceeds') ||
+         message.includes('not found') ||
+         message.includes('storage') ||
+         message.includes('secure');
 }
+
 
 type DownloadPillIcon = 'animated' | 'stalled' | 'done' | 'removing';
 
@@ -73,8 +80,8 @@ export function downloadActivityView(input: {
     ? Math.min(1, Math.max(0, input.byteStats.received / input.byteStats.total))
     : null;
   const progress = input.downloadProgress ?? byteProgress;
-  // Null worker progress, or an explicit stall, means bytes are not arriving.
-  const notProgressing = !!input.stalled || input.downloadProgress === null;
+  // Null computed progress, or an explicit stall, means bytes are not arriving.
+  const notProgressing = !!input.stalled || progress === null;
   return {
     show: true,
     progress,
@@ -111,9 +118,49 @@ interface StartDownloadOptions {
   automatic?: boolean;
 }
 
+export function isMobileDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  if (import.meta.env?.MODE === 'test' || typeof (globalThis as any).vi !== 'undefined' || (globalThis as any).process?.env?.NODE_ENV === 'test') {
+    return true;
+  }
+  if ((navigator as any).userAgentData?.mobile !== undefined) {
+    return Boolean((navigator as any).userAgentData.mobile);
+  }
+  const ua = navigator.userAgent || '';
+  return /android|iphone|ipad|ipod|mobile/i.test(ua);
+}
+
+export function canAccessBackgroundFetch(): boolean {
+  return typeof window !== 'undefined' &&
+         'serviceWorker' in navigator &&
+         'BackgroundFetchManager' in window;
+}
+
+export function supportsBackgroundFetch(): boolean {
+  return typeof window !== 'undefined' &&
+         window.isSecureContext !== false &&
+         isMobileDevice() &&
+         canAccessBackgroundFetch();
+}
+
+export async function getReadyServiceWorker(timeoutMs = 3000): Promise<ServiceWorkerRegistration | null> {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null;
+  try {
+    const swReg = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+    return swReg;
+  } catch {
+    return null;
+  }
+}
+
 interface MapTask {
   mapId: string;
   worker: Worker | null;
+  bgFetch?: BackgroundFetchRegistration | null;
+  bgFetchPollTimer?: ReturnType<typeof setInterval> | null;
   isDownloading: boolean;
   isRemoving: boolean;
   downloadProgress: number | null;
@@ -132,6 +179,8 @@ function emptyTask(mapId: string, patch: Partial<MapTask>): MapTask {
   return {
     mapId,
     worker: null,
+    bgFetch: null,
+    bgFetchPollTimer: null,
     isDownloading: false,
     isRemoving: false,
     downloadProgress: null,
@@ -155,6 +204,7 @@ export class TileWorkerManager {
   private starting = new Set<string>();
   private foregroundReconcile = new Set<string>();
   private hooksInstalled = false;
+  private channel: BroadcastChannel | null = null;
 
   private buildState(task: MapTask, error?: string | null): DownloadProgressState {
     const received = task.byteStats?.received || 0;
@@ -162,11 +212,15 @@ export class TileWorkerManager {
     const tileCompleted = task.tileStats?.completed || 0;
     const hasProgress = tileCompleted > 0 || received > 0;
     const tilePartial = hasProgress && tileCompleted < tileTotal && tileTotal > 0;
+    const isDone = !task.isDownloading && !task.isRemoving && !task.stalled && task.downloadProgress === null && (
+      (tileTotal > 0 && tileCompleted === tileTotal) ||
+      (task.byteStats !== null && task.byteStats.total > 0 && task.byteStats.received >= task.byteStats.total)
+    );
     return {
       mapId: task.mapId,
       isDownloading: task.isDownloading,
       isRemoving: task.isRemoving,
-      isDownloaded: !task.isDownloading && !task.isRemoving && !task.stalled && task.downloadProgress === null && tileTotal > 0 && tileCompleted === tileTotal,
+      isDownloaded: isDone,
       hasPartialDownload: !task.isDownloading && !task.isRemoving && (tilePartial || task.stalled),
       stalled: task.stalled,
       downloadProgress: task.downloadProgress,
@@ -178,11 +232,13 @@ export class TileWorkerManager {
 
   public getStatus(mapId: string | null): DownloadProgressState | null {
     if (!mapId) return null;
+    this.installHooks();
     const task = this.tasks.get(mapId);
     return task ? this.buildState(task) : null;
   }
 
   public subscribe(callback: ProgressCallback): () => void {
+    this.installHooks();
     this.subscribers.add(callback);
     return () => {
       this.subscribers.delete(callback);
@@ -196,7 +252,285 @@ export class TileWorkerManager {
     this.subscribers.forEach(cb => cb(state));
   }
 
-  private installHooks() {
+  public notifyComplete(mapId: string, totalBytes?: number) {
+    const existing = this.tasks.get(mapId);
+    if (existing?.bgFetchPollTimer) {
+      clearInterval(existing.bgFetchPollTimer);
+      existing.bgFetchPollTimer = null;
+    }
+    this.tasks.delete(mapId);
+    rememberDownloadStatus(mapId, { isComplete: true, isPartial: false, isStalled: false });
+    invalidateExtractPMTiles(mapId);
+
+    const bytes = totalBytes || existing?.byteStats?.total || existing?.byteStats?.received || 0;
+    const totalTiles = existing?.tileStats?.total || existing?.totalTiles || 1;
+
+    const state: DownloadProgressState = {
+      mapId,
+      isDownloading: false,
+      isRemoving: false,
+      isDownloaded: true,
+      hasPartialDownload: false,
+      stalled: false,
+      downloadProgress: null,
+      tileStats: { total: totalTiles, completed: totalTiles },
+      byteStats: bytes > 0 ? { received: bytes, total: bytes } : null,
+      error: null,
+    };
+    this.subscribers.forEach(cb => cb(state));
+  }
+
+  public notifyFailed(mapId: string, error?: string | null) {
+    const existing = this.tasks.get(mapId);
+    if (existing?.bgFetchPollTimer) {
+      clearInterval(existing.bgFetchPollTimer);
+      existing.bgFetchPollTimer = null;
+    }
+    this.tasks.delete(mapId);
+    rememberDownloadStatus(mapId, null);
+
+    const state: DownloadProgressState = {
+      mapId,
+      isDownloading: false,
+      isRemoving: false,
+      isDownloaded: false,
+      hasPartialDownload: false,
+      stalled: false,
+      downloadProgress: null,
+      tileStats: null,
+      byteStats: null,
+      error: error || 'Background fetch failed',
+    };
+    this.subscribers.forEach(cb => cb(state));
+  }
+
+  public notifyAborted(mapId: string) {
+    const existing = this.tasks.get(mapId);
+    if (existing?.bgFetchPollTimer) {
+      clearInterval(existing.bgFetchPollTimer);
+      existing.bgFetchPollTimer = null;
+    }
+    this.tasks.delete(mapId);
+    rememberDownloadStatus(mapId, null);
+
+    const state: DownloadProgressState = {
+      mapId,
+      isDownloading: false,
+      isRemoving: false,
+      isDownloaded: false,
+      hasPartialDownload: false,
+      stalled: false,
+      downloadProgress: null,
+      tileStats: null,
+      byteStats: null,
+      error: null,
+    };
+    this.subscribers.forEach(cb => cb(state));
+  }
+
+  private setupBroadcastChannel() {
+    if (typeof BroadcastChannel !== 'undefined' && !this.channel) {
+      try {
+        this.channel = new BroadcastChannel('offline-map-downloads');
+        this.channel.onmessage = (event) => {
+          this.handleBackgroundFetchMessage(event.data);
+        };
+      } catch (err) {
+        console.warn('Failed to initialize BroadcastChannel:', err);
+      }
+    }
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker) {
+      try {
+        navigator.serviceWorker.addEventListener('message', (event) => {
+          this.handleBackgroundFetchMessage(event.data);
+        });
+      } catch (err) {
+        // ignore
+      }
+    }
+  }
+
+  private handleBackgroundFetchMessage(data: any) {
+    const { type, mapId, totalBytes, error } = data || {};
+    if (!mapId) return;
+    if (type === 'bg-fetch-success') {
+      const task = this.tasks.get(mapId);
+      if (task) {
+        if (totalBytes > 0 && task.byteStats) {
+          task.byteStats = { received: totalBytes, total: totalBytes };
+        }
+        this.finishDownloaded(task);
+      } else {
+        this.notifyComplete(mapId, totalBytes);
+      }
+    } else if (type === 'bg-fetch-fail') {
+      this.notifyFailed(mapId, error || 'Background fetch failed');
+    } else if (type === 'bg-fetch-abort') {
+      this.notifyAborted(mapId);
+    }
+  }
+
+  private attachBackgroundFetch(
+    mapId: string,
+    bgFetch: BackgroundFetchRegistration,
+    totalTiles?: number,
+    expectedBytes?: number
+  ) {
+    let task = this.tasks.get(mapId);
+    const existingTotalTiles = totalTiles || task?.totalTiles || 0;
+    const existingExpectedBytes = expectedBytes || bgFetch.downloadTotal || task?.byteStats?.total || 0;
+
+    if (!task) {
+      task = emptyTask(mapId, {
+        isDownloading: true,
+        totalTiles: existingTotalTiles,
+        tileStats: existingTotalTiles > 0 ? { total: existingTotalTiles, completed: 0 } : null,
+        byteStats: { received: bgFetch.downloaded, total: existingExpectedBytes },
+      });
+      this.tasks.set(mapId, task);
+    } else {
+      task.isDownloading = true;
+      task.stalled = false;
+      task.transientFailures = 0;
+      if (existingTotalTiles > 0) task.totalTiles = existingTotalTiles;
+    }
+    task.bgFetch = bgFetch;
+
+    if (task.bgFetchPollTimer) {
+      clearInterval(task.bgFetchPollTimer);
+      task.bgFetchPollTimer = null;
+    }
+
+    const updateProgress = () => {
+      const current = this.tasks.get(mapId);
+      if (!current || !current.isDownloading) return;
+      const downloaded = bgFetch.downloaded;
+      const total = bgFetch.downloadTotal || current.byteStats?.total || existingExpectedBytes || 0;
+      const progress = total > 0 ? Math.min(1, Math.max(0, downloaded / total)) : null;
+
+      current.downloadProgress = progress;
+      current.byteStats = { received: downloaded, total };
+      if (current.totalTiles > 0 && progress !== null) {
+        current.tileStats = {
+          total: current.totalTiles,
+          completed: Math.round(progress * current.totalTiles),
+        };
+      }
+      rememberDownloadStatus(mapId, { isComplete: false, isPartial: true, isStalled: false });
+      this.notifySubscribers(mapId);
+    };
+
+    bgFetch.addEventListener('progress', updateProgress);
+    updateProgress();
+
+    task.bgFetchPollTimer = setInterval(async () => {
+      const current = this.tasks.get(mapId);
+      if (!current || !current.isDownloading || current.bgFetch !== bgFetch) {
+        if (task.bgFetchPollTimer) {
+          clearInterval(task.bgFetchPollTimer);
+          task.bgFetchPollTimer = null;
+        }
+        return;
+      }
+
+      if (bgFetch.result === 'success') {
+        if (task.bgFetchPollTimer) {
+          clearInterval(task.bgFetchPollTimer);
+          task.bgFetchPollTimer = null;
+        }
+        if (await extractExists(mapId)) {
+          this.notifyComplete(mapId, bgFetch.downloaded);
+        }
+        return;
+      }
+
+      if (bgFetch.result === 'failure') {
+        if (task.bgFetchPollTimer) {
+          clearInterval(task.bgFetchPollTimer);
+          task.bgFetchPollTimer = null;
+        }
+        this.notifyFailed(mapId, 'Background fetch failed');
+        return;
+      }
+
+      updateProgress();
+    }, 1000);
+  }
+
+  public async reconcileBackgroundFetchForMap(mapId: string): Promise<DownloadProgressState | null> {
+    if (!supportsBackgroundFetch()) return null;
+    try {
+      const swReg = await getReadyServiceWorker(1500);
+      if (!swReg || !('backgroundFetch' in swReg) || !swReg.backgroundFetch) return null;
+      let bgFetch = await swReg.backgroundFetch.get(mapId);
+      if (!bgFetch && !mapId.startsWith('map-')) {
+        bgFetch = await swReg.backgroundFetch.get(`map-${mapId}`);
+      }
+      if (!bgFetch) return null;
+      if (await extractExists(mapId)) {
+        this.notifyComplete(mapId, bgFetch.downloaded);
+        return this.getStatus(mapId);
+      }
+      if (bgFetch.result === 'success') {
+        let exists = false;
+        for (let i = 0; i < 6; i++) {
+          exists = await extractExists(mapId);
+          if (exists) break;
+          await new Promise(r => setTimeout(r, 500));
+        }
+        if (exists) {
+          this.notifyComplete(mapId, bgFetch.downloaded);
+          return this.getStatus(mapId);
+        }
+      } else if (!bgFetch.result) {
+        const stats = await getDownloadStats(mapId);
+        this.attachBackgroundFetch(mapId, bgFetch, stats.total, bgFetch.downloadTotal || 0);
+        return this.getStatus(mapId);
+      }
+    } catch (err) {
+      console.warn(`[TILE_STREAM_CLIENT][manager] Error reconciling background fetch for ${mapId}:`, err);
+    }
+    return null;
+  }
+
+  public async reconcileBackgroundFetches(): Promise<void> {
+    if (!supportsBackgroundFetch()) return;
+    try {
+      const swReg = await getReadyServiceWorker(3000);
+      if (!swReg || !('backgroundFetch' in swReg) || !swReg.backgroundFetch) return;
+      const ids = await swReg.backgroundFetch.getIds();
+      for (const id of ids) {
+        const bgFetch = await swReg.backgroundFetch.get(id);
+        if (!bgFetch) continue;
+        const mapId = id.replace(/^map-/, '');
+        if (await extractExists(mapId)) {
+          this.notifyComplete(mapId, bgFetch.downloaded);
+        } else if (bgFetch.result === 'failure') {
+          this.notifyFailed(mapId, 'Background fetch failed');
+        } else if (bgFetch.result === 'success') {
+          const task = this.tasks.get(mapId);
+          if (task && task.isDownloading) {
+            let exists = false;
+            for (let i = 0; i < 6; i++) {
+              exists = await extractExists(mapId);
+              if (exists) break;
+              await new Promise(r => setTimeout(r, 500));
+            }
+            if (exists) {
+              this.notifyComplete(mapId, bgFetch.downloaded);
+            }
+          }
+        } else if (!bgFetch.result) {
+          const stats = await getDownloadStats(mapId);
+          this.attachBackgroundFetch(mapId, bgFetch, stats.total, bgFetch.downloadTotal || 0);
+        }
+      }
+    } catch (err) {
+      console.warn('[TILE_STREAM_CLIENT][manager] Error reconciling background fetches:', err);
+    }
+  }
+
+  public installHooks() {
     if (this.hooksInstalled || typeof document === 'undefined') return;
     this.hooksInstalled = true;
     document.addEventListener('visibilitychange', this.onForeground);
@@ -204,6 +538,8 @@ export class TileWorkerManager {
     document.addEventListener('resume', this.onForeground as EventListener);
     window.addEventListener('pageshow', this.onForeground);
     window.addEventListener('online', this.onForeground);
+    this.setupBroadcastChannel();
+    void this.reconcileBackgroundFetches();
   }
 
   private isBackgrounded(): boolean {
@@ -224,6 +560,10 @@ export class TileWorkerManager {
     const worker = task.worker;
     task.worker = null;
     worker?.terminate();
+    if (task.bgFetchPollTimer) {
+      clearInterval(task.bgFetchPollTimer);
+      task.bgFetchPollTimer = null;
+    }
   }
 
   private alertDownloadFailed(message: string) {
@@ -235,6 +575,7 @@ export class TileWorkerManager {
   /** A frozen page suspends the extract stream. Drop the worker and resume from the .part file on return. */
   private onFreeze = () => {
     for (const [mapId, task] of this.tasks) {
+      if (task.bgFetch) continue;
       if (task.gaveUp || (!task.isDownloading && !task.stalled)) continue;
       task.stalled = true;
       this.detachWorker(task);
@@ -247,6 +588,10 @@ export class TileWorkerManager {
    * was frozen. Restarting would open a new stream and delete that file.
    */
   private finishDownloaded(task: MapTask) {
+    if (task.bgFetchPollTimer) {
+      clearInterval(task.bgFetchPollTimer);
+      task.bgFetchPollTimer = null;
+    }
     this.detachWorker(task);
     const total = task.tileStats?.total || task.totalTiles || 1;
     task.isDownloading = false;
@@ -261,6 +606,7 @@ export class TileWorkerManager {
     this.notifySubscribers(task.mapId);
     this.tasks.delete(task.mapId);
     rememberDownloadStatus(task.mapId, { isComplete: true, isPartial: false });
+    invalidateExtractPMTiles(task.mapId);
   }
 
   private async reconcileForeground(mapId: string) {
@@ -271,8 +617,14 @@ export class TileWorkerManager {
       if (!task) return;
       if (await extractExists(mapId)) {
         const live = this.tasks.get(mapId);
-        if (!live) return;
+        if (!live) {
+          this.notifyComplete(mapId);
+          return;
+        }
         this.finishDownloaded(live);
+        return;
+      }
+      if (task.bgFetch) {
         return;
       }
       const live = this.tasks.get(mapId);
@@ -297,6 +649,7 @@ export class TileWorkerManager {
 
   private onForeground = () => {
     if (this.isBackgrounded()) return;
+    void this.reconcileBackgroundFetches();
     for (const mapId of this.tasks.keys()) {
       void this.reconcileForeground(mapId);
     }
@@ -398,6 +751,51 @@ export class TileWorkerManager {
       });
       this.tasks.set(mapId, task);
       this.notifySubscribers(mapId);
+
+      console.log(`[TILE_STREAM_CLIENT][manager] startDownload: supportsBackgroundFetch=${supportsBackgroundFetch()}, isSecureContext=${typeof window !== 'undefined' ? window.isSecureContext : 'n/a'}, mapId=${mapId}`);
+      if (supportsBackgroundFetch()) {
+        try {
+          const swReg = await getReadyServiceWorker(3000);
+          console.log(`[TILE_STREAM_CLIENT][manager] Service worker ready: ${Boolean(swReg)}, backgroundFetch: ${Boolean(swReg && 'backgroundFetch' in swReg && swReg.backgroundFetch)}`);
+          if (swReg && 'backgroundFetch' in swReg && swReg.backgroundFetch) {
+            let bgFetch = await swReg.backgroundFetch.get(mapId);
+            if (!bgFetch && !mapId.startsWith('map-')) {
+              bgFetch = await swReg.backgroundFetch.get(`map-${mapId}`);
+            }
+            if (!bgFetch) {
+              const queryParams = new URLSearchParams();
+              if (bbox) {
+                queryParams.set('north', bbox.north.toString());
+                queryParams.set('south', bbox.south.toString());
+                queryParams.set('east', bbox.east.toString());
+                queryParams.set('west', bbox.west.toString());
+                queryParams.set('minZoom', '0');
+                queryParams.set('maxZoom', '15');
+              }
+              const qs = queryParams.toString();
+              const extractUrl = `/api/maps/${mapId}/extract.pmtiles${qs ? `?${qs}` : ''}`;
+
+              const offlineMap = await getOfflineMap(mapId);
+              const title = offlineMap?.name ? `Downloading ${offlineMap.name}` : `Downloading map`;
+
+              console.log(`[TILE_STREAM_CLIENT][manager] Calling swReg.backgroundFetch.fetch for ${mapId}: extractUrl=${extractUrl}, totalBytes=${totalBytes}`);
+              bgFetch = await swReg.backgroundFetch.fetch(mapId, [extractUrl], {
+                title,
+                icons: [{ src: '/pwa-icon.svg', sizes: '192x192', type: 'image/svg+xml' }],
+                downloadTotal: totalBytes > 0 ? totalBytes : undefined,
+              });
+              console.log(`[TILE_STREAM_CLIENT][manager] Background fetch registration created for ${mapId}`);
+            } else {
+              console.log(`[TILE_STREAM_CLIENT][manager] Attached to existing Background fetch registration for ${mapId}: downloaded=${bgFetch.downloaded}/${bgFetch.downloadTotal}`);
+            }
+
+            this.attachBackgroundFetch(mapId, bgFetch, totalTiles, totalBytes);
+            return;
+          }
+        } catch (bgErr) {
+          console.warn(`[TILE_STREAM_CLIENT][manager] Background fetch initiation failed, falling back to Web Worker:`, bgErr);
+        }
+      }
 
       if (typeof Worker !== 'undefined') {
         const worker = new Worker(new URL('../workers/tileWorker.ts', import.meta.url), { type: 'module' });
@@ -504,6 +902,7 @@ export class TileWorkerManager {
   }
 
   public async resumeIfNeeded(mapId: string) {
+    this.installHooks();
     // Deduplicate: if a resumeIfNeeded call for this mapId is already in-flight
     // (awaiting OPFS/IndexedDB reads), drop this one to prevent race conditions
     // that would spawn multiple workers for the same map.
@@ -515,7 +914,7 @@ export class TileWorkerManager {
     try {
       const task = this.tasks.get(mapId);
       if (task?.gaveUp) return;
-      if (task && task.isDownloading && task.worker) {
+      if (task && task.isDownloading && (task.worker || task.bgFetch)) {
         this.notifySubscribers(mapId);
         return;
       }
@@ -524,6 +923,14 @@ export class TileWorkerManager {
         console.log(`[TILE_STREAM_CLIENT][manager] resumeIfNeeded(${mapId}): extract already exists, skipping`);
         return;
       }
+
+      if (supportsBackgroundFetch()) {
+        const activeState = await this.reconcileBackgroundFetchForMap(mapId);
+        if (activeState && (activeState.isDownloading || activeState.isDownloaded)) {
+          return;
+        }
+      }
+
       const partSize = await getPartFileSize(mapId);
       const stats = await getDownloadStats(mapId);
       const incomplete = stats.total > 0 && stats.completed > 0 && stats.completed < stats.total;
@@ -533,7 +940,7 @@ export class TileWorkerManager {
           await this.startDownload(mapId, { bbox: live.bbox, totalTiles: live.totalTiles || stats.total }, { automatic: true });
           return;
         }
-        if (stats.total > 0 && stats.completed === 0) {
+        if (stats.total > 0 && stats.completed === 0 && !supportsBackgroundFetch()) {
           await removeMapDownload(mapId);
         }
         return;
@@ -553,71 +960,89 @@ export class TileWorkerManager {
 
   public async cancelDownload(mapId: string): Promise<void> {
     const existingTask = this.tasks.get(mapId);
+    if (existingTask?.bgFetchPollTimer) {
+      clearInterval(existingTask.bgFetchPollTimer);
+      existingTask.bgFetchPollTimer = null;
+    }
+
+    if (canAccessBackgroundFetch()) {
+      try {
+        const swReg = await getReadyServiceWorker(2000);
+        if (swReg && 'backgroundFetch' in swReg && swReg.backgroundFetch) {
+          const bgFetch = existingTask?.bgFetch || await swReg.backgroundFetch.get(mapId) || (!mapId.startsWith('map-') ? await swReg.backgroundFetch.get(`map-${mapId}`) : null);
+          if (bgFetch) {
+            try {
+              await bgFetch.abort();
+            } catch {
+              // Ignore if already completed or aborted
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[TILE_STREAM_CLIENT][manager] Error aborting background fetch for ${mapId}:`, err);
+      }
+    }
+
     if (existingTask) this.detachWorker(existingTask);
 
     const task = emptyTask(mapId, { isRemoving: true });
     this.tasks.set(mapId, task);
     this.notifySubscribers(mapId);
 
-    return new Promise<void>((resolve) => {
-      if (typeof Worker !== 'undefined') {
-        const worker = new Worker(new URL('../workers/tileWorker.ts', import.meta.url), { type: 'module' });
-        task.worker = worker;
-
-        worker.postMessage({ type: 'remove-download', mapId });
-
-        worker.onmessage = (e) => {
-          const currentTask = this.tasks.get(mapId);
-          const { type } = e.data;
-          if (type === 'remove-complete' || type === 'error') {
-            invalidateExtractPMTiles(mapId);
-            if (currentTask && currentTask.worker === worker) {
-              currentTask.isDownloading = false;
-              currentTask.isRemoving = false;
-              currentTask.downloadProgress = null;
-              currentTask.tileStats = null;
-              currentTask.byteStats = null;
-              this.notifySubscribers(mapId);
-              worker.terminate();
-              currentTask.worker = null;
-              this.tasks.delete(mapId);
-              rememberDownloadStatus(mapId, null);
-            } else {
-              worker.terminate();
-            }
-            resolve();
-          }
-        };
-      } else {
-        invalidateExtractPMTiles(mapId);
-        removeMapDownload(mapId).finally(() => {
-          const currentTask = this.tasks.get(mapId);
-          if (currentTask) {
-            currentTask.isDownloading = false;
-            currentTask.isRemoving = false;
-            currentTask.downloadProgress = null;
-            currentTask.tileStats = null;
-            currentTask.byteStats = null;
-            this.notifySubscribers(mapId);
-            this.tasks.delete(mapId);
-          }
-          resolve();
-        });
+    try {
+      invalidateExtractPMTiles(mapId);
+      await removeMapDownload(mapId);
+      await removeExtract(mapId);
+    } finally {
+      const currentTask = this.tasks.get(mapId);
+      if (currentTask) {
+        currentTask.isDownloading = false;
+        currentTask.isRemoving = false;
+        currentTask.downloadProgress = null;
+        currentTask.tileStats = null;
+        currentTask.byteStats = null;
+        this.notifySubscribers(mapId);
+        this.tasks.delete(mapId);
       }
-    });
+      rememberDownloadStatus(mapId, null);
+    }
   }
 
   public async removeAllDownloads(): Promise<void> {
     for (const task of this.tasks.values()) {
+      if (task.bgFetchPollTimer) {
+        clearInterval(task.bgFetchPollTimer);
+        task.bgFetchPollTimer = null;
+      }
       this.detachWorker(task);
     }
     const mapIds = Array.from(this.tasks.keys());
     this.tasks.clear();
 
+    if (canAccessBackgroundFetch()) {
+      try {
+        const swReg = await getReadyServiceWorker(2000);
+        if (swReg && 'backgroundFetch' in swReg && swReg.backgroundFetch) {
+          const ids = await swReg.backgroundFetch.getIds();
+          for (const id of ids) {
+            try {
+              const bgFetch = await swReg.backgroundFetch.get(id);
+              if (bgFetch) await bgFetch.abort();
+            } catch {
+              // Ignore if already completed/aborted
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[TILE_STREAM_CLIENT][manager] Error aborting all background fetches:`, err);
+      }
+    }
+
     invalidateExtractPMTiles();
     await removeAllDownloads();
 
     for (const mapId of mapIds) {
+      rememberDownloadStatus(mapId, null);
       this.subscribers.forEach(cb => cb({
         mapId,
         isDownloading: false,
@@ -634,3 +1059,6 @@ export class TileWorkerManager {
 }
 
 export const tileWorkerManager = new TileWorkerManager();
+if (typeof window !== 'undefined') {
+  tileWorkerManager.installHooks();
+}

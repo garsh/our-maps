@@ -5,22 +5,29 @@ test.afterEach(async ({ page }) => {
 });
 
 test('sidebar items are interactible', async ({ page }) => {
-  // Mock places reverse geocode
+  test.setTimeout(60000);
+
+  // Mock places reverse geocode and search APIs before navigation
   await page.route('**/places/reverse-geocode*', route => route.fulfill({ 
     json: { address: '123 Test St, Interactivity City, IC 12345' } 
   }));
+  await page.route('**/places/search*', route => route.fulfill({ 
+    json: [{ place_id: '1', title: 'Interactivity City', address: '123 Test St', lat: '10', lon: '10', type: 'global' }] 
+  }));
 
   await login(page);
-
-  // 1. Add a pin
-  await page.route('**/places/search*', route => route.fulfill({ json: [{ place_id: '1', title: 'Interactivity City', address: '123 Test St', lat: '10', lon: '10', type: 'global' }] }));
 
   // Navigate to new map page
   await page.getByRole('button', { name: /New Map/i }).click();
   await page.waitForURL(/\/map\//);
   await expect(page.getByText('Loading your map...')).not.toBeVisible();
   
-  await page.getByPlaceholder('Search...').fill('Interactivity City');
+  // 1. Add a pin
+  const searchInput = page.getByPlaceholder('Search...');
+  await expect(searchInput).toBeVisible({ timeout: 15000 });
+  await searchInput.fill('Interactivity City');
+  await searchInput.press('Enter');
+
   await expect(page.getByText('Interactivity City').first()).toBeVisible({ timeout: 10000 });
   await expect(page.getByText('123 Test St').first()).toBeVisible({ timeout: 10000 });
   await page.locator('button[title="Add to Map"]').first().click();
@@ -31,15 +38,17 @@ test('sidebar items are interactible', async ({ page }) => {
   await expect(sidebarItem).toBeVisible();
   await sidebarItem.click();
   
-  // 5. Test "Edit" button in sidebar
-  await sidebarItem.getByRole('button', { name: 'Edit' }).click();
+  // 3. Test "Edit" button in sidebar
+  const editButton = sidebarItem.getByRole('button', { name: 'Edit' });
+  await expect(editButton).toBeVisible();
+  await editButton.click();
   await expect(page.getByLabel('Name', { exact: true })).toBeVisible();
   
-  // 6. Test "Close edit" button
-  await sidebarItem.getByRole('button', { name: 'Close edit' }).click();
+  // 4. Test "Close edit" button
+  const closeEditButton = sidebarItem.getByRole('button', { name: 'Close edit' });
+  await expect(closeEditButton).toBeVisible();
+  await closeEditButton.click();
   await expect(page.getByLabel('Name', { exact: true })).not.toBeVisible();
-  
-  // 7. Cleanup test map
 });
 
 test('sidebar multi-layer creation, collapse/expand, and multi-selection flow', async ({ page }) => {

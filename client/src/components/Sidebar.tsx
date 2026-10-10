@@ -69,7 +69,7 @@ import {
 import { getExtractFile, getExtractResumeInfo, writeExtractMeta } from '../utils/extractStore';
 import { canFit, formatDownloadBytes } from '../utils/storageUtils';
 import { apiService } from '../services/api';
-import { downloadActivityView, tileWorkerManager } from '../utils/tileWorkerManager';
+import { downloadActivityView, tileWorkerManager, supportsBackgroundFetch } from '../utils/tileWorkerManager';
 import type { MapData } from '@shared/interfaces';
 import { comparePinPositions } from '../utils/reorderUtils';
 import { getMapViewportBounds } from '../utils/mapViewport';
@@ -2490,7 +2490,10 @@ const Sidebar = ({
 
     // Landing's localStorage cache can miss a download that finished on this page.
     const readFromDisk = async () => {
-      const live = tileWorkerManager.getStatus(mapId);
+      let live = tileWorkerManager.getStatus(mapId);
+      if (!live && supportsBackgroundFetch()) {
+        live = await tileWorkerManager.reconcileBackgroundFetchForMap(mapId);
+      }
       if (live && (live.isDownloading || live.isRemoving || live.stalled || live.hasPartialDownload)) {
         updateFromState(live);
         return;
@@ -2507,7 +2510,7 @@ const Sidebar = ({
         updateFromState(liveAfter);
         return;
       }
-      if (stats.total > 0 && stats.completed === stats.total) {
+      if (extractFile || (stats.total > 0 && stats.completed === stats.total)) {
         setIsDownloaded(true);
         setHasPartialDownload(false);
         setDownloadStalled(false);

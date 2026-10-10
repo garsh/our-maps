@@ -1,5 +1,5 @@
 import { removeMapDownload } from '../utils/tileUtils';
-import { getPartFileSize, writeExtractFromStream, writeExtractMeta } from '../utils/extractStore';
+import { getPartFileSize, removeExtract, writeExtractFromStream, writeExtractMeta } from '../utils/extractStore';
 
 function headerNumber(headers: Headers, name: string): number {
     const value = Number(headers.get(name) || 0);
@@ -24,6 +24,7 @@ self.onmessage = async (e) => {
     if (type === 'remove-download') {
         try {
             await removeMapDownload(mapId);
+            await removeExtract(mapId);
             self.postMessage({ type: 'remove-complete', mapId });
         } catch (error: any) {
             console.error('Error during removeMapDownload:', error);

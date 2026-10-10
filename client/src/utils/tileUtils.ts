@@ -606,6 +606,11 @@ export async function removeAllDownloads(): Promise<void> {
     const active = getAccountScope();
     if (active.mode === 'account') {
         await removeActiveAccountDownloads(active.userId);
+        const maps = await listStoredMaps();
+        const hasOtherAccounts = maps.some((map) => accountIdsOf(map).some((id) => id !== active.userId));
+        if (!hasOtherAccounts) {
+            await removeAllExtracts();
+        }
         return;
     }
     if (active.mode === 'hidden') return;
@@ -641,6 +646,7 @@ async function removeActiveAccountDownloads(userId: string): Promise<void> {
     if (typeof indexedDB === 'undefined') return;
     const maps = await listStoredMaps();
     const db = await openDB();
+    const extractsToRemove: string[] = [];
     await new Promise<void>((resolve, reject) => {
         const tx = db.transaction(MAP_STORE, 'readwrite');
         const store = tx.objectStore(MAP_STORE);
@@ -650,7 +656,7 @@ async function removeActiveAccountDownloads(userId: string): Promise<void> {
             const remaining = ids.filter((id) => id !== userId);
             if (remaining.length === 0) {
                 store.delete(map.id);
-                void removeExtract(map.id);
+                extractsToRemove.push(map.id);
             } else {
                 store.put({ ...map, accountUserIds: remaining });
             }
@@ -662,6 +668,8 @@ async function removeActiveAccountDownloads(userId: string): Promise<void> {
         tx.onerror = () => reject(tx.error);
         tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
     });
+
+    await Promise.all(extractsToRemove.map((id) => removeExtract(id)));
 }
 
 export async function removeMapDownload(mapId: string): Promise<void> {
@@ -674,6 +682,7 @@ export async function removeMapDownload(mapId: string): Promise<void> {
         return;
     }
 
+    let shouldDeleteExtract = true;
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
         const tx = db.transaction(MAP_STORE, 'readwrite');
@@ -682,28 +691,40 @@ export async function removeMapDownload(mapId: string): Promise<void> {
         getReq.onsuccess = () => {
             const existing = getReq.result as StoredMapRecord | undefined;
             if (active.mode === 'account') {
-                if (!existing || !canReadMapRecord(existing)) {
+                if (!existing) {
+                    shouldDeleteExtract = true;
                     resolve();
                     return;
                 }
-                const remaining = accountIdsOf(existing).filter((id) => id !== active.userId);
+                const ids = accountIdsOf(existing);
+                if (ids.length > 0 && !ids.includes(active.userId)) {
+                    shouldDeleteExtract = false;
+                    resolve();
+                    return;
+                }
+                const remaining = ids.filter((id) => id !== active.userId);
                 if (remaining.length === 0) {
                     store.delete(mapId);
-                    void removeExtract(mapId);
+                    shouldDeleteExtract = true;
                 } else {
                     store.put({ ...existing, accountUserIds: remaining });
+                    shouldDeleteExtract = false;
                 }
                 resolve();
                 return;
             }
             store.delete(mapId);
-            void removeExtract(mapId);
+            shouldDeleteExtract = true;
             resolve();
         };
         getReq.onerror = () => reject(getReq.error);
         tx.onerror = () => reject(tx.error);
         tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
     });
+
+    if (shouldDeleteExtract) {
+        await removeExtract(mapId);
+    }
 }
 
 export function getXRanges(west: number, east: number, zoom: number, buffer = 0): Array<[number, number]> {

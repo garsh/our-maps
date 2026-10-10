@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { downloadActivityView, TileWorkerManager } from '../tileWorkerManager';
+import { downloadActivityView, TileWorkerManager, supportsBackgroundFetch } from '../tileWorkerManager';
 import { extractExists } from '../extractStore';
 
 const { removeMapDownload } = vi.hoisted(() => ({
@@ -10,6 +10,7 @@ vi.mock('../extractStore', () => ({
   extractExists: vi.fn(async () => false),
   getExtractResumeInfo: vi.fn(async () => ({ partBytes: 400, totalBytes: 1000 })),
   getPartFileSize: vi.fn(async () => 400),
+  removeExtract: vi.fn(async () => {}),
 }));
 
 vi.mock('../offlineExtract', () => ({
@@ -288,5 +289,227 @@ describe('TileWorkerManager transient network errors', () => {
     expect(second.terminated).toBe(false);
     expect(alertSpy).not.toHaveBeenCalled();
     expect(manager.getStatus('map-1')?.isDownloading).toBe(true);
+  });
+});
+
+describe('Background Fetch integration', () => {
+  afterEach(() => {
+    delete (window as any).BackgroundFetchManager;
+    delete (navigator as any).serviceWorker;
+    vi.unstubAllGlobals();
+  });
+
+  it('supportsBackgroundFetch detects presence of BackgroundFetchManager and serviceWorker', () => {
+    delete (window as any).BackgroundFetchManager;
+    delete (navigator as any).serviceWorker;
+    expect(supportsBackgroundFetch()).toBe(false);
+
+    (window as any).BackgroundFetchManager = class {};
+    expect(supportsBackgroundFetch()).toBe(false);
+
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {},
+    });
+    expect(supportsBackgroundFetch()).toBe(true);
+
+    Object.defineProperty(window, 'isSecureContext', {
+      configurable: true,
+      value: false,
+    });
+    expect(supportsBackgroundFetch()).toBe(false);
+
+    Object.defineProperty(window, 'isSecureContext', {
+      configurable: true,
+      value: undefined,
+    });
+
+    delete (window as any).BackgroundFetchManager;
+    delete (navigator as any).serviceWorker;
+    expect(supportsBackgroundFetch()).toBe(false);
+  });
+
+  it('switches to Background Fetch when supported and reports progress and completion', async () => {
+    const mockBgFetch: any = {
+      id: 'map-bg-1',
+      downloaded: 0,
+      downloadTotal: 1000,
+      result: '',
+      addEventListener: vi.fn(),
+      abort: vi.fn(async () => true),
+    };
+
+    let activeBgFetch: any = null;
+    const mockFetch = vi.fn(async () => {
+      activeBgFetch = mockBgFetch;
+      return mockBgFetch;
+    });
+    const mockGet = vi.fn(async () => activeBgFetch);
+    const mockGetIds = vi.fn(async () => (activeBgFetch ? ['map-bg-1'] : []));
+
+    const swReg: any = {
+      backgroundFetch: {
+        fetch: mockFetch,
+        get: mockGet,
+        getIds: mockGetIds,
+      },
+    };
+
+    (window as any).BackgroundFetchManager = class {};
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        ready: Promise.resolve(swReg),
+        addEventListener: vi.fn(),
+      },
+    });
+
+    const manager = new TileWorkerManager();
+    await manager.startDownload('map-bg-1', { bbox, totalTiles: 50 });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'map-bg-1',
+      expect.arrayContaining([expect.stringContaining('/api/maps/map-bg-1/extract.pmtiles')]),
+      expect.objectContaining({ title: expect.any(String) })
+    );
+
+    expect(mockBgFetch.addEventListener).toHaveBeenCalledWith('progress', expect.any(Function));
+
+    // Simulate progress
+    mockBgFetch.downloaded = 500;
+    const progressListener = mockBgFetch.addEventListener.mock.calls.find((call: any[]) => call[0] === 'progress')?.[1];
+    progressListener?.();
+
+    const status = manager.getStatus('map-bg-1');
+    expect(status?.downloadProgress).toBe(0.5);
+    expect(status?.byteStats?.received).toBe(500);
+
+    // Cancel download
+    await manager.cancelDownload('map-bg-1');
+    expect(mockBgFetch.abort).toHaveBeenCalled();
+  });
+
+  it('falls back to Web Worker when Background Fetch fails during initiation', async () => {
+    FakeWorker.all = [];
+    vi.stubGlobal('Worker', FakeWorker);
+
+    const swReg: any = {
+      backgroundFetch: {
+        get: vi.fn(async () => null),
+        fetch: vi.fn(async () => {
+          throw new Error('Permission denied');
+        }),
+      },
+    };
+
+    (window as any).BackgroundFetchManager = class {};
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        ready: Promise.resolve(swReg),
+        addEventListener: vi.fn(),
+      },
+    });
+
+    const manager = new TileWorkerManager();
+    await manager.startDownload('map-fallback-1', { bbox, totalTiles: 50 });
+
+    // Should have fallen back to FakeWorker
+    expect(FakeWorker.all.length).toBe(1);
+    expect(manager.getStatus('map-fallback-1')?.isDownloading).toBe(true);
+  });
+
+  it('does not stall or terminate active Background Fetch on freeze', async () => {
+    const mockBgFetch: any = {
+      id: 'map-bg-freeze',
+      downloaded: 100,
+      downloadTotal: 1000,
+      result: '',
+      addEventListener: vi.fn(),
+      abort: vi.fn(async () => true),
+    };
+
+    const swReg: any = {
+      backgroundFetch: {
+        fetch: vi.fn(async () => mockBgFetch),
+        get: vi.fn(async () => mockBgFetch),
+        getIds: vi.fn(async () => ['map-bg-freeze']),
+      },
+    };
+
+    (window as any).BackgroundFetchManager = class {};
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        ready: Promise.resolve(swReg),
+        addEventListener: vi.fn(),
+      },
+    });
+
+    const manager = new TileWorkerManager();
+    await manager.startDownload('map-bg-freeze', { bbox, totalTiles: 50 });
+
+    expect(manager.getStatus('map-bg-freeze')?.isDownloading).toBe(true);
+    expect(manager.getStatus('map-bg-freeze')?.stalled).toBe(false);
+
+    document.dispatchEvent(new Event('freeze'));
+
+    // Should still be downloading and NOT stalled
+    const statusAfterFreeze = manager.getStatus('map-bg-freeze');
+    expect(statusAfterFreeze?.isDownloading).toBe(true);
+    expect(statusAfterFreeze?.stalled).toBe(false);
+  });
+
+  it('notifies subscribers of completion even if task was not actively tracked in manager', async () => {
+    const manager = new TileWorkerManager();
+    const states: any[] = [];
+    manager.subscribe((state) => {
+      states.push(state);
+    });
+
+    manager.notifyComplete('map-untagged', 5000);
+
+    expect(states.length).toBe(1);
+    expect(states[0]).toMatchObject({
+      mapId: 'map-untagged',
+      isDownloaded: true,
+      isDownloading: false,
+      byteStats: { received: 5000, total: 5000 },
+    });
+  });
+
+  it('reconciles background fetch for map and updates status', async () => {
+    const mockBgFetch: any = {
+      id: 'map-reconcile-1',
+      downloaded: 400,
+      downloadTotal: 1000,
+      result: '',
+      addEventListener: vi.fn(),
+      abort: vi.fn(async () => true),
+    };
+
+    const swReg: any = {
+      backgroundFetch: {
+        get: vi.fn(async (id: string) => (id === 'map-reconcile-1' ? mockBgFetch : null)),
+        getIds: vi.fn(async () => ['map-reconcile-1']),
+      },
+    };
+
+    (window as any).BackgroundFetchManager = class {};
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        ready: Promise.resolve(swReg),
+        addEventListener: vi.fn(),
+      },
+    });
+
+    const manager = new TileWorkerManager();
+    const state = await manager.reconcileBackgroundFetchForMap('map-reconcile-1');
+
+    expect(state).not.toBeNull();
+    expect(state?.isDownloading).toBe(true);
+    expect(state?.byteStats?.received).toBe(400);
+    expect(state?.downloadProgress).toBe(0.4);
   });
 });
