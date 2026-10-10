@@ -10,6 +10,7 @@ describe('sw-background-fetch Service Worker script', () => {
   let mockRoot: any;
   let mockStorage: any;
   let mockClients: any;
+  let partHandle: any;
 
   beforeEach(() => {
     listeners = {};
@@ -32,7 +33,7 @@ describe('sw-background-fetch Service Worker script', () => {
     vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel);
 
     const partFileContent: Uint8Array[] = [];
-    const partHandle: any = {
+    partHandle = {
       createWritable: vi.fn(async () => ({
         write: vi.fn(async (chunk) => {
           partFileContent.push(new Uint8Array(chunk));
@@ -105,10 +106,13 @@ describe('sw-background-fetch Service Worker script', () => {
     expect(listeners['backgroundfetchclick']).toBeDefined();
   });
 
-  it('handles backgroundfetchsuccess by streaming to OPFS and notifying clients', async () => {
+  it('handles backgroundfetchsuccess by streaming to OPFS and notifying clients on complete download', async () => {
     const mockResponse = {
       ok: true,
       status: 200,
+      headers: new Headers({
+        'content-length': '1024',
+      }),
       body: {
         pipeTo: vi.fn(async () => {}),
       },
@@ -120,6 +124,7 @@ describe('sw-background-fetch Service Worker script', () => {
 
     const mockRegistration = {
       id: 'map-test-123',
+      downloadTotal: 1024,
       matchAll: vi.fn(async () => [mockRecord]),
       updateUI: vi.fn(async () => {}),
     };
@@ -140,7 +145,7 @@ describe('sw-background-fetch Service Worker script', () => {
     expect(mockStorage.getDirectory).toHaveBeenCalled();
     expect(mockDir.getFileHandle).toHaveBeenCalledWith('test-123.pmtiles.part', { create: true });
     expect(mockResponse.body.pipeTo).toHaveBeenCalled();
-    expect(mockRegistration.updateUI).toHaveBeenCalledWith({ title: 'Download Complete' });
+    expect(mockRegistration.updateUI).toHaveBeenCalledWith({ title: 'Map downloaded' });
     expect(mockBroadcastChannelPostMessage).toHaveBeenCalledWith({
       type: 'bg-fetch-success',
       mapId: 'test-123',
@@ -148,9 +153,62 @@ describe('sw-background-fetch Service Worker script', () => {
     });
   });
 
-  it('handles backgroundfetchfail by cleaning up and notifying clients', async () => {
+  it('handles backgroundfetchsuccess by emitting bg-fetch-partial and preserving .part if download was truncated', async () => {
+    partHandle.getFile = vi.fn(async () => ({
+      size: 500,
+      stream: () => ({ pipeTo: vi.fn(async () => {}) }),
+      arrayBuffer: async () => new ArrayBuffer(500),
+    }));
+
+    const mockResponse = {
+      ok: true,
+      status: 206,
+      headers: new Headers({
+        'content-range': 'bytes 0-499/5000',
+        'x-extract-bytes': '5000',
+      }),
+      body: {
+        pipeTo: vi.fn(async () => {}),
+      },
+    };
+
+    const mockRecord = {
+      responseReady: Promise.resolve(mockResponse),
+    };
+
+    const mockRegistration = {
+      id: 'map-trunc-1',
+      downloadTotal: 5000,
+      matchAll: vi.fn(async () => [mockRecord]),
+      updateUI: vi.fn(async () => {}),
+    };
+
+    let waitUntilPromise: Promise<void> | null = null;
+    const event = {
+      registration: mockRegistration,
+      waitUntil: (p: Promise<void>) => {
+        waitUntilPromise = p;
+      },
+    };
+
+    listeners['backgroundfetchsuccess'](event);
+    await waitUntilPromise;
+
+    // Should NOT have moved or renamed to final .pmtiles
+    expect(partHandle.move).not.toHaveBeenCalled();
+    expect(mockRegistration.updateUI).toHaveBeenCalledWith({ title: 'Map download paused' });
+    expect(mockBroadcastChannelPostMessage).toHaveBeenCalledWith({
+      type: 'bg-fetch-partial',
+      mapId: 'trunc-1',
+      receivedBytes: 500,
+      totalBytes: 5000,
+    });
+  });
+
+  it('handles backgroundfetchfail by preserving .part file and updating UI to paused', async () => {
     const mockRegistration = {
       id: 'map-fail-1',
+      updateUI: vi.fn(async () => {}),
     };
 
     let waitUntilPromise: Promise<void> | null = null;
@@ -164,15 +222,17 @@ describe('sw-background-fetch Service Worker script', () => {
     listeners['backgroundfetchfail'](event);
     await waitUntilPromise;
 
-    expect(mockDir.removeEntry).toHaveBeenCalledWith('fail-1.pmtiles.part');
+    // Should NOT remove the .part file on network failure!
+    expect(mockDir.removeEntry).not.toHaveBeenCalledWith('fail-1.pmtiles.part');
+    expect(mockRegistration.updateUI).toHaveBeenCalledWith({ title: 'Map download paused' });
     expect(mockBroadcastChannelPostMessage).toHaveBeenCalledWith({
       type: 'bg-fetch-fail',
       mapId: 'fail-1',
-      error: 'Background fetch failed',
+      error: 'Download paused',
     });
   });
 
-  it('handles backgroundfetchabort by cleaning up and notifying clients', async () => {
+  it('handles backgroundfetchabort by notifying clients', async () => {
     const mockRegistration = {
       id: 'map-abort-1',
     };
@@ -188,7 +248,6 @@ describe('sw-background-fetch Service Worker script', () => {
     listeners['backgroundfetchabort'](event);
     await waitUntilPromise;
 
-    expect(mockDir.removeEntry).toHaveBeenCalledWith('abort-1.pmtiles.part');
     expect(mockBroadcastChannelPostMessage).toHaveBeenCalledWith({
       type: 'bg-fetch-abort',
       mapId: 'abort-1',

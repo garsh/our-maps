@@ -1,6 +1,7 @@
 // Background Fetch API Event Handlers for OurMaps Service Worker
 const BG_FETCH_CHANNEL = 'offline-map-downloads';
 const EXTRACT_DIR = 'offline-extracts';
+const EXTRACT_CACHE_NAME = 'offline-extracts-cache';
 
 function sanitizeMapId(mapId) {
   return (mapId || '').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -18,8 +19,30 @@ function metaFileName(mapId) {
   return `${sanitizeMapId(mapId)}.pmtiles.part.meta`;
 }
 
+async function getOfflineMapRecord(mapId) {
+  if (typeof indexedDB === 'undefined' || !mapId) return null;
+  try {
+    const req = indexedDB.open('MapTilesDB_v2', 7);
+    const db = await new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const record = await new Promise((resolve, reject) => {
+      const tx = db.transaction('maps', 'readonly');
+      const store = tx.objectStore('maps');
+      const getReq = store.get(mapId);
+      getReq.onsuccess = () => resolve(getReq.result || null);
+      getReq.onerror = () => reject(getReq.error);
+    });
+    db.close();
+    return record;
+  } catch {
+    return null;
+  }
+}
+
 async function markMapCompleteInIndexedDB(mapId, totalBytes) {
-  if (typeof indexedDB === 'undefined') return;
+  if (typeof indexedDB === 'undefined' || !mapId) return;
   try {
     const req = indexedDB.open('MapTilesDB_v2', 7);
     const db = await new Promise((resolve, reject) => {
@@ -49,6 +72,37 @@ async function markMapCompleteInIndexedDB(mapId, totalBytes) {
   }
 }
 
+async function markMapPartialInIndexedDB(mapId, receivedBytes, expectedBytes) {
+  if (typeof indexedDB === 'undefined' || !mapId || !expectedBytes || expectedBytes <= 0) return;
+  try {
+    const req = indexedDB.open('MapTilesDB_v2', 7);
+    const db = await new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('maps', 'readwrite');
+      const store = tx.objectStore('maps');
+      const getReq = store.get(mapId);
+      getReq.onsuccess = () => {
+        const record = getReq.result;
+        if (record && record.totalTiles) {
+          const ratio = Math.min(1, Math.max(0, receivedBytes / expectedBytes));
+          record.completedTiles = Math.round(ratio * record.totalTiles);
+          record.extractTotalBytes = expectedBytes;
+          record.lastAccessedAt = Date.now();
+          store.put(record);
+        }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (err) {
+    console.warn('[sw-bg-fetch] Error updating partial IndexedDB:', err);
+  }
+}
+
 async function notifyClients(message) {
   try {
     if (typeof BroadcastChannel !== 'undefined') {
@@ -56,7 +110,7 @@ async function notifyClients(message) {
       channel.postMessage(message);
       channel.close();
     }
-  } catch (err) {
+  } catch {
     // Ignore BroadcastChannel errors
   }
 
@@ -67,7 +121,7 @@ async function notifyClients(message) {
         client.postMessage(message);
       }
     }
-  } catch (err) {
+  } catch {
     // Ignore postMessage errors
   }
 }
@@ -77,79 +131,138 @@ self.addEventListener('backgroundfetchsuccess', (event) => {
     const registration = event.registration;
     const mapId = registration.id.replace(/^map-/, '');
     console.log(`[sw-bg-fetch] backgroundfetchsuccess event fired for map ${mapId}`);
+
+    const mapRecord = await getOfflineMapRecord(mapId);
+    const mapName = mapRecord?.name || 'Map';
+
     const records = await registration.matchAll();
     let totalBytesWritten = 0;
+    let expectedTotalBytes = registration.downloadTotal || mapRecord?.extractTotalBytes || 0;
+    let isComplete = false;
 
     for (const record of records) {
       const response = await record.responseReady;
       if (!response || (!response.ok && response.status !== 206)) {
         console.error(`[sw-bg-fetch] Record response failed: status=${response?.status}`);
-        throw new Error(`Background fetch record failed with status ${response?.status}`);
+        continue;
       }
 
+      const xBytes = Number(response.headers?.get('x-extract-bytes') || 0);
+      if (xBytes > 0) expectedTotalBytes = xBytes;
+      const contentRange = response.headers?.get('content-range');
+      if (contentRange) {
+        const match = /\/(\d+)$/.exec(contentRange);
+        if (match) {
+          const n = Number(match[1]);
+          if (n > 0) expectedTotalBytes = n;
+        }
+      }
+      if (!expectedTotalBytes && response.status === 200) {
+        const cl = Number(response.headers?.get('content-length') || 0);
+        if (cl > 0) expectedTotalBytes = cl;
+      }
+
+      let writtenViaOPFS = false;
       if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.getDirectory) {
-        const root = await navigator.storage.getDirectory();
-        const dir = await root.getDirectoryHandle(EXTRACT_DIR, { create: true });
-        const partName = partFileName(mapId);
-        const finalName = extractFileName(mapId);
+        try {
+          const root = await navigator.storage.getDirectory();
+          const dir = await root.getDirectoryHandle(EXTRACT_DIR, { create: true });
+          const partName = partFileName(mapId);
+          const finalName = extractFileName(mapId);
 
-        try { await dir.removeEntry(partName); } catch (e) {}
+          const partHandle = await dir.getFileHandle(partName, { create: true });
+          if (typeof partHandle.createWritable === 'function') {
+            const writable = await partHandle.createWritable();
+            try {
+              if (response.body && typeof response.body.pipeTo === 'function') {
+                await response.body.pipeTo(writable);
+              } else {
+                const buffer = await response.arrayBuffer();
+                await writable.write(buffer);
+                await writable.close();
+              }
+            } catch (streamErr) {
+              console.warn(`[sw-bg-fetch] Stream pipe interrupted for ${mapId}:`, streamErr);
+            }
 
-        const partHandle = await dir.getFileHandle(partName, { create: true });
-        const writable = await partHandle.createWritable();
+            const file = await partHandle.getFile();
+            totalBytesWritten = file.size;
+            writtenViaOPFS = true;
 
-        if (response.body && typeof response.body.pipeTo === 'function') {
-          await response.body.pipeTo(writable);
-        } else {
-          const buffer = await response.arrayBuffer();
-          await writable.write(buffer);
-          await writable.close();
-        }
+            // Only promote .part to .pmtiles if bytes match expected total!
+            const full = expectedTotalBytes > 0
+              ? totalBytesWritten >= expectedTotalBytes
+              : totalBytesWritten > 127;
 
-        const file = await partHandle.getFile();
-        totalBytesWritten = file.size;
-
-        try { await dir.removeEntry(finalName); } catch (e) {}
-
-        let moved = false;
-        if (typeof partHandle.move === 'function') {
-          try {
-            await partHandle.move(finalName);
-            moved = true;
-          } catch (e) {
-            moved = false;
+            if (full) {
+              try { await dir.removeEntry(finalName); } catch {}
+              let moved = false;
+              if (typeof partHandle.move === 'function') {
+                try {
+                  await partHandle.move(finalName);
+                  moved = true;
+                } catch {
+                  moved = false;
+                }
+              }
+              if (!moved) {
+                const dest = await dir.getFileHandle(finalName, { create: true });
+                const destWritable = await dest.createWritable();
+                if (typeof file.stream === 'function') {
+                  await file.stream().pipeTo(destWritable);
+                } else {
+                  await destWritable.write(await file.arrayBuffer());
+                  await destWritable.close();
+                }
+                try { await dir.removeEntry(partName); } catch {}
+              }
+              try { await dir.removeEntry(metaFileName(mapId)); } catch {}
+              isComplete = true;
+            }
           }
+        } catch (opfsErr) {
+          console.warn(`[sw-bg-fetch] OPFS write failed in Service Worker for ${mapId}:`, opfsErr);
         }
-        if (!moved) {
-          const dest = await dir.getFileHandle(finalName, { create: true });
-          const destWritable = await dest.createWritable();
-          if (typeof file.stream === 'function') {
-            await file.stream().pipeTo(destWritable);
-          } else {
-            await destWritable.write(await file.arrayBuffer());
-            await destWritable.close();
-          }
-          try { await dir.removeEntry(partName); } catch (e) {}
+      }
+
+      // If OPFS was not writable in Service Worker, stash in CacheStorage for window transfer
+      if (!writtenViaOPFS && typeof caches !== 'undefined') {
+        try {
+          const cache = await caches.open(EXTRACT_CACHE_NAME);
+          await cache.put(record.request, response.clone());
+        } catch (cacheErr) {
+          console.warn(`[sw-bg-fetch] Failed to cache response in CacheStorage:`, cacheErr);
         }
-        try { await dir.removeEntry(metaFileName(mapId)); } catch (e) {}
       }
     }
 
-    await markMapCompleteInIndexedDB(mapId, totalBytesWritten);
-
-    try {
-      if (typeof registration.updateUI === 'function') {
-        await registration.updateUI({ title: 'Download Complete' });
-      }
-    } catch (e) {
-      // updateUI can fail or not be supported in some environments
+    if (isComplete) {
+      await markMapCompleteInIndexedDB(mapId, totalBytesWritten);
+      try {
+        if (typeof registration.updateUI === 'function') {
+          await registration.updateUI({ title: `${mapName} downloaded` });
+        }
+      } catch {}
+      await notifyClients({
+        type: 'bg-fetch-success',
+        mapId,
+        totalBytes: totalBytesWritten,
+      });
+    } else {
+      console.warn(`[sw-bg-fetch] Download for ${mapId} incomplete: written ${totalBytesWritten}/${expectedTotalBytes} bytes`);
+      await markMapPartialInIndexedDB(mapId, totalBytesWritten, expectedTotalBytes);
+      try {
+        if (typeof registration.updateUI === 'function') {
+          await registration.updateUI({ title: `${mapName} download paused` });
+        }
+      } catch {}
+      await notifyClients({
+        type: 'bg-fetch-partial',
+        mapId,
+        receivedBytes: totalBytesWritten,
+        totalBytes: expectedTotalBytes,
+      });
     }
-
-    await notifyClients({
-      type: 'bg-fetch-success',
-      mapId,
-      totalBytes: totalBytesWritten,
-    });
   })());
 });
 
@@ -159,19 +272,21 @@ self.addEventListener('backgroundfetchfail', (event) => {
     const mapId = registration.id.replace(/^map-/, '');
     console.error(`[sw-bg-fetch] backgroundfetchfail fired for map ${mapId}, failureReason:`, registration?.failureReason);
 
+    const mapRecord = await getOfflineMapRecord(mapId);
+    const mapName = mapRecord?.name || 'Map';
+
+    // IMPORTANT: DO NOT remove .part or .meta! Keep partial bytes on disk so the user can resume!
+
     try {
-      if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.getDirectory) {
-        const root = await navigator.storage.getDirectory();
-        const dir = await root.getDirectoryHandle(EXTRACT_DIR, { create: false });
-        try { await dir.removeEntry(partFileName(mapId)); } catch (e) {}
-        try { await dir.removeEntry(metaFileName(mapId)); } catch (e) {}
+      if (typeof registration.updateUI === 'function') {
+        await registration.updateUI({ title: `${mapName} download paused` });
       }
-    } catch (e) {}
+    } catch {}
 
     await notifyClients({
       type: 'bg-fetch-fail',
       mapId,
-      error: 'Background fetch failed',
+      error: 'Download paused',
     });
   })());
 });
@@ -181,15 +296,6 @@ self.addEventListener('backgroundfetchabort', (event) => {
     const registration = event.registration;
     const mapId = registration.id.replace(/^map-/, '');
     console.warn(`[sw-bg-fetch] backgroundfetchabort fired for map ${mapId}`);
-
-    try {
-      if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.getDirectory) {
-        const root = await navigator.storage.getDirectory();
-        const dir = await root.getDirectoryHandle(EXTRACT_DIR, { create: false });
-        try { await dir.removeEntry(partFileName(mapId)); } catch (e) {}
-        try { await dir.removeEntry(metaFileName(mapId)); } catch (e) {}
-      }
-    } catch (e) {}
 
     await notifyClients({
       type: 'bg-fetch-abort',

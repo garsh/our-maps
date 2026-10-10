@@ -395,6 +395,10 @@ function parseExtractRequest(req: Request): { bbox: BoundingBox; startZoom: numb
 }
 
 export function parseExtractResumeOffset(req: Request): number {
+  const queryOffset = Number(req.query?.offset);
+  if (Number.isFinite(queryOffset) && queryOffset > 0) {
+    return Math.floor(queryOffset);
+  }
   const bodyOffset = Number((req.body || {}).offset);
   if (Number.isFinite(bodyOffset) && bodyOffset > 0) {
     return Math.floor(bodyOffset);
@@ -470,6 +474,14 @@ export async function handleTileStream(req: Request, res: Response, candidateMap
   const mapIdTag = resolvedMapId ? `[mapId=${resolvedMapId}] ` : '';
 
   console.log(`${mapIdTag}[TILE_STREAM_SERVER] New stream request (${req.method}): rawResumeOffset=${rawResumeOffset} bytes, bbox=${JSON.stringify(extractBbox)}, zooms=${startZoom}-${endZoom}`);
+
+  if (req.socket) {
+    try {
+      req.socket.setKeepAlive(true, 10000);
+    } catch {
+      // Ignore if socket does not support keepAlive
+    }
+  }
 
   let isAborted = false;
   req.on('close', () => {

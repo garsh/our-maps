@@ -154,12 +154,15 @@ describe('tileStream handler', () => {
     expect(jsonResult.bytes).toBe(Buffer.concat(chunks).length);
   });
 
-  it('parses resume offsets from JSON body or Range header', () => {
-    expect(parseExtractResumeOffset({ body: {}, headers: {} } as any)).toBe(0);
-    expect(parseExtractResumeOffset({ body: { offset: 4096 }, headers: {} } as any)).toBe(4096);
-    expect(parseExtractResumeOffset({ body: {}, headers: { range: 'bytes=2048-' } } as any)).toBe(2048);
-    expect(parseExtractResumeOffset({ body: { offset: 10 }, headers: { range: 'bytes=99-' } } as any)).toBe(10);
-    expect(parseExtractResumeOffset({ body: { offset: -5 }, headers: { range: 'bytes=0-' } } as any)).toBe(0);
+  it('parses resume offsets from query, JSON body, or Range header', () => {
+    expect(parseExtractResumeOffset({ query: {}, body: {}, headers: {} } as any)).toBe(0);
+    expect(parseExtractResumeOffset({ query: { offset: '1024' }, body: {}, headers: {} } as any)).toBe(1024);
+    expect(parseExtractResumeOffset({ query: { offset: 2048 }, body: {}, headers: {} } as any)).toBe(2048);
+    expect(parseExtractResumeOffset({ query: {}, body: { offset: 4096 }, headers: {} } as any)).toBe(4096);
+    expect(parseExtractResumeOffset({ query: {}, body: {}, headers: { range: 'bytes=2048-' } } as any)).toBe(2048);
+    expect(parseExtractResumeOffset({ query: { offset: 50 }, body: { offset: 10 }, headers: { range: 'bytes=99-' } } as any)).toBe(50);
+    expect(parseExtractResumeOffset({ query: {}, body: { offset: 10 }, headers: { range: 'bytes=99-' } } as any)).toBe(10);
+    expect(parseExtractResumeOffset({ query: { offset: '-5' }, body: { offset: -5 }, headers: { range: 'bytes=0-' } } as any)).toBe(0);
   });
 
   it('returns 206 and remaining bytes when resuming from an offset', async () => {
@@ -368,6 +371,60 @@ describe('tileStream handler', () => {
         params: { id: 'range-map' },
         query: { north: '10', south: '-10', east: '10', west: '-10', minZoom: '1', maxZoom: '2' },
         headers: { range: `bytes=${offset}-` },
+        on: () => {}
+      };
+      const resumeRes: any = {
+        writableEnded: false,
+        destroyed: false,
+        headersSent: false,
+        setHeader: (k: string, v: string) => { resumeHeaders[k] = v; },
+        write: (chunk: Buffer) => { resumeChunks.push(Buffer.from(chunk)); return true; },
+        end: () => { resumeRes.writableEnded = true; },
+        status: (code: number) => { statusCode = code; return resumeRes; },
+        json: () => resumeRes,
+        destroy: () => {},
+      };
+
+      await handleTileStream(resumeReq, resumeRes, [sharedDir]);
+      expect(statusCode).toBe(206);
+      expect(resumeHeaders['Content-Range']).toBe(`bytes ${offset}-${fullBody.length - 1}/${fullBody.length}`);
+      expect(Number(resumeHeaders['Content-Length'])).toBe(fullBody.length - offset);
+      const partialBody = Buffer.concat(resumeChunks);
+      expect(partialBody.equals(fullBody.subarray(offset))).toBe(true);
+    });
+
+    it('returns 206 Partial Content on GET with query offset', async () => {
+      const fullChunks: Buffer[] = [];
+      const fullReq: any = {
+        method: 'GET',
+        params: { id: 'query-offset-map' },
+        query: { north: '10', south: '-10', east: '10', west: '-10', minZoom: '1', maxZoom: '2' },
+        headers: {},
+        on: () => {}
+      };
+      const fullRes: any = {
+        writableEnded: false,
+        destroyed: false,
+        headersSent: false,
+        setHeader: () => {},
+        write: (chunk: Buffer) => { fullChunks.push(Buffer.from(chunk)); return true; },
+        end: () => { fullRes.writableEnded = true; },
+        status: () => fullRes,
+        json: () => fullRes,
+        destroy: () => {},
+      };
+      await handleTileStream(fullReq, fullRes, [sharedDir]);
+      const fullBody = Buffer.concat(fullChunks);
+      const offset = 120;
+
+      const resumeChunks: Buffer[] = [];
+      const resumeHeaders: Record<string, string> = {};
+      let statusCode = 200;
+      const resumeReq: any = {
+        method: 'GET',
+        params: { id: 'query-offset-map' },
+        query: { north: '10', south: '-10', east: '10', west: '-10', minZoom: '1', maxZoom: '2', offset: String(offset) },
+        headers: {},
         on: () => {}
       };
       const resumeRes: any = {
