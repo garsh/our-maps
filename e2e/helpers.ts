@@ -175,8 +175,7 @@ function setupConsoleFilter(page: Page) {
       text.includes('websocket') ||
       text.includes('elevation-tiles-prod') ||
       text.includes('AJAXError') ||
-      text.includes('Failed to fetch') ||
-      text.includes('Service Worker registration blocked by Playwright')
+      text.includes('Failed to fetch')
     ) {
       return;
     }

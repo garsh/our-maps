@@ -66,17 +66,15 @@ async function readExtractHandle(dir: FileSystemDirectoryHandle, name: string): 
 
 export async function getExtractFile(mapId: string): Promise<File | null> {
   if (!mapId) return null;
-  const cached = extractCache.get(mapId);
-  if (cached) return cached;
+  if (extractCache.has(mapId)) return extractCache.get(mapId) ?? null;
   try {
     const dir = await getExtractDirectory(false);
-    if (!dir) return null;
-    const file = await readExtractHandle(dir, extractFileName(mapId));
-    if (file) {
-      extractCache.set(mapId, file);
-    } else {
-      extractCache.delete(mapId);
+    if (!dir) {
+      extractCache.set(mapId, null);
+      return null;
     }
+    const file = await readExtractHandle(dir, extractFileName(mapId));
+    extractCache.set(mapId, file);
     return file;
   } catch {
     return null;
@@ -157,9 +155,6 @@ export async function writeExtractFromStream(
 ): Promise<{ bytes: number }> {
   const dir = await getExtractDirectory(true);
   if (!dir) {
-    if (typeof self !== 'undefined' && self.isSecureContext === false) {
-      throw new Error('Offline storage requires a secure connection (HTTPS or localhost). Chrome disables OPFS storage on insecure HTTP connections.');
-    }
     throw new Error('Origin private file storage is not available in this browser');
   }
 
@@ -357,10 +352,8 @@ export async function removeExtract(mapId: string): Promise<void> {
   for (const name of [extractFileName(mapId), partFileName(mapId), metaFileName(mapId)]) {
     try {
       await dir.removeEntry(name);
-    } catch (err) {
-      if (!isNotFoundError(err)) {
-        console.warn(`[TILE_STREAM_CLIENT][store] Failed to remove entry ${name} for map ${mapId}:`, err);
-      }
+    } catch {
+      // ignore
     }
   }
 }

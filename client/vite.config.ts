@@ -73,9 +73,6 @@ export default defineConfig({
     VitePWA({
       disable: noPWA,
       registerType: 'autoUpdate',
-      devOptions: {
-        enabled: true,
-      },
       includeAssets: ['favicon.svg', 'pwa-icon.svg'],
       manifest: {
         name: 'OurMaps',
@@ -96,7 +93,6 @@ export default defineConfig({
       workbox: {
         skipWaiting: true,
         clientsClaim: true,
-        importScripts: ['sw-background-fetch.js'],
         globPatterns: [
           '**/*.{js,css,html,ico,png,svg}',
           '**/sprites/*.json',
@@ -115,11 +111,6 @@ export default defineConfig({
             // Home-screen list is stored in localStorage.cached_maps; a SW
             // NetworkFirst copy can disagree after a flaky reconnect.
             urlPattern: /\/api\/maps\/?(?:\?.*)?$/i,
-            handler: 'NetworkOnly',
-          },
-          {
-            // Streaming extract PMTiles must never be cached by Workbox or aborted by networkTimeoutSeconds
-            urlPattern: /\/api\/maps\/.*\/extract\.pmtiles(?:\?.*)?$/i,
             handler: 'NetworkOnly',
           },
           {
