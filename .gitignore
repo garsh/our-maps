@@ -97,6 +97,8 @@ GEMINI.md
 *.db
 *.db-*
 server/dist/
+client/dist/
+client/dev-dist/
 
 # Map tiles, sprites & fonts
 *.pmtiles
