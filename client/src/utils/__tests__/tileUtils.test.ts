@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getYRange, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, saveMapToViewCache, getOfflineMap, isMapDownloaded, removeMapDownload, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB, stripMapCachePii, unionCachedMapsWithDownloads, updateDownloadedMapDocument, bumpDownloadDocumentEpoch, currentDownloadDocumentEpoch, touchMapCacheAccess, claimUnownedMapDocuments, getMapETag } from '../tileUtils';
-import { noteSignedInAccount, noteSignedOut, resetAccountScopeForTests } from '../accountScope';
+import { getYRange, getPinsBoundingBox, countTiles, getXRanges, saveMapOffline, saveMapToViewCache, getOfflineMap, isMapDownloaded, removeMapDownload, reconcileLocalMaps, removeAllDownloads, getDownloadStats, getMapDownloadStatuses, resetDBForTesting, openDB, stripMapCachePii, unionCachedMapsWithDownloads, updateDownloadedMapDocument, bumpDownloadDocumentEpoch, currentDownloadDocumentEpoch, touchMapCacheAccess, claimUnownedMapDocuments, getMapETag } from '../tileUtils';
+import { noteSignedInAccount, noteSignedOut, resetAccountScopeForTests, readAccountJson, writeAccountJson } from '../accountScope';
 import type { Pin } from '@shared/interfaces';
 
 const { mockExtracts, mockPartSizes, mockMetaBytes } = vi.hoisted(() => ({
@@ -607,4 +607,45 @@ describe('tileUtils', () => {
         noteSignedInAccount('user-a');
         expect((await getOfflineMap('orphan-map'))?.name).toBe('Orphan');
     });
+
+    it('purges orphaned OPFS extract even when map document is missing in IndexedDB', async () => {
+        noteSignedInAccount('user-a');
+        mockExtracts.add('orphan-extract-only');
+        expect(await isMapDownloaded('orphan-extract-only')).toBe(true);
+
+        await removeMapDownload('orphan-extract-only');
+        expect(await isMapDownloaded('orphan-extract-only')).toBe(false);
+        expect(mockExtracts.has('orphan-extract-only')).toBe(false);
+    });
+
+    it('cleans up cached_download_statuses entry upon removeMapDownload', async () => {
+        noteSignedInAccount('user-a');
+        writeAccountJson('cached_download_statuses', {
+            'map-del': { isComplete: true, isPartial: false },
+            'map-keep': { isComplete: true, isPartial: false },
+        });
+
+        await removeMapDownload('map-del');
+        const updated = readAccountJson<Record<string, unknown>>('cached_download_statuses', {});
+        expect(updated['map-del']).toBeUndefined();
+        expect(updated['map-keep']).toBeDefined();
+    });
+
+    it('reconcileLocalMaps purges local maps missing from the server list', async () => {
+        noteSignedInAccount('user-a');
+        await saveMapOffline({ id: 'srv-stay', name: 'Server Stay', layers: [], pins: [] } as any);
+        await saveMapOffline({ id: 'srv-gone', name: 'Deleted On Device 2', layers: [], pins: [] } as any);
+        mockExtracts.add('srv-stay');
+        mockExtracts.add('srv-gone');
+
+        const serverMaps = [{ id: 'srv-stay' }];
+        const purged = await reconcileLocalMaps(serverMaps);
+
+        expect(purged).toEqual(['srv-gone']);
+        expect(await getOfflineMap('srv-gone')).toBeNull();
+        expect(mockExtracts.has('srv-gone')).toBe(false);
+        expect((await getOfflineMap('srv-stay'))?.name).toBe('Server Stay');
+        expect(mockExtracts.has('srv-stay')).toBe(true);
+    });
 });
+

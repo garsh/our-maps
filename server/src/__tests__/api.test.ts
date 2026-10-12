@@ -797,14 +797,8 @@ describe('API Endpoints', () => {
       expect(successRes.body.success).toBe(true);
     });
 
-    it('POST /api/labels/system/:systemLabelId/maps rejects inaccessible maps with 404', async () => {
-      const res = await request(app).post('/api/labels/system/favorites/maps').set(authHeader).send({ mapId: uuid(999) });
-      expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Map not found');
-    });
-
     it('rejects invalid systemLabelId with 400', async () => {
-      const res = await request(app).post('/api/labels/system/invalid-label/maps').set(authHeader).send({ mapId: uuid(999) });
+      const res = await request(app).put('/api/labels/system/invalid-label/settings').set(authHeader).send({ sortMode: 'name' });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Invalid systemLabelId');
     });
@@ -814,6 +808,16 @@ describe('API Endpoints', () => {
       const res = await request(app).put('/api/labels/system/owned/order').set(authHeader).send({ mapIds: largeArray });
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('mapIds array required');
+    });
+
+    it('creates composite index idx_pins_map_layer_pos on pins(map_id, layer_id, position, id)', async () => {
+      const db = await getDb();
+      const indexRow = await db.get(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_pins_map_layer_pos'"
+      );
+      expect(indexRow).toBeDefined();
+      expect(indexRow.name).toBe('idx_pins_map_layer_pos');
+      expect(indexRow.sql).toContain('pins(map_id, layer_id, position, id)');
     });
   });
 

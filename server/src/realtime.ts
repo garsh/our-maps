@@ -4,6 +4,7 @@ import type {
   PinCreatePayload,
   PinUpdatePayload,
   PinDeletePayload,
+  PinsDeletePayload,
   PinsReorderPayload,
   PinMoveLayerPayload,
   LayerCreatePayload,
@@ -127,6 +128,24 @@ export async function handlePinDelete(data: PinDeletePayload) {
   if (!mapId || !pinId) return;
 
   await db.run('DELETE FROM pins WHERE id = ? AND map_id = ?', pinId, mapId);
+  await touchMapUpdatedAt(mapId);
+}
+
+export async function handlePinsDelete(data: PinsDeletePayload) {
+  const db = await getDb();
+  const { mapId, pinIds } = data;
+  if (!mapId || !Array.isArray(pinIds) || pinIds.length === 0) return;
+
+  const chunkSize = 500;
+  for (let i = 0; i < pinIds.length; i += chunkSize) {
+    const chunk = pinIds.slice(i, i + chunkSize);
+    const placeholders = chunk.map(() => '?').join(', ');
+    await db.run(
+      `DELETE FROM pins WHERE map_id = ? AND id IN (${placeholders})`,
+      mapId,
+      ...chunk
+    );
+  }
   await touchMapUpdatedAt(mapId);
 }
 

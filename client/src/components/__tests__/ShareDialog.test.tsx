@@ -270,4 +270,71 @@ describe('ShareDialog Dark Mode & Styling', () => {
     expect(apiService.searchUsers).toHaveBeenCalledTimes(1);
     expect(apiService.searchUsers).toHaveBeenCalledWith('');
   });
+
+  it('provides accessible modal attributes (role="dialog", aria-modal="true", aria-labelledby)', () => {
+    render(<ShareDialog {...defaultProps} />);
+
+    const dialog = screen.getByRole('dialog', { name: 'Share Map' });
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAttribute('aria-labelledby', 'share-dialog-title');
+  });
+
+  it('closes dialog when Escape key is pressed', () => {
+    const onClose = vi.fn();
+    render(<ShareDialog {...defaultProps} onClose={onClose} />);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes only the transfer confirmation sub-dialog when Escape key is pressed', () => {
+    const onClose = vi.fn();
+    render(<ShareDialog {...defaultProps} onClose={onClose} />);
+
+    // Trigger Transfer Ownership dialog
+    const emailInput = screen.getByPlaceholderText('user@example.com');
+    fireEvent.change(emailInput, { target: { value: 'transfer@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Owner' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Share' }));
+
+    const transferModal = screen.getByRole('dialog', { name: 'Transfer Ownership?' });
+    expect(transferModal).toBeInTheDocument();
+
+    // Press Escape
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    // Transfer modal should be gone, but main dialog should remain open (onClose not called)
+    expect(screen.queryByRole('dialog', { name: 'Transfer Ownership?' })).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Share Map' })).toBeInTheDocument();
+  });
+
+  it('traps focus inside the dialog when Tab and Shift+Tab are pressed', () => {
+    render(<ShareDialog {...defaultProps} />);
+
+    const dialog = screen.getByRole('dialog', { name: 'Share Map' });
+    const focusableSelector =
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusables = Array.from(
+      dialog.querySelectorAll<HTMLElement>(focusableSelector)
+    ).filter(el => el.style.display !== 'none' && el.style.visibility !== 'hidden' && !el.hasAttribute('hidden'));
+    expect(focusables.length).toBeGreaterThan(1);
+
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+
+    // Focus last element and press Tab -> should wrap to first
+    last.focus();
+    expect(document.activeElement).toBe(last);
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: false });
+    expect(document.activeElement).toBe(first);
+
+    // Focus first element and press Shift+Tab -> should wrap to last
+    first.focus();
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
+  });
 });
+

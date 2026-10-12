@@ -432,4 +432,72 @@ describe('fileUtils', () => {
       expect(result.addedPins[2].position).toBe(3);
     });
   });
+
+  describe('geoJSONToData UUID sanitization and coordinate validation', () => {
+    it('replaces non-UUID feature IDs with valid UUIDs and preserves valid UUIDs', () => {
+      const validUuid = '123e4567-e89b-12d3-a456-426614174000';
+      const geojson = {
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            id: 'osm-node-12345',
+            geometry: { type: 'Point', coordinates: [-122.4, 37.7] },
+            properties: { name: 'OSM Feature' }
+          },
+          {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [-122.5, 37.8] },
+            properties: { id: validUuid, name: 'Valid UUID Feature' }
+          },
+          {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [-122.6, 37.9] },
+            properties: { id: 'custom-string-id', layerId: 'custom-layer-id', layerName: 'My Layer', name: 'Custom ID' }
+          }
+        ]
+      };
+
+      const { pins, layers } = geoJSONToData(geojson);
+      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+      expect(pins).toHaveLength(3);
+      expect(UUID_REGEX.test(pins[0].id)).toBe(true);
+      expect(pins[0].id).not.toBe('osm-node-12345');
+
+      expect(pins[1].id).toBe(validUuid);
+
+      expect(UUID_REGEX.test(pins[2].id)).toBe(true);
+      expect(layers).toHaveLength(1);
+      expect(UUID_REGEX.test(layers[0].id)).toBe(true);
+      expect(pins[2].layerId).toBe(layers[0].id);
+    });
+
+    it('ignores features with invalid or out-of-bounds coordinates', () => {
+      const geojson = {
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [NaN, 37.7] },
+            properties: { name: 'NaN Lng' }
+          },
+          {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [0, 95] }, // lat > 90
+            properties: { name: 'Lat Out of Bounds' }
+          },
+          {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [-122.4, 37.7] },
+            properties: { name: 'Valid Point' }
+          }
+        ]
+      };
+
+      const { pins } = geoJSONToData(geojson);
+      expect(pins).toHaveLength(1);
+      expect(pins[0].label).toBe('Valid Point');
+    });
+  });
 });

@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { apiService } from '../services/api';
 import { Map as MapIcon, LogIn, LogOut, WifiOff, CloudSync, Loader2, Trash2, Upload, Sun, Moon, ChevronDown, Check, ArrowUpDown, Search, X, Pencil } from 'lucide-react';
-import { getMapDownloadStatuses, unionCachedMapsWithDownloads, type MapDownloadStatus } from '../utils/tileUtils';
+import { getMapDownloadStatuses, removeMapDownload, reconcileLocalMaps, unionCachedMapsWithDownloads, type MapDownloadStatus } from '../utils/tileUtils';
 import { landingStatusFromWorker, tileWorkerManager } from '../utils/tileWorkerManager';
 import { getAccountScope, readAccountJson as getStoredJson, subscribeAccountScope, writeAccountJson as setStoredJson } from '../utils/accountScope';
 import { setForcedOffline } from '../utils/offlineSession';
@@ -124,11 +124,16 @@ export default function LandingPage() {
   const [isRemovingLeftovers, setIsRemovingLeftovers] = useState(false);
   const [showOfflineInterstitial, setShowOfflineInterstitial] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
   const [touchTooltip, setTouchTooltip] = useState<TouchTooltipState | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggeredRef = useRef<boolean>(false);
   // True after a list fetch reaches the server. A stale navigator.onLine must not block opens.
   const reachedServerRef = useRef(false);
+
+  useEffect(() => {
+    setAvatarError(false);
+  }, [user?.picture]);
 
   // Label management state
   const [labels, setLabels] = useState<UserLabel[]>(() => getStoredJson<UserLabel[]>('cached_user_labels', []));
@@ -474,6 +479,21 @@ export default function LandingPage() {
       setIsOffline(false);
       setStoredJson('cached_maps', data);
       fetchDownloadedMapStatuses(data);
+      void reconcileLocalMaps(data).then(purgedIds => {
+        if (!isMountedRef.current || purgedIds.length === 0) return;
+        purgedIds.forEach(id => {
+          if (tileWorkerManager.getStatus(id)) {
+            void tileWorkerManager.cancelDownload(id).catch(() => {});
+          }
+        });
+        setDownloadStatuses(prev => {
+          const next = new Map(prev);
+          purgedIds.forEach(id => next.delete(id));
+          return next;
+        });
+      }).catch(err => {
+        console.warn('Failed to reconcile local maps with server', err);
+      });
     } catch (error: any) {
       console.error('Failed to fetch maps', error);
       if (error?.message?.includes('Unauthorized')) {
@@ -664,6 +684,19 @@ export default function LandingPage() {
       const updatedMaps = maps.filter(m => m.id !== id);
       setMaps(updatedMaps);
       setStoredJson('cached_maps', updatedMaps);
+      if (tileWorkerManager.getStatus(id)) {
+        await tileWorkerManager.cancelDownload(id).catch(() => {});
+      }
+      try {
+        await removeMapDownload(id);
+      } catch (err) {
+        console.warn('Failed to clean up local download for deleted map', err);
+      }
+      setDownloadStatuses(prev => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
     } catch (error) {
       console.error('Failed to perform action on map', error);
       alert('Failed to perform action on map');
@@ -1200,8 +1233,13 @@ export default function LandingPage() {
               }}
               title={user?.name}
             >
-              {user?.picture ? (
-                <img src={user.picture} alt={user.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              {user?.picture && !avatarError ? (
+                <img 
+                  src={user.picture} 
+                  alt={user.name} 
+                  onError={() => setAvatarError(true)}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                />
               ) : (
                 <span>{user?.name?.[0]?.toUpperCase() || 'U'}</span>
               )}

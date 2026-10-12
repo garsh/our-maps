@@ -17,6 +17,11 @@ export interface PinDeletePayload {
   pinId: string;
 }
 
+export interface PinsDeletePayload {
+  mapId: string;
+  pinIds: string[];
+}
+
 export interface PinsReorderPayload {
   mapId: string;
   layerId?: string | null;
@@ -60,4 +65,14 @@ export interface MapNameUpdatePayload {
 export interface CustomColorsUpdatePayload {
   mapId: string;
   customColors: string[];
+}
+
+export interface WriteErrorPayload {
+  mapId: string;
+  error: string;
+}
+
+export interface JoinMapErrorPayload {
+  mapId: string;
+  error?: string;
 }

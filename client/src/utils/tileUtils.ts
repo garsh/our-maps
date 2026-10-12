@@ -682,7 +682,12 @@ export async function removeMapDownload(mapId: string): Promise<void> {
         getReq.onsuccess = () => {
             const existing = getReq.result as StoredMapRecord | undefined;
             if (active.mode === 'account') {
-                if (!existing || !canReadMapRecord(existing)) {
+                if (!existing) {
+                    void removeExtract(mapId);
+                    resolve();
+                    return;
+                }
+                if (!canReadMapRecord(existing)) {
                     resolve();
                     return;
                 }
@@ -704,6 +709,36 @@ export async function removeMapDownload(mapId: string): Promise<void> {
         tx.onerror = () => reject(tx.error);
         tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
     });
+
+    try {
+        const cachedStatuses = readAccountJson<Record<string, unknown>>('cached_download_statuses', {});
+        if (cachedStatuses && mapId in cachedStatuses) {
+            delete cachedStatuses[mapId];
+            writeAccountJson('cached_download_statuses', cachedStatuses);
+        }
+    } catch {
+        // Non-critical
+    }
+}
+
+/**
+ * Cross-device reconciliation: purge local IndexedDB documents and OPFS extracts
+ * for any maps belonging to the active account that no longer exist on the server.
+ */
+export async function reconcileLocalMaps(serverMaps: Array<{ id: string }>): Promise<string[]> {
+    if (!Array.isArray(serverMaps)) return [];
+    const active = getAccountScope();
+    if (active.mode === 'hidden') return [];
+    const serverMapIds = new Set(serverMaps.map(m => m.id));
+    const localMaps = await listOfflineMaps();
+    const purgedIds: string[] = [];
+    for (const localMap of localMaps) {
+        if (!serverMapIds.has(localMap.id)) {
+            await removeMapDownload(localMap.id);
+            purgedIds.push(localMap.id);
+        }
+    }
+    return purgedIds;
 }
 
 export function getXRanges(west: number, east: number, zoom: number, buffer = 0): Array<[number, number]> {

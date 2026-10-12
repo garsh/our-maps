@@ -18,7 +18,7 @@ function notFound(): DOMException {
     );
 }
 
-function installOpfsMock(options?: { extractDirExists?: boolean }) {
+function installOpfsMock(options?: { extractDirExists?: boolean; disableMove?: boolean }) {
     const files = new Map<string, Uint8Array>();
     let extractDirExists = options?.extractDirExists ?? false;
     const dir: any = {
@@ -29,8 +29,20 @@ function installOpfsMock(options?: { extractDirExists?: boolean }) {
             if (!files.has(name) && opts?.create) {
                 files.set(name, new Uint8Array());
             }
-            return {
-                getFile: async () => new File([files.get(name) || new Uint8Array()], name),
+            const handle: any = {
+                getFile: async () => {
+                    const data = files.get(name) || new Uint8Array();
+                    const file = new File([data], name);
+                    if (typeof (file as any).stream !== 'function') {
+                        (file as any).stream = () => new ReadableStream({
+                            start(controller) {
+                                controller.enqueue(data);
+                                controller.close();
+                            }
+                        });
+                    }
+                    return file;
+                },
                 createWritable: async (opts?: { keepExistingData?: boolean }) => {
                     const existing = files.get(name) || new Uint8Array();
                     let data = opts?.keepExistingData ? Uint8Array.from(existing) : new Uint8Array();
@@ -66,12 +78,15 @@ function installOpfsMock(options?: { extractDirExists?: boolean }) {
                         abort: async () => { closed = true; },
                     };
                 },
-                move: async (dest: string) => {
+            };
+            if (!options?.disableMove) {
+                handle.move = async (dest: string) => {
                     const data = files.get(name) || new Uint8Array();
                     files.set(dest, data);
                     files.delete(name);
-                },
-            };
+                };
+            }
+            return handle;
         },
         removeEntry: async (name: string) => {
             files.delete(name);
@@ -280,4 +295,23 @@ describe('extractStore', () => {
     it('removeExtract succeeds when no extract directory exists yet', async () => {
         await expect(removeExtract('old-idb-map')).resolves.toBeUndefined();
     });
+
+    it('falls back to streaming file copy when handle.move is not supported', async () => {
+        files = installOpfsMock({ extractDirExists: true, disableMove: true });
+        const payload = new Uint8Array(150).map((_, i) => i);
+        const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+                controller.enqueue(payload);
+                controller.close();
+            }
+        });
+
+        const result = await writeExtractFromStream('fallback-map', stream);
+        expect(result.bytes).toBe(150);
+        expect(files.has('fallback-map.pmtiles')).toBe(true);
+        expect(files.has('fallback-map.pmtiles.part')).toBe(false);
+        expect(Array.from(files.get('fallback-map.pmtiles')!)).toEqual(Array.from(payload));
+        expect(await extractExists('fallback-map')).toBe(true);
+    });
 });
+

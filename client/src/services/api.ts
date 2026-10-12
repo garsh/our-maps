@@ -392,22 +392,5 @@ export const apiService = {
       body: JSON.stringify({ mapIds }),
     });
     return handleResponse<void>(res, this._logoutCallback, 'Failed to update system label map order');
-  },
-
-  async assignSystemMapLabel(systemLabelId: string, mapId: string): Promise<void> {
-    const res = await fetchWithRetry(`${API_BASE}/labels/system/${systemLabelId}/maps`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ mapId }),
-    });
-    return handleResponse<void>(res, this._logoutCallback, 'Failed to add map to system label');
-  },
-
-  async removeSystemMapLabel(systemLabelId: string, mapId: string): Promise<void> {
-    const res = await fetchWithRetry(`${API_BASE}/labels/system/${systemLabelId}/maps/${mapId}`, {
-      method: 'DELETE',
-      headers: getHeaders(),
-    });
-    return handleResponse<void>(res, this._logoutCallback, 'Failed to remove map from system label');
   }
 };

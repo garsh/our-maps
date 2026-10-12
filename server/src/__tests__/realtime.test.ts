@@ -43,6 +43,19 @@ describe('Realtime Delta Handlers', () => {
     expect(storedPin).toBeUndefined();
   });
 
+  it('handlePinsDelete batches deletion of multiple pins', async () => {
+    const db = await getDb();
+    await realtime.handlePinCreate({ mapId, pin: { id: 'batch-1', lat: 10, lng: 10, label: 'Batch 1', position: 0 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'batch-2', lat: 20, lng: 20, label: 'Batch 2', position: 1 } });
+    await realtime.handlePinCreate({ mapId, pin: { id: 'batch-3', lat: 30, lng: 30, label: 'Batch 3', position: 2 } });
+
+    await realtime.handlePinsDelete({ mapId, pinIds: ['batch-1', 'batch-3'] });
+
+    const remainingPins = await db.all('SELECT id FROM pins WHERE map_id = ? ORDER BY position ASC', mapId);
+    expect(remainingPins).toHaveLength(1);
+    expect(remainingPins[0].id).toBe('batch-2');
+  });
+
   it('handleLayerCreate & handleLayerDelete reassigning pins to Default Layer', async () => {
     const db = await getDb();
     const layer = { id: 'layer-1', name: 'Custom Layer', position: 0 };

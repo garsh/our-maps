@@ -371,4 +371,29 @@ describe('LandingPage label persistence', () => {
     expect(screen.getByText('Map One')).toBeInTheDocument();
     expect(screen.queryByText('Map Two')).not.toBeInTheDocument();
   });
+
+  it('falls back to user name initial when avatar image fails to load (offline fallback)', async () => {
+    (useAuth as any).mockReturnValue({
+      user: { id: 'user-1', email: 'test@test.com', name: 'Alice Adams', picture: 'https://example.com/photo.jpg' },
+      token: 'mock-token',
+      isAuthenticated: true,
+      isLoading: false,
+      login: vi.fn(),
+      logout: vi.fn(),
+      logoutEverywhere: vi.fn(),
+    });
+
+    renderLanding();
+
+    const img = screen.getByRole('img', { name: 'Alice Adams' });
+    expect(img).toBeInTheDocument();
+    expect(img).toHaveAttribute('src', 'https://example.com/photo.jpg');
+
+    // Simulate image error (e.g., offline network failure)
+    fireEvent.error(img);
+
+    expect(screen.queryByRole('img', { name: 'Alice Adams' })).not.toBeInTheDocument();
+    expect(screen.getByText('A')).toBeInTheDocument();
+  });
 });
+

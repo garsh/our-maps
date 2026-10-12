@@ -1646,6 +1646,28 @@ describe('Sidebar', () => {
     expect(onRemovePin).toHaveBeenNthCalledWith(2, '2');
   });
 
+  it('calls onRemovePins with all IDs when onRemovePins is provided', () => {
+    const onRemovePins = vi.fn();
+    const pins = [
+      { id: '1', lat: 10, lng: 20, label: 'Pin 1', position: 0 },
+      { id: '2', lat: 11, lng: 21, label: 'Pin 2', position: 1 },
+    ];
+
+    render(
+      <TestWrapper
+        pins={pins}
+        selectedNavIds={new Set(['1', '2'])}
+        handlers={{ onRemovePins }}
+      />
+    );
+
+    fireEvent.click(selectionActionsButton());
+    fireEvent.click(menuButton('Delete 2 pins'));
+    fireEvent.click(within(deletePinsDialog()).getByRole('button', { name: 'OK' }));
+    expect(onRemovePins).toHaveBeenCalledTimes(1);
+    expect(onRemovePins).toHaveBeenCalledWith(['1', '2']);
+  });
+
   it('hides selection actions when the map is read-only', () => {
     render(
       <TestWrapper

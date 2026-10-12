@@ -155,7 +155,9 @@ export const parseKmlHierarchy = (kmlDoc: Document): { pins: Pin[], layers: PinL
     const lat = parseFloat(latStr);
     const lng = parseFloat(lngStr);
 
-    if (isNaN(lat) || isNaN(lng)) return;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return;
+    }
 
     pins.push({
       id: generateId(),

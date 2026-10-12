@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import LandingPage from '../LandingPage';
@@ -744,5 +744,57 @@ describe('LandingPage Offline Map Access', () => {
     const olderIndex = renderedHeadings.indexOf('Older Access Map');
     expect(newerIndex).toBeLessThan(olderIndex);
   });
+
+  it('cleans up local download and status when map is deleted', async () => {
+    const removeMapDownloadSpy = vi.spyOn(tileUtils, 'removeMapDownload').mockResolvedValue(undefined);
+    (apiService.deleteMap as any).mockResolvedValue({ success: true });
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Downloaded Map')).toBeInTheDocument();
+    });
+
+    const card = screen.getByText('Downloaded Map').closest('.card')!;
+    const deleteBtn = card.querySelector('.delete-btn') as HTMLElement;
+    fireEvent.click(deleteBtn);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Delete Map?' })).toBeInTheDocument();
+    });
+
+    const modal = screen.getByRole('heading', { name: 'Delete Map?' }).closest('div')!;
+    const confirmBtn = within(modal).getByRole('button', { name: 'Delete Map' });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(apiService.deleteMap).toHaveBeenCalledWith('map-downloaded');
+      expect(removeMapDownloadSpy).toHaveBeenCalledWith('map-downloaded');
+      expect(screen.queryByText('Downloaded Map')).not.toBeInTheDocument();
+    });
+  });
+
+  it('reconciles local maps when fetchMaps receives server list missing a map', async () => {
+    const reconcileSpy = vi.spyOn(tileUtils, 'reconcileLocalMaps').mockResolvedValue(['map-removed-remotely']);
+
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <LandingPage />
+        </ThemeProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(reconcileSpy).toHaveBeenCalledWith(mockMaps);
+    });
+  });
 });
+
 

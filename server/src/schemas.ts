@@ -76,6 +76,11 @@ const PinDeletePayloadSchema = z.object({
   pinId: UuidSchema,
 });
 
+const PinsDeletePayloadSchema = z.object({
+  mapId: UuidSchema,
+  pinIds: z.array(UuidSchema).min(1).max(MAX_PINS_PER_MAP),
+});
+
 const PinsReorderPayloadSchema = z.object({
   mapId: UuidSchema,
   layerId: UuidSchema.optional().nullable(),
@@ -128,6 +133,7 @@ export const socketPayloadSchemas = {
   'pin-create': PinCreatePayloadSchema,
   'pin-update': PinUpdatePayloadSchema,
   'pin-delete': PinDeletePayloadSchema,
+  'pins-delete': PinsDeletePayloadSchema,
   'pins-reorder': PinsReorderPayloadSchema,
   'pin-move-layer': PinMoveLayerPayloadSchema,
   'layer-create': LayerCreatePayloadSchema,

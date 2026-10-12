@@ -102,6 +102,7 @@ export async function getDb() {
 
     CREATE INDEX IF NOT EXISTS idx_pins_layer_id ON pins(layer_id);
     CREATE INDEX IF NOT EXISTS idx_pins_map_pos ON pins(map_id, position, id);
+    CREATE INDEX IF NOT EXISTS idx_pins_map_layer_pos ON pins(map_id, layer_id, position, id);
     CREATE INDEX IF NOT EXISTS idx_pin_layers_map_pos ON pin_layers(map_id, position, id);
     CREATE INDEX IF NOT EXISTS idx_maps_owner_id ON maps(owner_id);
     CREATE INDEX IF NOT EXISTS idx_map_permissions_user_id ON map_permissions(user_id);

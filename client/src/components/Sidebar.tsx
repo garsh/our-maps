@@ -468,6 +468,7 @@ interface SidebarProps {
   pins: Pin[];
   onAddPin: (lat: number, lng: number, label: string, address?: string) => void;
   onRemovePin: (id: string) => void;
+  onRemovePins?: (ids: string[]) => void;
   onPinClick: (pin: Pin) => void;
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
   onMovePinsToLayer?: (pinIds: string[], targetLayerId?: string) => void;
@@ -1893,7 +1894,12 @@ export function scrollPinRowIntoList(
 
   const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
   const scrollToTop = (top: number) => {
-    container.scrollTo({ top: Math.min(maxScroll, Math.max(0, top)), behavior });
+    const targetTop = Math.min(maxScroll, Math.max(0, top));
+    if (typeof container.scrollTo === 'function') {
+      container.scrollTo({ top: targetTop, behavior });
+    } else {
+      container.scrollTop = targetTop;
+    }
   };
 
   // A row taller than the list cannot show both ends. Keep its top in view.
@@ -2218,6 +2224,7 @@ const Sidebar = ({
   pins,
   onAddPin,
   onRemovePin,
+  onRemovePins,
   onPinClick,
   onUpdatePin,
   onMovePinsToLayer,
@@ -2890,7 +2897,11 @@ const Sidebar = ({
 
   const handleConfirmDeletePins = () => {
     const pinIds = selectedPins.map(p => p.id);
-    pinIds.forEach(id => onRemovePin(id));
+    if (onRemovePins) {
+      onRemovePins(pinIds);
+    } else {
+      pinIds.forEach(id => onRemovePin(id));
+    }
     setShowDeletePinsDialog(false);
     closeSelectionMenu();
   };

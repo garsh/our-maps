@@ -2283,10 +2283,13 @@ describe('App Components Error Handling', () => {
       });
       expect(screen.queryByText('Gap B')).not.toBeInTheDocument();
       expect(screen.getByText('Move C')).toBeInTheDocument();
-      const deletedIds = mockSocket.emit.mock.calls
-        .filter((call) => call[0] === 'pin-delete')
-        .map((call) => call[1].pinId);
-      expect(deletedIds).toEqual(['a', 'b']);
+      const pinsDeleteCalls = mockSocket.emit.mock.calls
+        .filter((call) => call[0] === 'pins-delete');
+      expect(pinsDeleteCalls).toHaveLength(1);
+      expect(pinsDeleteCalls[0][1]).toEqual({
+        mapId: 'map-1',
+        pinIds: ['a', 'b'],
+      });
     });
 
     it('sends pin-move-layer when the pin editor moves one pin onto a gapped layer', async () => {
@@ -2397,5 +2400,132 @@ describe('App Components Error Handling', () => {
       localStorage.removeItem('ourmaps_transit');
     });
   });
+
+  describe('Socket Error Handling & Role Demotion', () => {
+    it('demotes to viewer and reloads map when write-error indicates access denied', async () => {
+      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'map-1',
+        name: 'Test Map',
+        pins: [],
+        layers: [],
+        userRole: 'edit',
+      });
+
+      renderWithProviders(<MapEditor />, {
+        initialEntries: ['/map/map-1'],
+        routePath: '/map/:id',
+      });
+
+      await waitFor(() => {
+        expect(socketCallbacks['write-error']).toBeDefined();
+      });
+
+      act(() => {
+        socketCallbacks['write-error']({ mapId: 'map-1', error: 'Write access denied' });
+      });
+
+      expect(alertSpy).toHaveBeenCalledWith('Edit privileges have been revoked - switching to view mode');
+      await waitFor(() => {
+        expect(apiService.getMap).toHaveBeenCalledTimes(2);
+      });
+      alertSpy.mockRestore();
+    });
+
+    it('demotes to viewer and reloads map when map-role-updated with view role arrives', async () => {
+      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'map-1',
+        name: 'Test Map',
+        pins: [],
+        layers: [],
+        userRole: 'edit',
+      });
+
+      renderWithProviders(<MapEditor />, {
+        initialEntries: ['/map/map-1'],
+        routePath: '/map/:id',
+      });
+
+      await waitFor(() => {
+        expect(socketCallbacks['map-role-updated']).toBeDefined();
+      });
+
+      act(() => {
+        socketCallbacks['map-role-updated']({ mapId: 'map-1', role: 'view' });
+      });
+
+      expect(alertSpy).toHaveBeenCalledWith('Edit privileges have been revoked - switching to view mode');
+      await waitFor(() => {
+        expect(apiService.getMap).toHaveBeenCalledTimes(2);
+      });
+      alertSpy.mockRestore();
+    });
+
+    it('handles join-map-error by alerting access denied and redirecting home', async () => {
+      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'map-1',
+        name: 'Test Map',
+        pins: [],
+        layers: [],
+        userRole: 'edit',
+      });
+
+      renderWithProviders(<MapEditor />, {
+        initialEntries: ['/map/map-1'],
+        routePath: '/map/:id',
+      });
+
+      await waitFor(() => {
+        expect(socketCallbacks['join-map-error']).toBeDefined();
+      });
+
+      act(() => {
+        socketCallbacks['join-map-error']({ mapId: 'map-1', error: 'Access denied' });
+      });
+
+      expect(alertSpy).toHaveBeenCalledWith('Could not join map: access denied.');
+      alertSpy.mockRestore();
+    });
+
+    it('immediately clears isSaving and isInitialCreating upon successful new map creation without 3-second delay', async () => {
+      (apiService.getMap as any).mockResolvedValue({
+        id: 'new-map-id',
+        name: 'My New Map',
+        pins: [],
+        layers: [],
+        userRole: 'owner',
+      });
+      (apiService.createMap as any).mockResolvedValue({ id: 'new-map-id' });
+
+      renderWithProviders(<MapEditor />, {
+        initialEntries: ['/map/new'],
+        routePath: '/map/:id',
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Synced/i)).toBeInTheDocument();
+      });
+
+      // Change name to trigger auto-save
+      fireEvent.click(screen.getByLabelText(/more options/i));
+      fireEvent.click(screen.getByText(/Rename Map/i));
+      fireEvent.change(screen.getByLabelText(/New Map Name/i), { target: { value: 'My New Map' } });
+      fireEvent.click(screen.getByText('Save'));
+
+      // Wait for createMap to be called and resolve
+      await waitFor(() => {
+        expect(apiService.createMap).toHaveBeenCalled();
+      });
+
+      // Should transition to Synced well within the window rather than remaining in Saving for 3 seconds
+      await waitFor(() => {
+        expect(screen.getByText(/Synced/i)).toBeInTheDocument();
+        expect(screen.queryByText(/Saving/i)).not.toBeInTheDocument();
+      }, { timeout: 2000 });
+    });
+  });
 });
+
 

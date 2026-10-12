@@ -83,4 +83,24 @@ describe('socket payload schemas', () => {
       expect(result.data.updates.position).toBeUndefined();
     }
   });
+
+  it('validates pins-delete socket payload schema', () => {
+    const PinsDeletePayloadSchema = socketPayloadSchemas['pins-delete'];
+    expect(PinsDeletePayloadSchema.safeParse({
+      mapId: uuid(1),
+      pinIds: [uuid(2), uuid(3)],
+    }).success).toBe(true);
+
+    // Empty array rejected
+    expect(PinsDeletePayloadSchema.safeParse({
+      mapId: uuid(1),
+      pinIds: [],
+    }).success).toBe(false);
+
+    // Non-UUID rejected
+    expect(PinsDeletePayloadSchema.safeParse({
+      mapId: uuid(1),
+      pinIds: ['not-a-uuid'],
+    }).success).toBe(false);
+  });
 });

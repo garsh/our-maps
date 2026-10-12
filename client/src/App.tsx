@@ -18,6 +18,7 @@ import type {
   PinCreatePayload,
   PinUpdatePayload,
   PinDeletePayload,
+  PinsDeletePayload,
   PinsReorderPayload,
   PinMoveLayerPayload,
   LayerCreatePayload,
@@ -25,7 +26,9 @@ import type {
   LayerDeletePayload,
   LayersReorderPayload,
   MapNameUpdatePayload,
-  CustomColorsUpdatePayload
+  CustomColorsUpdatePayload,
+  WriteErrorPayload,
+  JoinMapErrorPayload
 } from '@shared/interfaces'
 
 import type { DragEndEvent } from '@dnd-kit/core'
@@ -571,9 +574,55 @@ export function MapEditor() {
   targetPinIdRef.current = targetPinId;
   const editingPinIdRef = useRef(editingPinId);
   editingPinIdRef.current = editingPinId;
+  const loadMapRef = useRef<(mapId: string, silent?: boolean) => Promise<void>>(() => Promise.resolve());
+  const isDemotingRef = useRef(false);
 
-  const emitDelta = useCallback((eventName: string, payload: any) => {
-    if (!socketRef.current) return;
+  type PendingDelta =
+    | {
+        type: 'delta';
+        eventName: string;
+        payload: any;
+      }
+    | {
+        type: 'reorder';
+        targetPins: Pin[];
+        targetIds: string[];
+        startMap: Map<string, string | undefined>;
+        targetLayerId: string | undefined;
+      };
+
+  const pendingDeltasRef = useRef<PendingDelta[]>([]);
+  const initialCreateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleDemotionToViewer = useCallback((targetMapId?: string) => {
+    if (isDemotingRef.current) return;
+    isDemotingRef.current = true;
+    setTimeout(() => {
+      isDemotingRef.current = false;
+    }, 2000);
+
+    if (initialCreateTimerRef.current) {
+      clearTimeout(initialCreateTimerRef.current);
+      initialCreateTimerRef.current = null;
+    }
+
+    const currentId = targetMapId || mapIdRef.current;
+    setUserRole('view');
+    setEditingPinId(null);
+    setIsSaving(false);
+    setError(null);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('mode', 'view');
+      return next;
+    }, { replace: true });
+    alert('Edit privileges have been revoked - switching to view mode');
+    if (currentId) {
+      void loadMapRef.current(currentId, true);
+    }
+  }, [setSearchParams]);
+
+  const sendDeltaDirect = useCallback((socket: Socket, eventName: string, payload: any) => {
     inFlightDeltaCountRef.current++;
     setIsSaving(true);
     let resolved = false;
@@ -587,7 +636,7 @@ export function MapEditor() {
       }
     }, 3000);
 
-    socketRef.current.emit(eventName, payload, (res?: any) => {
+    socket.emit(eventName, payload, (res?: any) => {
       if (resolved) return;
       resolved = true;
       clearTimeout(ackTimeout);
@@ -597,19 +646,25 @@ export function MapEditor() {
       }
       if (res?.error) {
         console.error(`[SOCKET] Error acknowledging ${eventName}:`, res.error);
-        setError('Sync error');
+        if (res.error === 'Write access denied' || /access denied/i.test(res.error)) {
+          handleDemotionToViewer();
+        } else {
+          setError('Sync error');
+          if (mapIdRef.current) void loadMapRef.current(mapIdRef.current, true);
+        }
       }
     });
-  }, []);
+  }, [handleDemotionToViewer]);
 
-  const emitReorderDelta = useCallback((
+  const sendReorderDeltaDirect = useCallback((
+    socket: Socket,
     targetPins: Pin[],
     targetIds: string[],
     startMap: Map<string, string | undefined>,
     targetLayerId: string | undefined
   ) => {
     const currentMapId = mapIdRef.current;
-    if (!currentMapId || !socketRef.current) return;
+    if (!currentMapId) return;
 
     inFlightDeltaCountRef.current++;
     setIsSaving(true);
@@ -622,7 +677,7 @@ export function MapEditor() {
     }, 3000);
 
     emitPinMoveOrReorderEvents(
-      socketRef.current,
+      socket,
       currentMapId,
       targetPins,
       targetIds,
@@ -636,11 +691,58 @@ export function MapEditor() {
         if (inFlightDeltaCountRef.current === 0) setIsSaving(false);
         if (res?.error) {
           console.error(`[SOCKET] Error acknowledging pin reorder:`, res.error);
-          setError('Sync error');
+          if (res.error === 'Write access denied' || /access denied/i.test(res.error)) {
+            handleDemotionToViewer();
+          } else {
+            setError('Sync error');
+            if (mapIdRef.current) void loadMapRef.current(mapIdRef.current, true);
+          }
         }
       }
     );
-  }, []);
+  }, [handleDemotionToViewer]);
+
+  const emitDelta = useCallback((eventName: string, payload: any) => {
+    if (!socketRef.current) {
+      pendingDeltasRef.current.push({ type: 'delta', eventName, payload });
+      setIsSaving(true);
+      return;
+    }
+    sendDeltaDirect(socketRef.current, eventName, payload);
+  }, [sendDeltaDirect]);
+
+  const emitReorderDelta = useCallback((
+    targetPins: Pin[],
+    targetIds: string[],
+    startMap: Map<string, string | undefined>,
+    targetLayerId: string | undefined
+  ) => {
+    if (!socketRef.current) {
+      pendingDeltasRef.current.push({
+        type: 'reorder',
+        targetPins,
+        targetIds,
+        startMap,
+        targetLayerId
+      });
+      setIsSaving(true);
+      return;
+    }
+    sendReorderDeltaDirect(socketRef.current, targetPins, targetIds, startMap, targetLayerId);
+  }, [sendReorderDeltaDirect]);
+
+  const flushPendingDeltas = useCallback((socket: Socket) => {
+    if (pendingDeltasRef.current.length === 0) return;
+    const pending = pendingDeltasRef.current;
+    pendingDeltasRef.current = [];
+    for (const item of pending) {
+      if (item.type === 'delta') {
+        sendDeltaDirect(socket, item.eventName, item.payload);
+      } else if (item.type === 'reorder') {
+        sendReorderDeltaDirect(socket, item.targetPins, item.targetIds, item.startMap, item.targetLayerId);
+      }
+    }
+  }, [sendDeltaDirect, sendReorderDeltaDirect]);
 
   // Debounced POST /api/maps for brand-new maps that do not have an id yet
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -820,6 +922,7 @@ export function MapEditor() {
         withCredentials: true
       });
       socketRef.current = socket;
+      flushPendingDeltas(socket);
 
       let isInitialConnect = true;
 
@@ -830,6 +933,10 @@ export function MapEditor() {
         // their server acks, so the counter must be zeroed to prevent
         // isSaving from getting stuck true indefinitely.
         inFlightDeltaCountRef.current = 0;
+        if (initialCreateTimerRef.current) {
+          clearTimeout(initialCreateTimerRef.current);
+          initialCreateTimerRef.current = null;
+        }
         setIsInitialCreating(false);
         setIsSaving(false);
         applyOffline(false, true);
@@ -838,12 +945,14 @@ export function MapEditor() {
           if (isInitialConnect) {
             isInitialConnect = false;
             setIsSyncing(false);
-            return;
+          } else {
+            reconcileOnReconnect(id);
           }
-          reconcileOnReconnect(id);
         } else {
           setIsSyncing(false);
         }
+
+        flushPendingDeltas(socket);
       });
 
       socket.on('connect_error', () => {
@@ -903,6 +1012,31 @@ export function MapEditor() {
             return next;
           }
           return prev;
+        });
+        setIsDirty(false);
+      });
+
+      socket.on('pins-delete', (data: PinsDeletePayload) => {
+        if (data.mapId !== id) return;
+        isRemoteUpdateRef.current = true;
+        const idSet = new Set(data.pinIds);
+        setPins(prev => prev.filter(p => !idSet.has(p.id)));
+        const hovered = getHoveredPinId();
+        if (hovered && idSet.has(hovered)) clearHoveredPin();
+        setTargetPinId(prev => (prev && idSet.has(prev) ? null : prev));
+        setEditingPinId(prev => (prev && idSet.has(prev) ? null : prev));
+        setSelectedNavIds(prev => {
+          let hasAny = false;
+          for (const pid of data.pinIds) {
+            if (prev.has(pid)) {
+              hasAny = true;
+              break;
+            }
+          }
+          if (!hasAny) return prev;
+          const next = new Set(prev);
+          for (const pid of data.pinIds) next.delete(pid);
+          return next;
         });
         setIsDirty(false);
       });
@@ -1011,9 +1145,30 @@ export function MapEditor() {
         navigate('/', { replace: true });
       });
 
+      socket.on('join-map-error', (data: JoinMapErrorPayload) => {
+        if (data.mapId && data.mapId !== id) return;
+        forgetDeniedMap(data.mapId || id);
+        alert('Could not join map: access denied.');
+        navigate('/', { replace: true });
+      });
+
       socket.on('map-role-updated', (data: { mapId: string; role: 'owner' | 'edit' | 'view' }) => {
         if (data.mapId !== id) return;
-        setUserRole(data.role);
+        if (data.role === 'view' && userRoleRef.current !== 'view') {
+          handleDemotionToViewer(data.mapId);
+        } else {
+          setUserRole(data.role);
+        }
+      });
+
+      socket.on('write-error', (data: WriteErrorPayload) => {
+        if (data.mapId && data.mapId !== id) return;
+        if (data.error === 'Write access denied' || /access denied/i.test(data.error)) {
+          handleDemotionToViewer(data.mapId);
+        } else {
+          setError('Sync error');
+          if (id) void loadMapRef.current(id, true);
+        }
       });
 
       socket.on('map-public-updated', (data: { mapId: string; isPublic: boolean }) => {
@@ -1029,6 +1184,10 @@ export function MapEditor() {
         if (pendingTransitionTimerRef.current) {
           clearTimeout(pendingTransitionTimerRef.current);
           pendingTransitionTimerRef.current = null;
+        }
+        if (initialCreateTimerRef.current) {
+          clearTimeout(initialCreateTimerRef.current);
+          initialCreateTimerRef.current = null;
         }
         socket.disconnect();
         socketRef.current = null;
@@ -1144,6 +1303,7 @@ export function MapEditor() {
   };
 
   const loadMap = async (mapId: string, silent = false) => {
+    loadMapRef.current = loadMap;
     const epoch = ++loadEpochRef.current;
     let redirectedToLogin = false;
     if (boundsTimerRef.current) {
@@ -1299,13 +1459,24 @@ export function MapEditor() {
       setIsDirty(false);
       setMapId(newId);
       navigate(`/map/${newId}`, { replace: true });
-      setTimeout(() => {
+      if (isOfflineRef.current || isForcedOffline() || socketRef.current?.connected) {
         setIsInitialCreating(false);
         setIsSaving(false);
-      }, 3000);
+      } else {
+        if (initialCreateTimerRef.current) clearTimeout(initialCreateTimerRef.current);
+        initialCreateTimerRef.current = setTimeout(() => {
+          initialCreateTimerRef.current = null;
+          setIsInitialCreating(false);
+          setIsSaving(false);
+        }, 500);
+      }
     } catch (err: any) {
       console.error('Failed to save map', err);
       setError('NOT Synced');
+      if (initialCreateTimerRef.current) {
+        clearTimeout(initialCreateTimerRef.current);
+        initialCreateTimerRef.current = null;
+      }
       setIsInitialCreating(false);
       setIsSaving(false);
     } finally {
@@ -1591,6 +1762,38 @@ export function MapEditor() {
 
     if (mapId) {
       emitDelta('pin-delete', { mapId, pinId: targetId });
+    }
+  }, [editMode, isOffline, mapId, emitDelta]);
+
+  const removePins = useCallback((targetIds: string[]) => {
+    if (!editMode || isOffline || targetIds.length === 0) return;
+    const currentPins = pinsRef.current;
+    const idSet = new Set(targetIds);
+
+    const remainingPins = currentPins.filter(p => !idSet.has(p.id));
+    pinsRef.current = remainingPins;
+    setPins(remainingPins);
+
+    const hovered = getHoveredPinId();
+    if (hovered && idSet.has(hovered)) clearHoveredPin();
+    setTargetPinId(prev => (prev && idSet.has(prev) ? null : prev));
+    setEditingPinId(prev => (prev && idSet.has(prev) ? null : prev));
+    setSelectedNavIds(prev => {
+      let hasAny = false;
+      for (const pid of targetIds) {
+        if (prev.has(pid)) {
+          hasAny = true;
+          break;
+        }
+      }
+      if (!hasAny) return prev;
+      const next = new Set(prev);
+      for (const pid of targetIds) next.delete(pid);
+      return next;
+    });
+
+    if (mapId) {
+      emitDelta('pins-delete', { mapId, pinIds: targetIds });
     }
   }, [editMode, isOffline, mapId, emitDelta]);
 
@@ -2349,6 +2552,7 @@ export function MapEditor() {
               pins={pins}
               onAddPin={addPinAtLocation}
               onRemovePin={removePin}
+              onRemovePins={removePins}
               onPinClick={handlePinClick}
               onUpdatePin={updatePin}
               onMovePinsToLayer={movePinsToLayer}

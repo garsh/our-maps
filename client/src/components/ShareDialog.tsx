@@ -192,6 +192,84 @@ export default function ShareDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const searchAbortControllerRef = useRef<AbortController | null>(null);
   const collaboratorSearchRef = useRef<Promise<Contact[]> | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const transferDialogRef = useRef<HTMLDivElement>(null);
+  const previousActiveElementRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (!previousActiveElementRef.current && typeof document !== 'undefined') {
+      previousActiveElementRef.current = (document.activeElement as HTMLElement) || null;
+    }
+
+    const focusableSelector =
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    const timer = setTimeout(() => {
+      const activeEl = confirmTransferEmail ? transferDialogRef.current : dialogRef.current;
+      if (activeEl) {
+        const focusables = Array.from(
+          activeEl.querySelectorAll<HTMLElement>(focusableSelector)
+        ).filter(el => el.style.display !== 'none' && el.style.visibility !== 'hidden' && !el.hasAttribute('hidden'));
+        focusables[0]?.focus();
+      }
+    }, 0);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        if (confirmTransferEmail) {
+          setConfirmTransferEmail(null);
+        } else if (showDropdown) {
+          setShowDropdown(false);
+        } else {
+          onClose();
+        }
+        return;
+      }
+
+      if (e.key === 'Tab') {
+        const activeContainer = confirmTransferEmail ? transferDialogRef.current : dialogRef.current;
+        if (!activeContainer) return;
+
+        const focusables = Array.from(
+          activeContainer.querySelectorAll<HTMLElement>(focusableSelector)
+        ).filter(el => el.style.display !== 'none' && el.style.visibility !== 'hidden' && !el.hasAttribute('hidden'));
+
+        if (focusables.length === 0) {
+          e.preventDefault();
+          return;
+        }
+
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first || !activeContainer.contains(document.activeElement)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last || !activeContainer.contains(document.activeElement)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('keydown', handleKeyDown);
+      if (!confirmTransferEmail) {
+        previousActiveElementRef.current?.focus();
+        previousActiveElementRef.current = null;
+      }
+    };
+  }, [isOpen, confirmTransferEmail, showDropdown, onClose]);
 
   const loadCollaborators = useCallback(() => {
     if (!collaboratorSearchRef.current) {
@@ -404,6 +482,11 @@ export default function ShareDialog({
       backdropFilter: 'blur(4px)'
     }} onClick={onClose}>
       <div 
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="share-dialog-title"
+        tabIndex={-1}
         style={{ 
           background: 'var(--surface-color)', 
           border: '1px solid var(--border-color)',
@@ -417,7 +500,7 @@ export default function ShareDialog({
         onClick={e => e.stopPropagation()}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>
+          <h3 id="share-dialog-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>
             <Share2 size={24} color="var(--primary-accent, var(--primary-color))" /> Share Map
           </h3>
           <button 
@@ -850,6 +933,11 @@ export default function ShareDialog({
       {confirmTransferEmail && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, backdropFilter: 'blur(4px)' }} onClick={() => setConfirmTransferEmail(null)}>
           <div 
+            ref={transferDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="transfer-ownership-title"
+            tabIndex={-1}
             style={{ 
               background: 'var(--surface-color)', 
               border: '1px solid var(--border-color)',
@@ -861,7 +949,7 @@ export default function ShareDialog({
             }} 
             onClick={e => e.stopPropagation()}
           >
-            <h3 style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>Transfer Ownership?</h3>
+            <h3 id="transfer-ownership-title" style={{ marginTop: 0, fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-primary)' }}>Transfer Ownership?</h3>
             <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, margin: '1rem 0 2rem 0' }}>
               Are you sure you want to transfer ownership of this map to <strong style={{ color: 'var(--text-primary)' }}>{confirmTransferEmail}</strong>? 
               <br/><br/>

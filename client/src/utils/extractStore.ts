@@ -325,11 +325,17 @@ export async function writeExtractFromStream(
     const partFile = await partHandle.getFile();
     const dest = await dir.getFileHandle(finalName, { create: true });
     const destWritable = await dest.createWritable();
-    if (typeof (partFile as any).stream === 'function') {
-      const partStream = (partFile as any).stream() as ReadableStream<Uint8Array>;
-      await partStream.pipeTo(destWritable);
-    } else {
-      await destWritable.write(await partFile.arrayBuffer());
+    try {
+      const partStream = partFile.stream() as ReadableStream<Uint8Array>;
+      const reader = partStream.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value && value.byteLength > 0) {
+          await destWritable.write(value as unknown as FileSystemWriteChunkType);
+        }
+      }
+    } finally {
       await destWritable.close();
     }
     try {

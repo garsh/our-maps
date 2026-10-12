@@ -45,25 +45,52 @@ export const generateId = (): string => {
       });
 };
 
+export const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const isValidUuid = (id: unknown): id is string => {
+  return typeof id === 'string' && UUID_REGEX.test(id);
+};
+
 /**
  * Parses GeoJSON FeatureCollection into Pins and Groups.
  * Extracts layer info from 'folder' / 'layer' / 'parentName' properties.
  */
 export const geoJSONToData = (geojson: any): { pins: Pin[], layers: PinLayer[] } => {
-  if (!geojson || geojson.type !== 'FeatureCollection') return { pins: [], layers: [] };
+  if (!geojson || geojson.type !== 'FeatureCollection' || !Array.isArray(geojson.features)) {
+    return { pins: [], layers: [] };
+  }
 
   const pins: Pin[] = [];
   const layers: PinLayer[] = [];
-  const layerMap = new Map<string, string>(); // name -> id
+  const layerMap = new Map<string, string>(); // name or raw id -> valid uuid
 
   geojson.features
-    .filter((f: any) => f.geometry && f.geometry.type === 'Point')
+    .filter((f: any) => f && f.geometry && f.geometry.type === 'Point' && Array.isArray(f.geometry.coordinates))
     .forEach((f: any, index: number) => {
-      const [lng, lat] = f.geometry.coordinates;
+      const [lngRaw, latRaw] = f.geometry.coordinates;
+      const lng = typeof lngRaw === 'number' ? lngRaw : parseFloat(lngRaw);
+      const lat = typeof latRaw === 'number' ? latRaw : parseFloat(latRaw);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return;
+      }
       const props = f.properties || {};
       
       // Handle Groups (KML folders / layers)
       let layerId = props.layerId;
+      if (layerId && !isValidUuid(layerId)) {
+        if (layerMap.has(layerId)) {
+          layerId = layerMap.get(layerId);
+        } else {
+          const newId = generateId();
+          layerMap.set(layerId, newId);
+          layers.push({
+            id: newId,
+            name: props.layerName || `Layer ${layers.length + 1}`,
+            position: layers.length
+          });
+          layerId = newId;
+        }
+      }
       
       // Helper to find folder name deeply
       const findFolderName = (obj: any): string | undefined => {
@@ -101,9 +128,11 @@ export const geoJSONToData = (geojson: any): { pins: Pin[], layers: PinLayer[] }
 
       const color = isValidPinColor(props.color) ? props.color : DEFAULT_PIN_COLOR;
       const icon = isValidPinIcon(props.icon) ? props.icon : DEFAULT_PIN_ICON;
+      const rawId = props.id ?? f.id;
+      const pinId = isValidUuid(rawId) ? rawId : generateId();
 
       pins.push({
-        id: props.id || generateId(),
+        id: pinId,
         lat,
         lng,
         label: props.name || props.label || 'Imported Pin',

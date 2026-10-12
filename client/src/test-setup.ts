@@ -18,6 +18,22 @@ if (!window.crypto.randomUUID) {
   });
 }
 
+// Polyfill Blob.prototype.stream / File.prototype.stream for jsdom environment if needed
+if (typeof Blob !== 'undefined' && typeof Blob.prototype.stream !== 'function') {
+  Blob.prototype.stream = function () {
+    return new ReadableStream({
+      start: async (controller) => {
+        const buf = await this.arrayBuffer();
+        controller.enqueue(new Uint8Array(buf));
+        controller.close();
+      },
+    });
+  };
+}
+if (typeof File !== 'undefined' && typeof File.prototype.stream !== 'function') {
+  File.prototype.stream = Blob.prototype.stream;
+}
+
 // Polyfill File for Node environment if needed
 if (typeof File === 'undefined') {
   global.File = class File extends Blob {
@@ -39,6 +55,15 @@ if (typeof IDBKeyRange === 'undefined') {
     lowerBound: (val: any) => val,
     upperBound: (val: any) => val,
     bound: (lower: any, upper: any) => ({ lower, upper }),
+  };
+}
+
+// Polyfill Element.prototype.scrollTo for jsdom environment if needed
+if (typeof Element !== 'undefined' && typeof Element.prototype.scrollTo !== 'function') {
+  Element.prototype.scrollTo = function (options?: any) {
+    if (typeof options === 'object' && options !== null && 'top' in options) {
+      this.scrollTop = options.top;
+    }
   };
 }
 

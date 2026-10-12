@@ -11,7 +11,7 @@ const router = Router();
 router.use(authMiddleware);
 
 const ALLOWED_SORT_MODES = new Set<LabelSortMode>(['last_accessed', 'custom', 'name', 'created_at']);
-export const ALLOWED_SYSTEM_LABEL_IDS = new Set<string>(['all', 'owned', 'shared', 'unlabelled', 'offline', 'favorites']);
+export const ALLOWED_SYSTEM_LABEL_IDS = new Set<string>(['all', 'owned', 'shared', 'unlabelled', 'offline']);
 export const MAX_LABEL_MAP_IDS = 5000;
 
 /**
@@ -374,81 +374,6 @@ router.put('/system/:systemLabelId/order', async (req: AuthRequest, res: Respons
   } catch (err: any) {
     console.error('[Labels] Failed to update system label map order:', err);
     res.status(500).json({ error: 'Failed to update system label map order' });
-  }
-});
-
-/**
- * POST /api/labels/system/:systemLabelId/maps
- * Add a map to a system label (e.g. favorites).
- */
-router.post('/system/:systemLabelId/maps', async (req: AuthRequest, res: Response) => {
-  const userId = req.user!.id;
-  const systemLabelId = req.params.systemLabelId;
-  const { mapId } = req.body;
-
-  if (!ALLOWED_SYSTEM_LABEL_IDS.has(systemLabelId)) {
-    return res.status(400).json({ error: 'Invalid systemLabelId' });
-  }
-
-  if (!mapId) {
-    return res.status(400).json({ error: 'mapId is required' });
-  }
-
-  try {
-    const db = await getDb();
-    const role = await getMapRole(userId, mapId);
-    if (!canViewMap(role)) {
-      return res.status(404).json({ error: 'Map not found' });
-    }
-
-    const maxPos = await db.get(
-      'SELECT MAX(position) as maxPos FROM user_system_label_map_order WHERE user_id = ? AND system_label_id = ?',
-      userId,
-      systemLabelId
-    );
-    const pos = (maxPos?.maxPos != null) ? Number(maxPos.maxPos) + 1 : 0;
-
-    await db.run(
-      `INSERT INTO user_system_label_map_order (user_id, system_label_id, map_id, position)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(user_id, system_label_id, map_id) DO NOTHING`,
-      userId,
-      systemLabelId,
-      mapId,
-      pos
-    );
-    res.json({ success: true, systemLabelId, mapId });
-  } catch (err: any) {
-    console.error('[Labels] Failed to add map to system label:', err);
-    res.status(500).json({ error: 'Failed to add map to system label' });
-  }
-});
-
-/**
- * DELETE /api/labels/system/:systemLabelId/maps/:mapId
- * Remove a map from a system label (e.g. favorites).
- */
-router.delete('/system/:systemLabelId/maps/:mapId', async (req: AuthRequest, res: Response) => {
-  const userId = req.user!.id;
-  const systemLabelId = req.params.systemLabelId;
-  const mapId = req.params.mapId;
-
-  if (!ALLOWED_SYSTEM_LABEL_IDS.has(systemLabelId)) {
-    return res.status(400).json({ error: 'Invalid systemLabelId' });
-  }
-
-  try {
-    const db = await getDb();
-    await db.run(
-      'DELETE FROM user_system_label_map_order WHERE user_id = ? AND system_label_id = ? AND map_id = ?',
-      userId,
-      systemLabelId,
-      mapId
-    );
-    res.json({ success: true, systemLabelId, mapId });
-  } catch (err: any) {
-    console.error('[Labels] Failed to remove map from system label:', err);
-    res.status(500).json({ error: 'Failed to remove map from system label' });
   }
 });
 
