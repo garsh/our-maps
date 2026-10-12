@@ -283,6 +283,23 @@ describe('Places API Proxy Endpoints', () => {
     }
   });
 
+  it('should reject invalid or out-of-bounds coordinates with 400', async () => {
+    const res1 = await request(app)
+      .get('/api/places/reverse-geocode?lat=invalid&lng=56.78')
+      .set(authHeader);
+    expect(res1.status).toBe(400);
+
+    const res2 = await request(app)
+      .get('/api/places/reverse-geocode?lat=95&lng=56.78')
+      .set(authHeader);
+    expect(res2.status).toBe(400);
+
+    const res3 = await request(app)
+      .get('/api/places/reverse-geocode?lat=12.34&lng=200')
+      .set(authHeader);
+    expect(res3.status).toBe(400);
+  });
+
   it('should reverse geocode via Google Geocoding API when API key is present', async () => {
     process.env.GOOGLE_MAPS_API_KEY = 'mock-google-key-value';
 

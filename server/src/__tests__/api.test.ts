@@ -802,6 +802,19 @@ describe('API Endpoints', () => {
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Map not found');
     });
+
+    it('rejects invalid systemLabelId with 400', async () => {
+      const res = await request(app).post('/api/labels/system/invalid-label/maps').set(authHeader).send({ mapId: uuid(999) });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Invalid systemLabelId');
+    });
+
+    it('rejects mapIds exceeding maximum allowed length with 400', async () => {
+      const largeArray = new Array(5001).fill(uuid(1));
+      const res = await request(app).put('/api/labels/system/owned/order').set(authHeader).send({ mapIds: largeArray });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('mapIds array required');
+    });
   });
 
 });

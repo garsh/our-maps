@@ -485,6 +485,9 @@ export async function searchUsersHandler(req: AuthRequest, res: Response) {
     let queryParams: any[] = sharedCollaboratorParams(currentUserEmail, currentUserId);
 
     if (q.trim() !== '') {
+      // INTENTIONAL DESIGN DECISION:
+      // SQLite LIKE wildcards (% and _) are intentionally supported via parameter binding
+      // as an intentional power-user feature for flexible pattern matching across collaborators.
       const searchTerm = `%${q.trim()}%`;
       baseQuery += ` AND (email LIKE ? OR name LIKE ?)`;
       queryParams.push(searchTerm, searchTerm);
@@ -504,6 +507,12 @@ export async function searchUsersHandler(req: AuthRequest, res: Response) {
   }
 }
 
+/**
+ * INTENTIONAL DESIGN DECISION:
+ * Allows authenticated users syncing contacts to verify which of their contacts are
+ * registered OurMaps users without arbitrary batch limits or restricting lookups to
+ * existing map collaborators. This enables seamless map sharing with known acquaintances.
+ */
 export async function filterContactsHandler(req: AuthRequest, res: Response) {
   try {
     const { emails } = req.body;

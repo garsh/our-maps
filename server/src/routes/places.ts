@@ -324,9 +324,12 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
 
   const latNum = parseFloat(lat);
   const lngNum = parseFloat(lng);
-  const geoCacheKey = (!isNaN(latNum) && !isNaN(lngNum)) 
-    ? `${latNum.toFixed(4)},${lngNum.toFixed(4)}` 
-    : `${lat},${lng}`;
+
+  if (!Number.isFinite(latNum) || !Number.isFinite(lngNum) || latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180) {
+    return res.status(400).json({ error: 'Valid latitude (-90 to 90) and longitude (-180 to 180) are required' });
+  }
+
+  const geoCacheKey = `${latNum.toFixed(4)},${lngNum.toFixed(4)}`;
 
   const cachedGeocode = reverseGeocodeCache.get(geoCacheKey);
   if (cachedGeocode) {
@@ -341,7 +344,7 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
     }
     try {
       await throttleNominatim();
-      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${encodeURIComponent(latNum.toString())}&lon=${encodeURIComponent(lngNum.toString())}&zoom=18&addressdetails=1`;
       const response = await fetch(url, {
         headers: { 'User-Agent': 'OurMaps-App/1.0' },
         signal: AbortSignal.timeout(5000),
@@ -358,7 +361,7 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
   }
 
   try {
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`;
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(`${latNum},${lngNum}`)}&key=${apiKey}`;
     const response = await fetch(url, {
       signal: AbortSignal.timeout(5000),
     });

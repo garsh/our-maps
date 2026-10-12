@@ -76,6 +76,12 @@ describe('map file path sanitization', () => {
     expect(sanitizeMapFilename('database.sqlite')).toBeNull();
     expect(sanitizeMapFilename('secrets.env')).toBeNull();
   });
+
+  it('rejects hidden files and hidden directories such as plan cache', () => {
+    expect(sanitizeMapFilename('.plan_cache/abc123def456.json')).toBeNull();
+    expect(sanitizeMapFilename('.hidden.json')).toBeNull();
+    expect(sanitizeMapFilename('sprites/.secret.png')).toBeNull();
+  });
 });
 
 describe('safe map file resolution', () => {

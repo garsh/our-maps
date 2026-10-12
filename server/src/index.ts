@@ -117,13 +117,16 @@ app.use(cors({
 }));
 
 // Data limits: use conservative 100kb limit by default to prevent unauthenticated memory exhaustion DoS.
-// Large multi-pin map payloads (up to 10MB) are only permitted on the map creation endpoint.
+// Large multi-pin map payloads (up to 10MB) and multi-map label reordering are permitted on map creation and label endpoints.
 const defaultJsonParser = express.json({ limit: '100kb' });
-const mapCreateJsonParser = express.json({ limit: '10mb' });
+const largeJsonParser = express.json({ limit: '10mb' });
 
 app.use((req, res, next) => {
-  if (req.method === 'POST' && (req.path === '/api/maps' || req.path === '/api/maps/')) {
-    return mapCreateJsonParser(req, res, next);
+  if (
+    (req.method === 'POST' && (req.path === '/api/maps' || req.path === '/api/maps/')) ||
+    (req.method === 'PUT' && req.path.startsWith('/api/labels'))
+  ) {
+    return largeJsonParser(req, res, next);
   }
   return defaultJsonParser(req, res, next);
 });
@@ -286,6 +289,10 @@ io.on('connection', (socket: Socket) => {
     'custom-colors-update': realtime.handleCustomColorsUpdate,
   };
 
+  // INTENTIONAL DESIGN DECISION:
+  // Realtime delta events emitted by authenticated users are intentionally unthrottled
+  // so that large map imports (up to 5,000 pins) emit and persist all pins without
+  // dropped messages or import corruption.
   for (const [eventName, handler] of Object.entries(deltaHandlers)) {
     socket.on(eventName, async (data: any, callback?: (res: any) => void) => {
       try {

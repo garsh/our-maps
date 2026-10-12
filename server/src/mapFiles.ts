@@ -120,7 +120,8 @@ export function sanitizeMapFilename(filename: string): string | null {
 
   const normalized = path.posix.normalize(raw);
   if (normalized.startsWith('..') || path.posix.isAbsolute(normalized)) return null;
-  if (normalized.split('/').includes('..')) return null;
+  const segments = normalized.split('/');
+  if (segments.includes('..') || segments.some(seg => seg.startsWith('.'))) return null;
 
   const ext = path.posix.extname(normalized).toLowerCase();
   if (!ALLOWED_MAP_EXTENSIONS.has(ext)) return null;

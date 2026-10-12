@@ -11,6 +11,8 @@ const router = Router();
 router.use(authMiddleware);
 
 const ALLOWED_SORT_MODES = new Set<LabelSortMode>(['last_accessed', 'custom', 'name', 'created_at']);
+export const ALLOWED_SYSTEM_LABEL_IDS = new Set<string>(['all', 'owned', 'shared', 'unlabelled', 'offline', 'favorites']);
+export const MAX_LABEL_MAP_IDS = 5000;
 
 /**
  * GET /api/labels
@@ -280,8 +282,8 @@ router.put('/:id/order', async (req: AuthRequest, res: Response) => {
   const labelId = req.params.id;
   const { mapIds } = req.body;
 
-  if (!Array.isArray(mapIds)) {
-    return res.status(400).json({ error: 'mapIds array is required' });
+  if (!Array.isArray(mapIds) || mapIds.length > MAX_LABEL_MAP_IDS) {
+    return res.status(400).json({ error: `mapIds array required and must contain at most ${MAX_LABEL_MAP_IDS} items` });
   }
 
   try {
@@ -311,6 +313,10 @@ router.put('/system/:systemLabelId/settings', async (req: AuthRequest, res: Resp
   const userId = req.user!.id;
   const systemLabelId = req.params.systemLabelId;
   const { sortMode } = req.body;
+
+  if (!ALLOWED_SYSTEM_LABEL_IDS.has(systemLabelId)) {
+    return res.status(400).json({ error: 'Invalid systemLabelId' });
+  }
 
   if (!ALLOWED_SORT_MODES.has(sortMode)) {
     return res.status(400).json({ error: 'Invalid sortMode' });
@@ -342,8 +348,12 @@ router.put('/system/:systemLabelId/order', async (req: AuthRequest, res: Respons
   const systemLabelId = req.params.systemLabelId;
   const { mapIds } = req.body;
 
-  if (!Array.isArray(mapIds)) {
-    return res.status(400).json({ error: 'mapIds array is required' });
+  if (!ALLOWED_SYSTEM_LABEL_IDS.has(systemLabelId)) {
+    return res.status(400).json({ error: 'Invalid systemLabelId' });
+  }
+
+  if (!Array.isArray(mapIds) || mapIds.length > MAX_LABEL_MAP_IDS) {
+    return res.status(400).json({ error: `mapIds array required and must contain at most ${MAX_LABEL_MAP_IDS} items` });
   }
 
   try {
@@ -375,6 +385,10 @@ router.post('/system/:systemLabelId/maps', async (req: AuthRequest, res: Respons
   const userId = req.user!.id;
   const systemLabelId = req.params.systemLabelId;
   const { mapId } = req.body;
+
+  if (!ALLOWED_SYSTEM_LABEL_IDS.has(systemLabelId)) {
+    return res.status(400).json({ error: 'Invalid systemLabelId' });
+  }
 
   if (!mapId) {
     return res.status(400).json({ error: 'mapId is required' });
@@ -418,6 +432,10 @@ router.delete('/system/:systemLabelId/maps/:mapId', async (req: AuthRequest, res
   const userId = req.user!.id;
   const systemLabelId = req.params.systemLabelId;
   const mapId = req.params.mapId;
+
+  if (!ALLOWED_SYSTEM_LABEL_IDS.has(systemLabelId)) {
+    return res.status(400).json({ error: 'Invalid systemLabelId' });
+  }
 
   try {
     const db = await getDb();

@@ -40,6 +40,7 @@ export function getCspDirectives() {
     "frame-src": ["'self'", "https://accounts.google.com"],
     "worker-src": ["'self'", "blob:"],
     "child-src": ["'self'", "blob:"],
+    "frame-ancestors": ["'self'"],
     "manifest-src": ["'self'"],
   };
 }

@@ -20,6 +20,7 @@ describe('Content-Security-Policy', () => {
     expect(directives['connect-src']).not.toContain('http:');
     expect(directives['connect-src']).toContain("'self'");
     expect(directives['img-src']).toContain('https://*.googleusercontent.com');
+    expect(directives['frame-ancestors']).toEqual(["'self'"]);
   });
 
   it('sends the tightened policy on HTTP responses', async () => {
@@ -30,6 +31,7 @@ describe('Content-Security-Policy', () => {
     expect(directiveSources(csp, 'script-src')).not.toContain("'unsafe-inline'");
     expect(directiveSources(csp, 'img-src')).not.toContain('https:');
     expect(directiveSources(csp, 'connect-src')).not.toContain('https:');
+    expect(directiveSources(csp, 'frame-ancestors')).toContain("'self'");
     expect(csp).toContain('accounts.google.com');
     expect(csp).toContain('googleusercontent.com');
   });
