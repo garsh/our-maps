@@ -116,10 +116,10 @@ describe('Places API Proxy Endpoints', () => {
       expect(headers['X-Goog-FieldMask']).toContain('places.id');
       const body = JSON.parse(options?.body as string);
       expect(body.textQuery).toBe('starbucks');
-      expect(body.locationBias.rectangle.low.latitude).toBeCloseTo(5.0);
-      expect(body.locationBias.rectangle.low.longitude).toBeCloseTo(-1.0);
-      expect(body.locationBias.rectangle.high.latitude).toBeCloseTo(6.0);
-      expect(body.locationBias.rectangle.high.longitude).toBeCloseTo(1.0);
+      expect(body.locationRestriction.rectangle.low.latitude).toBeCloseTo(5.0);
+      expect(body.locationRestriction.rectangle.low.longitude).toBeCloseTo(-1.0);
+      expect(body.locationRestriction.rectangle.high.latitude).toBeCloseTo(6.0);
+      expect(body.locationRestriction.rectangle.high.longitude).toBeCloseTo(1.0);
       return {
         json: async () => mockGoogleResults
       } as Response;

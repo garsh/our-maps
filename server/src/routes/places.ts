@@ -217,7 +217,7 @@ router.get('/search', async (req: AuthRequest, res) => {
     if (clamped && !isGlobal) {
       const height = Math.abs(clamped.maxLat - clamped.minLat);
       if (clamped.boundEast - clamped.boundWest <= 180 && clamped.boundSouth <= clamped.boundNorth) {
-        body.locationBias = {
+        body.locationRestriction = {
           rectangle: {
             low: { latitude: clamped.boundSouth, longitude: clamped.boundWest },
             high: { latitude: clamped.boundNorth, longitude: clamped.boundEast }
