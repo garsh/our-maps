@@ -102,6 +102,86 @@ async function readLivePlanetTile(
   }
 }
 
+/**
+ * Lowest elevation, in meters, among DEM tiles currently in view.
+ * `dem.min` is the raw terrarium sample; mesh fallbacks from
+ * `getMinMaxElevation` already include exaggeration.
+ * Returns null when no finite sample is loaded. Offscreen cached tiles are
+ * ignored so the far plane stays near the terrain on screen.
+ */
+export function lowestVisibleTerrainElevation(terrain: any): number | null {
+  if (!terrain) return null;
+  const exaggeration = typeof terrain.exaggeration === 'number' && Number.isFinite(terrain.exaggeration)
+    ? terrain.exaggeration
+    : 1;
+
+  try {
+    const demTiles = terrain.tileManager?.tileManager?._inViewTiles?.getAllTiles?.();
+    if (demTiles && typeof demTiles[Symbol.iterator] === 'function') {
+      let lowest: number | null = null;
+      for (const tile of demTiles) {
+        const demMin = tile?.dem?.min;
+        if (typeof demMin !== 'number' || !Number.isFinite(demMin)) continue;
+        const elevated = demMin * exaggeration;
+        lowest = lowest === null ? elevated : Math.min(lowest, elevated);
+      }
+      if (lowest !== null) return lowest;
+    }
+  } catch {}
+
+  if (typeof terrain.getMinMaxElevation !== 'function') return null;
+  let meshTiles: any;
+  try {
+    meshTiles = terrain.tileManager?.getRenderableTiles?.();
+  } catch {
+    return null;
+  }
+  if (!meshTiles || typeof meshTiles[Symbol.iterator] !== 'function') return null;
+
+  let lowest: number | null = null;
+  for (const tile of meshTiles) {
+    if (!tile?.tileID) continue;
+    let minElevation: unknown;
+    try {
+      minElevation = terrain.getMinMaxElevation(tile.tileID)?.minElevation;
+    } catch {
+      continue;
+    }
+    if (typeof minElevation !== 'number' || !Number.isFinite(minElevation)) continue;
+    lowest = lowest === null ? minElevation : Math.min(lowest, minElevation);
+  }
+  return lowest;
+}
+
+/**
+ * MapLibre sizes the far plane from the DEM tile under the camera. Around
+ * Hawaii that tile is often an island near sea level while neighboring tiles
+ * hold the Pacific floor (about −5,000 m), so the abyss is clipped and the
+ * water color stops offshore. Each render resets this value from the center
+ * tile before the matrices are built. Lower it to the deepest in-view sample
+ * so the seafloor, shelves, and underwater hillshade stay inside the clip.
+ * Leave bathymetry in the DEM. Flattening red below 128, or `dem.min`, to
+ * 0 m erases shelves and underwater hillshade. That dropout has been
+ * reintroduced that way before. Camera elevation is untouched.
+ * See AGENTS.md, "3D Terrain Ocean Color".
+ */
+function extendFarPlaneForVisibleBathymetry(transform: any, terrain: any) {
+  const visibleMin = lowestVisibleTerrainElevation(terrain);
+  if (visibleMin === null || !Number.isFinite(visibleMin)) return;
+  const current = transform?.minElevationForCurrentTile;
+  if (typeof current === 'number' && Number.isFinite(current) && visibleMin >= current) return;
+  const helper = transform?._helper;
+  if (helper && typeof helper.setMinElevationForCurrentTile === 'function') {
+    helper.setMinElevationForCurrentTile(visibleMin);
+    return;
+  }
+  if (typeof transform?.setMinElevationForCurrentTile === 'function') {
+    transform.setMinElevationForCurrentTile(visibleMin);
+    return;
+  }
+  if (helper) helper._minElevationForCurrentTile = visibleMin;
+}
+
 export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
   if (!mapInput) return;
   const map = typeof mapInput.getMap === 'function' ? mapInput.getMap() : mapInput;
@@ -382,6 +462,23 @@ export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
             }
             return this._stableSetElevation.call(this, elevation);
           };
+        }
+        if (trProto && typeof trProto._calculateNearFarZIfNeeded === 'function') {
+          // Keep ocean color by extending the far plane to in-view bathymetry.
+          // Do not remove this wrap, and do not flatten DEM samples below sea
+          // level (AGENTS.md, "3D Terrain Ocean Color"). The wrap is installed
+          // once on the shared prototype. Refresh the map every sync so an
+          // orientation remount reads the live terrain.
+          trProto._visibleBathymetryMap = map;
+          if (!trProto._stableCalculateNearFarZIfNeeded) {
+            trProto._stableCalculateNearFarZIfNeeded = trProto._calculateNearFarZIfNeeded;
+            trProto._calculateNearFarZIfNeeded = function (cameraToSeaLevelDistance: number, limitedPitchRadians: number, offset: any) {
+              try {
+                extendFarPlaneForVisibleBathymetry(this, trProto._visibleBathymetryMap?.terrain);
+              } catch {}
+              return this._stableCalculateNearFarZIfNeeded.call(this, cameraToSeaLevelDistance, limitedPitchRadians, offset);
+            };
+          }
         }
       }
 

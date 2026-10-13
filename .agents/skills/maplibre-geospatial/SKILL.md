@@ -26,6 +26,7 @@ Specialized runbook for MapLibre GL JS, PMTiles, and 3D terrain rendering in Our
 - **No Static Terrain in Style**: Never declare `terrain: { source: 'terrainElevation', ... }` statically in the initial style object. Boot MapLibre in 2D mode, then activate terrain dynamically via `map.setTerrain(...)`.
 - **404 on Missing DEM Tiles**: Missing DEM tiles or tiles with $z > 15$ MUST throw HTTP 404.
 - **No 0m Flat Dummy Tiles**: Returning 0m elevation for uncached areas collapses camera altitude in mountainous terrain (e.g. Colorado at 2,500m–4,000m), triggering frustum culling that blanks 100% of visible tiles.
+- **Keep real bathymetry; extend the far plane**: Ocean holes while panning with 3D terrain on are a far-clip problem, not a DEM-encoding problem. AWS terrarium includes the ocean floor (about −6,000 m around Hawaii) and continental shelves. Leave those samples in the mesh and in the hillshade DEM. Do not clamp red below 128 to sea level, and do not flatten `dem.min` / `dem.max`. The rule and the required patch are in AGENTS.md under **3D Terrain Ocean Color**, and in `extendFarPlaneForVisibleBathymetry` (`MapView.tsx`).
 
 ---
 
@@ -50,6 +51,8 @@ When touching `MapView.tsx`, preserve all runtime patches in `syncOfflineTerrain
    - Step elevation by at most $0.5\text{m}$ (or 25%) per frame with `map.triggerRepaint()`.
 8. **Gesture Finalization Overwrite Guard (`HandlerManager.prototype._fireEvents` & `applyUpdatedTransform`)**:
    - Clear `_terrainMovement = false` and delete `_requestedCameraState` before `_fireEvents` runs at `pitch < 60`.
+9. **Visible-bathymetry far plane (`MercatorTransform.prototype._calculateNearFarZIfNeeded`)**:
+   - Lower `minElevationForCurrentTile` to the lowest in-view terrain elevation before the original near/far math. Never raise it. No-op when `_calculateNearFarZIfNeeded` is absent (the camera-stability mock, and globe transforms). The wrap is installed once on the shared prototype; each `syncOfflineTerrain` refreshes `_visibleBathymetryMap` so an orientation remount reads the live terrain. Do not clamp bathymetry to recover ocean color.
 
 ---
 

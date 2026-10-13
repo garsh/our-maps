@@ -4,6 +4,7 @@ import * as maplibregl from 'maplibre-gl';
 import MapView, {
   isPinInPaddedViewport,
   syncOfflineTerrain,
+  lowestVisibleTerrainElevation,
   resetDEMInflightForTests,
   paddedMapView,
   getMapEdgePadding,
@@ -179,6 +180,57 @@ vi.mock('../../utils/offlineExtract', () => ({
   setActiveOfflineMapId: vi.fn(),
 }));
 
+describe('lowestVisibleTerrainElevation', () => {
+  it('returns the lowest in-view DEM min times exaggeration and skips tiles without a DEM', () => {
+    const terrain = {
+      exaggeration: 1.5,
+      tileManager: {
+        tileManager: {
+          _inViewTiles: {
+            getAllTiles: () => [
+              { dem: { min: 0 } },
+              {},
+              { dem: { min: -4000 } },
+              { dem: { min: Number.NaN } },
+            ],
+          },
+        },
+      },
+    };
+
+    expect(lowestVisibleTerrainElevation(terrain)).toBe(-6000);
+  });
+
+  it('returns null when no DEM is loaded', () => {
+    expect(lowestVisibleTerrainElevation(null)).toBeNull();
+    expect(lowestVisibleTerrainElevation({
+      tileManager: {
+        tileManager: {
+          _inViewTiles: { getAllTiles: () => [{}, { dem: {} }] },
+        },
+      },
+    })).toBeNull();
+  });
+
+  it('falls back to renderable mesh tiles when the DEM tile list has no samples', () => {
+    const terrain = {
+      exaggeration: 2,
+      getMinMaxElevation: (id: { key: string }) => (
+        id.key === 'ocean' ? { minElevation: -5000 } : { minElevation: 12 }
+      ),
+      tileManager: {
+        getRenderableTiles: () => [
+          { tileID: { key: 'land' } },
+          { tileID: { key: 'ocean' } },
+          {},
+        ],
+      },
+    };
+
+    expect(lowestVisibleTerrainElevation(terrain)).toBe(-5000);
+  });
+});
+
 describe('syncOfflineTerrain', () => {
   it('enables and disables terrain based on show3DTerrain and allows tileManager.maxzoom up to 22', () => {
     const mockMap = {
@@ -204,6 +256,80 @@ describe('syncOfflineTerrain', () => {
     // When show3DTerrain is false and terrain is active
     syncOfflineTerrain(mockMap, false);
     expect(mockMap.setTerrain).toHaveBeenCalledWith(null);
+  });
+
+  it('extends the far plane down to in-view bathymetry and leaves a deeper stored min in place', () => {
+    const original = vi.fn();
+    const setMin = vi.fn();
+    const mockTrProto = {
+      _calculateNearFarZIfNeeded: original,
+    };
+    const mockTr = Object.create(mockTrProto);
+    mockTr.minElevationForCurrentTile = 0;
+    mockTr._helper = { setMinElevationForCurrentTile: setMin };
+
+    const demTiles = [
+      { dem: { min: 0 } },
+      { dem: { min: -5500 } },
+    ];
+    const mockMap = {
+      setTerrain: vi.fn(),
+      getTerrain: vi.fn(() => ({ source: 'terrainElevation' })),
+      terrain: {
+        exaggeration: 1,
+        tileManager: {
+          maxzoom: 22,
+          tileManager: {
+            _inViewTiles: { getAllTiles: () => demTiles },
+          },
+        },
+      },
+      _camera: { transform: mockTr },
+    };
+
+    syncOfflineTerrain(mockMap, true);
+    mockTr._calculateNearFarZIfNeeded(1, 0, { x: 0, y: 0 });
+
+    expect(setMin).toHaveBeenCalledWith(-5500);
+    expect(original).toHaveBeenCalledWith(1, 0, { x: 0, y: 0 });
+    expect(setMin.mock.invocationCallOrder[0]).toBeLessThan(original.mock.invocationCallOrder[0]);
+
+    const laterTiles = [{ dem: { min: -1200 } }];
+    const laterMap = {
+      setTerrain: vi.fn(),
+      getTerrain: vi.fn(() => ({ source: 'terrainElevation' })),
+      terrain: {
+        exaggeration: 1,
+        tileManager: {
+          maxzoom: 22,
+          tileManager: {
+            _inViewTiles: { getAllTiles: () => laterTiles },
+          },
+        },
+      },
+      _camera: { transform: mockTr },
+    };
+    syncOfflineTerrain(laterMap, true);
+    mockTr.minElevationForCurrentTile = 0;
+    setMin.mockClear();
+    original.mockClear();
+    mockTr._calculateNearFarZIfNeeded(1, 0, { x: 0, y: 0 });
+    expect(setMin).toHaveBeenCalledWith(-1200);
+
+    setMin.mockClear();
+    original.mockClear();
+    mockTr.minElevationForCurrentTile = -6000;
+    mockTr._calculateNearFarZIfNeeded(1, 0, { x: 0, y: 0 });
+    expect(setMin).not.toHaveBeenCalled();
+    expect(original).toHaveBeenCalled();
+
+    laterTiles.splice(0, laterTiles.length, { dem: { min: 40 } }, { dem: { min: 120 } });
+    mockTr.minElevationForCurrentTile = -80;
+    setMin.mockClear();
+    original.mockClear();
+    mockTr._calculateNearFarZIfNeeded(1, 0, { x: 0, y: 0 });
+    expect(setMin).not.toHaveBeenCalled();
+    expect(original).toHaveBeenCalled();
   });
 
   it('patches _getDEMTileMatrix to calculate parent DEM overzoom accurately', () => {
@@ -376,6 +502,7 @@ describe('syncOfflineTerrain', () => {
     expect(mockRttProto._stablePrepareForRender).toBeDefined();
     expect(mockTrProto._stableRecalculateZoomAndCenter).toBeDefined();
     expect(mockTrProto._stableSetElevation).toBeDefined();
+    expect((mockTrProto as any)._stableCalculateNearFarZIfNeeded).toBeUndefined();
     expect(mockHelperProto._stableRecalculateZoomAndCenter).toBeDefined();
     expect(mockCameraHelperProto._stableHandleMapControlsPan).toBeDefined();
     expect(mockHandlersProto._stableUpdateMapTransform).toBeDefined();
