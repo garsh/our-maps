@@ -37,8 +37,8 @@ export async function handlePinCreate(data: PinCreatePayload): Promise<boolean |
   }
 
   await db.run(
-    `INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position, place_id) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET 
        layer_id = excluded.layer_id,
        lat = excluded.lat,
@@ -48,7 +48,8 @@ export async function handlePinCreate(data: PinCreatePayload): Promise<boolean |
        address = excluded.address,
        color = excluded.color,
        icon = excluded.icon,
-       position = excluded.position
+       position = excluded.position,
+       place_id = excluded.place_id
      WHERE pins.map_id = excluded.map_id`,
     pin.id,
     mapId,
@@ -60,7 +61,8 @@ export async function handlePinCreate(data: PinCreatePayload): Promise<boolean |
     pin.address || null,
     pin.color || 'blue',
     pin.icon || 'default',
-    pin.position || 0
+    pin.position || 0,
+    pin.placeId || null
   );
   await touchMapUpdatedAt(mapId);
 }
@@ -113,6 +115,10 @@ export async function handlePinUpdate(data: PinUpdatePayload) {
   if ('position' in updates) {
     setClauses.push('position = ?');
     params.push(updates.position || 0);
+  }
+  if ('placeId' in updates) {
+    setClauses.push('place_id = ?');
+    params.push(updates.placeId || null);
   }
 
   if (setClauses.length > 0) {

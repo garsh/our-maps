@@ -21,6 +21,7 @@ function formatPinRow(p: {
   color?: string | null;
   icon?: string | null;
   position?: number | null;
+  place_id?: string | null;
 }): Pin {
   return {
     id: p.id,
@@ -33,6 +34,7 @@ function formatPinRow(p: {
     icon: (p.icon as PinIcon) || 'default',
     position: p.position || 0,
     layerId: p.layer_id || undefined,
+    placeId: p.place_id || undefined,
   };
 }
 
@@ -161,7 +163,7 @@ router.get('/:id', optionalAuthMiddleware, async (req: AuthRequest, res) => {
     mapId
   );
   const pins = await db.all(
-    'SELECT id, layer_id, lat, lng, label, description, address, color, icon, position FROM pins WHERE map_id = ? ORDER BY position ASC, id ASC',
+    'SELECT id, layer_id, lat, lng, label, description, address, color, icon, position, place_id FROM pins WHERE map_id = ? ORDER BY position ASC, id ASC',
     mapId
   );
 
@@ -354,13 +356,14 @@ async function syncMapLayersAndPins(
         color: pin.color || 'blue',
         icon: (pin.icon as PinIcon) || 'default',
         position: pin.position ?? 0,
+        placeId: pin.placeId || undefined,
       });
     }
 
     const pinChunkSize = 80;
     for (let i = 0; i < finalPins.length; i += pinChunkSize) {
       const chunk = finalPins.slice(i, i + pinChunkSize);
-      const valuePlaceholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const valuePlaceholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
       const params: any[] = [];
       for (const pin of chunk) {
         params.push(
@@ -374,11 +377,12 @@ async function syncMapLayersAndPins(
           pin.address || null,
           pin.color || 'blue',
           pin.icon || 'default',
-          pin.position || 0
+          pin.position || 0,
+          pin.placeId || null
         );
       }
       await db.run(`
-        INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position) 
+        INSERT INTO pins (id, map_id, layer_id, lat, lng, label, description, address, color, icon, position, place_id) 
         VALUES ${valuePlaceholders}
         ON CONFLICT(id) DO UPDATE SET 
           layer_id = excluded.layer_id,
@@ -389,7 +393,8 @@ async function syncMapLayersAndPins(
           address = excluded.address,
           color = excluded.color,
           icon = excluded.icon,
-          position = excluded.position
+          position = excluded.position,
+          place_id = excluded.place_id
         WHERE pins.map_id = excluded.map_id
       `, ...params);
     }

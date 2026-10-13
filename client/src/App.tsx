@@ -993,7 +993,8 @@ export function MapEditor() {
         setPins(prev => prev.map(p => {
           if (p.id !== data.pinId) return p;
           const updatedLayerId = data.updates.layerId === null ? undefined : ('layerId' in data.updates ? data.updates.layerId : p.layerId);
-          return { ...p, ...data.updates, layerId: updatedLayerId };
+          const updatedPlaceId = data.updates.placeId === null ? undefined : ('placeId' in data.updates ? data.updates.placeId : p.placeId);
+          return { ...p, ...data.updates, layerId: updatedLayerId, placeId: updatedPlaceId };
         }));
         setIsDirty(false);
       });
@@ -1704,7 +1705,7 @@ export function MapEditor() {
     }
   }, [canEditMap, isOffline, setSearchParams]);
 
-  const addPinAtLocation = useCallback((lat: number, lng: number, label?: string, address?: string, autoEdit = false) => {
+  const addPinAtLocation = useCallback((lat: number, lng: number, label?: string, address?: string, autoEdit = false, placeId?: string) => {
     if (!editMode || isOffline) return;
     const currentPins = pinsRef.current;
     const idVal = generateId();
@@ -1716,7 +1717,8 @@ export function MapEditor() {
       lng,
       label: pinLabel,
       address,
-      position: nextPosition
+      position: nextPosition,
+      placeId,
     };
     // handlePinSelect reads pinsRef to expand the destination layer. State
     // has not re-rendered yet, so include the new pin before selecting it.
@@ -1821,7 +1823,11 @@ export function MapEditor() {
         const startMap = new Map<string, string | undefined>([[targetId, originalLayerId]]);
         emitReorderDelta(updatedPins, [targetId], startMap, targetLayerId);
       } else {
-        emitDelta('pin-update', { mapId, pinId: targetId, updates: computedUpdates });
+        const payloadUpdates: any = { ...computedUpdates };
+        if ('placeId' in updates && updates.placeId === undefined) {
+          payloadUpdates.placeId = null;
+        }
+        emitDelta('pin-update', { mapId, pinId: targetId, updates: payloadUpdates });
       }
     }
   }, [editMode, isOffline, mapId, emitDelta, emitReorderDelta]);
@@ -2550,7 +2556,7 @@ export function MapEditor() {
               onUpdateLayer={updateLayer}
               onRemoveLayer={removeLayer}
               pins={pins}
-              onAddPin={addPinAtLocation}
+              onAddPin={(lat, lng, label, address, placeId) => addPinAtLocation(lat, lng, label, address, false, placeId)}
               onRemovePin={removePin}
               onRemovePins={removePins}
               onPinClick={handlePinClick}

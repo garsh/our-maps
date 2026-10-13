@@ -860,6 +860,7 @@ const PinMarker = memo(({
     onUpdatePin(pin.id, {
       lat: newLat,
       lng: newLng,
+      placeId: undefined,
     });
 
     // 2. Fetch address in background and guard against coordinate mismatch

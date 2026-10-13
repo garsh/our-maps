@@ -27,6 +27,7 @@ export interface Pin {
   icon?: PinIcon;
   layerId?: string;
   position: number;
+  placeId?: string;
 }
 
 export interface PinLayer {

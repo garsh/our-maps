@@ -33,6 +33,7 @@ export const PinSchema = z.object({
   icon: z.string().max(100).optional().nullable(),
   layerId: UuidSchema.optional().nullable(),
   position: z.number().int().nonnegative().optional().default(0),
+  placeId: z.string().max(255).optional().nullable(),
 });
 
 export const LayerSchema = z.object({
@@ -68,6 +69,7 @@ const PinUpdatePayloadSchema = z.object({
     icon: z.string().max(100).optional().nullable(),
     layerId: UuidSchema.optional().nullable(),
     position: z.number().int().nonnegative().optional(),
+    placeId: z.string().max(255).optional().nullable(),
   }),
 });
 

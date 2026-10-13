@@ -578,6 +578,26 @@ describe('Realtime Delta Handlers', () => {
       const stored = await db.get('SELECT layer_id FROM pins WHERE id = ?', 'valid-pin');
       expect(stored.layer_id).toBeNull();
     });
+
+    it('creates and updates pin with placeId, and clears placeId when set to null', async () => {
+      const db = await getDb();
+      await realtime.handlePinCreate({
+        mapId,
+        pin: { id: 'place-pin', lat: 10, lng: 10, label: 'Place Pin', position: 0, placeId: 'ChIJ123' }
+      });
+
+      let stored = await db.get('SELECT place_id FROM pins WHERE id = ?', 'place-pin');
+      expect(stored.place_id).toBe('ChIJ123');
+
+      await realtime.handlePinUpdate({
+        mapId,
+        pinId: 'place-pin',
+        updates: { placeId: null }
+      });
+
+      stored = await db.get('SELECT place_id FROM pins WHERE id = ?', 'place-pin');
+      expect(stored.place_id).toBeNull();
+    });
   });
 });
 

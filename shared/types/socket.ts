@@ -9,7 +9,10 @@ export interface PinCreatePayload {
 export interface PinUpdatePayload {
   mapId: string;
   pinId: string;
-  updates: Partial<Pin> & { layerId?: string | null };
+  updates: Omit<Partial<Pin>, 'layerId' | 'placeId'> & {
+    layerId?: string | null;
+    placeId?: string | null;
+  };
 }
 
 export interface PinDeletePayload {

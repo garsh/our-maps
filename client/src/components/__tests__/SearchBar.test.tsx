@@ -243,6 +243,26 @@ describe('SearchBar', () => {
     expect(mockOnAddPin).toHaveBeenCalledWith(40, -74, 'New York', 'New York, USA');
   });
 
+  it('calls onAddPin with googlePlaceId when place_id is an alphanumeric string', async () => {
+    const mockResults = [
+      { place_id: 'ChIJN1t_tDeuEmsRUsoyG83frY4', address: 'Bennelong Point, Sydney', title: 'Sydney Opera House', lat: '-33.86', lon: '151.20' }
+    ];
+    
+    (window.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => mockResults
+    });
+
+    render(<SearchBar onAddPin={mockOnAddPin} pins={[]} debounceMs={10} />);
+    
+    fireEvent.change(screen.getByPlaceholderText(/Search.../i), { target: { value: 'Opera' } });
+
+    await waitFor(() => screen.getByText('Sydney Opera House'));
+    fireEvent.click(screen.getByTitle('Add to Map'));
+
+    expect(mockOnAddPin).toHaveBeenCalledWith(-33.86, 151.20, 'Sydney Opera House', 'Bennelong Point, Sydney', 'ChIJN1t_tDeuEmsRUsoyG83frY4');
+  });
+
   it('does not re-trigger global search when mapBounds changes without text changes', async () => {
     const mockResults = [
       { place_id: 1, address: 'Paris, France', title: 'Paris', lat: '48.85', lon: '2.35' }

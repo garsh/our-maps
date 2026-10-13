@@ -24,7 +24,7 @@ export interface SearchAreaState {
 }
 
 interface SearchBarProps {
-  onAddPin: (lat: number, lng: number, label: string, address?: string) => void;
+  onAddPin: (lat: number, lng: number, label: string, address?: string, placeId?: string) => void;
   pins: Pin[];
   disabled?: boolean;
   debounceMs?: number;
@@ -521,7 +521,16 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          onAddPin(parseFloat(result.lat), parseFloat(result.lon), result.title || result.address.split(',')[0], result.address || undefined);
+                          const label = result.title || result.address.split(',')[0];
+                          const address = result.address || undefined;
+                          const googlePlaceId = typeof result.place_id === 'string' && !/^\d+$/.test(result.place_id)
+                            ? result.place_id
+                            : undefined;
+                          if (googlePlaceId) {
+                            onAddPin(parseFloat(result.lat), parseFloat(result.lon), label, address, googlePlaceId);
+                          } else {
+                            onAddPin(parseFloat(result.lat), parseFloat(result.lon), label, address);
+                          }
                           clearPreview();
                           setQuery('');
                         }}

@@ -466,7 +466,7 @@ interface SidebarProps {
   onUpdateLayer: (id: string, updates: Partial<PinLayer>) => void;
   onRemoveLayer: (id: string) => void;
   pins: Pin[];
-  onAddPin: (lat: number, lng: number, label: string, address?: string) => void;
+  onAddPin: (lat: number, lng: number, label: string, address?: string, placeId?: string) => void;
   onRemovePin: (id: string) => void;
   onRemovePins?: (ids: string[]) => void;
   onPinClick: (pin: Pin) => void;
@@ -846,6 +846,75 @@ const PinEditForm = memo(({
     fitTextarea(descriptionTextareaRef.current, 0, Math.round(window.innerHeight * 0.7));
   }, [pin.id, localAddress, localDescription]);
 
+  const [showPlaceIdTip, setShowPlaceIdTip] = useState(false);
+  const placeIdHoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const placeIdLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const placeIdDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const placeIdTouchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const clearPlaceIdTimers = useCallback(() => {
+    if (placeIdHoverTimerRef.current) {
+      clearTimeout(placeIdHoverTimerRef.current);
+      placeIdHoverTimerRef.current = null;
+    }
+    if (placeIdLongPressTimerRef.current) {
+      clearTimeout(placeIdLongPressTimerRef.current);
+      placeIdLongPressTimerRef.current = null;
+    }
+    if (placeIdDismissTimerRef.current) {
+      clearTimeout(placeIdDismissTimerRef.current);
+      placeIdDismissTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => clearPlaceIdTimers();
+  }, [clearPlaceIdTimers]);
+
+  const handlePlaceIdMouseEnter = () => {
+    clearPlaceIdTimers();
+    placeIdHoverTimerRef.current = setTimeout(() => {
+      setShowPlaceIdTip(true);
+    }, 200);
+  };
+
+  const handlePlaceIdMouseLeave = () => {
+    clearPlaceIdTimers();
+    setShowPlaceIdTip(false);
+  };
+
+  const handlePlaceIdTouchStart = (e: React.TouchEvent) => {
+    clearPlaceIdTimers();
+    const touch = e.touches[0];
+    if (touch) {
+      placeIdTouchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    }
+    placeIdLongPressTimerRef.current = setTimeout(() => {
+      setShowPlaceIdTip(true);
+      placeIdDismissTimerRef.current = setTimeout(() => {
+        setShowPlaceIdTip(false);
+      }, 2500);
+    }, 450);
+  };
+
+  const handlePlaceIdTouchMove = (e: React.TouchEvent) => {
+    if (!placeIdLongPressTimerRef.current || !placeIdTouchStartRef.current) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    const dx = touch.clientX - placeIdTouchStartRef.current.x;
+    const dy = touch.clientY - placeIdTouchStartRef.current.y;
+    if (Math.hypot(dx, dy) > 10) {
+      clearPlaceIdTimers();
+    }
+  };
+
+  const handlePlaceIdTouchEnd = () => {
+    if (placeIdLongPressTimerRef.current) {
+      clearTimeout(placeIdLongPressTimerRef.current);
+      placeIdLongPressTimerRef.current = null;
+    }
+  };
+
   const flushField = useCallback((field: 'label' | 'address' | 'description') => {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
@@ -854,7 +923,11 @@ const PinEditForm = memo(({
     const val = field === 'label' ? localLabelRef.current : field === 'address' ? localAddressRef.current : localDescriptionRef.current;
     const originalVal = (field === 'label' ? pin.label : field === 'address' ? pin.address : pin.description) || '';
     if (val !== originalVal) {
-      onUpdatePin(pin.id, { [field]: val });
+      if (field === 'address') {
+        onUpdatePin(pin.id, { address: val, placeId: undefined });
+      } else {
+        onUpdatePin(pin.id, { [field]: val });
+      }
     }
   }, [pin.id, pin.label, pin.address, pin.description, onUpdatePin]);
 
@@ -868,7 +941,7 @@ const PinEditForm = memo(({
         onUpdatePin(pin.id, { label: localLabelRef.current });
       }
       if (localAddressRef.current !== (pin.address || '')) {
-        onUpdatePin(pin.id, { address: localAddressRef.current });
+        onUpdatePin(pin.id, { address: localAddressRef.current, placeId: undefined });
       }
       if (localDescriptionRef.current !== (pin.description || '')) {
         onUpdatePin(pin.id, { description: localDescriptionRef.current });
@@ -914,7 +987,67 @@ const PinEditForm = memo(({
   return (
     <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '2px', borderTop: '1px solid var(--divider-color)', fontSize: '0.7rem' }}>
       <div style={{ marginBottom: '5px' }}>
-        <label htmlFor={`label-${pin.id}`} style={{ display: 'block', fontWeight: '700', marginBottom: '1px', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Name</label>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1px' }}>
+          <label htmlFor={`label-${pin.id}`} style={{ fontWeight: '700', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Name</label>
+          {pin.placeId && (
+            <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+              <div
+                onMouseEnter={handlePlaceIdMouseEnter}
+                onMouseLeave={handlePlaceIdMouseLeave}
+                onTouchStart={handlePlaceIdTouchStart}
+                onTouchMove={handlePlaceIdTouchMove}
+                onTouchEnd={handlePlaceIdTouchEnd}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '0.55rem',
+                  color: 'var(--text-secondary)',
+                  cursor: 'default',
+                  userSelect: 'none',
+                  WebkitUserSelect: 'none',
+                  WebkitTouchCallout: 'none',
+                  maxWidth: '180px',
+                }}
+              >
+                <span style={{ fontWeight: '600', opacity: 0.8 }}>ID:</span>
+                <span
+                  style={{
+                    fontFamily: 'monospace',
+                    textOverflow: 'ellipsis',
+                    overflow: 'hidden',
+                    whiteSpace: 'nowrap',
+                    maxWidth: '140px',
+                  }}
+                >
+                  {pin.placeId}
+                </span>
+              </div>
+              {showPlaceIdTip && (
+                <div
+                  role="tooltip"
+                  className="touch-tooltip-bubble"
+                  style={{
+                    position: 'absolute',
+                    bottom: 'calc(100% + 4px)',
+                    right: 0,
+                    zIndex: 5000,
+                    whiteSpace: 'nowrap',
+                    fontSize: '0.65rem',
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    background: '#1e293b',
+                    color: '#ffffff',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  Google Place ID
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         <input 
           id={`label-${pin.id}`}
           type="text" 
@@ -1273,8 +1406,8 @@ const SortablePin = memo(({
               </div>
               <a
                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                  [pin.label, pin.address].filter(part => part?.trim()).join(', ').replace(/\s+/g, ' ')
-                )}`}
+                  Array.from(new Set([pin.label, pin.address].filter(part => part?.trim()))).join(', ').replace(/\s+/g, ' ')
+                )}${pin.placeId ? `&query_place_id=${encodeURIComponent(pin.placeId)}` : ''}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 title="Open in Google Maps"
@@ -2822,30 +2955,52 @@ const Sidebar = ({
     setMoveLayerId('');
   };
 
+  const getPinLocationParam = (p: Pin) => {
+    // If the pin has a Google Place ID, Google Maps relies on the place_id parameter for exact routing,
+    // while using the destination/origin/waypoint query parameter as the human-readable display name.
+    if (p.placeId) {
+      const name = p.label?.trim() || p.address?.trim() || `${p.lat},${p.lng}`;
+      return encodeURIComponent(name);
+    }
+    // If the pin has an address, combine label and address so Google Maps displays the name and can geocode it
+    if (p.address && p.address.trim()) {
+      const parts = Array.from(new Set([p.label, p.address].filter(part => part?.trim())));
+      return encodeURIComponent(parts.join(', ').replace(/\s+/g, ' '));
+    }
+    // For pins with no Place ID and no address, pass raw coordinates to route to the exact dropped pin
+    return `${p.lat},${p.lng}`;
+  };
+
   const handleNavigate = () => {
     closeSelectionMenu();
     if (selectedPins.length === 0) return;
-    
-    let url = '';
-    if (selectedPins.length === 1) {
-        // Single pin: just navigate to it
-        const p = selectedPins[0];
-        url = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}&travelmode=driving`;
-    } else if (isTrackingLocation) {
-        // Multiple pins with location tracking ON: omit origin so Google Maps starts from user's current location.
-        // Destination is the last pin; all previous pins are waypoints.
-        const destination = selectedPins[selectedPins.length - 1];
-        const waypoints = selectedPins.slice(0, -1).map(p => `${p.lat},${p.lng}`).join('|');
-        url = `https://www.google.com/maps/dir/?api=1&destination=${destination.lat},${destination.lng}&waypoints=${waypoints}&travelmode=driving`;
-    } else {
-        // Multiple pins with location tracking OFF: first is origin, last is destination, others are waypoints
-        const origin = selectedPins[0];
-        const destination = selectedPins[selectedPins.length - 1];
-        const waypoints = selectedPins.slice(1, -1).map(p => `${p.lat},${p.lng}`).join('|');
-        
-        url = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=${waypoints}&travelmode=driving`;
+
+    const destination = selectedPins[selectedPins.length - 1];
+    const isMultiPinFixedOrigin = !isTrackingLocation && selectedPins.length > 1;
+    const origin = isMultiPinFixedOrigin ? selectedPins[0] : null;
+    const waypoints = isMultiPinFixedOrigin
+      ? selectedPins.slice(1, -1)
+      : selectedPins.slice(0, -1);
+
+    let url = 'https://www.google.com/maps/dir/?api=1';
+    if (origin) {
+      url += `&origin=${getPinLocationParam(origin)}`;
+      if (origin.placeId) {
+        url += `&origin_place_id=${encodeURIComponent(origin.placeId)}`;
+      }
     }
-    
+    url += `&destination=${getPinLocationParam(destination)}`;
+    if (destination.placeId) {
+      url += `&destination_place_id=${encodeURIComponent(destination.placeId)}`;
+    }
+    if (waypoints.length > 0) {
+      url += `&waypoints=${waypoints.map(getPinLocationParam).join('|')}`;
+      if (waypoints.every(w => Boolean(w.placeId))) {
+        url += `&waypoint_place_ids=${waypoints.map(w => encodeURIComponent(w.placeId!)).join('|')}`;
+      }
+    }
+    url += '&travelmode=driving';
+
     window.open(url, '_blank');
   };
 

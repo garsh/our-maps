@@ -18,11 +18,16 @@ export function setDbName(name: string) {
  *   2. Include a comment with the date one week after the change is deployed to production
  *      (e.g. "// Safe to remove after 2026-10-01"). Once that date passes and all known
  *      databases have been updated, delete the block.
- *
- * Current migrations: none (all historical migrations have been applied to every known database).
+ * Current migrations:
+ *   - pins.place_id (Safe to remove after 2026-10-20)
  */
-async function migrate(_db: Database) {
-  // Add future migrations here.
+async function migrate(database: Database) {
+  // Migration: add place_id column to pins table
+  // Safe to remove after 2026-10-20
+  const pinCols = await database.all("PRAGMA table_info(pins);");
+  if (!pinCols.some((col: any) => col.name === 'place_id')) {
+    await database.run("ALTER TABLE pins ADD COLUMN place_id TEXT;");
+  }
 }
 
 export async function getDb() {
@@ -96,6 +101,7 @@ export async function getDb() {
       color TEXT DEFAULT 'blue',
       icon TEXT DEFAULT 'default',
       position INTEGER DEFAULT 0,
+      place_id TEXT,
       FOREIGN KEY (map_id) REFERENCES maps(id) ON DELETE CASCADE,
       FOREIGN KEY (layer_id) REFERENCES pin_layers(id) ON DELETE SET NULL
     );
