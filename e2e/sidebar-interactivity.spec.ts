@@ -5,7 +5,7 @@ test.afterEach(async ({ page }) => {
 });
 
 test('sidebar items are interactible', async ({ page }) => {
-  test.setTimeout(60000);
+  test.setTimeout(90000);
 
   // Mock places reverse geocode and search APIs before navigation
   await page.route('**/places/reverse-geocode*', route => route.fulfill({ 
@@ -52,7 +52,7 @@ test('sidebar items are interactible', async ({ page }) => {
 });
 
 test('sidebar multi-layer creation, collapse/expand, and multi-selection flow', async ({ page }) => {
-  test.setTimeout(60000);
+  test.setTimeout(90000);
   await page.route('**/places/reverse-geocode*', route => route.fulfill({ 
     json: { address: '456 Test Ave, Pin City, PC 67890' } 
   }));

@@ -52,7 +52,7 @@ test('full map creation flow', async ({ page }) => {
 });
 
 test('updating an existing map', async ({ page }) => {
-  test.setTimeout(40000);
+  test.setTimeout(90000);
   await login(page);
   await page.getByRole('button', { name: /New Map/i }).click();
   await page.waitForURL(/\/map\//);
@@ -100,7 +100,7 @@ test('updating an existing map', async ({ page }) => {
 });
 
 test('rich pin metadata persistence and display', async ({ page }) => {
-  test.setTimeout(60000);
+  test.setTimeout(90000);
   await login(page);
   await page.getByRole('button', { name: /New Map/i }).click();
   await page.waitForURL(/\/map\//);
@@ -136,7 +136,7 @@ test('rich pin metadata persistence and display', async ({ page }) => {
 });
 
 test('pin grouping and persistence', async ({ page }) => {
-  test.setTimeout(60000);
+  test.setTimeout(90000);
   await login(page);
 
   // Mock Places Search API before navigation

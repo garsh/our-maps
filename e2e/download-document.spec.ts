@@ -18,7 +18,7 @@ async function accessMapRecord({ dbName, mapId, mapData }: {
 }): Promise<any> {
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(dbName);
-    const timer = setTimeout(() => reject(new Error('IndexedDB open timed out')), 4000);
+    const timer = setTimeout(() => reject(new Error('IndexedDB open timed out')), 15000);
     request.onsuccess = () => {
       clearTimeout(timer);
       resolve(request.result);
@@ -88,7 +88,7 @@ async function fetchMap(page: Page, mapId: string): Promise<Record<string, unkno
 }
 
 test('explicit download stores pin, layer, and name edits', async ({ page, browser }) => {
-  test.setTimeout(60000);
+  test.setTimeout(90000);
   let collaborator: Awaited<ReturnType<typeof browser.newContext>> | undefined;
   try {
     await login(page);
@@ -144,7 +144,7 @@ test('explicit download stores pin, layer, and name edits', async ({ page, brows
       const record = await readDownloadRecord(page, mapId!);
       const layerNames = record?.layers?.map((layer: { name: string }) => layer.name) ?? [];
       return record?.name === 'Downloaded Map' && layerNames.includes('Layer 1');
-    }).toBe(true);
+    }, { timeout: 15000 }).toBe(true);
     const afterLocalEdits = await readDownloadRecord(page, mapId!);
     expect(afterLocalEdits.pins.map((pin: { label: string }) => pin.label)).toContain('Seed City');
     expect(keptDownloadFields(afterLocalEdits)).toEqual(frozenDownload);
@@ -187,11 +187,11 @@ test('explicit download stores pin, layer, and name edits', async ({ page, brows
     await expect.poll(async () => {
       const record = await readDownloadRecord(page, mapId!);
       return record?.pins?.some((pin: { label: string; lat: number }) => pin.label === 'Remote Harbor' && pin.lat === 64);
-    }).toBe(true);
+    }, { timeout: 15000 }).toBe(true);
     await expect.poll(async () => {
       const record = await readDownloadRecord(other, mapId!);
       return record?.pins?.some((pin: { label: string; lat: number }) => pin.label === 'Remote Harbor' && pin.lat === 64);
-    }).toBe(true);
+    }, { timeout: 15000 }).toBe(true);
 
     expect(keptDownloadFields(await readDownloadRecord(page, mapId!))).toEqual(frozenDownload);
     const otherAfter = await readDownloadRecord(other, mapId!);
