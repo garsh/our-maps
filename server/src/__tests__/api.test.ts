@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { app } from '../index';
@@ -818,6 +818,135 @@ describe('API Endpoints', () => {
       expect(indexRow).toBeDefined();
       expect(indexRow.name).toBe('idx_pins_map_layer_pos');
       expect(indexRow.sql).toContain('pins(map_id, layer_id, position, id)');
+    });
+  });
+
+  describe('POST /api/maps/:id/populate-place-ids', () => {
+    it('returns 401 when unauthorized', async () => {
+      const res = await request(app).post(`/api/maps/${uuid(1)}/populate-place-ids`);
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 403 when user lacks edit permissions', async () => {
+      const db = await getDb();
+      const mapId = uuid(10);
+      const otherUserId = uuid(99);
+      await db.run('INSERT INTO users (id, email, name) VALUES (?, ?, ?)', otherUserId, 'other@example.com', 'Other User');
+      await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', mapId, 'Other Map', otherUserId);
+
+      const res = await request(app)
+        .post(`/api/maps/${mapId}/populate-place-ids`)
+        .set(authHeader);
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 503 if GOOGLE_MAPS_API_KEY is missing', async () => {
+      const db = await getDb();
+      const mapId = uuid(11);
+      await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', mapId, 'My Map', mockUser.id);
+
+      const originalKey = process.env.GOOGLE_MAPS_API_KEY;
+      delete process.env.GOOGLE_MAPS_API_KEY;
+      try {
+        const res = await request(app)
+          .post(`/api/maps/${mapId}/populate-place-ids`)
+          .set(authHeader);
+        expect(res.status).toBe(503);
+        expect(res.body.error).toContain('Google Maps API key');
+      } finally {
+        process.env.GOOGLE_MAPS_API_KEY = originalKey;
+      }
+    });
+
+    it('populates place IDs for pins missing place_id and updates database', async () => {
+      const db = await getDb();
+      const mapId = uuid(12);
+      await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', mapId, 'Populate Test Map', mockUser.id);
+      await db.run(
+        'INSERT INTO pins (id, map_id, lat, lng, label, address, place_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        uuid(21), mapId, 40.7128, -74.0060, 'Cafe Alpha', '123 Alpha St', null
+      );
+      await db.run(
+        'INSERT INTO pins (id, map_id, lat, lng, label, address, place_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        uuid(22), mapId, 40.7130, -74.0065, 'Cafe Beta', '456 Beta St', 'already-has-id'
+      );
+
+      process.env.GOOGLE_MAPS_API_KEY = 'test-key';
+      try {
+        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+          return {
+            json: async () => ({
+              places: [
+                {
+                  id: 'ChIJ_cafe_alpha_id',
+                  displayName: { text: 'Cafe Alpha' },
+                  location: { latitude: 40.7128, longitude: -74.0060 }
+                }
+              ]
+            })
+          } as Response;
+        });
+
+        const res = await request(app)
+          .post(`/api/maps/${mapId}/populate-place-ids`)
+          .set(authHeader)
+          .send({});
+
+        expect(res.status).toBe(200);
+        expect(res.body.totalScanned).toBe(1); // Only the pin missing place_id was scanned
+        expect(res.body.updatedCount).toBe(1);
+        expect(res.body.updatedPins).toEqual([{ id: uuid(21), placeId: 'ChIJ_cafe_alpha_id' }]);
+
+        const storedPin1 = await db.get('SELECT place_id FROM pins WHERE id = ?', uuid(21));
+        expect(storedPin1.place_id).toBe('ChIJ_cafe_alpha_id');
+
+        const storedPin2 = await db.get('SELECT place_id FROM pins WHERE id = ?', uuid(22));
+        expect(storedPin2.place_id).toBe('already-has-id'); // Untouched
+      } finally {
+        delete process.env.GOOGLE_MAPS_API_KEY;
+      }
+    });
+
+    it('scans all pins when overwrite: true is passed', async () => {
+      const db = await getDb();
+      const mapId = uuid(13);
+      await db.run('INSERT INTO maps (id, name, owner_id) VALUES (?, ?, ?)', mapId, 'Overwrite Test Map', mockUser.id);
+      await db.run(
+        'INSERT INTO pins (id, map_id, lat, lng, label, address, place_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        uuid(31), mapId, 40.7128, -74.0060, 'Cafe Gamma', '789 Gamma St', 'old-place-id'
+      );
+
+      process.env.GOOGLE_MAPS_API_KEY = 'test-key';
+      try {
+        vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+          return {
+            json: async () => ({
+              places: [
+                {
+                  id: 'new-place-id',
+                  displayName: { text: 'Cafe Gamma' },
+                  location: { latitude: 40.7128, longitude: -74.0060 }
+                }
+              ]
+            })
+          } as Response;
+        });
+
+        const res = await request(app)
+          .post(`/api/maps/${mapId}/populate-place-ids`)
+          .set(authHeader)
+          .send({ overwrite: true });
+
+        expect(res.status).toBe(200);
+        expect(res.body.totalScanned).toBe(1);
+        expect(res.body.updatedCount).toBe(1);
+        expect(res.body.updatedPins).toEqual([{ id: uuid(31), placeId: 'new-place-id' }]);
+
+        const stored = await db.get('SELECT place_id FROM pins WHERE id = ?', uuid(31));
+        expect(stored.place_id).toBe('new-place-id');
+      } finally {
+        delete process.env.GOOGLE_MAPS_API_KEY;
+      }
     });
   });
 

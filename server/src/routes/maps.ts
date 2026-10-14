@@ -3,9 +3,10 @@ import crypto from 'crypto';
 import { getDb, runInTransaction } from '../db';
 import type { Pin, MapData, MapPermission, PinLayer, PinIcon } from '@shared/interfaces';
 import { authMiddleware, optionalAuthMiddleware, type AuthRequest } from '../auth';
-import { addMapViewerIfLinkShared, resolveMapAccess } from '../permissions';
+import { addMapViewerIfLinkShared, resolveMapAccess, getMapRole, canEditMap } from '../permissions';
 import { MapCreateSchema, ShareSchema, PinSchema, LayerSchema } from '../schemas';
 import { revokeUserMapAccess, updateUserMapRole, syncSocketsOnPublicChange } from '../realtime';
+import { resolveGooglePlaceId } from './places';
 import { z } from 'zod';
 
 const router = Router();
@@ -609,6 +610,118 @@ router.delete('/:id', authMiddleware, async (req: AuthRequest, res) => {
     res.json({ message: 'Map deleted' });
   } catch (error: any) {
     console.error('[SERVER] DELETE /api/maps ERROR:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST populate / backfill missing Google Place IDs for pins on a map
+router.post('/:id/populate-place-ids', authMiddleware, async (req: AuthRequest, res) => {
+  const mapId = req.params.id;
+  const userId = req.user!.id;
+  const db = await getDb();
+
+  try {
+    const role = await getMapRole(userId, mapId);
+    if (!canEditMap(role)) {
+      return res.status(403).json({ error: 'Write access denied' });
+    }
+
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY?.trim();
+    if (!apiKey) {
+      return res.status(503).json({ error: 'Google Maps API key is not configured on the server' });
+    }
+
+    const overwrite = Boolean(req.body?.overwrite);
+    const targetPinIds: string[] | undefined = Array.isArray(req.body?.pinIds) ? req.body.pinIds : undefined;
+
+    let query = 'SELECT id, lat, lng, label, address, place_id FROM pins WHERE map_id = ?';
+    const queryParams: any[] = [mapId];
+
+    if (!overwrite) {
+      query += ' AND (place_id IS NULL OR place_id = "")';
+    }
+
+    if (targetPinIds && targetPinIds.length > 0) {
+      const placeholders = targetPinIds.map(() => '?').join(',');
+      query += ` AND id IN (${placeholders})`;
+      queryParams.push(...targetPinIds);
+    }
+
+    const pins = await db.all(query, ...queryParams);
+
+    if (pins.length === 0) {
+      return res.json({
+        message: 'No pins require Google Place IDs',
+        totalScanned: 0,
+        updatedCount: 0,
+        unresolvedCount: 0,
+        updatedPins: []
+      });
+    }
+
+    const CONCURRENCY = 4;
+    const updatedPins: Array<{ id: string; placeId: string }> = [];
+    let unresolvedCount = 0;
+
+    for (let i = 0; i < pins.length; i += CONCURRENCY) {
+      const chunk = pins.slice(i, i + CONCURRENCY);
+      await Promise.all(chunk.map(async (pin: any) => {
+        try {
+          const placeId = await resolveGooglePlaceId({
+            lat: pin.lat,
+            lng: pin.lng,
+            label: pin.label,
+            address: pin.address
+          }, apiKey);
+
+          if (placeId) {
+            if (placeId !== pin.place_id) {
+              updatedPins.push({ id: pin.id, placeId });
+            }
+          } else {
+            unresolvedCount++;
+          }
+        } catch (err) {
+          console.error(`[Maps API] Error resolving place ID for pin ${pin.id}:`, err);
+          unresolvedCount++;
+        }
+      }));
+    }
+
+    if (updatedPins.length > 0) {
+      await runInTransaction(async (database) => {
+        for (const item of updatedPins) {
+          await database.run(
+            'UPDATE pins SET place_id = ? WHERE id = ? AND map_id = ?',
+            item.placeId,
+            item.id,
+            mapId
+          );
+        }
+        await database.run('UPDATE maps SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', mapId);
+      });
+
+      const io = req.app.get('io');
+      if (io) {
+        for (const item of updatedPins) {
+          io.to(`map:${mapId}`).emit('pin-update', {
+            mapId,
+            pinId: item.id,
+            updates: { placeId: item.placeId }
+          });
+        }
+      }
+    }
+
+    res.json({
+      message: `Resolved Place IDs for ${updatedPins.length} pins`,
+      totalScanned: pins.length,
+      updatedCount: updatedPins.length,
+      unresolvedCount,
+      updatedPins
+    });
+  } catch (error: any) {
+    console.error('[SERVER] POST /api/maps/:id/populate-place-ids ERROR:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

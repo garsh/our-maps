@@ -471,6 +471,7 @@ interface SidebarProps {
   onRemovePins?: (ids: string[]) => void;
   onPinClick: (pin: Pin) => void;
   onUpdatePin: (id: string, updates: Partial<Pin>) => void;
+  onPinsPlaceIdsUpdated?: (updated: Array<{ id: string; placeId: string }>) => void;
   onMovePinsToLayer?: (pinIds: string[], targetLayerId?: string) => void;
   onDragEnd: (event: DragEndEvent) => void;
   onDragCancel?: () => void;
@@ -2352,6 +2353,7 @@ const Sidebar = ({
   onRemovePins,
   onPinClick,
   onUpdatePin,
+  onPinsPlaceIdsUpdated,
   onMovePinsToLayer,
   onDragEnd,
   onDragCancel,
@@ -2585,6 +2587,37 @@ const Sidebar = ({
   // Rename Modal State
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameInput, setRenameInput] = useState(mapName === 'Unnamed Map' ? '' : mapName);
+
+  // Find Place IDs Modal State
+  const [showFindPlaceIdsModal, setShowFindPlaceIdsModal] = useState(false);
+  const [isFindingPlaceIds, setIsFindingPlaceIds] = useState(false);
+  const [findPlaceIdsResult, setFindPlaceIdsResult] = useState<{ updatedCount: number; unresolvedCount: number; totalScanned: number } | null>(null);
+  const [findPlaceIdsError, setFindPlaceIdsError] = useState<string | null>(null);
+
+  const missingPlaceIdPins = useMemo(() => {
+    return pins.filter(p => !p.placeId);
+  }, [pins]);
+
+  const handleStartFindPlaceIds = async (overwrite = false) => {
+    if (!mapId) return;
+    setIsFindingPlaceIds(true);
+    setFindPlaceIdsError(null);
+    try {
+      const res = await apiService.populateMapPlaceIds(mapId, { overwrite });
+      setFindPlaceIdsResult({
+        updatedCount: res.updatedCount,
+        unresolvedCount: res.unresolvedCount,
+        totalScanned: res.totalScanned
+      });
+      if (res.updatedPins && res.updatedPins.length > 0) {
+        onPinsPlaceIdsUpdated?.(res.updatedPins);
+      }
+    } catch (err: any) {
+      setFindPlaceIdsError(err?.message || 'Failed to populate Place IDs');
+    } finally {
+      setIsFindingPlaceIds(false);
+    }
+  };
 
   useEffect(() => {
     setRenameInput(mapName === 'Unnamed Map' ? '' : mapName);
@@ -3330,6 +3363,22 @@ const Sidebar = ({
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
                       Import
+                    </div>
+                  )}
+                  {!readOnly && isAuthenticated && !isOffline && (
+                    <div 
+                      data-testid="find-place-ids-menu-item"
+                      style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: '600' }}
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        setFindPlaceIdsResult(null);
+                        setFindPlaceIdsError(null);
+                        setShowFindPlaceIdsModal(true);
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-color)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      Find Missing Place IDs{missingPlaceIdPins.length > 0 ? ` (${missingPlaceIdPins.length})` : ''}
                     </div>
                   )}
                   {!readOnly && (
@@ -4090,6 +4139,186 @@ const Sidebar = ({
                   </button>
                 </div>
               </form>
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {/* Find Place IDs Modal (Portaled) */}
+        {showFindPlaceIdsModal && typeof document !== 'undefined' && createPortal(
+          <div 
+            style={{ 
+              position: 'fixed', 
+              top: 0, 
+              left: 0, 
+              right: 0, 
+              bottom: 0, 
+              background: 'rgba(0,0,0,0.6)', 
+              backdropFilter: 'blur(2px)', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              zIndex: 99999, 
+              padding: '20px' 
+            }}
+            onClick={() => {
+              if (!isFindingPlaceIds) {
+                setShowFindPlaceIdsModal(false);
+                setFindPlaceIdsResult(null);
+                setFindPlaceIdsError(null);
+              }
+            }}
+          >
+            <div 
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="find-place-ids-title"
+              data-testid="find-place-ids-dialog"
+              style={{ 
+                background: 'var(--surface-color)', 
+                borderRadius: 'var(--radius-lg)', 
+                padding: '28px', 
+                maxWidth: '440px', 
+                width: '100%', 
+                boxShadow: '0 20px 50px rgba(0,0,0,0.3)',
+                color: 'var(--text-primary)'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 id="find-place-ids-title" style={{ margin: '0 0 12px 0', fontSize: '1.25rem', fontWeight: '800' }}>
+                Google Place IDs
+              </h3>
+
+              {isFindingPlaceIds ? (
+                <div style={{ padding: '24px 0', textAlign: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px', color: 'var(--primary-color)' }}>
+                    <Loader2 size={32} className="animate-spin" />
+                  </div>
+                  <p style={{ margin: '0 0 4px 0', fontWeight: '700', fontSize: '0.95rem' }}>Searching Google Maps...</p>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    Looking up Place IDs for pins on this map. This may take a few moments.
+                  </p>
+                </div>
+              ) : findPlaceIdsResult ? (
+                <div>
+                  <div style={{ padding: '16px 0', fontSize: '0.9rem', lineHeight: '1.4' }}>
+                    <p style={{ margin: '0 0 8px 0', fontWeight: '700', color: 'var(--success-color, #27ae60)' }}>
+                      Search complete!
+                    </p>
+                    <p style={{ margin: '0 0 4px 0' }}>
+                      Updated <strong>{findPlaceIdsResult.updatedCount}</strong> {findPlaceIdsResult.updatedCount === 1 ? 'pin' : 'pins'} with Google Place IDs.
+                    </p>
+                    {findPlaceIdsResult.unresolvedCount > 0 && (
+                      <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        {findPlaceIdsResult.unresolvedCount} {findPlaceIdsResult.unresolvedCount === 1 ? 'pin' : 'pins'} could not be resolved.
+                      </p>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+                    <button
+                      type="button"
+                      data-testid="find-place-ids-close-button"
+                      onClick={() => {
+                        setShowFindPlaceIdsModal(false);
+                        setFindPlaceIdsResult(null);
+                      }}
+                      style={{
+                        padding: '10px 20px',
+                        background: 'var(--primary-color)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 'var(--radius-md)',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  {findPlaceIdsError && (
+                    <div style={{ padding: '10px', marginBottom: '12px', background: '#ffebee', color: '#c62828', borderRadius: 'var(--radius-md)', fontSize: '0.8rem' }}>
+                      {findPlaceIdsError}
+                    </div>
+                  )}
+
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.4', margin: '0 0 16px 0' }}>
+                    Google Place IDs link pins directly to official Google Maps places, enabling exact navigation routing and waypoint search.
+                  </p>
+
+                  <div style={{ padding: '12px', background: 'var(--bg-color)', borderRadius: 'var(--radius-md)', marginBottom: '20px', fontSize: '0.85rem' }}>
+                    {missingPlaceIdPins.length > 0 ? (
+                      <div data-testid="find-place-ids-count-message">
+                        <strong>{missingPlaceIdPins.length}</strong> {missingPlaceIdPins.length === 1 ? 'pin is' : 'pins are'} missing a Google Place ID on this map.
+                      </div>
+                    ) : (
+                      <div data-testid="find-place-ids-count-message">
+                        All <strong>{pins.length}</strong> {pins.length === 1 ? 'pin' : 'pins'} on this map already have Google Place IDs.
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowFindPlaceIdsModal(false);
+                        setFindPlaceIdsError(null);
+                      }}
+                      style={{
+                        padding: '10px 16px',
+                        background: '#f5f5f5',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 'var(--radius-md)',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        color: '#444'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    {missingPlaceIdPins.length > 0 ? (
+                      <button
+                        type="button"
+                        data-testid="find-place-ids-start-button"
+                        onClick={() => handleStartFindPlaceIds(false)}
+                        style={{
+                          padding: '10px 20px',
+                          background: 'var(--primary-color)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: 'var(--radius-md)',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 10px rgba(72, 61, 139, 0.3)'
+                        }}
+                      >
+                        Find Place IDs ({missingPlaceIdPins.length})
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        data-testid="find-place-ids-refresh-button"
+                        onClick={() => handleStartFindPlaceIds(true)}
+                        style={{
+                          padding: '10px 20px',
+                          background: 'var(--primary-color)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: 'var(--radius-md)',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 10px rgba(72, 61, 139, 0.3)'
+                        }}
+                      >
+                        Refresh All Place IDs
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>,
           document.body

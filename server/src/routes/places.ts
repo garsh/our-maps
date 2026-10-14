@@ -68,7 +68,7 @@ class SimpleLRUCache<T> {
 }
 
 const searchCache = new SimpleLRUCache<any[]>(500, 60 * 60 * 1000);
-const reverseGeocodeCache = new SimpleLRUCache<{ address: string | null }>(1000, 24 * 60 * 60 * 1000);
+const reverseGeocodeCache = new SimpleLRUCache<{ address: string | null; placeId?: string | null }>(1000, 24 * 60 * 60 * 1000);
 
 export function clearPlacesCacheForTests(): void {
   searchCache.clear();
@@ -395,7 +395,7 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
       });
       const data = await response.json();
       const { address } = formatNominatimAddress(data);
-      const result = { address: address || null };
+      const result = { address: address || null, placeId: null };
       reverseGeocodeCache.set(geoCacheKey, result);
       return res.json(result);
     } catch (err: any) {
@@ -418,7 +418,8 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
 
     const rawAddress = data.results?.[0]?.formatted_address || null;
     const address = rawAddress ? stripCountrySuffix(rawAddress) : null;
-    const result = { address };
+    const placeId = data.results?.[0]?.place_id || null;
+    const result = { address, placeId };
     reverseGeocodeCache.set(geoCacheKey, result);
     return res.json(result);
   } catch (err: any) {
@@ -426,5 +427,103 @@ router.get('/reverse-geocode', async (req: AuthRequest, res) => {
     return res.status(502).json({ error: 'Reverse geocode failed' });
   }
 });
+
+function getDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371e3;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+const GENERIC_LABEL_REGEX = /^(dropped pin|new pin|imported pin|unnamed pin|pin|\s*[-+]?\d+(\.\d+)?,\s*[-+]?\d+(\.\d+)?\s*)$/i;
+
+export async function resolveGooglePlaceId(pin: {
+  lat: number;
+  lng: number;
+  label?: string | null;
+  address?: string | null;
+}, apiKeyOverride?: string): Promise<string | null> {
+  const apiKey = (apiKeyOverride || process.env.GOOGLE_MAPS_API_KEY)?.trim();
+  if (!apiKey) {
+    return null;
+  }
+
+  const cleanLabel = pin.label?.trim() || '';
+  const isGeneric = !cleanLabel || GENERIC_LABEL_REGEX.test(cleanLabel);
+  const cleanAddress = pin.address?.trim() || '';
+
+  // 1. If we have a descriptive label or address, try Google Places Text Search biased around (lat, lng)
+  if (!isGeneric || cleanAddress) {
+    const textQuery = !isGeneric
+      ? (cleanAddress ? `${cleanLabel}, ${cleanAddress}` : cleanLabel)
+      : cleanAddress;
+
+    try {
+      const url = 'https://places.googleapis.com/v1/places:searchText';
+      const body = {
+        textQuery,
+        maxResultCount: 1,
+        locationBias: {
+          circle: {
+            center: { latitude: pin.lat, longitude: pin.lng },
+            radius: 500
+          }
+        }
+      };
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': apiKey,
+          'X-Goog-FieldMask': 'places.id,places.displayName,places.location'
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(5000),
+      });
+
+      const data = await response.json();
+      if (!data.error && Array.isArray(data.places) && data.places.length > 0) {
+        const top = data.places[0];
+        if (top.id) {
+          // If top place has location, verify it is within a reasonable distance (1,500m)
+          if (top.location?.latitude != null && top.location?.longitude != null) {
+            const dist = getDistanceMeters(pin.lat, pin.lng, top.location.latitude, top.location.longitude);
+            if (dist <= 1500) {
+              return top.id;
+            }
+          } else {
+            return top.id;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[Places API] Text search in resolveGooglePlaceId failed:', err);
+    }
+  }
+
+  // 2. Fallback to Google Geocoding API reverse geocoding
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(`${pin.lat},${pin.lng}`)}&key=${apiKey}`;
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(5000),
+    });
+    const data = await response.json();
+    if (data.status === 'OK' && Array.isArray(data.results) && data.results.length > 0) {
+      const placeId = data.results[0]?.place_id;
+      if (placeId && typeof placeId === 'string') {
+        return placeId;
+      }
+    }
+  } catch (err) {
+    console.warn('[Places API] Reverse geocoding in resolveGooglePlaceId failed:', err);
+  }
+
+  return null;
+}
 
 export default router;

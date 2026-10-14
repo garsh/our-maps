@@ -257,6 +257,21 @@ export const apiService = {
     return handleResponse<{ message: string; isPublic: boolean }>(res, this._logoutCallback, 'Failed to update link sharing settings');
   },
 
+  async populateMapPlaceIds(id: string, options?: { overwrite?: boolean; pinIds?: string[] }): Promise<{
+    message: string;
+    totalScanned: number;
+    updatedCount: number;
+    unresolvedCount: number;
+    updatedPins: Array<{ id: string; placeId: string }>;
+  }> {
+    const res = await fetchWithRetry(`${API_BASE}/maps/${id}/populate-place-ids`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(options || {}),
+    }, 0);
+    return handleResponse(res, this._logoutCallback, 'Failed to populate Place IDs');
+  },
+
   async filterContacts(emails: string[]): Promise<{ existingEmails: string[] }> {
     const res = await fetchWithRetry(`${API_BASE}/auth/filter-contacts`, {
       method: 'POST',

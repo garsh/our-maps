@@ -1833,6 +1833,14 @@ export function MapEditor() {
     }
   }, [editMode, isOffline, mapId, emitDelta, emitReorderDelta]);
 
+  const handlePinsPlaceIdsUpdated = useCallback((updated: Array<{ id: string; placeId: string }>) => {
+    const updateMap = new Map(updated.map(u => [u.id, u.placeId]));
+    setPins(prev => prev.map(p => {
+      const newPlaceId = updateMap.get(p.id);
+      return newPlaceId ? { ...p, placeId: newPlaceId } : p;
+    }));
+  }, []);
+
   const movePinsToLayer = useCallback((pinIds: string[], targetLayerId?: string) => {
     if (!editMode || isOffline || pinIds.length === 0) return;
 
@@ -2562,6 +2570,7 @@ export function MapEditor() {
               onRemovePins={removePins}
               onPinClick={handlePinClick}
               onUpdatePin={updatePin}
+              onPinsPlaceIdsUpdated={handlePinsPlaceIdsUpdated}
               onMovePinsToLayer={movePinsToLayer}
               onDragEnd={handleDragEnd}
               onDragCancel={handleDragCancel}

@@ -1144,6 +1144,53 @@ describe('Sidebar', () => {
     }
   });
 
+  it('shows Find Missing Place IDs in options menu, opens modal, and confirms enrichment', async () => {
+    const onPinsPlaceIdsUpdated = vi.fn();
+    const { apiService } = await import('../../services/api');
+    const populateSpy = vi.spyOn(apiService, 'populateMapPlaceIds').mockResolvedValue({
+      message: 'Resolved Place IDs for 1 pins',
+      totalScanned: 1,
+      updatedCount: 1,
+      unresolvedCount: 0,
+      updatedPins: [{ id: 'pin-1', placeId: 'ChIJ_new_id' }]
+    });
+
+    try {
+      render(
+        <TestWrapper
+          pins={[{ id: 'pin-1', lat: 10, lng: 20, label: 'Missing ID Pin', position: 0 }]}
+          handlers={{ mapId: 'test-map-id', onPinsPlaceIdsUpdated }}
+        />
+      );
+
+      fireEvent.click(screen.getByLabelText(/more options/i));
+      const menuItem = screen.getByTestId('find-place-ids-menu-item');
+      expect(menuItem).toBeInTheDocument();
+      expect(menuItem.textContent).toContain('Find Missing Place IDs (1)');
+
+      fireEvent.click(menuItem);
+
+      const dialog = screen.getByTestId('find-place-ids-dialog');
+      expect(dialog).toBeInTheDocument();
+      expect(within(dialog).getByTestId('find-place-ids-count-message').textContent).toContain('1 pin is missing a Google Place ID');
+
+      const startButton = within(dialog).getByTestId('find-place-ids-start-button');
+      fireEvent.click(startButton);
+
+      await waitFor(() => {
+        expect(within(dialog).getByText(/Search complete!/i)).toBeInTheDocument();
+      });
+
+      expect(populateSpy).toHaveBeenCalledWith('test-map-id', { overwrite: false });
+      expect(onPinsPlaceIdsUpdated).toHaveBeenCalledWith([{ id: 'pin-1', placeId: 'ChIJ_new_id' }]);
+
+      fireEvent.click(within(dialog).getByTestId('find-place-ids-close-button'));
+      expect(screen.queryByTestId('find-place-ids-dialog')).not.toBeInTheDocument();
+    } finally {
+      populateSpy.mockRestore();
+    }
+  });
+
   it('imports pins and layers into an existing map with pins and layers after confirming', async () => {
     const onImport = vi.fn();
     let fileInput: HTMLInputElement | null = null;

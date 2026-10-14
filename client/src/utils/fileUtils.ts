@@ -23,7 +23,8 @@ export const mapDataToGeoJSON = (mapData: MapData) => {
       color: pin.color,
       icon: pin.icon,
       layerId: pin.layerId,
-      position: pin.position
+      position: pin.position,
+      placeId: pin.placeId,
     }
   }));
 
@@ -140,7 +141,8 @@ export const geoJSONToData = (geojson: any): { pins: Pin[], layers: PinLayer[] }
         color,
         icon,
         layerId,
-        position: props.position ?? index
+        position: props.position ?? index,
+        placeId: props.placeId || props.place_id || undefined
       });
     });
 
@@ -334,6 +336,7 @@ export function mergeImportedMapData(
       icon: pin.icon,
       layerId,
       position: nextImportedPinPosition(mergedPins, layerId),
+      placeId: pin.placeId || undefined,
     };
     addedPins.push(newPin);
     mergedPins.push(newPin);

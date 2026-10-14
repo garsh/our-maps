@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { app } from '../index';
-import { clearPlacesCacheForTests } from '../routes/places';
+import { clearPlacesCacheForTests, resolveGooglePlaceId } from '../routes/places';
 import { setupTestDb, teardownTestDb, AUTH_HEADER } from './testHelpers';
 
 describe('Places API Proxy Endpoints', () => {
@@ -457,5 +457,124 @@ describe('Places API Proxy Endpoints', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
 
     delete process.env.GOOGLE_MAPS_API_KEY;
+  });
+
+  describe('resolveGooglePlaceId', () => {
+    it('returns null when API key is missing', async () => {
+      delete process.env.GOOGLE_MAPS_API_KEY;
+      const res = await resolveGooglePlaceId({ lat: 40.71, lng: -74.01, label: 'Coffee Shop' });
+      expect(res).toBeNull();
+    });
+
+    it('resolves place ID via Places text search when descriptive label matches nearby place', async () => {
+      process.env.GOOGLE_MAPS_API_KEY = 'test-key';
+      try {
+        const mockPlacesResp = {
+          places: [
+            {
+              id: 'ChIJ_descriptive_123',
+              displayName: { text: 'Coffee Shop' },
+              location: { latitude: 40.7105, longitude: -74.0095 }
+            }
+          ]
+        };
+
+        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+          expect(url.toString()).toContain('places.googleapis.com/v1/places:searchText');
+          return {
+            json: async () => mockPlacesResp
+          } as Response;
+        });
+
+        const placeId = await resolveGooglePlaceId({
+          lat: 40.7100,
+          lng: -74.0100,
+          label: 'Coffee Shop',
+          address: '123 Main St'
+        });
+
+        expect(fetchSpy).toHaveBeenCalled();
+        expect(placeId).toBe('ChIJ_descriptive_123');
+      } finally {
+        delete process.env.GOOGLE_MAPS_API_KEY;
+      }
+    });
+
+    it('falls back to Google Geocoding reverse lookup for generic labels like Dropped Pin', async () => {
+      process.env.GOOGLE_MAPS_API_KEY = 'test-key';
+      try {
+        const mockGeocodeResp = {
+          status: 'OK',
+          results: [
+            {
+              place_id: 'ChIJ_reverse_geo_456',
+              formatted_address: '456 Reverse Ave'
+            }
+          ]
+        };
+
+        const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+          expect(url.toString()).toContain('maps.googleapis.com/maps/api/geocode/json');
+          return {
+            json: async () => mockGeocodeResp
+          } as Response;
+        });
+
+        const placeId = await resolveGooglePlaceId({
+          lat: 37.7749,
+          lng: -122.4194,
+          label: 'Dropped Pin'
+        });
+
+        expect(fetchSpy).toHaveBeenCalled();
+        expect(placeId).toBe('ChIJ_reverse_geo_456');
+      } finally {
+        delete process.env.GOOGLE_MAPS_API_KEY;
+      }
+    });
+
+    it('falls back to reverse geocode if Places text search returns a match that is too far away', async () => {
+      process.env.GOOGLE_MAPS_API_KEY = 'test-key';
+      try {
+        const mockFarPlacesResp = {
+          places: [
+            {
+              id: 'ChIJ_far_place_id',
+              displayName: { text: 'Remote Duplicate Coffee' },
+              location: { latitude: 45.0, longitude: -80.0 } // Far away
+            }
+          ]
+        };
+        const mockGeocodeResp = {
+          status: 'OK',
+          results: [
+            {
+              place_id: 'ChIJ_local_reverse_id',
+              formatted_address: '10 Local Rd'
+            }
+          ]
+        };
+
+        vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+          if (url.toString().includes('places.googleapis.com')) {
+            return { json: async () => mockFarPlacesResp } as Response;
+          }
+          if (url.toString().includes('maps.googleapis.com/maps/api/geocode')) {
+            return { json: async () => mockGeocodeResp } as Response;
+          }
+          throw new Error('Unexpected fetch url: ' + url);
+        });
+
+        const placeId = await resolveGooglePlaceId({
+          lat: 40.7128,
+          lng: -74.0060,
+          label: 'Specialty Coffee'
+        });
+
+        expect(placeId).toBe('ChIJ_local_reverse_id');
+      } finally {
+        delete process.env.GOOGLE_MAPS_API_KEY;
+      }
+    });
   });
 });
