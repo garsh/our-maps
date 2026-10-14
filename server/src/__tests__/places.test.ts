@@ -116,10 +116,10 @@ describe('Places API Proxy Endpoints', () => {
       expect(headers['X-Goog-FieldMask']).toContain('places.id');
       const body = JSON.parse(options?.body as string);
       expect(body.textQuery).toBe('starbucks');
-      expect(body.locationRestriction.rectangle.low.latitude).toBeCloseTo(5.0);
-      expect(body.locationRestriction.rectangle.low.longitude).toBeCloseTo(-1.0);
-      expect(body.locationRestriction.rectangle.high.latitude).toBeCloseTo(6.0);
-      expect(body.locationRestriction.rectangle.high.longitude).toBeCloseTo(1.0);
+      expect(body.locationBias.rectangle.low.latitude).toBeCloseTo(5.0);
+      expect(body.locationBias.rectangle.low.longitude).toBeCloseTo(-1.0);
+      expect(body.locationBias.rectangle.high.latitude).toBeCloseTo(6.0);
+      expect(body.locationBias.rectangle.high.longitude).toBeCloseTo(1.0);
       return {
         json: async () => mockGoogleResults
       } as Response;
@@ -205,6 +205,68 @@ describe('Places API Proxy Endpoints', () => {
         address: '67903 Tulare Rd, Montrose, CO 81403',
         lat: '38.3826',
         lon: '-107.8185',
+        type: 'global'
+      }
+    ]);
+
+    delete process.env.GOOGLE_MAPS_API_KEY;
+  });
+
+  it('should fall back to locationRestriction when locationBias returns only out-of-bounds results', async () => {
+    process.env.GOOGLE_MAPS_API_KEY = 'mock-google-key-value';
+
+    const mockBiasResults = {
+      places: [
+        {
+          id: 'kauai-wailua-id',
+          displayName: { text: 'Wailua Falls (Kauai)', languageCode: 'en' },
+          formattedAddress: 'Kauai, HI',
+          location: { latitude: 22.0345, longitude: -159.3789 }
+        }
+      ]
+    };
+
+    const mockRestrResults = {
+      places: [
+        {
+          id: 'maui-wailua-id',
+          displayName: { text: 'Wailua Falls (Maui)', languageCode: 'en' },
+          formattedAddress: 'Hana Hwy, Maui, HI',
+          location: { latitude: 20.6833, longitude: -156.0304 }
+        }
+      ]
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options) => {
+      const body = JSON.parse(options?.body as string);
+      if (body.locationBias) {
+        return {
+          json: async () => mockBiasResults
+        } as Response;
+      }
+      if (body.locationRestriction) {
+        expect(body.locationRestriction.rectangle.low.latitude).toBeCloseTo(20.55);
+        expect(body.locationRestriction.rectangle.low.longitude).toBeCloseTo(-156.7);
+        return {
+          json: async () => mockRestrResults
+        } as Response;
+      }
+      throw new Error(`Unexpected fetch call: ${url.toString()}`);
+    });
+
+    const res = await request(app)
+      .get('/api/places/search?q=Wailua%20Falls&bounds=-156.7,21.05,-155.95,20.55')
+      .set(authHeader);
+
+    expect(res.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(res.body).toEqual([
+      {
+        place_id: 'maui-wailua-id',
+        title: 'Wailua Falls (Maui)',
+        address: 'Hana Hwy, Maui, HI',
+        lat: '20.6833',
+        lon: '-156.0304',
         type: 'global'
       }
     ]);
@@ -338,7 +400,7 @@ describe('Places API Proxy Endpoints', () => {
           id: 'place-cached-1',
           displayName: { text: 'Cached Place', languageCode: 'en' },
           formattedAddress: '100 Cached St',
-          location: { latitude: 10.0, longitude: 20.0 }
+          location: { latitude: 25.0, longitude: 20.0 }
         }
       ]
     };

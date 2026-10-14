@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authMiddleware, type AuthRequest } from '../auth';
-import { parseAndClampBounds, isWithinBounds, isWorldBounds } from '../../../shared/geoUtils';
+import { parseAndClampBounds, isWithinBounds, isWorldBounds, type ClampedBounds } from '../../../shared/geoUtils';
 
 const STATE_ABBREVIATIONS: Record<string, string> = {
   'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR', 'California': 'CA',
@@ -112,6 +112,23 @@ function stripCountrySuffix(address?: string | null): string {
   return address.replace(/,\s*(USA|United States|United States of America)$/i, '').trim();
 }
 
+function formatGooglePlaces(places: any[], clamped: ClampedBounds | null, isGlobal: boolean) {
+  let formatted = places.map((item: any) => ({
+    place_id: item.id || '',
+    title: item.displayName?.text || '',
+    address: stripCountrySuffix(item.formattedAddress),
+    lat: item.location?.latitude?.toString() || '0',
+    lon: item.location?.longitude?.toString() || '0',
+    type: 'global'
+  }));
+
+  if (clamped && !isGlobal) {
+    formatted = formatted.filter((item: any) => isWithinBounds(item.lat, item.lon, clamped));
+  }
+
+  return formatted;
+}
+
 function formatNominatimAddress(item: any): { title: string; address: string } {
   let title = '';
   let address = item.display_name || '';
@@ -217,7 +234,7 @@ router.get('/search', async (req: AuthRequest, res) => {
     if (clamped && !isGlobal) {
       const height = Math.abs(clamped.maxLat - clamped.minLat);
       if (clamped.boundEast - clamped.boundWest <= 180 && clamped.boundSouth <= clamped.boundNorth) {
-        body.locationRestriction = {
+        body.locationBias = {
           rectangle: {
             low: { latitude: clamped.boundSouth, longitude: clamped.boundWest },
             high: { latitude: clamped.boundNorth, longitude: clamped.boundEast }
@@ -254,21 +271,48 @@ router.get('/search', async (req: AuthRequest, res) => {
     }
 
     const results = data.places || [];
-    let formatted = results.map((item: any) => ({
-      place_id: item.id || '',
-      title: item.displayName?.text || '',
-      address: stripCountrySuffix(item.formattedAddress),
-      lat: item.location?.latitude?.toString() || '0',
-      lon: item.location?.longitude?.toString() || '0',
-      type: 'global'
-    }));
+    let formatted = formatGooglePlaces(results, clamped, isGlobal);
 
-    if (clamped && !isGlobal) {
-      formatted = formatted.filter((item: any) => isWithinBounds(item.lat, item.lon, clamped));
+    // If locationBias returned results but all were outside the viewport (e.g. prominent landmark elsewhere
+    // like Wailua Falls on Kauai), fall back to locationRestriction to force searching within the viewable bounds.
+    if (clamped && !isGlobal && formatted.length === 0 && results.length > 0) {
+      if (clamped.boundEast - clamped.boundWest <= 180 && clamped.boundSouth <= clamped.boundNorth) {
+        try {
+          const restrBody: Record<string, any> = {
+            textQuery: query,
+            maxResultCount: 10,
+            locationRestriction: {
+              rectangle: {
+                low: { latitude: clamped.boundSouth, longitude: clamped.boundWest },
+                high: { latitude: clamped.boundNorth, longitude: clamped.boundEast }
+              }
+            }
+          };
+          const restrResp = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Goog-Api-Key': apiKey,
+              'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location'
+            },
+            body: JSON.stringify(restrBody),
+            signal: AbortSignal.timeout(5000),
+          });
+          const restrData = await restrResp.json();
+          if (!restrData.error && Array.isArray(restrData.places)) {
+            const restrFormatted = formatGooglePlaces(restrData.places, clamped, isGlobal);
+            if (restrFormatted.length > 0) {
+              formatted = restrFormatted;
+            }
+          }
+        } catch (restrErr) {
+          console.warn('[Places API] Location restriction fallback failed:', restrErr);
+        }
+      }
     }
 
-    // If Places API returned zero results, fallback to Google Geocoding API for addresses
-    if (results.length === 0) {
+    // If Places API returned zero in-bounds results (e.g. for pure street addresses), fallback to Google Geocoding API
+    if (formatted.length === 0) {
       try {
         let geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${apiKey}`;
         if (clamped && !isGlobal) {
