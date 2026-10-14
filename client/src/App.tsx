@@ -1670,13 +1670,6 @@ export function MapEditor() {
 
   const handleHoverPin = useCallback((id: string | null, leavingPinId?: string) => {
     if (isHoverBlockedRef.current && id !== null) return;
-    if (id !== null) {
-      if (!hasFinePointer()) return;
-      const target = targetPinIdRef.current;
-      const editing = editingPinIdRef.current;
-      if (target && pinsRef.current.some(p => p.id === target)) return;
-      if (editing && pinsRef.current.some(p => p.id === editing)) return;
-    }
     setHoveredPin(id, leavingPinId);
   }, []);
 

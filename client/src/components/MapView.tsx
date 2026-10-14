@@ -998,7 +998,7 @@ const PinMarker = memo(({
       anchor="bottom"
       draggable={!readOnly && isEditing}
       onDragEnd={handleDragEnd}
-      style={{ zIndex: showHighlight ? 1000 : 1 }}
+      style={{ zIndex: isHovered ? 1100 : (isSelected ? 1000 : 1) }}
     >
       <div
         className={`custom-pin-modern ${showHighlight ? 'hovered' : ''}`}
@@ -1081,11 +1081,17 @@ const PinOverlays = memo(({
   onPinClick: (pin: Pin) => void;
 }) => {
   const hoveredPinId = useHoveredPinId();
-  const overlayPins = visiblePins.filter((pin) => (
-    pin.id === targetPinId ||
-    pin.id === editingPinId ||
-    pin.id === hoveredPinId
-  ));
+  const overlayPins = visiblePins
+    .filter((pin) => (
+      pin.id === targetPinId ||
+      pin.id === editingPinId ||
+      pin.id === hoveredPinId
+    ))
+    .sort((a, b) => {
+      if (a.id === hoveredPinId) return 1;
+      if (b.id === hoveredPinId) return -1;
+      return 0;
+    });
 
   return (
     <>
@@ -3027,7 +3033,7 @@ const MapView = ({
             </Marker>
           )}
           {previewLocation && previewMarker && (
-            <Marker longitude={previewLocation.lng} latitude={previewLocation.lat} anchor="bottom">
+            <Marker longitude={previewLocation.lng} latitude={previewLocation.lat} anchor="bottom" style={{ zIndex: 1200 }}>
               <div
                 className={previewMarker.className}
                 style={{ width: previewMarker.width, height: previewMarker.height, position: 'relative' }}

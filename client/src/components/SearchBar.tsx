@@ -361,8 +361,10 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     const lng = parseFloat(result.lon);
     if (hasFinePointer()) {
       if (result.type === 'local' && result.pinId) {
+        onHoverSearchResult?.(null, null);
         onHoverPin?.(result.pinId);
       } else {
+        onHoverPin?.(null);
         onHoverSearchResult?.(lat, lng);
       }
       return;
@@ -460,6 +462,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'var(--bg-color)';
                     if (!hasFinePointer()) return;
+                    onHoverSearchResult?.(null, null);
                     onHoverPin?.(result.pinId || null);
                   }}
                   onMouseLeave={(e) => {
@@ -505,6 +508,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'var(--bg-color)';
                     if (!hasFinePointer()) return;
+                    onHoverPin?.(null);
                     onHoverSearchResult?.(parseFloat(result.lat), parseFloat(result.lon));
                   }}
                   onMouseLeave={(e) => {

@@ -123,7 +123,7 @@ vi.mock('react-map-gl/maplibre', () => {
       }, 0);
       return <div data-testid="react-map-gl-mock">{children}</div>;
     },
-    Marker: ({ children }: any) => <div data-testid="marker-mock">{children}</div>,
+    Marker: ({ children, style }: any) => <div data-testid="marker-mock" style={style}>{children}</div>,
     Source: (props: any) => {
       capturedSourceProps.current.push(props);
       return <div data-testid="source-mock">{props.children}</div>;
@@ -1689,6 +1689,70 @@ describe('MapView Compass and Tilt Indicator', () => {
         Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: originalInnerWidth });
         Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: originalInnerHeight });
       }
+    });
+  });
+
+  describe('Marker z-index and layering hierarchy', () => {
+    afterEach(() => {
+      resetPinHoverForTests();
+    });
+
+    it('assigns higher z-index to hovered pin than selected pin and places it last in DOM order', () => {
+      const mockPins = [
+        { id: 'pin-1', lat: 10, lng: 20, label: 'Selected Pin', color: 'blue' as const, position: 0 },
+        { id: 'pin-2', lat: 10, lng: 20, label: 'Hovered Pin', color: 'red' as const, position: 1 },
+      ];
+
+      setHoveredPin('pin-2');
+
+      const { container } = render(
+        <MapView
+          pins={mockPins}
+          targetPinId="pin-1"
+          onMapClick={vi.fn()}
+          onUpdatePin={vi.fn()}
+        />
+      );
+
+      const markers = container.querySelectorAll('[data-testid="marker-mock"]');
+      expect(markers.length).toBe(2);
+
+      const selectedMarker = Array.from(markers).find(m => m.textContent?.includes('Selected Pin')) || markers[0];
+      const hoveredMarker = Array.from(markers).find(m => m.textContent?.includes('Hovered Pin')) || markers[1];
+
+      // Selected pin has zIndex 1000
+      expect((selectedMarker as HTMLElement).style.zIndex).toBe('1000');
+      // Hovered pin has zIndex 1100
+      expect((hoveredMarker as HTMLElement).style.zIndex).toBe('1100');
+
+      // In DOM order, hovered pin is rendered last so it sits on top
+      expect(markers[1]).toBe(hoveredMarker);
+    });
+
+    it('assigns zIndex 1200 to previewLocation search marker', () => {
+      const mockPins = [
+        { id: 'pin-1', lat: 10, lng: 20, label: 'Existing Pin', color: 'blue' as const, position: 0 },
+      ];
+
+      const { container } = render(
+        <MapView
+          pins={mockPins}
+          targetPinId="pin-1"
+          previewLocation={{ lat: 10, lng: 20 }}
+          onMapClick={vi.fn()}
+          onUpdatePin={vi.fn()}
+        />
+      );
+
+      const markers = container.querySelectorAll('[data-testid="marker-mock"]');
+      // Should have existing selected pin marker and preview marker
+      expect(markers.length).toBe(2);
+
+      const previewMarker = Array.from(markers).find(m => (m as HTMLElement).style.zIndex === '1200');
+      expect(previewMarker).toBeDefined();
+
+      const existingMarker = Array.from(markers).find(m => (m as HTMLElement).style.zIndex === '1000');
+      expect(existingMarker).toBeDefined();
     });
   });
 });
