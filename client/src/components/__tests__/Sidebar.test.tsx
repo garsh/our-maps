@@ -1336,6 +1336,84 @@ describe('Sidebar', () => {
     expect(screen.getByText('Default Pin')).toBeInTheDocument();
   });
 
+  it('closes pin edit dialog when the layer containing the edited pin is closed', () => {
+    const layers = [
+      { id: 'layer-1', name: 'Restaurants', position: 0 },
+      { id: 'layer-2', name: 'Hotels', position: 1 },
+    ];
+    const pins = [
+      { id: 'p1', lat: 10, lng: 20, label: 'Restaurant 1', layerId: 'layer-1', position: 0 },
+      { id: 'p2', lat: 11, lng: 21, label: 'Hotel 1', layerId: 'layer-2', position: 0 },
+      { id: 'p3', lat: 12, lng: 22, label: 'Default Pin', layerId: undefined, position: 0 },
+    ];
+
+    const onToggleExpand = vi.fn();
+
+    render(
+      <TestWrapper 
+        pins={pins} 
+        handlers={{ 
+          layers, 
+          collapsedLayerIds: new Set<string | null>(),
+          onToggleExpand 
+        }} 
+      />
+    );
+
+    // Click edit on Restaurant 1 (in layer-1)
+    const editBtns = screen.getAllByLabelText('Edit');
+    fireEvent.click(editBtns[0]);
+
+    // The edit dialog is open
+    expect(screen.getByLabelText('Close edit')).toBeInTheDocument();
+
+    // Click on Hotels header (layer-2) to collapse layer-2
+    fireEvent.click(screen.getByText('Hotels', { selector: 'span' }));
+    expect(onToggleExpand).toHaveBeenCalledWith('layer-2');
+    // Edit dialog for Restaurant 1 should remain open because layer-1 was not closed
+    expect(screen.getByLabelText('Close edit')).toBeInTheDocument();
+
+    // Now click on Restaurants header (layer-1) to collapse layer-1
+    fireEvent.click(screen.getByText('Restaurants', { selector: 'span' }));
+    expect(onToggleExpand).toHaveBeenCalledWith('layer-1');
+    // Edit dialog for Restaurant 1 should now be closed!
+    expect(screen.queryByLabelText('Close edit')).toBeNull();
+  });
+
+  it('closes pin edit dialog when default layer containing the edited pin is closed', () => {
+    const layers = [
+      { id: 'layer-1', name: 'Restaurants', position: 0 },
+    ];
+    const pins = [
+      { id: 'p1', lat: 10, lng: 20, label: 'Restaurant 1', layerId: 'layer-1', position: 0 },
+      { id: 'p2', lat: 12, lng: 22, label: 'Default Pin', layerId: undefined, position: 0 },
+    ];
+
+    const onToggleExpand = vi.fn();
+
+    render(
+      <TestWrapper 
+        pins={pins} 
+        handlers={{ 
+          layers, 
+          collapsedLayerIds: new Set<string | null>(),
+          onToggleExpand 
+        }} 
+      />
+    );
+
+    // Edit the default layer pin
+    const editBtns = screen.getAllByLabelText('Edit');
+    fireEvent.click(editBtns[1]);
+    expect(screen.getByLabelText('Close edit')).toBeInTheDocument();
+
+    // Click Default Layer header to collapse it
+    fireEvent.click(screen.getByText(/Default Layer/, { selector: 'span' }));
+    expect(onToggleExpand).toHaveBeenCalledWith(null);
+    // Edit dialog for Default Pin should now be closed
+    expect(screen.queryByLabelText('Close edit')).toBeNull();
+  });
+
   it('handles multi-pin navigation selection and Select All toggle', () => {
     const layers = [{ id: 'layer-1', name: 'Activities', position: 0 }];
     const pins = [

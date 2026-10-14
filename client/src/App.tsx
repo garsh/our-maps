@@ -862,6 +862,14 @@ export function MapEditor() {
 
   const handleToggleExpand = useCallback((id: string | null) => {
     setCollapsedLayerIds(prev => {
+      const willCollapse = !prev.has(id);
+      if (willCollapse && editingPinIdRef.current) {
+        const editingPin = pinsRef.current.find(p => p.id === editingPinIdRef.current);
+        if (editingPin && (editingPin.layerId || null) === id) {
+          setEditingPinId(null);
+          setTargetPinId(null);
+        }
+      }
       const newSet = new Set(prev);
       if (newSet.has(id)) newSet.delete(id);
       else newSet.add(id);

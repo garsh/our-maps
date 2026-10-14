@@ -1685,14 +1685,6 @@ const SortableLayer = memo(({
     }
   }, [isEditingName]);
 
-  useEffect(() => {
-    if (editingPinId && layerPins.some(p => p.id === editingPinId)) {
-      if (!isExpanded) {
-        onToggleExpand();
-      }
-    }
-  }, [editingPinId, layerPins, isExpanded, onToggleExpand]);
-
   const {
     attributes,
     listeners,
@@ -2938,6 +2930,17 @@ const Sidebar = ({
   const layerIds = useMemo(() => layers.map(layer => layer.id), [layers]);
   const defaultPinIds = useMemo(() => defaultPins.map(p => p.id), [defaultPins]);
 
+  const handleToggleExpand = useCallback((layerId: string | null) => {
+    const isCurrentlyExpanded = !collapsedLayerIds?.has(layerId);
+    if (isCurrentlyExpanded && editingPinId) {
+      const editingPin = pins.find(p => p.id === editingPinId);
+      if (editingPin && (editingPin.layerId || null) === layerId) {
+        onSetEditingPinId(null);
+      }
+    }
+    onToggleExpand?.(layerId);
+  }, [collapsedLayerIds, editingPinId, pins, onSetEditingPinId, onToggleExpand]);
+
   const selectedPins = useMemo(() => {
     if (!selectedNavIds || selectedNavIds.size === 0) return [];
     return pins
@@ -3791,7 +3794,7 @@ const Sidebar = ({
                 isHidden={hiddenLayerIds?.has(layer.id) || false}
                 onToggleVisibility={() => onToggleLayerVisibility?.(layer.id)}
                 isExpanded={!collapsedLayerIds?.has(layer.id)}
-                onToggleExpand={() => onToggleExpand?.(layer.id)}
+                onToggleExpand={() => handleToggleExpand(layer.id)}
                 isAnySelectedDragging={isAnySelectedDragging}
                 isLayerDragging={!!activeLayer}
                 isAnyPinDragging={isAnyPinDragging}
@@ -3808,7 +3811,7 @@ const Sidebar = ({
             readOnly={readOnly}
             isLayerDragging={!!activeLayer}
             isAnyPinDragging={isAnyPinDragging}
-            onToggleExpand={onToggleExpand}
+            onToggleExpand={handleToggleExpand}
             onToggleLayerVisibility={onToggleLayerVisibility}
             onToggleNavIds={onToggleNavIds}
             layersCount={layers.length}
