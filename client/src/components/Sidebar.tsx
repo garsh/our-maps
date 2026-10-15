@@ -988,10 +988,10 @@ const PinEditForm = memo(({
   return (
     <div style={{ padding: '0.3rem 0.15rem 0.15rem 0.15rem', marginTop: '2px', borderTop: '1px solid var(--divider-color)', fontSize: '0.7rem' }}>
       <div style={{ marginBottom: '5px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1px' }}>
-          <label htmlFor={`label-${pin.id}`} style={{ fontWeight: '700', color: 'var(--text-secondary)', fontSize: '0.6rem' }}>Name</label>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1px', gap: '8px' }}>
+          <label htmlFor={`label-${pin.id}`} style={{ fontWeight: '700', color: 'var(--text-secondary)', fontSize: '0.6rem', flexShrink: 0 }}>Name</label>
           {pin.placeId && (
-            <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+            <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', minWidth: 0, justifyContent: 'flex-end' }}>
               <div
                 onMouseEnter={handlePlaceIdMouseEnter}
                 onMouseLeave={handlePlaceIdMouseLeave}
@@ -1005,20 +1005,20 @@ const PinEditForm = memo(({
                   fontSize: '0.55rem',
                   color: 'var(--text-secondary)',
                   cursor: 'default',
-                  userSelect: 'none',
-                  WebkitUserSelect: 'none',
-                  WebkitTouchCallout: 'none',
-                  maxWidth: '180px',
+                  minWidth: 0,
                 }}
               >
-                <span style={{ fontWeight: '600', opacity: 0.8 }}>ID:</span>
+                <span style={{ fontWeight: '600', opacity: 0.8, flexShrink: 0, userSelect: 'none', WebkitUserSelect: 'none' }}>ID:</span>
                 <span
                   style={{
                     fontFamily: 'monospace',
                     textOverflow: 'ellipsis',
                     overflow: 'hidden',
                     whiteSpace: 'nowrap',
-                    maxWidth: '140px',
+                    minWidth: 0,
+                    userSelect: 'text',
+                    WebkitUserSelect: 'text',
+                    cursor: 'text',
                   }}
                 >
                   {pin.placeId}

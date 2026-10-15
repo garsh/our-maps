@@ -1331,6 +1331,30 @@ describe('Sidebar', () => {
     expect(addressInput.value).toBe('123 Main St');
   });
 
+  it('displays the full Google Place ID in the pin edit dialog with text selection and preserves the Name heading', () => {
+    const fullPlaceId = 'ChIJgUbEo8cfqokR5lP9_Wh_DaM_Extra_Long_Place_ID_12345';
+    const pins = [{ id: '1', lat: 10, lng: 20, label: 'Pin 1', placeId: fullPlaceId, position: 0 }];
+    render(<TestWrapper pins={pins} />);
+
+    // Open edit dialog
+    fireEvent.click(screen.getByLabelText('Edit'));
+
+    // "Name" label should be present with flexShrink: 0
+    const nameLabel = screen.getByText('Name');
+    expect(nameLabel).toBeInTheDocument();
+    expect(nameLabel.style.flexShrink).toBe('0');
+
+    // The entire Place ID should be displayed and not hardcoded to a fixed maxWidth
+    const placeIdElement = screen.getByText(fullPlaceId);
+    expect(placeIdElement).toBeInTheDocument();
+    expect(placeIdElement.textContent).toBe(fullPlaceId);
+    expect(placeIdElement.style.maxWidth).toBe('');
+
+    // Place ID must allow text selection
+    expect(placeIdElement.style.userSelect).toBe('text');
+    expect(placeIdElement.style.cursor).toBe('text');
+  });
+
   it('renders multi-layer pin list and handles layer collapse/expand', () => {
     const layers = [
       { id: 'layer-1', name: 'Restaurants', position: 0 },
