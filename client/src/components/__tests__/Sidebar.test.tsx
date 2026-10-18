@@ -291,6 +291,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('Trail notes').closest('[data-no-text-select]')).toBe(cluster);
 
     const grip = cluster.querySelector('svg') as SVGElement;
+    expect(grip.closest('[data-drag-handle]')).not.toBeNull();
     const gripMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
     fireEvent(grip, gripMenu);
     expect(gripMenu.defaultPrevented).toBe(true);
@@ -309,6 +310,7 @@ describe('Sidebar', () => {
 
     const layerName = screen.getByText(/Day Hike/, { selector: 'span' });
     const layerRow = layerName.closest('[data-no-text-select]') as HTMLElement;
+    expect(layerRow.querySelector('[data-drag-handle]')).not.toBeNull();
     expect(layerRow.style.userSelect).toBe('none');
     expect(layerRow.style.webkitUserSelect).toBe('none');
     const layerMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });

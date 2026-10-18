@@ -41,7 +41,6 @@ import {
   DndContext, 
   KeyboardSensor,
   PointerSensor,
-  TouchSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -50,6 +49,7 @@ import {
   defaultDropAnimationSideEffects,
   useDroppable
 } from '@dnd-kit/core';
+import { GripTouchSensor } from '../utils/gripTouchSensor';
 import {
   SortableContext,
   sortableKeyboardCoordinates,
@@ -1310,7 +1310,7 @@ const SortablePin = memo(({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '20px' }}>
         <div data-no-text-select="" style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, ...NO_TEXT_SELECT_STYLE }}>
           {!readOnly && (
-            <div {...attributes} {...listeners} style={{ cursor: 'grab', marginRight: '0px', color: '#bbb', padding: '1px 1px', marginLeft: '-2px', touchAction: 'none' }}>
+            <div {...attributes} {...listeners} data-drag-handle="" style={{ cursor: 'grab', marginRight: '0px', color: '#bbb', padding: '1px 1px', marginLeft: '-2px', touchAction: 'none' }}>
               <GripVertical size={10} />
             </div>
           )}
@@ -1743,7 +1743,7 @@ const SortableLayer = memo(({
           ...NO_TEXT_SELECT_STYLE,
         }}>
           {!readOnly && (
-            <div {...attributes} {...listeners} style={{ cursor: 'grab', color: '#bbb', padding: '1px 1px', marginLeft: '-2px', display: 'flex', alignItems: 'center', touchAction: 'none' }}>
+            <div {...attributes} {...listeners} data-drag-handle="" style={{ cursor: 'grab', color: '#bbb', padding: '1px 1px', marginLeft: '-2px', display: 'flex', alignItems: 'center', touchAction: 'none' }}>
               <GripVertical size={11} />
             </div>
           )}
@@ -2925,7 +2925,7 @@ const Sidebar = ({
   };
 
   const mouseSensor = useSensor(MouseSensor, MOUSE_SENSOR_OPTIONS);
-  const touchSensor = useSensor(TouchSensor, TOUCH_SENSOR_OPTIONS);
+  const touchSensor = useSensor(GripTouchSensor, TOUCH_SENSOR_OPTIONS);
   const keyboardSensor = useSensor(KeyboardSensor, KEYBOARD_SENSOR_OPTIONS);
   const sensors = useSensors(mouseSensor, touchSensor, keyboardSensor);
 
