@@ -2136,7 +2136,8 @@ const MapView = ({
       type: 'raster',
       source: 'esriSatellite',
       minzoom: 0,
-      maxzoom: 19,
+      // Do not set maxzoom here. A layer maxzoom hides the raster instead of
+      // letting MapLibre scale the source tiles up to the map's max zoom.
       layout: {
         visibility: showSatellite ? 'visible' : 'none',
       },
@@ -2365,6 +2366,8 @@ const MapView = ({
           type: 'raster',
           tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
           tileSize: 256,
+          // Stay at 19. Higher Esri levels are often an HTTP 200 "no data" JPEG,
+          // which MapLibre would paint instead of scaling the last real imagery.
           maxzoom: 19,
           attribution: '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
         },

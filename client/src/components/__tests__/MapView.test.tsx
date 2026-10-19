@@ -1311,6 +1311,22 @@ describe('MapView Compass and Tilt Indicator', () => {
     expect(capturedMapProps.current.mapStyle?.sources?.protomaps?.maxzoom).toBe(15);
   });
 
+  it('keeps satellite imagery past the Esri source max zoom by scaling level 19 up to zoom 22', () => {
+    render(
+      <MapView
+        pins={[]}
+        onMapClick={vi.fn()}
+        onUpdatePin={vi.fn()}
+      />
+    );
+
+    const style = capturedMapProps.current.mapStyle;
+    const satellite = style.layers.find((layer: { id?: string }) => layer.id === 'esri-satellite');
+    expect(satellite).toBeDefined();
+    expect(satellite.maxzoom).toBeUndefined();
+    expect(style.sources.esriSatellite.maxzoom).toBe(19);
+  });
+
   it('does not subscribe to per-tile sourcedata or data repaint handlers', () => {
     render(
       <MapView
