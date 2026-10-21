@@ -674,8 +674,67 @@ const IconButton = ({ type, Icon, isSelected, onClick }: { type: PinIcon, Icon: 
   );
 };
 
+const PIN_NAME_LONG_PRESS_MS = 450;
+const PIN_NAME_TIP_DISMISS_MS = 3500;
+const PIN_NAME_LONG_PRESS_MOVE_PX = 10;
+// A touch is followed by a synthetic mouseenter. Skip that so the native title
+// does not appear on top of the touch tip.
+const PIN_NAME_TOUCH_MOUSE_SUPPRESS_MS = 1000;
+
 const TruncatedTooltip = ({ text, style }: { text: string, style?: React.CSSProperties }) => {
+  const elRef = useRef<HTMLDivElement>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressFiredRef = useRef(false);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const lastTouchAtRef = useRef(0);
+  const [tip, setTip] = useState<{ x: number; y: number; below: boolean } | null>(null);
+
+  const clearLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const isTruncated = () => {
+    const el = elRef.current;
+    return !!el && el.scrollWidth > el.clientWidth;
+  };
+
+  const showTip = () => {
+    const el = elRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const tipWidth = Math.min(320, window.innerWidth - 32);
+    const half = tipWidth / 2;
+    const center = rect.left + rect.width / 2;
+    const x = Math.max(16 + half, Math.min(center, window.innerWidth - 16 - half));
+    const below = rect.top < 72;
+    const y = below ? rect.bottom + 8 : rect.top - 6;
+    setTip({ x, y, below });
+  };
+
+  useEffect(() => {
+    return () => clearLongPress();
+  }, []);
+
+  useEffect(() => {
+    if (!tip) return;
+    const dismissTimer = setTimeout(() => setTip(null), PIN_NAME_TIP_DISMISS_MS);
+    const dismiss = () => setTip(null);
+    window.addEventListener('pointerdown', dismiss);
+    window.addEventListener('scroll', dismiss, true);
+    window.addEventListener('resize', dismiss);
+    return () => {
+      clearTimeout(dismissTimer);
+      window.removeEventListener('pointerdown', dismiss);
+      window.removeEventListener('scroll', dismiss, true);
+      window.removeEventListener('resize', dismiss);
+    };
+  }, [tip]);
+
   const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (Date.now() - lastTouchAtRef.current < PIN_NAME_TOUCH_MOUSE_SUPPRESS_MS) return;
     const el = e.currentTarget;
     if (el.scrollWidth > el.clientWidth) {
       el.title = text;
@@ -684,18 +743,76 @@ const TruncatedTooltip = ({ text, style }: { text: string, style?: React.CSSProp
     }
   };
 
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    lastTouchAtRef.current = Date.now();
+    clearLongPress();
+    longPressFiredRef.current = false;
+    setTip(null);
+    if (!isTruncated()) return;
+    const touch = e.touches[0];
+    touchStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null;
+      if (!isTruncated()) return;
+      longPressFiredRef.current = true;
+      showTip();
+    }, PIN_NAME_LONG_PRESS_MS);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!touchStartRef.current) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    const dx = touch.clientX - touchStartRef.current.x;
+    const dy = touch.clientY - touchStartRef.current.y;
+    if (Math.hypot(dx, dy) <= PIN_NAME_LONG_PRESS_MOVE_PX) return;
+    clearLongPress();
+    setTip(null);
+  };
+
+  const handleTouchEnd = () => {
+    lastTouchAtRef.current = Date.now();
+    clearLongPress();
+    touchStartRef.current = null;
+  };
+
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!longPressFiredRef.current) return;
+    longPressFiredRef.current = false;
+    e.stopPropagation();
+    e.preventDefault();
+  };
+
   return (
-    <div
-      onMouseEnter={handleMouseEnter}
-      style={{
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        ...style
-      }}
-    >
-      {text}
-    </div>
+    <>
+      <div
+        ref={elRef}
+        onMouseEnter={handleMouseEnter}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        onClick={handleClick}
+        style={{
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          ...style
+        }}
+      >
+        {text}
+      </div>
+      {tip && createPortal(
+        <div
+          role="tooltip"
+          className={`touch-tooltip-bubble${tip.below ? ' is-below' : ''}`}
+          style={{ left: tip.x, top: tip.y }}
+        >
+          {text}
+        </div>,
+        document.body
+      )}
+    </>
   );
 };
 

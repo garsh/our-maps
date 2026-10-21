@@ -276,6 +276,109 @@ describe('Sidebar', () => {
     expect(onPinClick).toHaveBeenCalled();
   });
 
+  it('shows the full pin name on long-press when the label is truncated', () => {
+    const onPinClick = vi.fn();
+    const label = 'Museum of the Very Long Pin Name';
+    render(
+      <TestWrapper
+        pins={[{ id: '1', lat: 10, lng: 20, label, description: '', position: 0 }]}
+        handlers={{ onPinClick }}
+      />
+    );
+
+    const name = screen.getByText(label);
+    const tooltip = () => document.querySelector('[role="tooltip"]');
+    Object.defineProperty(name, 'scrollWidth', { configurable: true, value: 400 });
+    Object.defineProperty(name, 'clientWidth', { configurable: true, value: 80 });
+
+    fireEvent.mouseEnter(name);
+    expect(name).toHaveAttribute('title', label);
+    Object.defineProperty(name, 'scrollWidth', { configurable: true, value: 40 });
+    fireEvent.mouseEnter(name);
+    expect(name).not.toHaveAttribute('title');
+    Object.defineProperty(name, 'scrollWidth', { configurable: true, value: 400 });
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      fireEvent.touchStart(name, { touches: [{ clientX: 30, clientY: 40 }] });
+      act(() => {
+        vi.advanceTimersByTime(449);
+      });
+      expect(tooltip()).not.toBeInTheDocument();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(tooltip()).toHaveTextContent(label);
+      expect(tooltip()).toHaveClass('touch-tooltip-bubble');
+
+      fireEvent.touchEnd(name);
+      fireEvent.click(name);
+      expect(onPinClick).not.toHaveBeenCalled();
+      expect(tooltip()).toHaveTextContent(label);
+
+      fireEvent.pointerDown(document.body);
+      expect(tooltip()).not.toBeInTheDocument();
+
+      fireEvent.touchStart(name, { touches: [{ clientX: 30, clientY: 40 }] });
+      fireEvent.touchEnd(name);
+      fireEvent.click(name);
+      expect(onPinClick).toHaveBeenCalledTimes(1);
+      expect(tooltip()).not.toBeInTheDocument();
+
+      fireEvent.touchStart(name, { touches: [{ clientX: 30, clientY: 40 }] });
+      fireEvent.touchMove(name, { touches: [{ clientX: 50, clientY: 40 }] });
+      act(() => {
+        vi.advanceTimersByTime(450);
+      });
+      expect(tooltip()).not.toBeInTheDocument();
+      fireEvent.touchEnd(name);
+      fireEvent.click(name);
+      expect(onPinClick).toHaveBeenCalledTimes(2);
+
+      Object.defineProperty(name, 'scrollWidth', { configurable: true, value: 40 });
+      fireEvent.touchStart(name, { touches: [{ clientX: 30, clientY: 40 }] });
+      act(() => {
+        vi.advanceTimersByTime(450);
+      });
+      expect(tooltip()).not.toBeInTheDocument();
+      fireEvent.touchEnd(name);
+      fireEvent.click(name);
+      expect(onPinClick).toHaveBeenCalledTimes(3);
+
+      Object.defineProperty(name, 'scrollWidth', { configurable: true, value: 400 });
+      fireEvent.touchStart(name, { touches: [{ clientX: 30, clientY: 40 }] });
+      act(() => {
+        vi.advanceTimersByTime(450);
+      });
+      expect(tooltip()).toHaveTextContent(label);
+      fireEvent.scroll(document.querySelector('.pin-list')!);
+      expect(tooltip()).not.toBeInTheDocument();
+
+      fireEvent.touchStart(name, { touches: [{ clientX: 30, clientY: 40 }] });
+      act(() => {
+        vi.advanceTimersByTime(450);
+      });
+      expect(tooltip()).toHaveTextContent(label);
+      fireEvent.touchEnd(name);
+      act(() => {
+        vi.advanceTimersByTime(3499);
+      });
+      expect(tooltip()).toHaveTextContent(label);
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(tooltip()).not.toBeInTheDocument();
+
+      name.removeAttribute('title');
+      fireEvent.touchStart(name, { touches: [{ clientX: 30, clientY: 40 }] });
+      fireEvent.touchEnd(name);
+      fireEvent.mouseEnter(name);
+      expect(name).not.toHaveAttribute('title');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not let a long-press select a pin or layer name', () => {
     render(
       <TestWrapper
