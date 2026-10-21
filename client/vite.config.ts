@@ -1,4 +1,5 @@
 import { defineConfig, createLogger, type Plugin } from 'vite'
+import { API_RESPONSE_CACHE } from './src/utils/apiResponseCache'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
@@ -114,10 +115,24 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
+            // Signed-in identity, labels, and collaborator lists. NetworkFirst
+            // stores these by URL only, so a slow load can show another account.
+            urlPattern: /\/api\/auth(?:\/|\?|$)/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /\/api\/labels(?:\/|\?|$)/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /\/api\/maps\/[0-9a-f-]{36}\/permissions(?:\/|\?|$)/i,
+            handler: 'NetworkOnly',
+          },
+          {
             urlPattern: /\/api\/.*/i,
             handler: 'NetworkFirst',
             options: {
-              cacheName: 'api-cache',
+              cacheName: API_RESPONSE_CACHE,
               expiration: {
                 maxEntries: 100,
                 maxAgeSeconds: 60 * 60 * 24, // 24 hours

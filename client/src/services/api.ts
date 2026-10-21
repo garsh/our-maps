@@ -108,6 +108,7 @@ export const apiService = {
     const res = await fetch(`${API_BASE}/auth/me`, {
       credentials: 'include',
       headers: getHeaders(),
+      cache: 'no-store',
     });
     if (!res.ok) return null;
     const data = await res.json().catch(() => ({}));
@@ -217,7 +218,7 @@ export const apiService = {
     userRole?: 'owner' | 'edit' | 'view';
     isPublic?: boolean;
   }> {
-    const res = await fetchWithRetry(`${API_BASE}/maps/${id}/permissions`, { headers: getHeaders() });
+    const res = await fetchWithRetry(`${API_BASE}/maps/${id}/permissions`, { headers: getHeaders(), cache: 'no-store' });
     return handleResponse(res, this._logoutCallback, 'Failed to fetch map permissions');
   },
 
@@ -285,6 +286,7 @@ export const apiService = {
     const res = await fetchWithRetry(`${API_BASE}/auth/search-users?q=${encodeURIComponent(query)}`, {
       headers: getHeaders(),
       signal,
+      cache: 'no-store',
     }, 0);
     return handleResponse<{ users: any[] }>(res, this._logoutCallback, 'Failed to search users');
   },
@@ -332,6 +334,7 @@ export const apiService = {
     const res = await fetchWithRetry(`${API_BASE}/labels`, {
       headers: getHeaders(),
       signal,
+      cache: 'no-store',
     });
     return handleResponse(res, this._logoutCallback, 'Failed to fetch labels');
   },

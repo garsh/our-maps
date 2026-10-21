@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { API_RESPONSE_CACHE } from '../apiResponseCache';
 import {
   accountStorageKey,
   getAccountScope,
@@ -38,6 +39,26 @@ describe('accountScope', () => {
     noteSignedInAccount('user-a');
     expect(readAccountJson('cached_maps', [])).toEqual([{ id: 'map-1', name: 'Trip' }]);
     expect(readAccountJson('cached_selected_label', null)).toBe('owned');
+  });
+
+  it('drops the shared API cache on sign-out and when the account changes', () => {
+    const deleted: string[] = [];
+    vi.stubGlobal('caches', {
+      delete: (name: string) => {
+        deleted.push(name);
+        return Promise.resolve(true);
+      },
+    });
+    try {
+      noteSignedInAccount('user-a');
+      expect(deleted).toEqual([]);
+      noteSignedOut();
+      noteSignedInAccount('user-a');
+      noteSignedInAccount('user-b');
+      expect(deleted).toEqual([API_RESPONSE_CACHE, API_RESPONSE_CACHE]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('does not show one account the maps saved by another', () => {

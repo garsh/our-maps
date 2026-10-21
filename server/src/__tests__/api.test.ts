@@ -318,6 +318,7 @@ describe('API Endpoints', () => {
     const meRes = await request(app).get('/api/auth/me').set('Cookie', cookie);
     expect(meRes.status).toBe(200);
     expect(meRes.body.user.email).toBe('mock@example.com');
+    expect(meRes.headers['cache-control']).toBe('private, no-store');
   });
 
   it('logout-everywhere invalidates other sessions', async () => {
@@ -436,6 +437,7 @@ describe('API Endpoints', () => {
       .set(authHeader);
 
     expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toBe('private, no-store');
     expect(res.body.owner.id).toBe(mockUser.id);
     expect(res.body.userRole).toBe('owner');
     expect(res.body.permissions).toHaveLength(1);
@@ -764,6 +766,41 @@ describe('API Endpoints', () => {
     // It should not be rejected by body-parser with 413. It will fail Zod validation on name length (max 1000) with 400.
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Validation failed');
+    expect(res.body.details.some((issue: { path?: string[] }) => issue.path?.[0] === 'name')).toBe(true);
+  });
+
+  it('rejects an anonymous oversized map or label body before parsing it', async () => {
+    const tooBig = 'A'.repeat(10 * 1024 * 1024);
+    const mapRes = await request(app).post('/api/maps').send({ name: tooBig });
+    expect(mapRes.status).toBe(401);
+
+    const labelRes = await request(app).put('/api/labels/not-a-label').send({ name: tooBig });
+    expect(labelRes.status).toBe(401);
+  });
+
+  it('parses a label update above the anonymous cap after authentication', async () => {
+    const created = await request(app).post('/api/labels').set(authHeader).send({ name: 'Trip' });
+    expect(created.status).toBe(201);
+    const name = 'N'.repeat(150 * 1024);
+    const res = await request(app).put(`/api/labels/${created.body.id}`).set(authHeader).send({ name });
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe(name);
+  });
+
+  it('does not cache account-specific label and collaborator responses', async () => {
+    const labels = await request(app).get('/api/labels').set(authHeader);
+    expect(labels.status).toBe(200);
+    expect(labels.headers['cache-control']).toBe('private, no-store');
+
+    const search = await request(app).get('/api/auth/search-users').set(authHeader);
+    expect(search.status).toBe(200);
+    expect(search.headers['cache-control']).toBe('private, no-store');
+
+    const mapId = uuid(901);
+    await request(app).post('/api/maps').set(authHeader).send({ id: mapId, name: 'Cache map', layers: [], pins: [] });
+    const map = await request(app).get(`/api/maps/${mapId}`).set(authHeader);
+    expect(map.status).toBe(200);
+    expect(map.headers['cache-control'] ?? '').not.toContain('no-store');
   });
 
   describe('Labels map access authorization', () => {

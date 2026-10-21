@@ -1,3 +1,4 @@
+import { deleteApiResponseCache } from './apiResponseCache';
 import { getStoredJson, setStoredJson } from './storageUtils';
 
 /**
@@ -103,6 +104,7 @@ export function noteSignedInAccount(userId: string): string | null {
   } catch {
     // The in-memory scope still limits this session.
   }
+  if (previous && previous !== userId) deleteApiResponseCache();
   setScope({ mode: 'account', userId });
   return previous;
 }
@@ -113,6 +115,7 @@ export function noteSignedOut(): void {
   } catch {
     // Still hide for this page session.
   }
+  deleteApiResponseCache();
   setScope({ mode: 'hidden' });
 }
 

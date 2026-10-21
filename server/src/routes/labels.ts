@@ -4,11 +4,16 @@ import { authMiddleware, type AuthRequest } from '../auth';
 import { getDb, runInTransaction } from '../db';
 import type { LabelSortMode } from '@shared/interfaces';
 import { getMapRole, canViewMap } from '../permissions';
+import { largeJsonParser } from '../jsonBody';
 
 const router = Router();
 
-// All label routes require authentication
+// All label routes require authentication. Large label writes are parsed after that check.
 router.use(authMiddleware);
+router.use((req, res, next) => {
+  if (req.method === 'PUT') return largeJsonParser(req, res, next);
+  return next();
+});
 
 const ALLOWED_SORT_MODES = new Set<LabelSortMode>(['last_accessed', 'custom', 'name', 'created_at']);
 export const ALLOWED_SYSTEM_LABEL_IDS = new Set<string>(['all', 'owned', 'shared', 'unlabelled', 'offline']);

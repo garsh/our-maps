@@ -7,6 +7,7 @@ import { addMapViewerIfLinkShared, resolveMapAccess, getMapRole, canEditMap } fr
 import { MapCreateSchema, ShareSchema, PinSchema, LayerSchema } from '../schemas';
 import { revokeUserMapAccess, updateUserMapRole, syncSocketsOnPublicChange } from '../realtime';
 import { resolveGooglePlaceId } from './places';
+import { largeJsonParser } from '../jsonBody';
 import { z } from 'zod';
 
 const router = Router();
@@ -404,8 +405,8 @@ async function syncMapLayersAndPins(
   return { layers: finalLayers, pins: finalPins };
 }
 
-// POST new map
-router.post('/', authMiddleware, async (req: AuthRequest, res) => {
+// POST new map. Parse the body only after the session check.
+router.post('/', authMiddleware, largeJsonParser, async (req: AuthRequest, res) => {
   try {
     const validatedData = MapCreateSchema.parse(req.body);
     const { id, name, layers, pins, customColors } = validatedData;

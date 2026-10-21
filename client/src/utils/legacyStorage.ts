@@ -1,4 +1,5 @@
 import { isAccountScopedStorageKey } from './accountScope';
+import { API_RESPONSE_CACHE } from './apiResponseCache';
 
 type LeftoverKind = 'indexeddb' | 'opfs' | 'cache' | 'localStorage';
 
@@ -13,7 +14,7 @@ const CURRENT_INDEXED_DB = 'MapTilesDB_v2';
 const CURRENT_OPFS_DIR = 'offline-extracts';
 
 const KNOWN_CACHE_NAMES = new Set([
-  'api-cache',
+  API_RESPONSE_CACHE,
   'protomaps-assets-cache',
   'elevation-tiles-cache',
   'esri-satellite-cache',

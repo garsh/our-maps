@@ -24,6 +24,7 @@ import { getCspDirectives } from './csp';
 import { socketPayloadSchemas } from './schemas';
 import * as realtime from './realtime';
 import { handleExtractSize, handleTileStream, cleanupPlanDiskCache } from './tileStream';
+import { defaultJsonParser, defersJsonBody } from './jsonBody';
 
 const app = express();
 const server = http.createServer(app);
@@ -116,18 +117,21 @@ app.use(cors({
   credentials: true,
 }));
 
-// Data limits: use conservative 100kb limit by default to prevent unauthenticated memory exhaustion DoS.
-// Large multi-pin map payloads (up to 10MB) and multi-map label reordering are permitted on map creation and label endpoints.
-const defaultJsonParser = express.json({ limit: '100kb' });
-const largeJsonParser = express.json({ limit: '10mb' });
+// Account-specific GET responses must not be stored by the browser or a shared cache.
+// Map documents and the map list are omitted; the client already requests those with cache: 'no-store'.
+const PRIVATE_API_CACHE = /^\/api\/(?:auth(?:\/|$)|labels(?:\/|$)|maps\/[0-9a-f-]{36}\/permissions\/?$)/i;
 
 app.use((req, res, next) => {
-  if (
-    (req.method === 'POST' && (req.path === '/api/maps' || req.path === '/api/maps/')) ||
-    (req.method === 'PUT' && req.path.startsWith('/api/labels'))
-  ) {
-    return largeJsonParser(req, res, next);
+  if (PRIVATE_API_CACHE.test(req.path)) {
+    res.setHeader('Cache-Control', 'private, no-store');
   }
+  next();
+});
+
+// 100kb by default so an anonymous caller cannot force a large JSON parse.
+// POST /api/maps and PUT /api/labels defer parsing until after authMiddleware, then allow 10mb.
+app.use((req, res, next) => {
+  if (defersJsonBody(req)) return next();
   return defaultJsonParser(req, res, next);
 });
 
