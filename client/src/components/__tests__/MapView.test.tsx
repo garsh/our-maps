@@ -9,6 +9,10 @@ import MapView, {
   paddedMapView,
   getMapEdgePadding,
   PIN_HEAD_CLEARANCE,
+  terrainTopOverflow,
+  jumpCenterElevation,
+  commitArrivalElevation,
+  runAfterElevationPop,
   themePaintUpdates,
 } from '../MapView';
 import { getHoveredPinId, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
@@ -36,6 +40,7 @@ const mockGetContainer = vi.fn(() => ({
   clientHeight: 800,
 }));
 const mockGetPadding = vi.fn(() => ({ top: 0, bottom: 0, left: 0, right: 0 }));
+const mockQueryTerrainElevation = vi.fn((_lngLat: [number, number]): number | null => null);
 const mockGetBounds = vi.fn(() => ({
   getNorthWest: () => ({ lat: 40, lng: -70 }),
   getSouthEast: () => ({ lat: 30, lng: -80 }),
@@ -68,6 +73,7 @@ const mockMapInstance = {
     getPitch: mockGetPitch,
     getBounds: mockGetBounds,
     getPadding: mockGetPadding,
+    queryTerrainElevation: mockQueryTerrainElevation,
     project: mockProject,
     getContainer: mockGetContainer,
     getCanvas: () => ({
@@ -396,6 +402,9 @@ describe('syncOfflineTerrain', () => {
     const mockCameraProto = {
       _elevateCameraIfInsideTerrain: vi.fn(() => ({ pitch: 0, zoom: 16.98 })),
       _finalizeElevation: vi.fn(),
+      _updateElevation: vi.fn(function (this: { transform: { elevation: number } }) {
+        this.transform.elevation = 4100;
+      }),
       _afterEase: vi.fn(),
       easeTo: vi.fn(),
       applyUpdatedTransform: vi.fn(),
@@ -558,9 +567,15 @@ describe('syncOfflineTerrain', () => {
     mockHandlers._updateMapTransform({ zoomDelta: 0.2 }, { zoom: true }, {});
     expect(mockHandlersProto._stableUpdateMapTransform).toHaveBeenCalledWith({ zoomDelta: 0.2 }, { zoom: true }, {});
 
-    // 5. _finalizeElevation clears elevationFreeze without calling recalculateZoomAndCenter when pitch < 60
+    // 5. _finalizeElevation does not retarget when pitch < 60.
+    // A flight that held its height keeps the freeze so arrival cannot snap to a new sample.
     expect(mockCameraProto._stableFinalizeElevation).toBeDefined();
     mockCamera.elevationFreeze = true;
+    mockCamera._holdElevation = true;
+    mockCamera._finalizeElevation();
+    expect(mockCamera.elevationFreeze).toBe(true);
+    expect(mockCameraProto._stableFinalizeElevation).not.toHaveBeenCalled();
+    mockCamera._holdElevation = false;
     mockCamera._finalizeElevation();
     expect(mockCamera.elevationFreeze).toBe(false);
     expect(mockCameraProto._stableFinalizeElevation).not.toHaveBeenCalled();
@@ -598,20 +613,27 @@ describe('syncOfflineTerrain', () => {
     expect(mockReleaseRTT).toHaveBeenCalledWith(mockMap.painter);
     expect(mockMap.triggerRepaint).toHaveBeenCalled();
 
-    // 7. _fireEvents clears _terrainMovement and elevationFreeze when finishedMoving occurs without recalculating zoom/center
+    // 7. _fireEvents clears _inertia, _terrainMovement, and elevationFreeze when finishedMoving occurs without recalculating zoom/center
     expect(mockHandlersProto._stableFireEvents).toBeDefined();
+    mockHandlers._inertia = { clear: vi.fn() };
+    mockHandlers.isMoving = () => Boolean(mockHandlers._eventsInProgress?.zoom || mockHandlers._eventsInProgress?.drag);
+    mockHandlers.isZooming = () => Boolean(mockHandlers._eventsInProgress?.zoom);
     mockHandlers._terrainMovement = true;
     mockCamera.elevationFreeze = true;
     mockHandlers._camera._requestedCameraState = {};
     mockHandlers._fireEvents({}, {}, true);
+    expect(mockHandlers._inertia.clear).toHaveBeenCalled();
     expect(mockHandlers._terrainMovement).toBe(false);
     expect(mockCamera.elevationFreeze).toBe(false);
     expect(mockHandlers._camera._requestedCameraState).toBeUndefined();
     expect(mockHandlersProto._stableFireEvents).toHaveBeenCalled();
+    delete mockHandlers.isMoving;
+    delete mockHandlers.isZooming;
 
-    // 8. _terrainGestureElevation bypasses ray-plane solve for pitch < 60 pure zoom to prevent lateral jitter
+    // 8. _terrainGestureElevation bypasses ray-plane solve for pitch < 60 pan and zoom to prevent lateral jitter and post-pan shifts
     expect(mockHandlersProto._stableTerrainGestureElevation).toBeDefined();
     expect(mockHandlers._terrainGestureElevation(mockTerrain, { x: 600, y: 400 }, true, mockTr, { zoom: true, drag: false })).toBeUndefined();
+    expect(mockHandlers._terrainGestureElevation(mockTerrain, { x: 600, y: 400 }, true, mockTr, { zoom: false, drag: true })).toBeUndefined();
     expect(mockHandlersProto._stableTerrainGestureElevation).not.toHaveBeenCalled();
 
     // At pitch >= 60, it delegates to stable terrain gesture elevation
@@ -619,14 +641,34 @@ describe('syncOfflineTerrain', () => {
     mockHandlers._terrainGestureElevation(mockTerrain, { x: 600, y: 400 }, true, mockTrPitched, { zoom: true, drag: false });
     expect(mockHandlersProto._stableTerrainGestureElevation).toHaveBeenCalled();
 
-    // 9. _handleMapControls unfreezes elevation during pure zoom so elevation updates continuously
+    // 9. _handleMapControls unfreezes elevation during both zoom and pan and updates the gesture transform clone's elevation continuously.
     expect(mockHandlersProto._stableHandleMapControls).toBeDefined();
     mockCamera.elevationFreeze = true;
+    mockCamera._holdElevation = true;
     mockHandlers._handleMapControls({ combinedEventsInProgress: { zoom: true, drag: false } });
     expect(mockCamera.elevationFreeze).toBe(false);
+    expect(mockCamera._holdElevation).toBe(false);
+    const dragClone = {
+      center: { lng: -107.897, lat: 38.497 },
+      zoom: 17.64,
+      tileZoom: 17,
+      elevation: 2800,
+      _stableSetElevation: vi.fn(),
+    };
+    mockCamera.elevationFreeze = true;
+    mockCamera._holdElevation = true;
+    mockHandlers._handleMapControls({
+      tr: dragClone,
+      terrain: mockTerrain,
+      combinedEventsInProgress: { zoom: false, drag: true },
+    });
+    expect(mockCamera._holdElevation).toBe(false);
+    expect(mockCamera.elevationFreeze).toBe(false);
+    expect(dragClone._stableSetElevation).toHaveBeenCalledWith(3250);
 
     // 10. setElevation eases sudden elevation changes (> 0.05m) when idle to prevent single-frame vertical pops
     mockHandlers._terrainMovement = false;
+    mockTr.elevation = 3200;
     mockTr._elevation = 3200;
     mockMap.triggerRepaint.mockClear();
     mockTr.setElevation(3204);
@@ -634,9 +676,36 @@ describe('syncOfflineTerrain', () => {
     expect(mockMap.triggerRepaint).toHaveBeenCalled();
 
     // Small elevation changes (<= 0.05m) apply directly
+    mockTr.elevation = 3200;
     mockTr._elevation = 3200;
     mockTr.setElevation(3200.02);
     expect(mockTrProto._stableSetElevation).toHaveBeenCalledWith(3200.02);
+
+    // A missing DEM tile reports 0. Keep the real height.
+    mockTr.tileZoom = 12;
+    mockTr.elevation = 40;
+    mockTr._elevation = 40;
+    (mockMap.terrain as any)._getOverscaledTileIDFromLngLatZoom = () => ({ tileID: { key: '12' } });
+    (mockMap.terrain as any)._getElevationSampler = () => null;
+    const callsBeforeMiss = mockTrProto._stableSetElevation.mock.calls.length;
+    mockTr.setElevation(0);
+    expect(mockTrProto._stableSetElevation.mock.calls.length).toBe(callsBeforeMiss);
+
+    // A loaded tile at sea level still applies.
+    (mockMap.terrain as any)._getElevationSampler = () => () => 0;
+    mockTr.elevation = 0.04;
+    mockTr._elevation = 0.04;
+    mockTr.setElevation(0);
+    expect(mockTrProto._stableSetElevation).toHaveBeenLastCalledWith(0);
+
+    // An unfrozen flight copies the tracked height onto the camera clone.
+    // applyUpdatedTransform would otherwise restore the height the zoom started from.
+    const requested = { setElevation: vi.fn() };
+    mockCamera._requestedCameraState = requested;
+    mockCamera.transform.elevation = 400;
+    mockCamera._updateElevation(1);
+    expect(mockCameraProto._stableUpdateElevation).toHaveBeenCalledWith(1);
+    expect(requested.setElevation).toHaveBeenCalledWith(4100);
   });
 });
 
@@ -778,6 +847,8 @@ describe('MapView Compass and Tilt Indicator', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetPadding.mockReturnValue({ top: 0, bottom: 0, left: 0, right: 0 });
+    mockQueryTerrainElevation.mockReset();
+    mockQueryTerrainElevation.mockReturnValue(null);
     resetPinHoverForTests();
     resetMapViewportBoundsForTests();
     capturedMapProps.current = null;
@@ -938,6 +1009,55 @@ describe('MapView Compass and Tilt Indicator', () => {
         padding: { top: 0, left: 0, right: 0, bottom: 0 },
       })
     );
+  });
+
+  it('adds only the northern terrain overflow to top padding on compass double-click', () => {
+    const originalInnerWidth = window.innerWidth;
+    const originalInnerHeight = window.innerHeight;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1200 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: 800 });
+    mockQueryTerrainElevation.mockImplementation((lngLat: [number, number]) => {
+      return lngLat[1] === 19.48 ? 1000 : 100;
+    });
+
+    const mockPins = [
+      { id: 'pin-1', lat: 19.4, lng: 20, label: 'South', color: 'blue' as const, position: 0 },
+      { id: 'pin-2', lat: 19.48, lng: 20.08, label: 'North', color: 'red' as const, position: 1 },
+    ];
+
+    try {
+      render(
+        <MapView
+          pins={mockPins}
+          onMapClick={vi.fn()}
+          onUpdatePin={vi.fn()}
+          onBoundsChange={vi.fn()}
+          leftPadding={0}
+          bottomPadding={0}
+        />
+      );
+
+      const compassButton = screen.getByRole('button', { name: /Compass - Reset bearing to North/i });
+      fireEvent.click(compassButton);
+      fireEvent.click(compassButton);
+
+      // 900 m over 0.08° on the 800px map overflows the 36px top by 19px.
+      const base = paddedMapView(0, 0);
+      expect(base.top).toBe(36);
+      expect(mockFitBounds).toHaveBeenCalledWith(
+        [
+          [20, 19.4],
+          [20.08, 19.48],
+        ],
+        expect.objectContaining({
+          maxZoom: 13,
+          padding: { ...base, top: base.top + 19 },
+        })
+      );
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: originalInnerWidth });
+      Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: originalInnerHeight });
+    }
   });
 
   it('triggers onHoverPin with pin.id on mouse enter and (null, pin.id) on mouse leave', () => {
@@ -1705,6 +1825,298 @@ describe('MapView Compass and Tilt Indicator', () => {
         Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: originalInnerWidth });
         Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: originalInnerHeight });
       }
+    });
+  });
+
+  describe('terrain top overflow', () => {
+    const padding = { top: 36, right: 10, bottom: 32, left: 10 };
+    const span = { minLat: 19.4, maxLat: 19.48, minLng: -156, maxLng: -155.9 };
+    const pins = [
+      { lat: 19.4, lng: -156 },
+      { lat: 19.48, lng: -155.92 },
+    ];
+    const map = (north: number | null, center: number | null) => ({
+      getContainer: () => ({ clientHeight: 800 }),
+      queryTerrainElevation: (lngLat: [number, number]) => (lngLat[1] === 19.48 ? north : center),
+    });
+
+    it('returns 0 when terrain elevation is unavailable', () => {
+      expect(terrainTopOverflow(null, pins, span, padding)).toBe(0);
+      expect(terrainTopOverflow({ getContainer: () => ({ clientHeight: 800 }) }, pins, span, padding)).toBe(0);
+      expect(terrainTopOverflow(map(null, 100), pins, span, padding)).toBe(0);
+      expect(terrainTopOverflow(map(1000, null), pins, span, padding)).toBe(0);
+    });
+
+    it('returns 0 when the northern pin is not above the span center', () => {
+      expect(terrainTopOverflow(map(100, 100), pins, span, padding)).toBe(0);
+      expect(terrainTopOverflow(map(50, 400), pins, span, padding)).toBe(0);
+    });
+
+    it('returns 0 when relief is small compared with the fitted span', () => {
+      const wide = { minLat: 10, maxLat: 20, minLng: 20, maxLng: 40 };
+      const widePins = [
+        { lat: 10, lng: 20 },
+        { lat: 20, lng: 40 },
+      ];
+      const wideMap = {
+        getContainer: () => ({ clientHeight: 864 }),
+        queryTerrainElevation: (lngLat: [number, number]) => (lngLat[1] === 20 ? 500 : 100),
+      };
+      expect(terrainTopOverflow(wideMap, widePins, wide, { top: 36, right: 16, bottom: 35, left: 40 })).toBe(0);
+    });
+
+    it('adds only the slide past the existing headroom for a steep short span', () => {
+      // 900 m of relief over 0.08° (~8.9 km) on an 800px map slides the northern
+      // tip about 24px. Top padding of 36 leaves 8px above the 28px marker.
+      expect(terrainTopOverflow(map(1000, 100), pins, span, padding)).toBe(19);
+    });
+
+    it('measures that slide at the arrival zoom once that DEM tile is loaded', () => {
+      const detailed = {
+        getContainer: () => ({ clientHeight: 800 }),
+        getCenterElevation: () => 100,
+        queryTerrainElevation: () => 100,
+        terrain: {
+          getElevationForLngLatZoom: (lngLat: { lat: number }) => (lngLat.lat === 19.48 ? 1000 : 100),
+          _getOverscaledTileIDFromLngLatZoom: () => ({ tileID: { key: '12' } }),
+          _getElevationSampler: () => () => 1000,
+        },
+      };
+      expect(terrainTopOverflow(detailed, pins, span, padding)).toBe(0);
+      expect(terrainTopOverflow(detailed, pins, span, padding, 12.7)).toBe(19);
+    });
+
+    it('uses the camera elevation when that plane is below the span center', () => {
+      const withCamera = {
+        getContainer: () => ({ clientHeight: 800 }),
+        getCenterElevation: () => 100,
+        queryTerrainElevation: (lngLat: [number, number]) => (lngLat[1] === 19.48 ? 1000 : 900),
+      };
+      // 100 m above the span center stays inside the spare. The frozen camera
+      // plane is 900 m below the pin, so only the top inset grows.
+      expect(terrainTopOverflow(withCamera, pins, span, padding)).toBe(19);
+    });
+
+    it('returns 0 when both planes are already above the northern pin', () => {
+      const withCamera = {
+        getContainer: () => ({ clientHeight: 800 }),
+        getCenterElevation: () => 1500,
+        queryTerrainElevation: (lngLat: [number, number]) => (lngLat[1] === 19.48 ? 1000 : 1200),
+      };
+      expect(terrainTopOverflow(withCamera, pins, span, padding)).toBe(0);
+    });
+
+    it('pads for the span center when the camera will drop onto lower ground after the fit', () => {
+      const withCamera = {
+        getContainer: () => ({ clientHeight: 800 }),
+        getCenterElevation: () => 1000,
+        queryTerrainElevation: (lngLat: [number, number]) => (lngLat[1] === 19.48 ? 1000 : 100),
+      };
+      // The camera plane matches the pin. The span center is 900 m lower, so the
+      // top inset still reserves that slide.
+      expect(terrainTopOverflow(withCamera, pins, span, padding)).toBe(19);
+    });
+
+    it('adds twice the slide when width sets the zoom', () => {
+      const wideBox = {
+        getContainer: () => ({ clientHeight: 800, clientWidth: 500 }),
+        queryTerrainElevation: (lngLat: [number, number]) => (lngLat[1] === 19.48 ? 1000 : 100),
+      };
+      const widePins = [
+        { lat: 19.4, lng: 20 },
+        { lat: 19.48, lng: 20.08 },
+      ];
+      const wideSpan = { minLat: 19.4, maxLat: 19.48, minLng: 20, maxLng: 20.08 };
+      expect(terrainTopOverflow(wideBox, widePins, wideSpan, padding)).toBe(9);
+    });
+  });
+
+  describe('elevation pop before a terrain flight', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('does nothing when the camera is already at the destination height', () => {
+      const stable = vi.fn();
+      const map = {
+        queryTerrainElevation: () => 40,
+        _camera: { transform: { elevation: 40, _stableSetElevation: stable } },
+      };
+      expect(jumpCenterElevation(map, [1, 2])).toBe(false);
+      expect(stable).not.toHaveBeenCalled();
+    });
+
+    it('applies the destination height in one step, ahead of the eased setter', () => {
+      const stable = vi.fn();
+      const eased = vi.fn();
+      const map = {
+        queryTerrainElevation: () => 480,
+        triggerRepaint: vi.fn(),
+        _camera: { transform: { elevation: 20, _stableSetElevation: stable, setElevation: eased } },
+      };
+      expect(jumpCenterElevation(map, [-156, 19.5])).toBe(true);
+      expect(stable).toHaveBeenCalledWith(480);
+      expect(eased).not.toHaveBeenCalled();
+    });
+
+    it('waits for the popped frame before the camera move', () => {
+      vi.useFakeTimers();
+      let onRender: (() => void) | null = null;
+      const map = {
+        once: (_event: string, cb: () => void) => { onRender = cb; },
+        triggerRepaint: vi.fn(),
+      };
+      const run = vi.fn();
+      runAfterElevationPop(map, run);
+      expect(run).not.toHaveBeenCalled();
+      onRender!();
+      expect(run).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(120);
+      expect(run).toHaveBeenCalledTimes(1);
+    });
+
+    it('moves anyway when the popped frame never renders', () => {
+      vi.useFakeTimers();
+      const map = { once: vi.fn(), triggerRepaint: vi.fn() };
+      const run = vi.fn();
+      runAfterElevationPop(map, run);
+      expect(run).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(400);
+      expect(run).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses the arrival-zoom sample when that DEM tile is loaded', () => {
+      const stable = vi.fn();
+      const camera: { elevationFreeze?: boolean; _holdElevation?: boolean; transform: any } = {
+        transform: { elevation: 100, _stableSetElevation: stable },
+      };
+      const map = {
+        queryTerrainElevation: () => 100,
+        terrain: {
+          getElevationForLngLatZoom: () => 900,
+          _getOverscaledTileIDFromLngLatZoom: () => ({ tileID: { key: '13' } }),
+          _getElevationSampler: () => () => 900,
+        },
+        _camera: camera,
+      };
+      expect(jumpCenterElevation(map, [-156, 19.5], 13.2)).toBe(true);
+      expect(stable).toHaveBeenCalledWith(900);
+      expect(camera.elevationFreeze).toBe(true);
+    });
+
+    it('does not substitute the zoomed-out sample when the arrival tile is missing', () => {
+      const stable = vi.fn();
+      const map = {
+        queryTerrainElevation: () => 100,
+        terrain: {
+          getElevationForLngLatZoom: () => 0,
+          _getOverscaledTileIDFromLngLatZoom: (_lngLat: unknown, z: number) => ({ tileID: { key: String(z) } }),
+          _getElevationSampler: (tileID: { key: string }) => (tileID.key === '8' ? () => 100 : null),
+        },
+        _camera: { transform: { elevation: 400, tileZoom: 8, _stableSetElevation: stable } },
+      };
+      expect(jumpCenterElevation(map, [-156, 19.5], 13)).toBe(false);
+      expect(stable).not.toHaveBeenCalled();
+    });
+
+    it('does not jump to a parent DEM when the arrival tile itself is missing', () => {
+      const stable = vi.fn();
+      const getSourceTile = vi.fn((_tileID: { key: string }, searchForDEM: boolean) => (
+        searchForDEM ? { dem: {} } : undefined
+      ));
+      const map = {
+        queryTerrainElevation: () => 50,
+        terrain: {
+          getElevationForLngLatZoom: () => 50,
+          _getOverscaledTileIDFromLngLatZoom: () => ({ tileID: { key: '13' } }),
+          tileManager: { getSourceTile },
+        },
+        _camera: { transform: { elevation: 400, _stableSetElevation: stable } },
+      };
+      expect(jumpCenterElevation(map, [-156, 19.5], 13)).toBe(false);
+      expect(stable).not.toHaveBeenCalled();
+      expect(getSourceTile).toHaveBeenCalledWith({ key: '13' }, false);
+    });
+
+    it('jumps when the exact arrival tile is loaded', () => {
+      const stable = vi.fn();
+      const map = {
+        queryTerrainElevation: () => 50,
+        terrain: {
+          getElevationForLngLatZoom: () => 880,
+          _getOverscaledTileIDFromLngLatZoom: () => ({ tileID: { key: '13' } }),
+          tileManager: { getSourceTile: () => ({ dem: {} }) },
+        },
+        _camera: { transform: { elevation: 100, _stableSetElevation: stable } },
+      };
+      expect(jumpCenterElevation(map, [-156, 19.5], 13)).toBe(true);
+      expect(stable).toHaveBeenCalledWith(880);
+    });
+
+    it('copies the arrival height onto the zoomed-out flight clone', () => {
+      const stable = vi.fn();
+      const cloneStable = vi.fn();
+      const map = {
+        queryTerrainElevation: () => 50,
+        terrain: {
+          getElevationForLngLatZoom: () => 880,
+          _getOverscaledTileIDFromLngLatZoom: () => ({ tileID: { key: '13' } }),
+          tileManager: { getSourceTile: () => ({ dem: {} }) },
+        },
+        _camera: {
+          transform: { elevation: -1800, _stableSetElevation: stable },
+          _requestedCameraState: { elevation: -1800, _stableSetElevation: cloneStable },
+        },
+      };
+      expect(jumpCenterElevation(map, [-156, 19.5], 13)).toBe(true);
+      expect(stable).toHaveBeenCalledWith(880);
+      expect(cloneStable).toHaveBeenCalledWith(880);
+    });
+
+    it('puts the arrival height back and drops the gesture clone before the flight', () => {
+      const stable = vi.fn();
+      const camera: {
+        elevationFreeze?: boolean;
+        transform: { elevation: number; _stableSetElevation: (elevation: number) => void };
+        _requestedCameraState?: object;
+      } = {
+        elevationFreeze: false,
+        transform: { elevation: -1800, _stableSetElevation: stable },
+        _requestedCameraState: { elevation: -1800 },
+      };
+      commitArrivalElevation({ _camera: camera }, 132);
+      expect(stable).toHaveBeenCalledWith(132);
+      expect(camera.elevationFreeze).toBe(true);
+      expect(camera._requestedCameraState).toBeUndefined();
+    });
+
+    it('drops a gesture clone without writing a height when the arrival tile is not ready', () => {
+      const stable = vi.fn();
+      const camera: {
+        transform: { _stableSetElevation: (elevation: number) => void };
+        _requestedCameraState?: object;
+      } = {
+        transform: { _stableSetElevation: stable },
+        _requestedCameraState: {},
+      };
+      commitArrivalElevation({ _camera: camera }, null);
+      expect(stable).not.toHaveBeenCalled();
+      expect(camera._requestedCameraState).toBeUndefined();
+    });
+
+    it('does not treat a missing DEM tile as sea level', () => {
+      const stable = vi.fn();
+      const map = {
+        queryTerrainElevation: () => 0,
+        terrain: {
+          getElevationForLngLatZoom: () => 0,
+          _getOverscaledTileIDFromLngLatZoom: () => ({ tileID: { key: '13' } }),
+          _getElevationSampler: () => null,
+        },
+        _camera: { transform: { elevation: 400, tileZoom: 13, _stableSetElevation: stable } },
+      };
+      expect(jumpCenterElevation(map, [-156, 19.5], 13)).toBe(false);
+      expect(stable).not.toHaveBeenCalled();
     });
   });
 

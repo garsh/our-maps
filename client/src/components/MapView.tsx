@@ -364,11 +364,30 @@ export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
         if (cameraProto && !cameraProto._stableFinalizeElevation && typeof cameraProto._finalizeElevation === 'function') {
           cameraProto._stableFinalizeElevation = cameraProto._finalizeElevation;
           cameraProto._finalizeElevation = function () {
-            this.elevationFreeze = false;
             if ((this.transform?.pitch ?? 0) < 60) {
+              // Clearing the freeze here is what lets the render loop write the
+              // arrival zoom's DEM after the camera has already stopped. An
+              // animated fit holds only when that arrival tile is already loaded.
+              if (!this._holdElevation) this.elevationFreeze = false;
               return;
             }
+            this.elevationFreeze = false;
             return this._stableFinalizeElevation.call(this);
+          };
+        }
+        if (cameraProto && !cameraProto._stableUpdateElevation && typeof cameraProto._updateElevation === 'function') {
+          cameraProto._stableUpdateElevation = cameraProto._updateElevation;
+          cameraProto._updateElevation = function (k: number) {
+            const result = this._stableUpdateElevation.call(this, k);
+            // applyUpdatedTransform copies the flight clone back over the live
+            // height on every frame. Keep the tracked height on that clone or
+            // the zoom finishes on the plane it started from.
+            const tracked = readTransformElevation(this.transform);
+            const requested = this._requestedCameraState;
+            if (requested && typeof tracked === 'number' && Number.isFinite(tracked)) {
+              writeStableElevation(requested, tracked);
+            }
+            return result;
           };
         }
         if (cameraProto && !cameraProto._stableApplyUpdatedTransform && typeof cameraProto.applyUpdatedTransform === 'function') {
@@ -443,7 +462,10 @@ export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
         if (trProto && !trProto._stableSetElevation && typeof trProto.setElevation === 'function') {
           trProto._stableSetElevation = trProto.setElevation;
           trProto.setElevation = function (elevation: number) {
-            if (elevation === this._elevation) return;
+            const current = readTransformElevation(this);
+            if (typeof current === 'number' && elevation === current) return;
+            // A DEM tile that has not loaded reports 0. Do not drop a real height to sea level.
+            if (rejectUnloadedSeaLevel(map, elevation, current)) return;
             // In top-down / low pitch mode (pitch < 60), if the map is idle and not in active movement,
             // avoid sudden vertical elevation jumps (> 0.05m) that scale perspective in a single frame.
             const handlers = (map as any)._handlers;
@@ -566,18 +588,22 @@ export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
               this._fireEvents(combinedEventsInProgress, deactivatedHandlers, true);
               return;
             }
+            const tracked = readTransformElevation(this._camera?.transform);
+            const requested = this._camera?._requestedCameraState;
+            if (requested && typeof tracked === 'number' && Number.isFinite(tracked)) {
+              writeStableElevation(requested, tracked);
+            }
             return this._stableUpdateMapTransform.call(this, combinedResult, combinedEventsInProgress, deactivatedHandlers);
           };
-
         }
         if (handlersProto && !handlersProto._stableTerrainGestureElevation && typeof handlersProto._terrainGestureElevation === 'function') {
           handlersProto._stableTerrainGestureElevation = handlersProto._terrainGestureElevation;
           handlersProto._terrainGestureElevation = function (terrain: any, around: any, aroundOnSurface: any, tr: any, combinedEventsInProgress: any) {
-            // For top-down / low pitch (pitch < 60), pure zoom gestures should anchor to the
-            // ground plane (undefined aroundElevation -> z=0 relative to tr.elevation in setLocationAtPoint).
-            // This guarantees zero lateral jitter and eliminates gl.readPixels stalls and missing-tile
-            // coords framebuffer null flickers that plague offline ancestor overscaled DEM tiles.
-            if ((tr?.pitch ?? 0) < 60 && combinedEventsInProgress?.zoom && !combinedEventsInProgress?.drag) {
+            // For top-down / low pitch (pitch < 60), pan and zoom gestures anchor to the
+            // center-elevation ground plane (undefined aroundElevation -> z=0 relative to tr.elevation).
+            // This eliminates gl.readPixels stalls and prevents off-center cursor anchor parallax
+            // as tr.elevation tracks the terrain continuously during the gesture.
+            if ((tr?.pitch ?? 0) < 60 && (combinedEventsInProgress?.zoom || combinedEventsInProgress?.drag)) {
               return undefined;
             }
             return this._stableTerrainGestureElevation.call(this, terrain, around, aroundOnSurface, tr, combinedEventsInProgress);
@@ -587,12 +613,27 @@ export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
           handlersProto._stableHandleMapControls = handlersProto._handleMapControls;
           handlersProto._handleMapControls = function (args: any) {
             const res = this._stableHandleMapControls.call(this, args);
-            // In top-down / low pitch terrain mode (pitch < 60), keep elevation unfrozen during pure zoom
-            // so ground elevation updates continuously frame-by-frame with the zoom motion.
-            // This prevents a delayed ~200ms elevation snap when the gesture settles.
-            if ((this._camera?.transform?.pitch ?? 0) < 60 && args?.combinedEventsInProgress?.zoom && !args?.combinedEventsInProgress?.drag) {
-              if (this._camera) {
+            // In top-down / low pitch terrain mode (pitch < 60), keep elevation unfrozen during both
+            // pan and zoom and update the gesture transform clone's elevation on every frame.
+            // Otherwise applyUpdatedTransform copies the start-of-gesture elevation back onto
+            // camera.transform every frame and snaps to the new terrain elevation on mouse release.
+            if ((this._camera?.transform?.pitch ?? 0) < 60 && this._camera) {
+              const events = args?.combinedEventsInProgress;
+              if (events?.zoom || events?.drag) {
+                this._camera._holdElevation = false;
                 this._camera.elevationFreeze = false;
+                const targetTr = args?.tr;
+                const terrain = args?.terrain || map.terrain;
+                if (targetTr && terrain && targetTr.center && typeof terrain.getElevationForLngLatZoom === 'function') {
+                  const tileZ = targetTr._helper?._tileZoom ?? targetTr.tileZoom ?? Math.max(0, Math.floor(targetTr.zoom ?? 0));
+                  const ele = terrain.getElevationForLngLatZoom(toSafeLngLat(targetTr.center), tileZ);
+                  if (typeof ele === 'number' && Number.isFinite(ele) && !rejectUnloadedSeaLevel(map, ele, readTransformElevation(targetTr))) {
+                    writeStableElevation(targetTr, ele);
+                    if (this._camera.transform && this._camera.transform !== targetTr) {
+                      writeStableElevation(this._camera.transform, ele);
+                    }
+                  }
+                }
               }
             }
             return res;
@@ -602,10 +643,6 @@ export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
           handlersProto._stableFireEvents = handlersProto._fireEvents;
           handlersProto._fireEvents = function (newEventsInProgress: any, deactivatedHandlers: any, allowEndAnimation: any) {
             const isHandlerStillActive = () => {
-              if (typeof this.isZooming === 'function' && this.isZooming()) return true;
-              const mapInst = (this as any)._map || map;
-              if (mapInst?.scrollZoom?.isZooming?.()) return true;
-              if (typeof this.isMoving === 'function' && this.isMoving()) return true;
               for (const name in this._eventsInProgress) {
                 const { handlerName } = this._eventsInProgress[name] || {};
                 if (!handlerName || this._handlersById?.[handlerName]?.isActive?.()) {
@@ -623,13 +660,15 @@ export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
 
             const stillMoving = isHandlerStillActive();
 
-            // Only finalize terrain gesture state when all movement has truly ended.
-            // Wheel-scroll animations and intermediate notch steps must not clear _terrainMovement
-            // or delete _requestedCameraState while scrolling is in progress.
-            if (!stillMoving && this._terrainMovement && (this._camera?.transform?.pitch ?? 0) < 60) {
-              this._camera.elevationFreeze = false;
-              this._terrainMovement = false;
-              this._terrainGestureAnchorElevation = null;
+            // Finalize terrain gesture state and clear inertia when all active handlers have ended
+            // so pan/zoom stops immediately on mouse release without a post-release shift or coast.
+            if (!stillMoving && (this._camera?.transform?.pitch ?? 0) < 60 && this._camera) {
+              this._inertia?.clear?.();
+              if (this._terrainMovement) {
+                this._camera.elevationFreeze = false;
+                this._terrainMovement = false;
+                this._terrainGestureAnchorElevation = null;
+              }
               delete (this._camera as any)._requestedCameraState;
             }
 
@@ -1264,9 +1303,421 @@ function applyThemePaintsOnMap(map: any, flavor: 'light' | 'dark') {
   }
 }
 
-// Terrain flyTo freezes camera height and only calls _finalizeElevation when this is set.
-// Without it, street labels keep a mid-flight perspective scale after Find my location.
+// Frozen terrain flights keep one camera height for the whole move, including
+// the arrival frame. MapLibre clears that freeze only when this option is set,
+// and the render loop would then write the new zoom's DEM in one frame. The
+// destination height is applied on the still picture first. Keeping the height
+// fixed also stops street labels from sticking at a mid-flight size. A flight
+// whose arrival tile is not loaded uses terrainFlightOptions and tracks height.
 const FLY_TO_TERRAIN = { freezeElevation: true as const };
+
+// Height actually stored for a transform. The public value is `elevation`.
+function readTransformElevation(tr: any): number | undefined {
+  if (!tr) return undefined;
+  if (typeof tr.elevation === 'number' && Number.isFinite(tr.elevation)) return tr.elevation;
+  const helperElevation = tr._helper?.elevation;
+  if (typeof helperElevation === 'number' && Number.isFinite(helperElevation)) return helperElevation;
+  const helperStored = tr._helper?._elevation;
+  if (typeof helperStored === 'number' && Number.isFinite(helperStored)) return helperStored;
+  if (typeof tr._elevation === 'number' && Number.isFinite(tr._elevation)) return tr._elevation;
+  return undefined;
+}
+
+// True when this zoom's own DEM tile is loaded. A coarser parent still
+// answers samples, but it is the wide view's ground, not the ground the
+// fit is about to zoom into.
+function arrivalDemReady(terrain: any, lngLat: any, zoom: number): boolean {
+  if (!terrain || !Number.isFinite(zoom)) return false;
+  if (typeof terrain.tileManager?.getSourceTile === 'function' && typeof terrain._getOverscaledTileIDFromLngLatZoom === 'function') {
+    try {
+      const spec = terrain._getOverscaledTileIDFromLngLatZoom(toSafeLngLat(lngLat), Math.max(0, Math.floor(zoom)));
+      if (!spec?.tileID) return false;
+      return !!terrain.tileManager.getSourceTile(spec.tileID, false)?.dem;
+    } catch {
+      return false;
+    }
+  }
+  return terrainDemLoaded(terrain, lngLat, zoom);
+}
+
+// True when a DEM tile (or a loaded parent) can answer an elevation sample.
+// A miss makes MapLibre return 0, which is also a real shoreline height.
+function terrainDemLoaded(terrain: any, lngLat: any, zoom: number): boolean {
+  if (!terrain || !Number.isFinite(zoom)) return false;
+  try {
+    if (typeof terrain._getOverscaledTileIDFromLngLatZoom !== 'function') return true;
+    const spec = terrain._getOverscaledTileIDFromLngLatZoom(toSafeLngLat(lngLat), Math.max(0, Math.floor(zoom)));
+    const tileID = spec?.tileID;
+    if (!tileID) return false;
+    if (typeof terrain._getElevationSampler === 'function') return !!terrain._getElevationSampler(tileID);
+    if (typeof terrain.tileManager?.getSourceTile === 'function') {
+      return !!terrain.tileManager.getSourceTile(tileID, true)?.dem;
+    }
+  } catch {}
+  return true;
+}
+
+function elevationAtZoom(terrain: any, lngLat: any, zoom: number): number | null {
+  if (!terrain || typeof terrain.getElevationForLngLatZoom !== 'function' || !Number.isFinite(zoom)) return null;
+  const z = Math.max(0, Math.floor(zoom));
+  if (!arrivalDemReady(terrain, lngLat, z)) return null;
+  // A sampler cached before this tile loaded still answers with its parent.
+  if (typeof terrain.resetElevationCache === 'function') terrain.resetElevationCache();
+  const value = terrain.getElevationForLngLatZoom(toSafeLngLat(lngLat), z);
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function writeStableElevation(tr: { _stableSetElevation?: (elevation: number) => void; setElevation?: (elevation: number) => void } | null | undefined, elevation: number) {
+  if (!tr) return;
+  if (typeof tr._stableSetElevation === 'function') tr._stableSetElevation(elevation);
+  else if (typeof tr.setElevation === 'function') tr.setElevation(elevation);
+}
+
+// The arrival zoom is used only when that tile itself is loaded. A parent
+// tile is the zoomed-out ground; holding it while the fit zooms in pushes
+// higher pins off both edges. Never treat a missing tile's 0 as ground.
+function groundElevation(map: any, lngLat: [number, number], zoom?: number): number | null {
+  if (typeof zoom === 'number' && Number.isFinite(zoom)) {
+    return elevationAtZoom(map?.terrain, lngLat, zoom);
+  }
+  const tr = map?._camera?.transform || map?.transform;
+  const viewZoom = tr?.tileZoom;
+  if (map?.terrain && typeof viewZoom === 'number' && !terrainDemLoaded(map.terrain, lngLat, viewZoom)) return null;
+  if (typeof map?.queryTerrainElevation !== 'function') return null;
+  const value = map.queryTerrainElevation(lngLat);
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+// The render loop samples 0 when the DEM under the center is not loaded yet.
+// Leaving a real height in place beats a one-frame drop to sea level.
+function rejectUnloadedSeaLevel(map: any, elevation: number, current: number | undefined): boolean {
+  if (elevation !== 0 || typeof current !== 'number' || Math.abs(current) <= 0.05) return false;
+  const tr = map?._camera?.transform || map?.transform;
+  if (!map?.terrain || typeof tr?.tileZoom !== 'number' || !tr?.center) return false;
+  return !terrainDemLoaded(map.terrain, tr.center, tr.tileZoom);
+}
+
+// Set the camera height to the ground at `lngLat` in one frame.
+// `zoom` is the zoom the flight will arrive at, when it is already known.
+export function jumpCenterElevation(
+  map: {
+    queryTerrainElevation?: (lngLat: [number, number]) => number | null;
+    triggerRepaint?: () => void;
+    terrain?: unknown;
+    _camera?: {
+      elevationFreeze?: boolean;
+      transform?: { elevation?: number; _elevation?: number; tileZoom?: number; _stableSetElevation?: (elevation: number) => void; setElevation?: (elevation: number) => void };
+      _requestedCameraState?: { _stableSetElevation?: (elevation: number) => void; setElevation?: (elevation: number) => void };
+    };
+    transform?: { elevation?: number; _elevation?: number; tileZoom?: number; _stableSetElevation?: (elevation: number) => void; setElevation?: (elevation: number) => void };
+  } | null | undefined,
+  lngLat: [number, number],
+  zoom?: number,
+): boolean {
+  if (!map || typeof map.queryTerrainElevation !== 'function') return false;
+  if (!Number.isFinite(lngLat[0]) || !Number.isFinite(lngLat[1])) return false;
+  const next = groundElevation(map, lngLat, zoom);
+  if (next === null) return false;
+  const tr = map._camera?.transform || map.transform;
+  if (!tr) return false;
+  const current = readTransformElevation(tr);
+  const changed = !(typeof current === 'number' && Math.abs(current - next) <= 0.05);
+  if (changed) {
+    if (typeof tr._stableSetElevation !== 'function' && typeof tr.setElevation !== 'function') return false;
+    writeStableElevation(tr, next);
+  }
+  // flyTo reuses this clone for the whole frozen flight. A clone taken during
+  // the zoom-out still has that plane until the jump is copied onto it.
+  const clone = map._camera?._requestedCameraState;
+  if (clone) writeStableElevation(clone, next);
+  if (map._camera && (changed || clone)) {
+    // Keep the render loop from replacing this height before the flight starts.
+    map._camera.elevationFreeze = true;
+  }
+  if (changed && typeof map.triggerRepaint === 'function') map.triggerRepaint();
+  return changed;
+}
+
+// fitBounds and flyTo clone the transform on the way in, and reuse any clone
+// already stored. Write the arrival height and drop that clone in the same
+// turn as the camera move, or the zoomed-out plane is the one that sticks.
+export function commitArrivalElevation(
+  map: object | null | undefined,
+  elevation: number | null,
+): void {
+  const camera = (map as {
+    _camera?: {
+      elevationFreeze?: boolean;
+      transform?: { _stableSetElevation?: (elevation: number) => void; setElevation?: (elevation: number) => void };
+      _requestedCameraState?: { _stableSetElevation?: (elevation: number) => void; setElevation?: (elevation: number) => void };
+    };
+    transform?: { _stableSetElevation?: (elevation: number) => void; setElevation?: (elevation: number) => void };
+  } | null | undefined)?._camera;
+  if (!camera) return;
+  if (typeof elevation === 'number' && Number.isFinite(elevation)) {
+    writeStableElevation(camera.transform || (map as { transform?: { _stableSetElevation?: (elevation: number) => void; setElevation?: (elevation: number) => void } }).transform, elevation);
+    writeStableElevation(camera._requestedCameraState, elevation);
+    camera.elevationFreeze = true;
+  }
+  delete camera._requestedCameraState;
+}
+
+// Let the popped height paint and hold briefly, then run the camera move.
+// A render that never arrives still moves.
+const ELEVATION_POP_HOLD_MS = 120;
+export function runAfterElevationPop(
+  map: { once?: (event: string, cb: () => void) => void; triggerRepaint?: () => void } | null | undefined,
+  run: () => void,
+) {
+  if (!map || typeof map.once !== 'function') {
+    run();
+    return;
+  }
+  let ran = false;
+  const once = () => {
+    if (ran) return;
+    ran = true;
+    run();
+  };
+  map.once('render', () => {
+    window.setTimeout(once, ELEVATION_POP_HOLD_MS);
+  });
+  if (typeof map.triggerRepaint === 'function') map.triggerRepaint();
+  window.setTimeout(once, 400);
+}
+
+function centerTuple(center: unknown): [number, number] | null {
+  if (Array.isArray(center) && Number.isFinite(center[0]) && Number.isFinite(center[1])) {
+    return [center[0], center[1]];
+  }
+  if (!center || typeof center !== 'object') return null;
+  const record = center as { lng?: unknown; lon?: unknown; lat?: unknown };
+  const lng = typeof record.lng === 'number' ? record.lng : record.lon;
+  if (typeof lng === 'number' && typeof record.lat === 'number' && Number.isFinite(lng) && Number.isFinite(record.lat)) {
+    return [lng, record.lat];
+  }
+  return null;
+}
+
+// A frozen flight stays on its starting height. That is safe when the height
+// is already the arrival tile. Tracking is for a zoomed-out plane: the height
+// then changes with the zoom instead of after it.
+function terrainFlightOptions(arrivalReady: boolean, animate: boolean): { freezeElevation: boolean } {
+  if (animate && !arrivalReady) return { freezeElevation: false };
+  return FLY_TO_TERRAIN;
+}
+
+function releaseStuckSymbolPlacement(map: { style?: { placement?: { commitTime?: number } }; triggerRepaint?: () => void } | null | undefined) {
+  const placement = map?.style?.placement;
+  if (placement && typeof placement.commitTime === 'number') placement.commitTime = 0;
+  if (typeof map?.triggerRepaint === 'function') map.triggerRepaint();
+}
+
+function primeArrivalElevation(
+  map: Parameters<typeof jumpCenterElevation>[0],
+  lngLat: [number, number],
+  zoom: number | undefined,
+): { jumped: boolean; ready: boolean; elevation: number | null } {
+  if (typeof zoom !== 'number' || !Number.isFinite(zoom)) return { jumped: false, ready: false, elevation: null };
+  const ready = arrivalDemReady(map?.terrain, lngLat, zoom);
+  if (!ready) return { jumped: false, ready: false, elevation: null };
+  const elevation = groundElevation(map, lngLat, zoom);
+  if (elevation === null) return { jumped: false, ready: false, elevation: null };
+  return { jumped: jumpCenterElevation(map, lngLat, zoom), ready: true, elevation };
+}
+
+// The DEM tile the arrival zoom actually samples. One level coarser than the
+// view zoom: terrain draws that source and scales it up.
+function arrivalSourceTileID(terrain: any, lngLat: [number, number], zoom: number): { key: string; scaledTo?: (z: number) => any } | null {
+  if (!terrain || typeof terrain._getOverscaledTileIDFromLngLatZoom !== 'function' || !Number.isFinite(zoom)) return null;
+  try {
+    const spec = terrain._getOverscaledTileIDFromLngLatZoom(toSafeLngLat(lngLat), Math.max(0, Math.floor(zoom)));
+    const tileID = spec?.tileID;
+    if (!tileID || typeof tileID.scaledTo !== 'function') return null;
+    const delta = typeof terrain.tileManager?.deltaZoom === 'number' ? terrain.tileManager.deltaZoom : 1;
+    let sourceZ = tileID.overscaledZ - delta;
+    const source = terrain.tileManager?.tileManager?._source;
+    if (typeof source?.maxzoom === 'number' && sourceZ > source.maxzoom) sourceZ = source.maxzoom;
+    if (typeof source?.minzoom === 'number' && sourceZ < source.minzoom) return null;
+    if (!(sourceZ >= 0)) return null;
+    return tileID.scaledTo(sourceZ);
+  } catch {
+    return null;
+  }
+}
+
+function arrivalDemErrored(terrain: any, lngLat: [number, number], zoom: number): boolean {
+  const tileID = arrivalSourceTileID(terrain, lngLat, zoom);
+  if (!tileID?.key) return false;
+  const inner = terrain?.tileManager?.tileManager;
+  const tile = inner?.getTileByID?.(tileID.key) || terrain?.tileManager?.findTileInCaches?.(tileID.key);
+  return tile?.state === 'errored';
+}
+
+// A zoomed-out frame drops higher-zoom DEM tiles. Asking for one and then
+// letting the next render discard it aborts the fetch. Hold the tile in the
+// retain set until it has data, then the fit can sample it.
+function keepArrivalDemTiles(retain: Record<string, unknown> | undefined, extra: Record<string, unknown> | undefined) {
+  if (!extra || !retain) return;
+  for (const key in extra) retain[key] = extra[key];
+}
+
+// raster-dem is cleaned up on the vector path. A tile requested ahead of the
+// current zoom is aborted there unless it stays in the retain set.
+function installArrivalDemRetain(tileManager: any) {
+  const proto = Object.getPrototypeOf(tileManager);
+  if (!proto) return;
+  if (!proto._stableCleanUpVectorTiles && typeof proto._cleanUpVectorTiles === 'function') {
+    proto._stableCleanUpVectorTiles = proto._cleanUpVectorTiles;
+    proto._cleanUpVectorTiles = function (retain: Record<string, unknown>) {
+      keepArrivalDemTiles(retain, this._arrivalDemRetain);
+      return this._stableCleanUpVectorTiles.call(this, retain);
+    };
+  }
+  if (!proto._stableCleanUpRasterTiles && typeof proto._cleanUpRasterTiles === 'function') {
+    proto._stableCleanUpRasterTiles = proto._cleanUpRasterTiles;
+    proto._cleanUpRasterTiles = function (retain: Record<string, unknown>) {
+      keepArrivalDemTiles(retain, this._arrivalDemRetain);
+      return this._stableCleanUpRasterTiles.call(this, retain);
+    };
+  }
+}
+
+function holdArrivalDemTiles(
+  terrain: any,
+  lngLats: Array<[number, number]>,
+  zoom: number,
+): { release: () => void } | null {
+  const inner = terrain?.tileManager?.tileManager;
+  if (!inner || typeof inner._addTile !== 'function') return null;
+  installArrivalDemRetain(inner);
+  inner._arrivalDemRetain ||= {};
+  inner._arrivalDemRetainCounts ||= {};
+  const added: string[] = [];
+  for (const lngLat of lngLats) {
+    const tileID = arrivalSourceTileID(terrain, lngLat, zoom);
+    if (!tileID?.key) continue;
+    try {
+      inner._addTile(tileID);
+    } catch {
+      continue;
+    }
+    inner._arrivalDemRetain[tileID.key] = tileID;
+    inner._arrivalDemRetainCounts[tileID.key] = (inner._arrivalDemRetainCounts[tileID.key] || 0) + 1;
+    added.push(tileID.key);
+  }
+  if (added.length === 0) return null;
+  return {
+    release() {
+      for (const key of added) {
+        const left = (inner._arrivalDemRetainCounts[key] || 1) - 1;
+        if (left <= 0) {
+          delete inner._arrivalDemRetainCounts[key];
+          delete inner._arrivalDemRetain[key];
+        } else {
+          inner._arrivalDemRetainCounts[key] = left;
+        }
+      }
+    },
+  };
+}
+
+function whenArrivalDemsSettled(
+  map: { terrain?: any; on?: (event: string, cb: () => void) => void; off?: (event: string, cb: () => void) => void },
+  points: Array<[number, number]>,
+  zoom: number,
+  timeoutMs: number,
+): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      try { map?.off?.('data', check); } catch {}
+      try { map?.off?.('sourcedata', check); } catch {}
+      window.clearInterval(poll);
+      window.clearTimeout(timer);
+      resolve();
+    };
+    const check = () => {
+      const terrain = map?.terrain;
+      if (!terrain) {
+        finish();
+        return;
+      }
+      const waiting = points.some((point) => !arrivalDemReady(terrain, point, zoom) && !arrivalDemErrored(terrain, point, zoom));
+      if (!waiting) finish();
+    };
+    try { map?.on?.('data', check); } catch {}
+    try { map?.on?.('sourcedata', check); } catch {}
+    const poll = window.setInterval(check, 50);
+    const timer = window.setTimeout(finish, timeoutMs);
+    check();
+  });
+}
+
+type PinSpan = { minLat: number; maxLat: number; minLng: number; maxLng: number };
+
+function pinInSpan(pin: { lat: number; lng: number }, span: PinSpan): boolean {
+  return (
+    Number.isFinite(pin.lat) &&
+    Number.isFinite(pin.lng) &&
+    pin.lat >= span.minLat &&
+    pin.lat <= span.maxLat &&
+    pin.lng >= span.minLng &&
+    pin.lng <= span.maxLng
+  );
+}
+
+function northernPinLngLat(
+  pins: Array<{ lat: number; lng: number }>,
+  span: PinSpan,
+): [number, number] | null {
+  let best: [number, number] | null = null;
+  for (const pin of pins) {
+    if (!pinInSpan(pin, span)) continue;
+    if (!best || pin.lat > best[1]) best = [pin.lng, pin.lat];
+  }
+  return best;
+}
+
+function beginCameraMove(
+  seqRef: { current: number },
+  map: { once?: (event: string, cb: () => void) => void; triggerRepaint?: () => void } | null | undefined,
+  jumped: boolean,
+  animate: boolean,
+  arrivalReady: boolean,
+  elevation: number | null,
+  run: () => void,
+) {
+  const seq = ++seqRef.current;
+  const start = () => {
+    if (seq !== seqRef.current) return;
+    // The pop above may have waited out a render. Put the arrival height back
+    // and drop the gesture clone now, immediately before the camera move.
+    commitArrivalElevation(map, arrivalReady ? elevation : null);
+    const camera = (map as { _camera?: { _holdElevation?: boolean } } | null | undefined)?._camera;
+    // A previous fit may still be holding. Drop that when this arrival tile
+    // is not loaded, or the zoomed-out height stays locked.
+    if (camera) camera._holdElevation = !!(animate && arrivalReady);
+    if (animate && !arrivalReady && map && typeof map.once === 'function') {
+      map.once('moveend', () => {
+        if (seq !== seqRef.current) return;
+        // The arrival tile was still missing when the zoom finished. Let the
+        // next loaded DEM update the camera, or the mesh rises under a frozen
+        // low plane and both pin edges leave the view.
+        const camera = (map as { _camera?: { elevationFreeze?: boolean } })._camera;
+        if (camera) camera.elevationFreeze = false;
+        releaseStuckSymbolPlacement(map);
+        if (typeof map.triggerRepaint === 'function') map.triggerRepaint();
+      });
+    }
+    run();
+  };
+  if (jumped && animate) runAfterElevationPop(map, start);
+  else start();
+}
+
 // Edge padding set to 4% of visible map width and height (excluding sidebar and sheet)
 export function getMapEdgePadding(leftPadding = 0, bottomPadding = 0) {
   if (typeof window === 'undefined') {
@@ -1288,6 +1739,13 @@ export function getMapEdgePadding(leftPadding = 0, bottomPadding = 0) {
 // Pin icons are 28px tall anchored at the bottom tip.
 // Enforce a minimum top clearance of 36px so the northern-most pin is never clipped.
 export const PIN_HEAD_CLEARANCE = 36;
+const PIN_MARKER_HEIGHT = 28;
+// A head that lands exactly on the map edge still looks clipped after rasterization.
+const RASTER_HEAD_MARGIN = 2;
+// One degree of latitude. Used to compare pin relief with the fitted ground span.
+const METERS_PER_DEGREE_LAT = 111320;
+// MapLibre's default field of view places the camera this many screen-heights away.
+const CAMERA_DISTANCE_IN_HEIGHTS = 1.5;
 
 export function paddedMapView(leftPadding: number, bottomPadding: number) {
   const edge = getMapEdgePadding(leftPadding, bottomPadding);
@@ -1344,6 +1802,99 @@ function paddingBeyondCurrent(current: Partial<ViewPadding> | null | undefined, 
     right: desired.right - (current?.right ?? 0),
     bottom: desired.bottom - (current?.bottom ?? 0),
   };
+}
+
+// Extra top inset so an elevated northern tip still clears the 28px marker.
+// When the arrival DEM is already loaded, the fit keeps that height through
+// arrival. The pin has to clear whichever is lower: that plane, or the
+// span-center ground. Zero unless terrain can sample the northern pin and
+// that slide exceeds the spare in `padding.top`.
+export function terrainTopOverflow(
+  map: {
+    queryTerrainElevation?: (lngLat: [number, number]) => number | null;
+    getCenterElevation?: () => number;
+    getContainer?: () => { clientHeight?: number; clientWidth?: number } | null;
+    terrain?: any;
+  } | null | undefined,
+  pins: Array<{ lat: number; lng: number }>,
+  span: PinSpan,
+  padding: ViewPadding,
+  sampleZoom?: number,
+): number {
+  if (!map || typeof map.queryTerrainElevation !== 'function') return 0;
+  const sample = (lngLat: [number, number]): number | null => {
+    if (typeof sampleZoom === 'number') {
+      const atZoom = elevationAtZoom(map.terrain, lngLat, sampleZoom);
+      if (atZoom !== null) return atZoom;
+    }
+    const value = map.queryTerrainElevation?.(lngLat);
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  };
+  const spanMeters = (span.maxLat - span.minLat) * METERS_PER_DEGREE_LAT;
+  if (!(spanMeters > 0)) return 0;
+  const container = map.getContainer?.();
+  const mapHeight = container?.clientHeight ?? 0;
+  if (!(mapHeight > 0)) return 0;
+  const availableHeight = mapHeight - padding.top - padding.bottom;
+  if (!(availableHeight > 0)) return 0;
+
+  let northLat = -Infinity;
+  for (const pin of pins) {
+    if (pinInSpan(pin, span) && pin.lat > northLat) northLat = pin.lat;
+  }
+  if (!Number.isFinite(northLat)) return 0;
+
+  let northElev: number | null = null;
+  for (const pin of pins) {
+    if (pin.lat !== northLat || !pinInSpan(pin, span)) continue;
+    const elev = sample([pin.lng, pin.lat]);
+    if (elev == null || !Number.isFinite(elev)) continue;
+    if (northElev == null || elev > northElev) northElev = elev;
+  }
+
+  // Pad for the lower plane. The zoom keeps the current camera elevation, and
+  // the following ease drops onto the span center when that ground is lower.
+  let reference: number | null = null;
+  if (typeof map.getCenterElevation === 'function') {
+    const camera = map.getCenterElevation();
+    if (typeof camera === 'number' && Number.isFinite(camera)) reference = camera;
+  }
+  const centerElev = sample([
+    (span.minLng + span.maxLng) / 2,
+    (span.minLat + span.maxLat) / 2,
+  ]);
+  if (typeof centerElev === 'number' && Number.isFinite(centerElev)) {
+    reference = reference == null ? centerElev : Math.min(reference, centerElev);
+  }
+  if (northElev == null || reference == null) return 0;
+
+  const relief = northElev - reference;
+  if (!(relief > 0)) return 0;
+
+  const midLat = (span.minLat + span.maxLat) / 2;
+  const lngMeters = Math.abs(span.maxLng - span.minLng) * METERS_PER_DEGREE_LAT * Math.cos((midLat * Math.PI) / 180);
+  const availableWidth = (container?.clientWidth ?? 0) - padding.left - padding.right;
+  let metersPerPixel = spanMeters / availableHeight;
+  // Width-limited fits keep their zoom, so extra top only shifts the center halfway.
+  let slidePerTopPixel = 1;
+  if (availableWidth > 0 && lngMeters > 0) {
+    const lngMetersPerPixel = lngMeters / availableWidth;
+    if (lngMetersPerPixel > metersPerPixel) {
+      metersPerPixel = lngMetersPerPixel;
+      slidePerTopPixel = 0.5;
+    }
+  }
+
+  const distancePx = ((northLat - midLat) * METERS_PER_DEGREE_LAT) / metersPerPixel;
+  if (!(distancePx > 0)) return 0;
+  const altitudePx = CAMERA_DISTANCE_IN_HEIGHTS * mapHeight;
+  const zPx = relief / metersPerPixel;
+  const depth = altitudePx - zPx;
+  const shift = depth > 1 ? (distancePx * zPx) / depth : distancePx;
+  const spare = padding.top - PIN_MARKER_HEIGHT;
+  const deficit = shift - spare;
+  if (!(deficit > 0)) return 0;
+  return Math.min(mapHeight, Math.ceil(deficit / slidePerTopPixel) + RASTER_HEAD_MARGIN);
 }
 
 export function isPinInPaddedViewport(
@@ -1409,6 +1960,7 @@ const MapView = ({
 }: MapViewProps) => {
 
   const mapRef = useRef<MapRef | null>(null);
+  const cameraMoveSeqRef = useRef(0);
   const mapThemeRef = useRef(mapTheme);
   mapThemeRef.current = mapTheme;
   const show3DTerrainRef = useRef(show3DTerrain);
@@ -1454,6 +2006,8 @@ const MapView = ({
   );
   const visiblePinsRef = useRef(visiblePins);
   visiblePinsRef.current = visiblePins;
+  const pinsRef = useRef(pins);
+  pinsRef.current = pins;
 
   const [mapSessionKey, setMapSessionKey] = useState(0);
   const contextLostRef = useRef(false);
@@ -2652,31 +3206,109 @@ const MapView = ({
       const duration = animate ? 1200 : 0;
       const padding = paddedMapView(leftPadding, bottomPadding);
 
+      const map = mapRef.current.getMap();
       if (Math.abs(maxLat - minLat) < 0.0001 && Math.abs(maxLng - minLng) < 0.0001) {
-        mapRef.current.flyTo({
-          center: [minLng, minLat],
-          zoom: 6,
-          bearing: 0,
-          pitch: 0,
-          duration,
-          padding,
-          ...FLY_TO_TERRAIN,
-        });
-      } else {
-        mapRef.current.fitBounds(
-          [
-            [minLng, minLat],
-            [maxLng, maxLat],
-          ],
-          {
-            padding: paddingBeyondCurrent(mapRef.current.getMap().getPadding(), padding),
-            maxZoom: 13,
+        const arrival = primeArrivalElevation(map, [minLng, minLat], 6);
+        beginCameraMove(cameraMoveSeqRef, map, arrival.jumped, duration > 0, arrival.ready, arrival.elevation, () => {
+          mapRef.current?.flyTo({
+            center: [minLng, minLat],
+            zoom: 6,
             bearing: 0,
             pitch: 0,
             duration,
-            ...FLY_TO_TERRAIN,
-          }
+            padding,
+            ...terrainFlightOptions(arrival.ready, duration > 0),
+          });
+        });
+      } else {
+        const span = { minLat, maxLat, minLng, maxLng };
+        const sourcePins = visiblePinsRef.current.length > 0 ? visiblePinsRef.current : pinsRef.current;
+        const boundsLngLat: [[number, number], [number, number]] = [[minLng, minLat], [maxLng, maxLat]];
+        const predictCamera = (fitPadding: ViewPadding) => (
+          typeof map.cameraForBounds === 'function'
+            ? map.cameraForBounds(boundsLngLat, {
+              padding: paddingBeyondCurrent(map.getPadding(), fitPadding),
+              maxZoom: 13,
+              bearing: 0,
+              pitch: 0,
+            })
+            : null
         );
+        const fitPaddingFor = (sampleZoom?: number) => {
+          const topOverflow = terrainTopOverflow(map, sourcePins, span, padding, sampleZoom);
+          return topOverflow > 0 ? { ...padding, top: padding.top + topOverflow } : padding;
+        };
+        const midpoint: [number, number] = [(minLng + maxLng) / 2, (minLat + maxLat) / 2];
+        const predictTarget = (fitPadding: ViewPadding) => {
+          const predicted = predictCamera(fitPadding);
+          return {
+            center: centerTuple(predicted?.center) ?? midpoint,
+            zoom: typeof predicted?.zoom === 'number' ? predicted.zoom : 13,
+          };
+        };
+        // A zoomed-out parent is the wide view's ground. Zooming in on that
+        // plane pushes both pin edges off once the detailed mesh loads.
+        // Load the arrival tile and adopt its height before the zoom starts.
+        const flyPrepared = (pass: number) => {
+          let fitPadding = fitPaddingFor();
+          const first = predictTarget(fitPadding);
+          let arrival = primeArrivalElevation(map, first.center, first.zoom);
+          if (arrival.ready) {
+            fitPadding = fitPaddingFor(first.zoom);
+            const refined = predictTarget(fitPadding);
+            if (pass < 1 && duration > 0 && map.terrain && !arrivalDemReady(map.terrain, refined.center, refined.zoom)) {
+              loadThenFly(pass + 1, refined);
+              return;
+            }
+            const again = primeArrivalElevation(map, refined.center, refined.zoom);
+            if (again.ready) fitPadding = fitPaddingFor(refined.zoom);
+            arrival = {
+              jumped: arrival.jumped || again.jumped,
+              ready: again.ready,
+              elevation: again.elevation,
+            };
+          }
+          const fitPaddingArg = paddingBeyondCurrent(map.getPadding(), fitPadding);
+          beginCameraMove(cameraMoveSeqRef, map, arrival.jumped, duration > 0, arrival.ready, arrival.elevation, () => {
+            mapRef.current?.fitBounds(boundsLngLat, {
+              padding: fitPaddingArg,
+              maxZoom: 13,
+              bearing: 0,
+              pitch: 0,
+              duration,
+              ...terrainFlightOptions(arrival.ready, duration > 0),
+            });
+          });
+        };
+        const loadThenFly = (pass: number, forced?: { center: [number, number]; zoom: number }) => {
+          if (!(duration > 0) || !map.terrain) {
+            flyPrepared(pass);
+            return;
+          }
+          const target = forced ?? predictTarget(fitPaddingFor());
+          if (arrivalDemReady(map.terrain, target.center, target.zoom)) {
+            flyPrepared(pass);
+            return;
+          }
+          const north = northernPinLngLat(sourcePins, span);
+          const points = north ? [target.center, north] : [target.center];
+          const hold = holdArrivalDemTiles(map.terrain, points, target.zoom);
+          if (!hold) {
+            flyPrepared(pass);
+            return;
+          }
+          const seq = ++cameraMoveSeqRef.current;
+          if (typeof map.triggerRepaint === 'function') map.triggerRepaint();
+          void whenArrivalDemsSettled(map, [target.center], target.zoom, 1500).then(() => {
+            if (seq !== cameraMoveSeqRef.current || !mapRef.current) {
+              hold.release();
+              return;
+            }
+            flyPrepared(pass);
+            hold.release();
+          });
+        };
+        loadThenFly(0);
       }
     },
     [leftPadding, bottomPadding]
@@ -2726,17 +3358,20 @@ const MapView = ({
     const left = leftPaddingRef.current;
     const bottom = bottomPaddingRef.current;
     if (!isPinInPaddedViewport(map, pin, left, bottom)) {
-      map.flyTo({
-        center: [pin.lng, pin.lat],
-        zoom: map.getZoom(),
-        padding: paddedMapView(left, bottom),
-        duration: 1200,
-        ...FLY_TO_TERRAIN,
+      const zoom = map.getZoom();
+      const pinPadding = paddedMapView(left, bottom);
+      const arrival = primeArrivalElevation(map, [pin.lng, pin.lat], zoom);
+      beginCameraMove(cameraMoveSeqRef, map, arrival.jumped, true, arrival.ready, arrival.elevation, () => {
+        mapRef.current?.flyTo({
+          center: [pin.lng, pin.lat],
+          zoom,
+          padding: pinPadding,
+          duration: 1200,
+          ...terrainFlightOptions(arrival.ready, true),
+        });
       });
     }
   }, [targetPinId, pins, hiddenLayerIds]);
-
-
 
   // Camera movements for boundsToFit or initial pins focus
   useEffect(() => {
@@ -2796,12 +3431,17 @@ const MapView = ({
 
           if (isFirstLock) {
             isFirstLock = false;
-            mapRef.current?.flyTo({
-              center: [lng, lat],
-              zoom: 16,
-              duration: 1500,
-              padding: paddedMapView(leftPaddingRef.current, bottomPaddingRef.current),
-              ...FLY_TO_TERRAIN,
+            const map = mapRef.current?.getMap?.();
+            const locatePadding = paddedMapView(leftPaddingRef.current, bottomPaddingRef.current);
+            const arrival = map ? primeArrivalElevation(map, [lng, lat], 16) : { jumped: false, ready: false, elevation: null };
+            beginCameraMove(cameraMoveSeqRef, map, arrival.jumped, true, arrival.ready, arrival.elevation, () => {
+              mapRef.current?.flyTo({
+                center: [lng, lat],
+                zoom: 16,
+                duration: 1500,
+                padding: locatePadding,
+                ...terrainFlightOptions(arrival.ready, true),
+              });
             });
           }
         },
