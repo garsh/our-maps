@@ -7,6 +7,9 @@ import {
   clearHoveredPin,
   subscribeHoveredPin,
   useHoveredPinId,
+  getDraggingPinId,
+  setDraggingPin,
+  useDraggingPinId,
   resetPinHoverForTests,
   hasFinePointer,
   setLastPointerTypeForTests,
@@ -146,5 +149,43 @@ describe('pinHover', () => {
 
     setLastPointerTypeForTests('mouse');
     expect(hasFinePointer()).toBe(true);
+  });
+
+  it('tracks dragged pin separately from hovered pin during sidebar drag', () => {
+    const rowA = document.createElement('li');
+    rowA.id = 'pin-a';
+    const rowB = document.createElement('li');
+    rowB.id = 'pin-b';
+    document.body.append(rowA, rowB);
+
+    const { result } = renderHook(() => ({
+      hovered: useHoveredPinId(),
+      dragging: useDraggingPinId(),
+    }));
+
+    act(() => setHoveredPin('a'));
+    expect(result.current.hovered).toBe('a');
+    expect(rowA.classList.contains(PIN_HOVER_CLASS)).toBe(true);
+
+    // Starting a drag on pin 'a' sets draggingId and clears hoveredId from 'a'
+    act(() => setDraggingPin('a'));
+    expect(getDraggingPinId()).toBe('a');
+    expect(result.current.dragging).toBe('a');
+    expect(result.current.hovered).toBeNull();
+    expect(rowA.classList.contains(PIN_HOVER_CLASS)).toBe(false);
+
+    // Hovering over the dragged pin itself is ignored while dragging
+    act(() => setHoveredPin('a'));
+    expect(result.current.hovered).toBeNull();
+
+    // Hovering over another pin ('b') during the drag sets hoveredId to 'b'
+    act(() => setHoveredPin('b'));
+    expect(result.current.dragging).toBe('a');
+    expect(result.current.hovered).toBe('b');
+    expect(rowB.classList.contains(PIN_HOVER_CLASS)).toBe(true);
+
+    // Ending the drag clears draggingId
+    act(() => setDraggingPin(null));
+    expect(result.current.dragging).toBeNull();
   });
 });

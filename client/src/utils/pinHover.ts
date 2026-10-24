@@ -3,10 +3,12 @@ import { useEffect, useState } from 'react';
 export const PIN_HOVER_CLASS = 'pin-hovered';
 
 let hoveredId: string | null = null;
+let draggingId: string | null = null;
 let lastHoveredEls: HTMLElement[] = [];
 let coLocatedById = new Map<string, string[]>();
 let lastPointerType: string = 'mouse';
 const listeners = new Set<(id: string | null) => void>();
+const draggingListeners = new Set<(id: string | null) => void>();
 
 if (typeof window !== 'undefined') {
   window.addEventListener(
@@ -56,6 +58,10 @@ export function getHoveredPinId(): string | null {
   return hoveredId;
 }
 
+export function getDraggingPinId(): string | null {
+  return draggingId;
+}
+
 export function syncCoLocatedPins(pins: Array<{ id: string; lat: number; lng: number }>) {
   const groups = new Map<string, string[]>();
   for (const pin of pins) {
@@ -99,17 +105,33 @@ function notify(id: string | null) {
   listeners.forEach((listener) => listener(id));
 }
 
+function notifyDragging(id: string | null) {
+  draggingListeners.forEach((listener) => listener(id));
+}
+
 export function setHoveredPin(id: string | null, leavingPinId?: string) {
   if (id === null) {
     if (leavingPinId && hoveredId !== leavingPinId) return;
     if (hoveredId === null) return;
     hoveredId = null;
   } else {
+    if (draggingId !== null && id === draggingId) return;
     if (hoveredId === id) return;
     hoveredId = id;
   }
   applyListHoverClass(hoveredId);
   notify(hoveredId);
+}
+
+export function setDraggingPin(id: string | null) {
+  if (draggingId === id) return;
+  draggingId = id;
+  if (id !== null && hoveredId === id) {
+    hoveredId = null;
+    applyListHoverClass(null);
+    notify(null);
+  }
+  notifyDragging(draggingId);
 }
 
 export function clearHoveredPin() {
@@ -120,6 +142,13 @@ export function subscribeHoveredPin(listener: (id: string | null) => void): () =
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
+  };
+}
+
+export function subscribeDraggingPin(listener: (id: string | null) => void): () => void {
+  draggingListeners.add(listener);
+  return () => {
+    draggingListeners.delete(listener);
   };
 }
 
@@ -135,13 +164,27 @@ export function useHoveredPinId(): string | null {
   return currentHoveredId;
 }
 
+export function useDraggingPinId(): string | null {
+  const [currentDraggingId, setCurrentDraggingId] = useState<string | null>(() => draggingId);
+
+  useEffect(() => {
+    return subscribeDraggingPin((id) => {
+      setCurrentDraggingId(id);
+    });
+  }, []);
+
+  return currentDraggingId;
+}
+
 export function resetPinHoverForTests() {
   hoveredId = null;
+  draggingId = null;
   lastHoveredEls = [];
   coLocatedById = new Map();
   lastPointerType = 'mouse';
   finePointerMedia = null;
   listeners.clear();
+  draggingListeners.clear();
   if (typeof document !== 'undefined') {
     document.querySelectorAll(`.${PIN_HOVER_CLASS}`).forEach((el) => {
       el.classList.remove(PIN_HOVER_CLASS);

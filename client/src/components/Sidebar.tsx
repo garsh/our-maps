@@ -2,7 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from 'react-dom';
 import SearchBar, { type SearchAreaState } from './SearchBar';
 import { reverseGeocode } from '../utils/geocoding';
-import { refreshHoveredPinListClasses } from '../utils/pinHover';
+import { clearHoveredPin, hasFinePointer, refreshHoveredPinListClasses, setDraggingPin, setHoveredPin } from '../utils/pinHover';
 import type { Pin, PinIcon, PinLayer } from '@shared/interfaces';
 import { 
   Bed, 
@@ -1385,14 +1385,19 @@ const SortablePin = memo(({
   }, [isTarget, pin.id, pin.address, pin.lat, pin.lng, isFetchingAddress, onUpdatePin, readOnly]);
 
   const isItemInDraggingBundle = isAnySelectedDragging && isSelected;
-  const isDropTarget = isOver && !!isAnyPinDragging && !isDragging && !isItemInDraggingBundle;
+  const isBeingDragged = Boolean(isDragging || isItemInDraggingBundle);
+  const isDropTarget = isOver && !!isAnyPinDragging && !isBeingDragged;
+
+  useLayoutEffect(() => {
+    refreshHoveredPinListClasses();
+  }, [isEditing, isDropTarget, isTarget, isBeingDragged]);
 
   const style = {
     transition,
     zIndex: isDragging ? 10 : (isDropTarget ? 50 : undefined),
-    opacity: isDragging ? 0.25 : (isItemInDraggingBundle ? 0.25 : 1),
+    opacity: isBeingDragged ? 0.25 : 1,
     position: 'relative' as const,
-    pointerEvents: (isDragging || isItemInDraggingBundle) ? 'none' as const : undefined,
+    pointerEvents: isBeingDragged ? 'none' as const : undefined,
   };
 
   const currentColor = resolvePinColorCode(pin.color);
@@ -1400,7 +1405,7 @@ const SortablePin = memo(({
   return (
     <li 
       id={`pin-${pin.id}`}
-      className={`pin-list-item${isEditing ? ' pin-editing' : ''}${isDropTarget ? ' pin-drop-target' : ''}${isTarget ? ' pin-target' : ''}`}
+      className={`pin-list-item${isEditing ? ' pin-editing' : ''}${isDropTarget ? ' pin-drop-target' : ''}${isTarget ? ' pin-target' : ''}${isBeingDragged ? ' pin-dragging' : ''}`}
       ref={setNodeRef} 
       style={{ 
         ...style, 
@@ -1415,10 +1420,10 @@ const SortablePin = memo(({
         contentVisibility: isDropTarget ? 'visible' : undefined,
       }}
       onPointerEnter={(e) => {
-        if (!isHoverBlocked && e.pointerType === 'mouse') onHoverPin?.(pin.id);
+        if (!isHoverBlocked && !isBeingDragged && e.pointerType === 'mouse') onHoverPin?.(pin.id);
       }}
       onPointerMove={(e) => {
-        if (!isHoverBlocked && e.pointerType === 'mouse') onHoverPin?.(pin.id);
+        if (!isHoverBlocked && !isBeingDragged && e.pointerType === 'mouse') onHoverPin?.(pin.id);
       }}
       onPointerLeave={(e) => {
         if (e.pointerType === 'mouse') onHoverPin?.(null, pin.id);
@@ -2598,7 +2603,7 @@ const Sidebar = ({
 
   useLayoutEffect(() => {
     refreshHoveredPinListClasses();
-  }, [pins, collapsedLayerIds]);
+  }, [pins, collapsedLayerIds, activePin]);
   const targetPinIdsKey = Array.from(targetPinIds).join(',');
   const targetPinIdsRef = useRef(targetPinIds);
   targetPinIdsRef.current = targetPinIds;
@@ -3246,28 +3251,49 @@ const Sidebar = ({
     ghostOffsetSampleRef.current = null;
   };
 
+  useEffect(() => {
+    return () => {
+      setDraggingPin(null);
+    };
+  }, []);
+
   const handleDragStart = (event: DragStartEvent) => {
     clearDragCollision();
     const { active } = event;
     if (active.data.current?.type === 'pin') {
-      setActivePin(active.data.current.pin);
+      const pin = active.data.current.pin as Pin;
+      setActivePin(pin);
+      setDraggingPin(pin?.id ?? String(active.id));
     } else if (active.data.current?.type === 'layer') {
       setActiveLayer(active.data.current.layer);
+      clearHoveredPin();
     }
     onDragStart?.(event);
   };
 
   const handleDragEndInternal = (event: DragEndEvent) => {
+    const draggedPinId = activePin?.id ?? (event.active.data.current?.type === 'pin' ? String(event.active.id) : null);
     clearDragCollision();
     setActivePin(null);
     setActiveLayer(null);
+    setDraggingPin(null);
     onDragEnd(event);
+    if (draggedPinId) {
+      if (!isHoverBlocked && hasFinePointer()) {
+        setHoveredPin(draggedPinId);
+        onHoverPin?.(draggedPinId);
+      } else {
+        clearHoveredPin();
+      }
+    }
   };
 
   const handleDragCancelInternal = () => {
     clearDragCollision();
     setActivePin(null);
     setActiveLayer(null);
+    setDraggingPin(null);
+    clearHoveredPin();
     onDragCancel?.();
   };
 

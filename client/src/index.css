@@ -404,22 +404,25 @@ button:active {
 
 .pin-list-item.pin-editing,
 .pin-list-item.pin-drop-target,
-.pin-list-item.pin-target {
+.pin-list-item.pin-target,
+.pin-list-item.pin-dragging {
   content-visibility: visible;
 }
 
 .pin-list-item.pin-hovered,
-.pin-list-item.pin-target {
+.pin-list-item.pin-target,
+.pin-list-item.pin-dragging {
   background: rgba(72, 61, 139, 0.05);
   box-shadow: 0 0 0 1px var(--primary-color);
 }
 
 .pin-list.pin-drag-active .pin-list-item.pin-hovered {
-  background: transparent;
-  box-shadow: none;
+  background: rgba(72, 61, 139, 0.025);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-accent) 38%, transparent);
 }
 
-.pin-list.pin-drag-active .pin-list-item.pin-target {
+.pin-list.pin-drag-active .pin-list-item.pin-target,
+.pin-list.pin-drag-active .pin-list-item.pin-dragging {
   background: rgba(72, 61, 139, 0.05);
   box-shadow: 0 0 0 1px var(--primary-color);
 }

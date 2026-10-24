@@ -13,7 +13,7 @@ import { reverseGeocode } from '../utils/geocoding';
 import type { MapTheme } from './Sidebar';
 
 import { getActiveExtractPMTiles, getExtractTileJSON, preloadExtract, setActiveOfflineMapId } from '../utils/offlineExtract';
-import { clearHoveredPin, getHoveredPinId, useHoveredPinId, hasFinePointer } from '../utils/pinHover';
+import { clearHoveredPin, getHoveredPinId, useDraggingPinId, useHoveredPinId, hasFinePointer } from '../utils/pinHover';
 import { setMapViewportBounds } from '../utils/mapViewport';
 import { ensurePinImageByKey, ensurePinImages, getPinIconKey, clearRegisteredImages } from '../utils/pinIconSprite';
 import { applyBundledSprites, applyBundledSpriteById, isBundledSpriteId } from '../utils/basemapSprites';
@@ -956,6 +956,7 @@ interface PinMarkerProps {
   onPinClick?: (pin: Pin) => void;
   isSelected: boolean;
   isHovered: boolean;
+  isSubtleHover?: boolean;
   isEditing: boolean;
   readOnly: boolean;
 }
@@ -967,10 +968,12 @@ const PinMarker = memo(({
   onPinClick,
   isSelected,
   isHovered,
+  isSubtleHover = false,
   isEditing,
   readOnly,
 }: PinMarkerProps) => {
   const showHighlight = isSelected || isHovered;
+  const showSubtleHighlight = !showHighlight && isSubtleHover;
   const colorCode = resolvePinColorCode(pin.color);
   const iconPath = pin.icon && pin.icon !== 'default' ? ICON_SVG_PATHS[pin.icon as Exclude<PinIcon, 'default'>] : null;
 
@@ -1037,10 +1040,10 @@ const PinMarker = memo(({
       anchor="bottom"
       draggable={!readOnly && isEditing}
       onDragEnd={handleDragEnd}
-      style={{ zIndex: isHovered ? 1100 : (isSelected ? 1000 : 1) }}
+      style={{ zIndex: isHovered ? 1100 : (isSubtleHover ? 1050 : (isSelected ? 1000 : 1)) }}
     >
       <div
-        className={`custom-pin-modern ${showHighlight ? 'hovered' : ''}`}
+        className={`custom-pin-modern${showHighlight ? ' hovered' : ''}${showSubtleHighlight ? ' subtle-hovered' : ''}`}
         style={{
           position: 'relative',
           width: '20px',
@@ -1066,6 +1069,24 @@ const PinMarker = memo(({
               zIndex: -1,
               animation: 'pulse 1.2s infinite',
               boxShadow: `0 0 15px ${colorCode}66`,
+              pointerEvents: 'none',
+            }}
+          />
+        )}
+        {showSubtleHighlight && (
+          <div
+            data-testid="pin-subtle-highlight"
+            style={{
+              position: 'absolute',
+              top: '-12px',
+              left: '-12px',
+              width: '44px',
+              height: '44px',
+              background: `${colorCode}22`,
+              border: `2px solid ${colorCode}88`,
+              borderRadius: '50%',
+              zIndex: -1,
+              boxShadow: `0 0 8px ${colorCode}33`,
               pointerEvents: 'none',
             }}
           />
@@ -1120,16 +1141,24 @@ const PinOverlays = memo(({
   onPinClick: (pin: Pin) => void;
 }) => {
   const hoveredPinId = useHoveredPinId();
+  const draggingPinId = useDraggingPinId();
+  const activePrimaryHoverId = draggingPinId ?? hoveredPinId;
+  const subtleHoverPinId = draggingPinId && hoveredPinId && hoveredPinId !== draggingPinId ? hoveredPinId : null;
+
   const overlayPins = visiblePins
     .filter((pin) => (
       pin.id === targetPinId ||
       pin.id === editingPinId ||
-      pin.id === hoveredPinId
+      pin.id === activePrimaryHoverId ||
+      pin.id === subtleHoverPinId
     ))
     .sort((a, b) => {
-      if (a.id === hoveredPinId) return 1;
-      if (b.id === hoveredPinId) return -1;
-      return 0;
+      const rank = (id: string) => {
+        if (id === activePrimaryHoverId) return 2;
+        if (id === subtleHoverPinId) return 1;
+        return 0;
+      };
+      return rank(a.id) - rank(b.id);
     });
 
   return (
@@ -1137,7 +1166,8 @@ const PinOverlays = memo(({
       {overlayPins.map((pin) => {
         const isSelected = targetPinId === pin.id || editingPinId === pin.id;
         const isEditing = !readOnly && editingPinId === pin.id;
-        const isHovered = hoveredPinId === pin.id;
+        const isHovered = activePrimaryHoverId === pin.id;
+        const isSubtleHover = subtleHoverPinId === pin.id;
         return (
           <PinMarker
             key={pin.id}
@@ -1147,6 +1177,7 @@ const PinOverlays = memo(({
             onPinClick={onPinClick}
             isSelected={isSelected}
             isHovered={isHovered}
+            isSubtleHover={isSubtleHover}
             isEditing={isEditing}
             readOnly={readOnly}
           />

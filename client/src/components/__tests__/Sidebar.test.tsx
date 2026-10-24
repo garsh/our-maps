@@ -4,7 +4,7 @@ import Sidebar, { computeCustomCollisionDetection, isPinRowVisibleInList, getPin
 import { useState } from 'react';
 import * as dndSortable from '@dnd-kit/sortable';
 import * as dndCore from '@dnd-kit/core';
-import { PIN_HOVER_CLASS, setHoveredPin, resetPinHoverForTests, syncCoLocatedPins } from '../../utils/pinHover';
+import { PIN_HOVER_CLASS, getDraggingPinId, getHoveredPinId, setHoveredPin, resetPinHoverForTests, syncCoLocatedPins } from '../../utils/pinHover';
 
 describe('Sidebar', () => {
   beforeEach(() => {
@@ -2662,6 +2662,80 @@ describe('Sidebar', () => {
     const defaultShowBtn = screen.getByRole('button', { name: 'Show layer' });
     expect(defaultShowBtn.style.color).toBe('var(--text-secondary)');
     expect(defaultShowBtn.style.opacity).toBe('0.45');
+  });
+
+  it('keeps dragged pin highlighted, allows subtle hover on moved-over pin, and restores hover on drop', () => {
+    let capturedDndProps: any = null;
+    const OriginalDndContextType = (dndCore.DndContext as any).type;
+    const dndSpy = vi.spyOn(dndCore.DndContext as any, 'type').mockImplementation((props: any) => {
+      capturedDndProps = props;
+      return OriginalDndContextType(props);
+    });
+
+    let activeDraggingSortableId: string | null = null;
+    const OriginalUseSortable = dndSortable.useSortable;
+    const sortableSpy = vi.spyOn(dndSortable, 'useSortable').mockImplementation((args: any) => {
+      const base = OriginalUseSortable(args);
+      if (args.id === activeDraggingSortableId) {
+        return { ...base, isDragging: true };
+      }
+      return base;
+    });
+
+    const pins = [
+      { id: 'p1', lat: 10, lng: 20, label: 'Pin 1', position: 0 },
+      { id: 'p2', lat: 11, lng: 21, label: 'Pin 2', position: 1 },
+    ];
+
+    try {
+      const { container } = render(
+        <TestWrapper
+          pins={pins}
+          handlers={{ onHoverPin: setHoveredPin }}
+        />
+      );
+
+      const row1 = document.getElementById('pin-p1')!;
+      const row2 = document.getElementById('pin-p2')!;
+
+      setHoveredPin('p1');
+      expect(row1).toHaveClass(PIN_HOVER_CLASS);
+
+      activeDraggingSortableId = 'p1';
+      act(() => {
+        capturedDndProps.onDragStart({
+          active: { id: 'p1', data: { current: { type: 'pin', pin: pins[0] } } },
+        });
+      });
+
+      expect(getDraggingPinId()).toBe('p1');
+      expect(getHoveredPinId()).toBeNull();
+      expect(row1).toHaveClass('pin-dragging');
+      expect(container.querySelector('.pin-list')).toHaveClass('pin-drag-active');
+
+      // Moving over row2 during drag highlights row2 as the hovered-over pin
+      fireEvent.pointerEnter(row2, { pointerType: 'mouse' });
+      expect(getDraggingPinId()).toBe('p1');
+      expect(getHoveredPinId()).toBe('p2');
+      expect(row2).toHaveClass(PIN_HOVER_CLASS);
+
+      // Ending the drag clears draggingPinId and restores hover to the moved pin
+      activeDraggingSortableId = null;
+      act(() => {
+        capturedDndProps.onDragEnd({
+          active: { id: 'p1', data: { current: { type: 'pin', pin: pins[0] } } },
+          over: { id: 'p2' },
+        });
+      });
+
+      expect(getDraggingPinId()).toBeNull();
+      expect(getHoveredPinId()).toBe('p1');
+      expect(row1).toHaveClass(PIN_HOVER_CLASS);
+      expect(row2).not.toHaveClass(PIN_HOVER_CLASS);
+    } finally {
+      dndSpy.mockRestore();
+      sortableSpy.mockRestore();
+    }
   });
 });
 

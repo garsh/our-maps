@@ -15,7 +15,7 @@ import MapView, {
   runAfterElevationPop,
   themePaintUpdates,
 } from '../MapView';
-import { getHoveredPinId, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
+import { getHoveredPinId, setDraggingPin, setHoveredPin, resetPinHoverForTests } from '../../utils/pinHover';
 import { getMapViewportBounds, resetMapViewportBoundsForTests } from '../../utils/mapViewport';
 
 const { capturedMapProps, capturedSourceProps, protocolHandlers, liveTile, getActiveExtractPMTiles } = vi.hoisted(() => ({
@@ -2181,6 +2181,41 @@ describe('MapView Compass and Tilt Indicator', () => {
 
       const existingMarker = Array.from(markers).find(m => (m as HTMLElement).style.zIndex === '1000');
       expect(existingMarker).toBeDefined();
+    });
+
+    it('keeps dragged pin highlighted and applies subtle highlight to hovered pin during sidebar drag', () => {
+      const mockPins = [
+        { id: 'pin-1', lat: 10, lng: 20, label: 'Dragged Pin', color: 'blue' as const, position: 0 },
+        { id: 'pin-2', lat: 10.01, lng: 20.01, label: 'Hovered Over Pin', color: 'red' as const, position: 1 },
+      ];
+
+      setDraggingPin('pin-1');
+      setHoveredPin('pin-2');
+
+      const { container } = render(
+        <MapView
+          pins={mockPins}
+          onMapClick={vi.fn()}
+          onUpdatePin={vi.fn()}
+        />
+      );
+
+      const markers = container.querySelectorAll('[data-testid="marker-mock"]');
+      expect(markers.length).toBe(2);
+
+      // Hovered-over pin during drag gets subtle highlight (zIndex 1050) and renders before dragged pin
+      const subtleMarker = markers[0] as HTMLElement;
+      const draggedMarker = markers[1] as HTMLElement;
+
+      expect(subtleMarker.style.zIndex).toBe('1050');
+      expect(subtleMarker.querySelector('.custom-pin-modern')).toHaveClass('subtle-hovered');
+      expect(subtleMarker.querySelector('.custom-pin-modern')).not.toHaveClass('hovered');
+      expect(subtleMarker.querySelector('[data-testid="pin-subtle-highlight"]')).not.toBeNull();
+
+      // Dragged pin keeps primary highlight (zIndex 1100) and renders last in DOM order
+      expect(draggedMarker.style.zIndex).toBe('1100');
+      expect(draggedMarker.querySelector('.custom-pin-modern')).toHaveClass('hovered');
+      expect(draggedMarker.querySelector('[data-testid="pin-subtle-highlight"]')).toBeNull();
     });
   });
 });
