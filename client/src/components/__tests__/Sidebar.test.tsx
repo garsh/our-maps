@@ -1922,16 +1922,26 @@ describe('Sidebar', () => {
     expect(onRemovePins).toHaveBeenCalledWith(['1', '2']);
   });
 
-  it('hides selection actions when the map is read-only', () => {
+  it('allows unselecting all pins and routing in view mode while hiding edit actions', () => {
+    const onToggleNavIds = vi.fn();
     render(
       <TestWrapper
         selectedNavIds={new Set(['1'])}
-        handlers={{ editMode: false }}
+        handlers={{ editMode: false, onToggleNavIds }}
       />
     );
 
     expect(screen.getByText(/Go \(1\)/).tagName).toBe('BUTTON');
-    expect(screen.queryByLabelText('Actions for selected pins')).not.toBeInTheDocument();
+    fireEvent.click(selectionActionsButton());
+    const menu = selectionMenu();
+    expect(within(menu).getByRole('button', { name: 'Unselect all pins' })).toBeInTheDocument();
+    expect(within(menu).getByRole('button', { name: 'Route to 1 pin' })).toBeInTheDocument();
+    expect(within(menu).queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument();
+    expect(within(menu).queryByLabelText(/Move .* to layer/)).not.toBeInTheDocument();
+
+    fireEvent.click(menuButton('Unselect all pins'));
+    expect(onToggleNavIds).toHaveBeenCalledWith(['1'], false);
+    expect(screen.queryByTestId('selection-actions-menu')).not.toBeInTheDocument();
   });
 
   it('asks before deleting one selected pin and Escape cancels', () => {

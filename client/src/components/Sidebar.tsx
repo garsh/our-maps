@@ -3220,8 +3220,10 @@ const Sidebar = ({
   };
 
   useEffect(() => {
-    if (selectedPins.length === 0 || readOnly) {
+    if (selectedPins.length === 0) {
       setIsSelectionMenuOpen(false);
+    }
+    if (selectedPins.length === 0 || readOnly) {
       setMoveLayerId('');
       setShowDeletePinsDialog(false);
     }
@@ -3755,34 +3757,32 @@ const Sidebar = ({
                 >
                   <Navigation size={10} /> Go ({selectedPins.length})
                 </button>
-                {!readOnly && (
-                  <button
-                    type="button"
-                    aria-label="Actions for selected pins"
-                    aria-expanded={isSelectionMenuOpen}
-                    aria-haspopup="dialog"
-                    title="Actions for selected pins"
-                    onClick={handleToggleSelectionMenu}
-                    style={{
-                      background: 'transparent',
-                      color: 'white',
-                      border: 'none',
-                      borderLeft: '1px solid rgba(255,255,255,0.35)',
-                      padding: '0 8px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <ChevronDown size={12} />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  aria-label="Actions for selected pins"
+                  aria-expanded={isSelectionMenuOpen}
+                  aria-haspopup="dialog"
+                  title="Actions for selected pins"
+                  onClick={handleToggleSelectionMenu}
+                  style={{
+                    background: 'transparent',
+                    color: 'white',
+                    border: 'none',
+                    borderLeft: '1px solid rgba(255,255,255,0.35)',
+                    padding: '0 8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  <ChevronDown size={12} />
+                </button>
               </div>
             )}
           </div>
         )}
 
-        {isSelectionMenuOpen && !readOnly && selectedPins.length > 0 && typeof document !== 'undefined' && createPortal(
+        {isSelectionMenuOpen && selectedPins.length > 0 && typeof document !== 'undefined' && createPortal(
           <div
             ref={selectionMenuRef}
             data-testid="selection-actions-menu"
@@ -3818,89 +3818,93 @@ const Sidebar = ({
             >
               {routeLabel}
             </button>
-            <button
-              type="button"
-              onClick={() => setShowDeletePinsDialog(true)}
-              style={SELECTION_MENU_ROW_STYLE}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-color)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              Delete {selectedPins.length} {selectedPins.length === 1 ? 'pin' : 'pins'}
-            </button>
-            <div
-              // 7px left + the box border and 8px padding lines the label up with the 16px rows.
-              // 2px vertical padding plus that border and 7px padding keeps this row the same height.
-              style={{ ...SELECTION_MENU_ROW_STYLE, position: 'relative', display: 'flex', alignItems: 'center', gap: '10px', padding: '2px 16px 2px 7px' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-color)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              <div
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '7px 8px',
-                  background: 'var(--surface-color)',
-                }}
-              >
-                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{moveLayerLabel}</span>
-                <ChevronDown size={14} style={{ flexShrink: 0 }} />
-              </div>
-              <button
-                type="button"
-                disabled={moveLayerId === ''}
-                onClick={handleMoveSelected}
-                style={{
-                  position: 'relative',
-                  zIndex: 1,
-                  flexShrink: 0,
-                  alignSelf: 'stretch',
-                  padding: '7px 12px',
-                  border: `1px solid ${moveLayerId === '' ? 'var(--border-color)' : 'var(--primary-color)'}`,
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: '0.85rem',
-                  lineHeight: 1.2,
-                  fontWeight: 600,
-                  fontFamily: 'inherit',
-                  cursor: moveLayerId === '' ? 'default' : 'pointer',
-                  background: moveLayerId === '' ? 'var(--bg-color)' : 'var(--primary-color)',
-                  color: moveLayerId === '' ? 'var(--text-secondary)' : 'white',
-                }}
-              >
-                Move
-              </button>
-              <select
-                id="selection-move-layer"
-                aria-label={movePinsPrompt}
-                value={moveLayerId}
-                onChange={(e) => setMoveLayerId(e.target.value)}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: '100%',
-                  margin: 0,
-                  opacity: 0,
-                  cursor: 'pointer',
-                }}
-              >
-                <option value="">{movePinsPrompt}</option>
-                <option value={SELECTION_DEFAULT_LAYER}>Default Layer</option>
-                {layers.map(layer => (
-                  <option key={layer.id} value={layer.id}>{layer.name}</option>
-                ))}
-              </select>
-            </div>
+            {!readOnly && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowDeletePinsDialog(true)}
+                  style={SELECTION_MENU_ROW_STYLE}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-color)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  Delete {selectedPins.length} {selectedPins.length === 1 ? 'pin' : 'pins'}
+                </button>
+                <div
+                  // 7px left + the box border and 8px padding lines the label up with the 16px rows.
+                  // 2px vertical padding plus that border and 7px padding keeps this row the same height.
+                  style={{ ...SELECTION_MENU_ROW_STYLE, position: 'relative', display: 'flex', alignItems: 'center', gap: '10px', padding: '2px 16px 2px 7px' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-color)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <div
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '7px 8px',
+                      background: 'var(--surface-color)',
+                    }}
+                  >
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{moveLayerLabel}</span>
+                    <ChevronDown size={14} style={{ flexShrink: 0 }} />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={moveLayerId === ''}
+                    onClick={handleMoveSelected}
+                    style={{
+                      position: 'relative',
+                      zIndex: 1,
+                      flexShrink: 0,
+                      alignSelf: 'stretch',
+                      padding: '7px 12px',
+                      border: `1px solid ${moveLayerId === '' ? 'var(--border-color)' : 'var(--primary-color)'}`,
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.85rem',
+                      lineHeight: 1.2,
+                      fontWeight: 600,
+                      fontFamily: 'inherit',
+                      cursor: moveLayerId === '' ? 'default' : 'pointer',
+                      background: moveLayerId === '' ? 'var(--bg-color)' : 'var(--primary-color)',
+                      color: moveLayerId === '' ? 'var(--text-secondary)' : 'white',
+                    }}
+                  >
+                    Move
+                  </button>
+                  <select
+                    id="selection-move-layer"
+                    aria-label={movePinsPrompt}
+                    value={moveLayerId}
+                    onChange={(e) => setMoveLayerId(e.target.value)}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      margin: 0,
+                      opacity: 0,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value="">{movePinsPrompt}</option>
+                    <option value={SELECTION_DEFAULT_LAYER}>Default Layer</option>
+                    {layers.map(layer => (
+                      <option key={layer.id} value={layer.id}>{layer.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
           </div>,
           document.body
         )}
 
-        {showDeletePinsDialog && selectedPins.length > 0 && typeof document !== 'undefined' && createPortal(
+        {showDeletePinsDialog && !readOnly && selectedPins.length > 0 && typeof document !== 'undefined' && createPortal(
           <div
             ref={deletePinsDialogRef}
             style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '20px' }}
