@@ -636,7 +636,7 @@ describe('App Components Error Handling', () => {
     (apiService.getMap as any).mockResolvedValue({
       id: 'map-1',
       name: 'Test Map',
-      pins: [],
+      pins: [{ id: 'p1', lat: 37.7749, lng: -122.4194, label: 'Pin 1', position: 0 }],
       layers: [],
       userRole: 'owner'
     });
@@ -673,6 +673,7 @@ describe('App Components Error Handling', () => {
     expect(controls.contains(locatorButton)).toBe(true);
     expect(locatorButton.compareDocumentPosition(compassButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(controls).not.toHaveClass('is-minimized');
+    expect(controls.style.getPropertyValue('--controls-shift-x')).toBe('');
 
     // Minimize sheet (close to 0px)
     fireEvent.pointerDown(handle, { clientY: 450, pointerId: 1 });
@@ -685,6 +686,7 @@ describe('App Components Error Handling', () => {
     expect(controls.contains(compassButton)).toBe(true);
     expect(controls.contains(locatorButton)).toBe(true);
     expect(locatorButton.compareDocumentPosition(compassButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(controls.style.getPropertyValue('--controls-shift-x')).toBe('');
 
     // Reopen sheet back to standard height
     fireEvent.pointerDown(handle, { clientY: 800, pointerId: 1 });
@@ -697,6 +699,39 @@ describe('App Components Error Handling', () => {
     expect(controls.contains(locatorButton)).toBe(true);
     expect(locatorButton.compareDocumentPosition(compassButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
+    // Select pin checkbox so Go button appears to the right of the controls
+    const checkbox = container.querySelector('#pin-p1 input[type="checkbox"]') as HTMLInputElement;
+    fireEvent.click(checkbox);
+    expect(screen.getByText(/Go \(1\)/)).toBeInTheDocument();
+    expect(controls.style.getPropertyValue('--controls-max-shift-x')).toBe('84px');
+    expect(controls.style.getPropertyValue('--controls-shift-x')).toBe('');
+
+    // Minimize sheet with Go button visible: controls slide off the sheet AND shift right to the edge
+    fireEvent.pointerDown(handle, { clientY: 450, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientY: 450, pointerId: 1 });
+    expect(sheet).toHaveStyle({ height: '0px' });
+    expect(controls).toHaveClass('is-minimized');
+    expect(controls.style.getPropertyValue('--controls-shift-x')).toBe('84px');
+
+    // Drag sheet back up past the slide-off threshold while still holding pointer down:
+    // inline --controls-shift-x must be set to 0px so .is-minimized does not snap controls back to the right
+    fireEvent.pointerDown(handle, { clientY: 800, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientY: 600, pointerId: 1 });
+    await waitFor(() => {
+      expect(controls.style.getPropertyValue('--controls-shift-x')).toBe('0px');
+    });
+    fireEvent.pointerUp(handle, { clientY: 600, pointerId: 1 });
+    expect(sheet).toHaveStyle({ height: '200px' });
+    expect(controls).not.toHaveClass('is-minimized');
+    expect(controls.style.getPropertyValue('--controls-shift-x')).toBe('');
+
+    // Return to standard height (350px)
+    fireEvent.pointerDown(handle, { clientY: 600, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientY: 600, pointerId: 1 });
+    expect(sheet).toHaveStyle({ height: '350px' });
+    expect(controls).not.toHaveClass('is-minimized');
+    expect(controls.style.getPropertyValue('--controls-shift-x')).toBe('');
+
     // Drag sheet down to intermediate height (40px) overlapping the buttons
     fireEvent.pointerDown(handle, { clientY: 450, pointerId: 1 });
     fireEvent.pointerMove(handle, { clientY: 760, pointerId: 1 });
@@ -704,6 +739,7 @@ describe('App Components Error Handling', () => {
     expect(sheet).toHaveStyle({ height: '40px' });
     expect(controls).not.toHaveClass('is-minimized');
     expect(controls.style.getPropertyValue('--controls-shift-y')).toBe('-11.2px');
+    expect(controls.style.getPropertyValue('--controls-shift-x')).toBe('24.85px');
     expect(controls.contains(compassButton)).toBe(true);
     expect(controls.contains(locatorButton)).toBe(true);
     } finally {

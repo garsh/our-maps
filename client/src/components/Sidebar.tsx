@@ -2461,6 +2461,20 @@ function zoneToContainer(c: any) {
   return c;
 }
 
+function measureGoShiftX(goGroup: HTMLElement | null, count: number): number {
+  if (count <= 0) return 0;
+  if (goGroup) {
+    const rect = goGroup.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      return (rect.width * 28) / rect.height + 6;
+    }
+    if (goGroup.offsetWidth > 0) {
+      return goGroup.offsetWidth + 6;
+    }
+  }
+  return 72 + String(count).length * 6 + 6;
+}
+
 const Sidebar = ({
   mapId,
   mapName,
@@ -3344,7 +3358,29 @@ const Sidebar = ({
 
   const effectiveScale = mobileScale || 1.5;
   const currentSheetHeight = sheetHeight ?? 350;
+  const maxShiftY = 31.2 + 10 / effectiveScale;
   const shift = Math.max(0, (10 - (currentSheetHeight - 31.2 * effectiveScale)) / effectiveScale);
+  const maxShiftX = selectedPins.length > 0 ? measureGoShiftX(goGroupRef.current, selectedPins.length) : 0;
+  const shiftX = shift > 0 ? Math.min(1, shift / maxShiftY) * maxShiftX : 0;
+
+  useLayoutEffect(() => {
+    if (!isMobile) return;
+    const controls = document.getElementById('mobile-map-controls');
+    if (!controls) return;
+    if (selectedPins.length <= 0) {
+      controls.style.removeProperty('--controls-max-shift-x');
+      controls.style.removeProperty('--controls-shift-x');
+      return;
+    }
+    const measuredMaxShiftX = measureGoShiftX(goGroupRef.current, selectedPins.length);
+    controls.style.setProperty('--controls-max-shift-x', `${Number(measuredMaxShiftX.toFixed(2))}px`);
+    if (shift > 0) {
+      const measuredShiftX = Math.min(1, shift / maxShiftY) * measuredMaxShiftX;
+      controls.style.setProperty('--controls-shift-x', `${Number(measuredShiftX.toFixed(2))}px`);
+    } else {
+      controls.style.removeProperty('--controls-shift-x');
+    }
+  }, [isMobile, selectedPins.length, shift, maxShiftY]);
 
   return (
     <aside style={{ flex: 1, minHeight: 0, height: '100%', background: 'var(--surface-color)', color: 'var(--text-primary)', display: 'flex', flexDirection: 'column', padding: isMobile ? '0.2rem 0.6rem 0.6rem 0.6rem' : '0.4rem 0.6rem 0.6rem 0.6rem', boxSizing: 'border-box', overflow: isMobile ? 'visible' : 'hidden', position: 'relative' }}>
@@ -3720,6 +3756,8 @@ const Sidebar = ({
                 style={{
                   ...(isEditMode ? undefined : { marginLeft: 'auto' }),
                   '--mobile-scale': effectiveScale,
+                  '--controls-max-shift-x': maxShiftX > 0 ? `${Number(maxShiftX.toFixed(2))}px` : undefined,
+                  '--controls-shift-x': shiftX > 0 ? `${Number(shiftX.toFixed(2))}px` : undefined,
                   '--controls-shift-y': shift > 0 ? `-${Number(shift.toFixed(2))}px` : undefined,
                 } as React.CSSProperties}
               />

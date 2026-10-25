@@ -304,6 +304,7 @@ export function MapEditor() {
               } else {
                 controls.classList.remove('is-minimized');
               }
+              controls.style.removeProperty('--controls-shift-x');
               controls.style.removeProperty('--controls-shift-y');
             }
           } else {
@@ -444,7 +445,11 @@ export function MapEditor() {
       const controls = document.getElementById('mobile-map-controls');
       if (controls) {
         const scale = mobileScale || 1.5;
+        const maxShiftY = 31.2 + 10 / scale;
         const shift = Math.max(0, (10 - (newH - 31.2 * scale)) / scale);
+        const maxShiftX = parseFloat(controls.style.getPropertyValue('--controls-max-shift-x')) || 0;
+        const shiftX = Math.min(1, shift / maxShiftY) * maxShiftX;
+        controls.style.setProperty('--controls-shift-x', `${Number(shiftX.toFixed(2))}px`);
         controls.style.setProperty('--controls-shift-y', `-${Number(shift.toFixed(2))}px`);
       }
     });
@@ -513,15 +518,24 @@ export function MapEditor() {
     const controls = document.getElementById('mobile-map-controls');
     if (controls) {
       const scale = mobileScale || 1.5;
+      const maxShiftY = 31.2 + 10 / scale;
       const shift = Math.max(0, (10 - (finalH - 31.2 * scale)) / scale);
+      const maxShiftX = parseFloat(controls.style.getPropertyValue('--controls-max-shift-x')) || 0;
+      const shiftX = Math.min(1, shift / maxShiftY) * maxShiftX;
       if (finalH <= 0) {
         controls.classList.add('is-minimized');
       } else {
         controls.classList.remove('is-minimized');
       }
       if (shift > 0) {
+        if (shiftX > 0) {
+          controls.style.setProperty('--controls-shift-x', `${Number(shiftX.toFixed(2))}px`);
+        } else {
+          controls.style.removeProperty('--controls-shift-x');
+        }
         controls.style.setProperty('--controls-shift-y', `-${Number(shift.toFixed(2))}px`);
       } else {
+        controls.style.removeProperty('--controls-shift-x');
         controls.style.removeProperty('--controls-shift-y');
       }
     }
@@ -1563,6 +1577,7 @@ export function MapEditor() {
       const controls = document.getElementById('mobile-map-controls');
       if (controls) {
         controls.classList.remove('is-minimized');
+        controls.style.removeProperty('--controls-shift-x');
         controls.style.removeProperty('--controls-shift-y');
       }
       setSheetHeight(defaultSheet);
