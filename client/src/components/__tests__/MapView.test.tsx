@@ -650,6 +650,7 @@ describe('syncOfflineTerrain', () => {
     expect(mockCamera._holdElevation).toBe(false);
     const dragClone = {
       center: { lng: -107.897, lat: 38.497 },
+      centerPoint: mockTr.centerPoint,
       zoom: 17.64,
       tileZoom: 17,
       elevation: 2800,
@@ -665,6 +666,31 @@ describe('syncOfflineTerrain', () => {
     expect(mockCamera._holdElevation).toBe(false);
     expect(mockCamera.elevationFreeze).toBe(false);
     expect(dragClone._stableSetElevation).toHaveBeenCalledWith(3250);
+
+    // Two-finger pinch-zoom with simultaneous touchPan (zoom + drag + off-center around + panDelta)
+    // clears top-level panDelta passed to _stableHandleMapControls so MapLibre routes through
+    // handleMapControlsPan (anchoring at pinchAround) instead of its center-only drag shortcut.
+    const pinchAround = { x: 200, y: 150, distSqr: (p: any) => (200 - p.x) ** 2 + (150 - p.y) ** 2 };
+    const pinchPanDelta = { x: 2, y: 3, mag: () => Math.hypot(2, 3) };
+    mockHandlersProto._stableHandleMapControls.mockClear();
+    mockHandlers._handleMapControls({
+      tr: dragClone,
+      terrain: mockTerrain,
+      deltasForHelper: {
+        zoomDelta: 0.25,
+        panDelta: pinchPanDelta,
+        around: pinchAround,
+        aroundElevation: undefined,
+      },
+      preZoomAroundLoc: { lng: -107.9, lat: 38.5 },
+      combinedEventsInProgress: { zoom: true, drag: true },
+      panDelta: pinchPanDelta,
+    });
+    expect(mockHandlersProto._stableHandleMapControls).toHaveBeenCalledTimes(1);
+    const passedArgs = mockHandlersProto._stableHandleMapControls.mock.calls[0][0];
+    expect(passedArgs.panDelta).toBeUndefined();
+    expect(passedArgs.deltasForHelper.panDelta).toBe(pinchPanDelta);
+    expect(passedArgs.deltasForHelper.around).toBe(pinchAround);
 
     // 10. setElevation eases sudden elevation changes (> 0.05m) when idle to prevent single-frame vertical pops
     mockHandlers._terrainMovement = false;

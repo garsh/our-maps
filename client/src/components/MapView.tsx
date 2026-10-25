@@ -544,6 +544,14 @@ export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
         }
       }
 
+      const hasControlDeltas = (d: any) => (
+        (d?.panDelta?.mag?.() ?? 0) > 0.05 ||
+        Math.abs(d?.zoomDelta ?? 0) > 1e-4 ||
+        Math.abs(d?.bearingDelta ?? 0) > 1e-4 ||
+        Math.abs(d?.pitchDelta ?? 0) > 1e-4 ||
+        Math.abs(d?.rollDelta ?? 0) > 1e-4
+      );
+
       // Guard handleMapControlsPan against empty deltas:
       // When scroll zooming stops, MapLibre's ScrollZoomHandler fires a 200ms finish timeout.
       // In terrain mode, if handleMapControlsPan is called with no deltas, setLocationAtPoint
@@ -555,9 +563,7 @@ export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
         if (cameraHelperProto && !cameraHelperProto._stableHandleMapControlsPan && typeof cameraHelperProto.handleMapControlsPan === 'function') {
           cameraHelperProto._stableHandleMapControlsPan = cameraHelperProto.handleMapControlsPan;
           cameraHelperProto.handleMapControlsPan = function (deltas: any, tr: any, preZoomAroundLoc: any) {
-            const hasPan = (deltas?.panDelta?.mag?.() ?? 0) > 0.05;
-            const hasZoom = Math.abs(deltas?.zoomDelta ?? 0) > 1e-4;
-            if (!hasPan && !hasZoom) return;
+            if (!hasControlDeltas(deltas)) return;
             if (deltas?.around && tr?.centerPoint && deltas.around.distSqr(tr.centerPoint) < 1.0e-2) return;
             return this._stableHandleMapControlsPan.call(this, deltas, tr, preZoomAroundLoc);
           };
@@ -571,20 +577,13 @@ export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
         if (handlersProto && !handlersProto._stableUpdateMapTransform && typeof handlersProto._updateMapTransform === 'function') {
           handlersProto._stableUpdateMapTransform = handlersProto._updateMapTransform;
           handlersProto._updateMapTransform = function (combinedResult: any, combinedEventsInProgress: any, deactivatedHandlers: any) {
-            const hasDelta = (
-              (combinedResult?.panDelta?.mag?.() ?? 0) > 0.05 ||
-              Math.abs(combinedResult?.zoomDelta ?? 0) > 1e-4 ||
-              Math.abs(combinedResult?.bearingDelta ?? 0) > 1e-4 ||
-              Math.abs(combinedResult?.pitchDelta ?? 0) > 1e-4 ||
-              Math.abs(combinedResult?.rollDelta ?? 0) > 1e-4
-            );
             // Guard against zero-delta frames calling _camera.stop(true) inside
             // _stableUpdateMapTransform, which would kill ongoing inertia easing.
             // NOTE: The upstream terrain&&_terrainMovement passthrough is intentionally
             // NOT restored here — on zero-delta terrain frames the anchor re-application
             // in _handleMapControls is a no-op anyway (around defaults to centerPoint,
             // both handleMapControlsPan guards return early), so skipping it is safe.
-            if (!hasDelta) {
+            if (!hasControlDeltas(combinedResult)) {
               this._fireEvents(combinedEventsInProgress, deactivatedHandlers, true);
               return;
             }
@@ -612,26 +611,44 @@ export function syncOfflineTerrain(mapInput: any, show3DTerrain: boolean) {
         if (handlersProto && !handlersProto._stableHandleMapControls && typeof handlersProto._handleMapControls === 'function') {
           handlersProto._stableHandleMapControls = handlersProto._handleMapControls;
           handlersProto._handleMapControls = function (args: any) {
-            const res = this._stableHandleMapControls.call(this, args);
+            const events = args?.combinedEventsInProgress;
+            const deltas = args?.deltasForHelper;
+            const targetTr = args?.tr;
+            const isZoomOrRotate = Boolean(
+              events?.zoom ||
+              events?.rotate ||
+              Math.abs(deltas?.zoomDelta ?? 0) > 1e-4 ||
+              Math.abs(deltas?.bearingDelta ?? 0) > 1e-4
+            );
+            const hasOffCenterAnchor = (
+              typeof deltas?.around?.distSqr === 'function' &&
+              targetTr?.centerPoint &&
+              deltas.around.distSqr(targetTr.centerPoint) >= 1.0e-2
+            );
+            // Two-finger pinch-zoom/rotate activates TouchPanHandler alongside TouchZoom/Rotate.
+            // With aroundElevation undefined at pitch < 60, upstream _handleMapControls takes its
+            // drag-only shortcut when args.panDelta is set, skipping handleMapControlsPan and zooming
+            // around the display center. preZoomAroundLoc already includes panDelta (around.sub(panDelta)),
+            // so clearing args.panDelta routes through handleMapControlsPan to anchor at pinchAround.
+            const callArgs = isZoomOrRotate && hasOffCenterAnchor && args?.panDelta !== undefined
+              ? { ...args, panDelta: undefined }
+              : args;
+            const res = this._stableHandleMapControls.call(this, callArgs);
             // In top-down / low pitch terrain mode (pitch < 60), keep elevation unfrozen during both
             // pan and zoom and update the gesture transform clone's elevation on every frame.
             // Otherwise applyUpdatedTransform copies the start-of-gesture elevation back onto
             // camera.transform every frame and snaps to the new terrain elevation on mouse release.
-            if ((this._camera?.transform?.pitch ?? 0) < 60 && this._camera) {
-              const events = args?.combinedEventsInProgress;
-              if (events?.zoom || events?.drag) {
-                this._camera._holdElevation = false;
-                this._camera.elevationFreeze = false;
-                const targetTr = args?.tr;
-                const terrain = args?.terrain || map.terrain;
-                if (targetTr && terrain && targetTr.center && typeof terrain.getElevationForLngLatZoom === 'function') {
-                  const tileZ = targetTr._helper?._tileZoom ?? targetTr.tileZoom ?? Math.max(0, Math.floor(targetTr.zoom ?? 0));
-                  const ele = terrain.getElevationForLngLatZoom(toSafeLngLat(targetTr.center), tileZ);
-                  if (typeof ele === 'number' && Number.isFinite(ele) && !rejectUnloadedSeaLevel(map, ele, readTransformElevation(targetTr))) {
-                    writeStableElevation(targetTr, ele);
-                    if (this._camera.transform && this._camera.transform !== targetTr) {
-                      writeStableElevation(this._camera.transform, ele);
-                    }
+            if ((this._camera?.transform?.pitch ?? 0) < 60 && this._camera && (events?.zoom || events?.drag || events?.rotate)) {
+              this._camera._holdElevation = false;
+              this._camera.elevationFreeze = false;
+              const terrain = args?.terrain || map.terrain;
+              if (targetTr && terrain && targetTr.center && typeof terrain.getElevationForLngLatZoom === 'function') {
+                const tileZ = targetTr._helper?._tileZoom ?? targetTr.tileZoom ?? Math.max(0, Math.floor(targetTr.zoom ?? 0));
+                const ele = terrain.getElevationForLngLatZoom(toSafeLngLat(targetTr.center), tileZ);
+                if (typeof ele === 'number' && Number.isFinite(ele) && !rejectUnloadedSeaLevel(map, ele, readTransformElevation(targetTr))) {
+                  writeStableElevation(targetTr, ele);
+                  if (this._camera.transform && this._camera.transform !== targetTr) {
+                    writeStableElevation(this._camera.transform, ele);
                   }
                 }
               }
