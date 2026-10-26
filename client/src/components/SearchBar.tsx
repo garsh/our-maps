@@ -87,6 +87,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
   const [query, setQuery] = useState('');
   const [globalResults, setResults] = useState<SearchResult[]>([]);
   const [localResults, setLocalResults] = useState<SearchResult[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [lastSearchedBounds, setLastSearchedBounds] = useState<string | null>(null);
   const [storeBounds, setStoreBounds] = useState<string | null>(() => getMapViewportBounds());
@@ -108,6 +109,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     setQuery('');
     setLocalResults([]);
     setResults([]);
+    setSearchError(null);
     setLastSearchedBounds(null);
     setIsSearching(false);
     prevQueryRef.current = '';
@@ -123,6 +125,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     setQuery('');
     setLocalResults([]);
     setResults([]);
+    setSearchError(null);
     setLastSearchedBounds(null);
     setIsSearching(false);
     abortControllerRef.current?.abort();
@@ -196,6 +199,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     if (searchQuery.trim().length < 3) {
       abortControllerRef.current?.abort();
       setResults([]);
+      setSearchError(null);
       setIsSearching(false);
       return;
     }
@@ -205,6 +209,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     abortControllerRef.current = controller;
 
     setIsSearching(true);
+    setSearchError(null);
     const bounds = boundsToUse ?? mapBoundsRef.current ?? getMapViewportBounds();
     try {
       const formatted = await apiService.search(searchQuery.trim(), bounds, controller.signal);
@@ -214,6 +219,8 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     } catch (error: any) {
       if (error?.name !== 'AbortError' && !controller.signal.aborted) {
         console.error('Search failed:', error);
+        setResults([]);
+        setSearchError(error?.message || 'Searches are being rejected by Google');
       }
     } finally {
       if (!controller.signal.aborted) {
@@ -228,6 +235,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     if (!trimmed) {
       setLocalResults([]);
       setResults([]);
+      setSearchError(null);
       setIsSearching(false);
       setLastSearchedBounds(null);
       clearPreview();
@@ -266,6 +274,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
 
     if (query.trim().length < 3) {
       setResults([]);
+      setSearchError(null);
       setIsSearching(false);
       return;
     }
@@ -325,7 +334,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
     }
   };
 
-  const resultsOpen = query.trim() !== '' && (localResults.length > 0 || globalResults.length > 0);
+  const resultsOpen = query.trim() !== '' && (localResults.length > 0 || globalResults.length > 0 || searchError !== null);
 
   const updateResultsMaxHeight = useCallback(() => {
     const anchor = containerRef.current;
@@ -536,6 +545,7 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
                             onAddPin(parseFloat(result.lat), parseFloat(result.lon), label, address);
                           }
                           clearPreview();
+                          setSearchError(null);
                           setQuery('');
                         }}
                         style={{ 
@@ -569,6 +579,22 @@ const SearchBar = ({ onAddPin, pins, disabled, debounceMs = 500, mapBounds, onHo
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {searchError && (
+            <div
+              role="alert"
+              data-testid="search-error"
+              style={{
+                padding: '0.5rem 0.6rem',
+                fontSize: '0.75rem',
+                color: 'var(--error-color)',
+                background: 'color-mix(in srgb, var(--error-color) 10%, transparent)',
+                lineHeight: '1.3',
+              }}
+            >
+              {searchError}
             </div>
           )}
         </div>

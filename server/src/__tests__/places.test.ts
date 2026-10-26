@@ -318,6 +318,38 @@ describe('Places API Proxy Endpoints', () => {
     delete process.env.GOOGLE_MAPS_API_KEY;
   });
 
+  it('should return 502 with a rejection message when Google Places API returns an error', async () => {
+    process.env.GOOGLE_MAPS_API_KEY = 'mock-google-key-value';
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('places.googleapis.com/v1/places:searchText')) {
+        return {
+          json: async () => ({
+            error: {
+              code: 403,
+              message: 'The caller does not have permission',
+              status: 'PERMISSION_DENIED'
+            }
+          })
+        } as Response;
+      }
+      throw new Error(`Unexpected fetch call: ${urlStr}`);
+    });
+
+    const res = await request(app)
+      .get('/api/places/search?q=Suisan&bounds=-155.12,19.76,-155.02,19.68')
+      .set(authHeader);
+
+    expect(res.status).toBe(502);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(res.body).toEqual({
+      error: 'Searches are being rejected by Google'
+    });
+
+    delete process.env.GOOGLE_MAPS_API_KEY;
+  });
+
   it('should reverse geocode via Nominatim when API key is missing', async () => {
     const originalKey = process.env.GOOGLE_MAPS_API_KEY;
     delete process.env.GOOGLE_MAPS_API_KEY;

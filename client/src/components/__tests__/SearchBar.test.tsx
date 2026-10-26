@@ -570,5 +570,21 @@ describe('SearchBar', () => {
     expect(pinIcon.style.height).toBe('22px');
     expect(pinIcon.style.borderRadius).toBe('50%');
   });
+
+  it('displays an error message when global search is rejected by Google', async () => {
+    (window.fetch as any).mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => ({ error: 'Searches are being rejected by Google' })
+    });
+
+    render(<SearchBar onAddPin={mockOnAddPin} pins={[]} debounceMs={10} />);
+
+    const input = screen.getByPlaceholderText(/Search.../i);
+    fireEvent.change(input, { target: { value: 'Suisan' } });
+
+    const errorBanner = await screen.findByTestId('search-error');
+    expect(errorBanner).toHaveTextContent('Searches are being rejected by Google');
+  });
 });
 

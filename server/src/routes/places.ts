@@ -267,7 +267,7 @@ router.get('/search', async (req: AuthRequest, res) => {
 
     if (data.error) {
       console.error('[Places API] Google search returned error:', data.error.message);
-      return res.status(502).json({ error: 'Search failed' });
+      return res.status(502).json({ error: 'Searches are being rejected by Google' });
     }
 
     const results = data.places || [];
