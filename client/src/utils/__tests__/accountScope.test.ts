@@ -8,6 +8,7 @@ import {
   noteSignedInAccount,
   noteSignedOut,
   readAccountJson,
+  readAccountUser,
   resetAccountScopeForTests,
   writeAccountJson,
 } from '../accountScope';
@@ -130,5 +131,44 @@ describe('accountScope', () => {
     expect(readAccountJson('cached_maps', [])).toEqual([{ id: 'old', name: 'Legacy' }]);
     noteSessionUnreachable();
     expect(getAccountScope()).toEqual({ mode: 'open' });
+  });
+
+  it('stores and restores the user profile for the signed-in account', () => {
+    const profileA = { id: 'user-a', name: 'User A', email: 'a@example.com' };
+    noteSignedInAccount('user-a', profileA);
+    expect(readAccountUser()).toEqual(profileA);
+
+    noteSignedOut();
+    expect(readAccountUser()).toBeNull();
+
+    // While offline without signing out, installAccountScopeFromStorage restores the profile
+    localStorage.removeItem('ourmaps_signed_out');
+    setOnline(false);
+    installAccountScopeFromStorage();
+    expect(getAccountScope()).toEqual({ mode: 'account', userId: 'user-a' });
+    expect(readAccountUser()).toEqual(profileA);
+  });
+
+  it('restores the cached user profile after noteSessionUnreachable', () => {
+    const profile = { id: 'user-a', name: 'Donna', email: 'donna@example.com' };
+    noteSignedInAccount('user-a', profile);
+
+    setOnline(true);
+    installAccountScopeFromStorage();
+    expect(getAccountScope()).toEqual({ mode: 'hidden' });
+    expect(readAccountUser()).toBeNull();
+
+    noteSessionUnreachable();
+    expect(getAccountScope()).toEqual({ mode: 'account', userId: 'user-a' });
+    expect(readAccountUser()).toEqual(profile);
+  });
+
+  it('does not leak the user profile to a different account', () => {
+    const profileA = { id: 'user-a', name: 'User A', email: 'a@example.com' };
+    noteSignedInAccount('user-a', profileA);
+    expect(readAccountUser()).toEqual(profileA);
+
+    noteSignedInAccount('user-b');
+    expect(readAccountUser()).toBeNull();
   });
 });

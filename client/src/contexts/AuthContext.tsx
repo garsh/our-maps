@@ -2,7 +2,15 @@ import React, { createContext, useContext, useState, useEffect, useRef } from 'r
 import { googleLogout } from '@react-oauth/google';
 import type { User } from '@shared/interfaces';
 import { apiService } from '../services/api';
-import { installAccountScopeFromStorage, noteSessionUnreachable, noteSignedInAccount, noteSignedOut } from '../utils/accountScope';
+import {
+  getAccountScope,
+  installAccountScopeFromStorage,
+  noteSessionUnreachable,
+  noteSignedInAccount,
+  noteSignedOut,
+  readAccountUser,
+  subscribeAccountScope,
+} from '../utils/accountScope';
 import { claimUnownedMapDocuments } from '../utils/tileUtils';
 
 interface AuthContextType {
@@ -18,19 +26,19 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const userRef = useRef<User | null>(null);
-  // Before children read caches. Online stays hidden until me() confirms.
-  useState(() => {
+  const [user, setUser] = useState<User | null>(() => {
     installAccountScopeFromStorage();
-    return null;
+    return readAccountUser<User>();
   });
+  const [isLoading, setIsLoading] = useState(true);
+  const userRef = useRef<User | null>(user);
+  userRef.current = user;
+  const explicitLoginRef = useRef(false);
 
   const adoptUser = (next: User | null) => {
     userRef.current = next;
     if (next?.id) {
-      const previous = noteSignedInAccount(next.id);
+      const previous = noteSignedInAccount(next.id, next);
       void claimUnownedMapDocuments(next.id, previous);
     } else {
       noteSignedOut();
@@ -39,6 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const clearLocalSession = () => {
+    explicitLoginRef.current = false;
     googleLogout();
     adoptUser(null);
     setIsLoading(false);
@@ -69,6 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const handleCredentialResponse = async (credential: string) => {
+    explicitLoginRef.current = true;
     setIsLoading(true);
     try {
       const data = await apiService.loginWithGoogle(credential);
@@ -82,27 +92,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const restoreCachedUserIfUnset = () => {
+    if (!userRef.current && getAccountScope().mode === 'account') {
+      const cachedUser = readAccountUser<User>();
+      if (cachedUser) {
+        userRef.current = cachedUser;
+        setUser(cachedUser);
+      }
+    }
+  };
+
+  const loadSession = async () => {
+    try {
+      const data = await apiService.me();
+      if (explicitLoginRef.current) return;
+      if (data?.user) adoptUser(data.user);
+      else adoptUser(null);
+    } catch {
+      if (!explicitLoginRef.current) {
+        noteSessionUnreachable();
+        restoreCachedUserIfUnset();
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
     // Delete after 2027-01-01: leftover JWTs from the pre-cookie auth era.
     localStorage.removeItem('token');
 
-    const loadSession = async () => {
-      try {
-        const data = await apiService.me();
-        if (userRef.current) return;
-        if (data?.user) adoptUser(data.user);
-        else adoptUser(null);
-      } catch {
-        if (!userRef.current) noteSessionUnreachable();
-      } finally {
-        setIsLoading(false);
-      }
+    void loadSession();
+
+    const handleOnline = () => {
+      void loadSession();
     };
-    loadSession();
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
+
+  useEffect(() => {
+    return subscribeAccountScope(restoreCachedUserIfUnset);
   }, []);
 
   const login = async () => {
     if (import.meta.env.VITE_MOCK_AUTH === 'true' || !import.meta.env.VITE_GOOGLE_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID === 'MOCK_CLIENT_ID') {
+      explicitLoginRef.current = true;
       setIsLoading(true);
       try {
         const data = await apiService.mockLogin();

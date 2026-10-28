@@ -22,6 +22,7 @@ const ACCOUNT_CACHE_BASES = [
   'cached_system_label_settings',
   'cached_system_label_map_order',
   'cached_selected_label',
+  'cached_user_profile',
 ] as const;
 
 let scope: AccountScope = { mode: 'open' };
@@ -95,18 +96,31 @@ function migrateLegacyCaches(userId: string, previousId: string | null) {
 }
 
 /** Remember this account and move any pre-scope cache onto that account. Returns the previous account id. */
-export function noteSignedInAccount(userId: string): string | null {
+export function noteSignedInAccount(userId: string, userProfile?: any): string | null {
   const previous = readAccountId();
   migrateLegacyCaches(userId, previous);
   try {
     localStorage.setItem(ACCOUNT_ID_KEY, userId);
     localStorage.removeItem(SIGNED_OUT_KEY);
+    if (userProfile && typeof userProfile === 'object' && (userProfile as { id?: string }).id === userId) {
+      localStorage.setItem(accountStorageKey('cached_user_profile', userId), JSON.stringify(userProfile));
+    }
   } catch {
     // The in-memory scope still limits this session.
   }
   if (previous && previous !== userId) deleteApiResponseCache();
   setScope({ mode: 'account', userId });
   return previous;
+}
+
+/** Retrieve the cached user profile for the currently active account, if available. */
+export function readAccountUser<T = any>(): T | null {
+  if (scope.mode !== 'account') return null;
+  const stored = readAccountJson<T | null>('cached_user_profile', null);
+  if (stored && typeof stored === 'object' && (stored as { id?: string }).id === scope.userId) {
+    return stored;
+  }
+  return null;
 }
 
 export function noteSignedOut(): void {

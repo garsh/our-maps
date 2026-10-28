@@ -39,7 +39,7 @@ import { generateId, mergeImportedMapData } from './utils/fileUtils';
 import { getOfflineMap, isMapDownloaded, removeMapDownload, touchMapCacheAccess, saveMapToViewCache, clearMapMetadataCache, bumpDownloadDocumentEpoch, currentDownloadDocumentEpoch, updateDownloadedMapDocument } from './utils/tileUtils';
 import { preloadExtract, setActiveOfflineMapId } from './utils/offlineExtract';
 import { getStoredJson, setStoredJson, getStoredBoolean, setStoredBoolean } from './utils/storageUtils';
-import { readAccountJson, writeAccountJson } from './utils/accountScope';
+import { getAccountScope, noteSessionUnreachable, readAccountJson, subscribeAccountScope, writeAccountJson } from './utils/accountScope';
 import { AUTO_VIEW_SESSION_KEY, OFFLINE_SESSION_KEY, isForcedOffline, readSessionFlag, writeSessionFlag } from './utils/offlineSession';
 
 import { clearHoveredPin, getHoveredPinId, setHoveredPin, hasFinePointer, syncCoLocatedPins } from './utils/pinHover';
@@ -99,6 +99,14 @@ export function MapEditor() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, isLoading: isAuthLoading } = useAuth();
+  const [accountScope, setAccountScope] = useState(getAccountScope);
+  useEffect(() => {
+    return subscribeAccountScope(() => {
+      setAccountScope(getAccountScope());
+    });
+  }, []);
+  const hasSignedInAccount = Boolean(user) || accountScope.mode === 'account';
+  const effectiveUserId = user?.id || (accountScope.mode === 'account' ? accountScope.userId : '');
   const socketRef = useRef<Socket | null>(null);
   
   const [pins, setPins] = useState<Pin[]>([])
@@ -111,10 +119,10 @@ export function MapEditor() {
   const [mapId, setMapId] = useState<string | null>(id && id !== 'new' ? id : null);
 
   useEffect(() => {
-    if (id === 'new' && !isAuthLoading && !user) {
+    if (id === 'new' && !isAuthLoading && !hasSignedInAccount) {
       navigate('/login');
     }
-  }, [id, isAuthLoading, user, navigate]);
+  }, [id, isAuthLoading, hasSignedInAccount, navigate]);
 
   useLayoutEffect(() => {
     if (id && id !== 'new') {
@@ -1438,11 +1446,38 @@ export function MapEditor() {
         navigate('/', { replace: true });
         return;
       }
+      if (!hasHydratedLocally) {
+        noteSessionUnreachable();
+        try {
+          const [cached, downloaded] = await Promise.all([
+            getOfflineMap(mapId),
+            isMapDownloaded(mapId),
+          ]);
+          if (cached && downloaded) {
+            hasHydratedLocally = true;
+            isInitialLoadRef.current = true;
+            setMapId(cached.id);
+            setMapName(cached.name || 'Unnamed Map');
+            setLayers(cached.layers || []);
+            setPins(cached.pins || []);
+            setCustomColors(cached.customColors || []);
+            setUserRole(cached.userRole || 'view');
+            setIsPublic(Boolean(cached.isPublic));
+            if (cached.pins && cached.pins.length > 0 && !silent) {
+              triggerBoundsToFit(pinLatLngBounds(cached.pins), 3000);
+            }
+            touchMapCacheAccess(mapId, { name: cached.name, ownerId: cached.ownerId }).catch(() => {});
+          }
+        } catch (offlineErr) {
+          console.warn('[APP] Fallback offline map hydration failed:', offlineErr);
+        }
+      }
       if (hasHydratedLocally) {
         applyOffline(true, true);
         return;
       }
-      if (!user) {
+      const hasSignedIn = Boolean(user) || getAccountScope().mode === 'account';
+      if (!hasSignedIn) {
         redirectedToLogin = true;
         navigate('/login', { replace: true });
         return;
@@ -1477,7 +1512,7 @@ export function MapEditor() {
         layers: layersRef.current,
         pins: pinsRef.current,
         customColors: customColorsRef.current,
-        ownerId: user?.id || '',
+        ownerId: effectiveUserId,
       });
       setIsDirty(false);
       setMapId(newId);
@@ -2369,7 +2404,7 @@ export function MapEditor() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
           <div id="download-pill-container" style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}></div>
           {(() => {
-            if (!user) {
+            if (!hasSignedInAccount) {
               return (
                 <div style={{ flexShrink: 0 }}>
                   <button
@@ -2591,7 +2626,7 @@ export function MapEditor() {
               onDragCancel={handleDragCancel}
               onDragStart={handleDragStart}
               userRole={userRole}
-              isAuthenticated={Boolean(user)}
+              isAuthenticated={hasSignedInAccount}
               onSignIn={() => navigate('/login', { state: { from: location } })}
               editMode={editMode}
               onToggleEditMode={handleToggleEditMode}
@@ -2724,7 +2759,7 @@ export function MapEditor() {
           onRemoveShare={handleRemoveShare}
           permissions={permissions}
           owner={owner}
-          currentUserId={user?.id || ''}
+          currentUserId={effectiveUserId}
           userRole={userRole}
           isPublic={isPublic}
           onTogglePublic={handleTogglePublic}

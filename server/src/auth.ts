@@ -7,7 +7,8 @@ import type { User } from '@shared/interfaces';
 import { disconnectSessionSocket, disconnectUserSockets } from './realtime';
 
 export const SESSION_COOKIE = 'ourmaps_session';
-const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+export const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+export const SESSION_REFRESH_THRESHOLD_MS = SESSION_MAX_AGE_MS - 24 * 60 * 60 * 1000;
 
 export const DEV_JWT_SECRET = 'our-maps-dev-secret-key-30-days';
 
@@ -115,6 +116,7 @@ export function isValidSessionId(sessionId: unknown): sessionId is string {
 interface CachedSession {
   user: User;
   expiresAtMs: number;
+  sessionExpiresAtMs: number;
 }
 
 const sessionCache = new Map<string, CachedSession>();
@@ -208,9 +210,37 @@ export async function getUserForSession(sessionId: string): Promise<User> {
   }
   sessionCache.set(sessionId, {
     user,
-    expiresAtMs: Math.min(now + SESSION_CACHE_TTL_MS, dbExpiresAtMs)
+    expiresAtMs: Math.min(now + SESSION_CACHE_TTL_MS, dbExpiresAtMs),
+    sessionExpiresAtMs: dbExpiresAtMs,
   });
   return user;
+}
+
+function isLogoutRequest(req: Request): boolean {
+  return req.path === '/api/auth/logout' || req.path === '/api/auth/logout-everywhere';
+}
+
+async function refreshSessionIfNeeded(sessionId: string, res: Response): Promise<void> {
+  const now = Date.now();
+  const cached = sessionCache.get(sessionId);
+  if (!cached || cached.sessionExpiresAtMs - now > SESSION_REFRESH_THRESHOLD_MS) {
+    return;
+  }
+  const nextExpiresAtMs = now + SESSION_MAX_AGE_MS;
+  const nextExpiresAt = new Date(nextExpiresAtMs).toISOString();
+  const previousSessionExpiresAtMs = cached.sessionExpiresAtMs;
+  const previousCacheExpiresAtMs = cached.expiresAtMs;
+  cached.sessionExpiresAtMs = nextExpiresAtMs;
+  cached.expiresAtMs = Math.min(now + SESSION_CACHE_TTL_MS, nextExpiresAtMs);
+  try {
+    const db = await getDb();
+    await db.run('UPDATE sessions SET expires_at = ? WHERE id = ?', nextExpiresAt, sessionId);
+    setSessionCookie(res, sessionId);
+  } catch (err) {
+    cached.sessionExpiresAtMs = previousSessionExpiresAtMs;
+    cached.expiresAtMs = previousCacheExpiresAtMs;
+    throw err;
+  }
 }
 
 async function deleteSession(sessionId: string) {
@@ -230,11 +260,15 @@ async function deleteAllSessionsForUser(userId: string) {
   await db.run('DELETE FROM sessions WHERE user_id = ?', userId);
 }
 
-async function authenticateRequest(req: Request): Promise<User> {
+async function authenticateRequest(req: Request, res?: Response): Promise<User> {
   const sessionId = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   if (sessionId) {
     try {
-      return await getUserForSession(sessionId);
+      const user = await getUserForSession(sessionId);
+      if (res && !isLogoutRequest(req)) {
+        await refreshSessionIfNeeded(sessionId, res);
+      }
+      return user;
     } catch (error) {
       if (!(error instanceof AuthError)) throw error;
     }
@@ -378,7 +412,7 @@ export function userFromGooglePayload(payload: {
 
 export async function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    req.user = await authenticateRequest(req);
+    req.user = await authenticateRequest(req, res);
     return next();
   } catch (error) {
     if (error instanceof AuthError) {
@@ -388,9 +422,9 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
   }
 }
 
-export async function optionalAuthMiddleware(req: AuthRequest, _res: Response, next: NextFunction) {
+export async function optionalAuthMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    req.user = await authenticateRequest(req);
+    req.user = await authenticateRequest(req, res);
   } catch {
     req.user = undefined;
   }
@@ -399,7 +433,7 @@ export async function optionalAuthMiddleware(req: AuthRequest, _res: Response, n
 
 export async function meHandler(req: Request, res: Response) {
   try {
-    const user = await authenticateRequest(req);
+    const user = await authenticateRequest(req, res);
     return res.json({ user });
   } catch {
     return res.json({ user: null });

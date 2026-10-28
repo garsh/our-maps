@@ -31,6 +31,7 @@ const KNOWN_LOCAL_STORAGE_KEYS = new Set([
   'cached_system_label_settings',
   'cached_system_label_map_order',
   'cached_selected_label',
+  'cached_user_profile',
   'customColors',
   'ourmaps_map_theme',
   'ourmaps_hillshade',

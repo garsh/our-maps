@@ -141,6 +141,7 @@ export default function LandingPage() {
   const [systemSettings, setSystemSettings] = useState<Record<string, LabelSortMode>>(() => getStoredJson<Record<string, LabelSortMode>>('cached_system_label_settings', {}));
   const [systemOrder, setSystemOrder] = useState<Record<string, string[]>>(() => getStoredJson<Record<string, string[]>>('cached_system_label_map_order', {}));
   // Scope whose saved filter is already the one in state. Until then, don't write.
+  const [accountScope, setAccountScope] = useState(getAccountScope);
   const selectedLabelScopeRef = useRef<string | null>(null);
   const [activeLabelId, setActiveLabelId] = useState<string>(() => {
     if (getAccountScope().mode === 'hidden') return 'all';
@@ -637,6 +638,7 @@ export default function LandingPage() {
   useEffect(() => {
     return subscribeAccountScope(() => {
       const next = getAccountScope();
+      setAccountScope(next);
       if (next.mode === 'hidden') {
         clearPrivateHome();
         selectedLabelScopeRef.current = null;
@@ -650,7 +652,7 @@ export default function LandingPage() {
 
   useEffect(() => {
     if (authLoading || user) return;
-    if (getAccountScope().mode === 'hidden') {
+    if (accountScope.mode === 'hidden') {
       clearPrivateHome();
       return;
     }
@@ -663,7 +665,7 @@ export default function LandingPage() {
     setForcedOffline(true);
     setIsOffline(true);
     void applyCachedMaps();
-  }, [user, authLoading]);
+  }, [user, authLoading, accountScope]);
 
 
   const handleDelete = async (id: string) => {
@@ -713,7 +715,6 @@ export default function LandingPage() {
     navigate('/map/new');
   };
 
-  const accountScope = getAccountScope();
   const accountUserId = user?.id ?? (accountScope.mode === 'account' ? accountScope.userId : undefined);
   // Owned, shared, and custom labels stay available for this account when the
   // session user has not loaded yet, so a restored filter still has its option.
@@ -1136,7 +1137,7 @@ export default function LandingPage() {
           <MapIcon size={24} color={theme === 'dark' ? '#cbd5e1' : 'white'} /> OurMaps
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {!loading && !user && (
+          {!loading && !showAccountFilters && (
             <button 
               onClick={() => navigate('/login')}
               style={{
@@ -1161,7 +1162,7 @@ export default function LandingPage() {
               <LogIn size={16} /> Sign In
             </button>
           )}
-          {!loading && Boolean(user) && !isOffline && (
+          {!loading && showAccountFilters && !isOffline && (
             <button 
               onClick={handleCreateMap}
               style={{
@@ -1186,7 +1187,7 @@ export default function LandingPage() {
               New Map
             </button>
           )}
-          {!loading && Boolean(user) && isOffline && (
+          {!loading && showAccountFilters && isOffline && (
             <button 
               onClick={() => fetchMaps()}
               style={{
@@ -1339,7 +1340,7 @@ export default function LandingPage() {
                   </div>
 
                   {/* Sign Out or Sign In */}
-                  {user ? (
+                  {showAccountFilters ? (
                     <div
                       onClick={() => {
                         setShowUserMenu(false);
@@ -1801,7 +1802,7 @@ export default function LandingPage() {
                     map={map}
                     isCustomSort={true}
                     downloadStatus={downloadStatuses.get(map.id)}
-                    currentUserId={user?.id}
+                    currentUserId={accountUserId}
                     isOffline={isOffline}
                     onMapClick={handleMapClick}
                     onOpenLabels={(m, e) => {
@@ -1826,7 +1827,7 @@ export default function LandingPage() {
                     map={activeDragMap}
                     isCustomSort={true}
                     downloadStatus={downloadStatuses.get(activeDragMap.id)}
-                    currentUserId={user?.id}
+                    currentUserId={accountUserId}
                     isOffline={isOffline}
                     formatDate={formatDate}
                     isOverlay={true}
@@ -1844,7 +1845,7 @@ export default function LandingPage() {
                 map={map}
                 isCustomSort={false}
                 downloadStatus={downloadStatuses.get(map.id)}
-                currentUserId={user?.id}
+                currentUserId={accountUserId}
                 isOffline={isOffline}
                 onMapClick={handleMapClick}
                 onOpenLabels={(m, e) => {

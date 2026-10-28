@@ -319,6 +319,35 @@ describe('API Endpoints', () => {
     expect(meRes.status).toBe(200);
     expect(meRes.body.user.email).toBe('mock@example.com');
     expect(meRes.headers['cache-control']).toBe('private, no-store');
+    expect(meRes.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('refreshes session expiry and cookie when more than 24 hours of the session lifetime have elapsed', async () => {
+    const db = await getDb();
+    const sessionId = uuid(77);
+    const fiveDaysFromNow = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+    await db.run(
+      'INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)',
+      sessionId,
+      mockUser.id,
+      fiveDaysFromNow
+    );
+
+    const beforeMs = Date.now();
+    const meRes = await request(app)
+      .get('/api/auth/me')
+      .set('Cookie', `ourmaps_session=${sessionId}`);
+
+    expect(meRes.status).toBe(200);
+    expect(meRes.body.user.id).toBe(mockUser.id);
+    const setCookieHeader = meRes.headers['set-cookie'];
+    const setCookie = Array.isArray(setCookieHeader) ? setCookieHeader.join('; ') : setCookieHeader;
+    expect(setCookie).toContain(`ourmaps_session=${sessionId}`);
+    expect(setCookie).toMatch(/Max-Age=2592000/i);
+
+    const row = await db.get('SELECT expires_at FROM sessions WHERE id = ?', sessionId);
+    const refreshedMs = new Date(row.expires_at).getTime();
+    expect(refreshedMs).toBeGreaterThanOrEqual(beforeMs + 29 * 24 * 60 * 60 * 1000);
   });
 
   it('logout-everywhere invalidates other sessions', async () => {

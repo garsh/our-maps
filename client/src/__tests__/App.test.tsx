@@ -7,6 +7,7 @@ import { PIN_HOVER_CLASS, getHoveredPinId, setLastPointerTypeForTests } from '..
 import { apiService } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getOfflineMap } from '../utils/tileUtils';
+import { resetAccountScopeForTests } from '../utils/accountScope';
 import { renderWithProviders, MOCK_USER } from '../testHelpers';
 
 // Mock the dependencies
@@ -88,6 +89,7 @@ describe('App Components Error Handling', () => {
   const mockUser = MOCK_USER;
 
   beforeEach(() => {
+    resetAccountScopeForTests();
     vi.clearAllMocks();
     mockSocket.connected = false;
     
@@ -1624,6 +1626,68 @@ describe('App Components Error Handling', () => {
     expect(screen.queryByText('Secret trailhead')).not.toBeInTheDocument();
     expect(sessionStorage.getItem('ourmaps_offline')).toBeNull();
     expect(tileUtilsMock.removeMapDownload).not.toHaveBeenCalled();
+  });
+
+  it('hydrates downloaded map and shows Offline status instead of redirecting to /login when network fails and account was signed in', async () => {
+    const tileUtilsMock = await import('../utils/tileUtils');
+    const accountScopeModule = await import('../utils/accountScope');
+
+    try {
+      localStorage.setItem('ourmaps_account_id', 'user-donna');
+      accountScopeModule.noteSignedInAccount('user-donna', { id: 'user-donna', name: 'Donna', email: 'donna@example.com' });
+
+      accountScopeModule.installAccountScopeFromStorage();
+      expect(accountScopeModule.getAccountScope()).toEqual({ mode: 'hidden' });
+
+      (useAuth as any).mockReturnValue({
+        user: null,
+        token: null,
+        isAuthenticated: false,
+        isLoading: false,
+        login: vi.fn(),
+        logout: vi.fn(),
+        logoutEverywhere: vi.fn(),
+        handleCredentialResponse: vi.fn()
+      });
+
+      (tileUtilsMock.getOfflineMap as any).mockImplementation((id: string) => {
+        const scope = accountScopeModule.getAccountScope();
+        if (scope.mode === 'hidden') return Promise.resolve(null);
+        return Promise.resolve({
+          id: 'hawaii-map-1',
+          name: 'Hawaii Trip',
+          pins: [{ id: 'pin-1', lat: 21.3, lng: -157.8, label: 'Waikiki Beach', position: 0 }],
+          layers: [{ id: 'layer-1', name: 'Beaches', position: 0 }],
+          customColors: [],
+          userRole: 'edit',
+          ownerId: 'user-donna',
+        });
+      });
+      (tileUtilsMock.isMapDownloaded as any).mockResolvedValue(true);
+      (apiService.getMap as any).mockRejectedValue(new TypeError('Failed to fetch'));
+
+      render(
+        <GoogleOAuthProvider clientId="test-client-id">
+          <MemoryRouter initialEntries={['/map/hawaii-map-1']}>
+            <Routes>
+              <Route path="/map/:id" element={<MapEditor />} />
+              <Route path="/login" element={<div data-testid="login-page">Login Page</div>} />
+            </Routes>
+          </MemoryRouter>
+        </GoogleOAuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Hawaii Trip')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('Waikiki Beach')).toBeInTheDocument();
+      expect(screen.getByText('Offline')).toBeInTheDocument();
+      expect(screen.queryByText('Logged Out')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('login-page')).not.toBeInTheDocument();
+    } finally {
+      accountScopeModule.resetAccountScopeForTests();
+    }
   });
 
   it.each(['Access denied', 'Map not found'])(

@@ -105,14 +105,24 @@ export const apiService = {
   },
 
   async me(): Promise<{ user: any } | null> {
-    const res = await fetch(`${API_BASE}/auth/me`, {
-      credentials: 'include',
-      headers: getHeaders(),
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    const data = await res.json().catch(() => ({}));
-    return data.user ? data : null;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await fetch(`${API_BASE}/auth/me`, {
+        credentials: 'include',
+        headers: getHeaders(),
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      if (res.status === 401) return null;
+      if (!res.ok) {
+        throw new Error(`Server error: ${res.status}`);
+      }
+      const data = await res.json().catch(() => ({}));
+      return data.user ? data : null;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   },
 
   async logout(): Promise<void> {
