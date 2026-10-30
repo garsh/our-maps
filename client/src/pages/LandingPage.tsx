@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { apiService } from '../services/api';
-import { Map as MapIcon, LogIn, LogOut, WifiOff, CloudSync, Loader2, Trash2, Upload, Sun, Moon, ChevronDown, Check, ArrowUpDown, Search, X, Pencil } from 'lucide-react';
+import { Map as MapIcon, LogIn, LogOut, WifiOff, CloudSync, Loader2, Trash2, Upload, Sun, Moon, ChevronDown, Check, ArrowUpDown, Search, X, Pencil, Plus } from 'lucide-react';
 import { getMapDownloadStatuses, removeMapDownload, reconcileLocalMaps, unionCachedMapsWithDownloads, type MapDownloadStatus } from '../utils/tileUtils';
 import { landingStatusFromWorker, tileWorkerManager } from '../utils/tileWorkerManager';
 import { getAccountScope, readAccountJson as getStoredJson, subscribeAccountScope, writeAccountJson as setStoredJson } from '../utils/accountScope';
@@ -155,6 +155,7 @@ export default function LandingPage() {
   const [editLabelName, setEditLabelName] = useState('');
   const editInputRef = useRef<HTMLInputElement>(null);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const [showLabelDropdown, setShowLabelDropdown] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const labelHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const [headingEl, setHeadingEl] = useState<HTMLHeadingElement | null>(null);
@@ -182,6 +183,15 @@ export default function LandingPage() {
       editInputRef.current.select();
     }
   }, [showEditLabelModal]);
+
+  useEffect(() => {
+    if (!showLabelDropdown) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowLabelDropdown(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showLabelDropdown]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -1121,6 +1131,164 @@ export default function LandingPage() {
     };
   }, [headingEl, activeLabelTitle, activeLabelId, activeSortMode, isOffline]);
 
+  const renderLabelFilterOptions = () => (
+    <>
+      {/* User-defined labels */}
+      {showAccountFilters && labels.map(l => (
+        <option key={l.id} value={l.id}>
+          {l.name} ({labelCounts[l.id] || 0})
+        </option>
+      ))}
+      {showAccountFilters && labels.length > 0 && (
+        <hr
+          className="landing-select-divider"
+          style={{ border: 'none', borderTop: '2.5px solid var(--divider-color)', margin: '6px 0' }}
+        />
+      )}
+
+      {/* System-defined labels */}
+      <option value="all">All Maps ({labelCounts.all || 0})</option>
+      {showAccountFilters && (
+        <>
+          <option value="owned">Owned by Me ({labelCounts.owned || 0})</option>
+          <option value="shared">Shared with Me ({labelCounts.shared || 0})</option>
+        </>
+      )}
+      <option value="unlabelled">Unlabelled Maps ({labelCounts.unlabelled || 0})</option>
+      <option value="offline">Downloaded ({labelCounts.offline || 0})</option>
+
+      {/* Divider line before Search and New Label */}
+      <hr
+        className="landing-select-divider"
+        style={{ border: 'none', borderTop: '2.5px solid var(--divider-color)', margin: '6px 0' }}
+      />
+
+      {/* Search and New Label */}
+      <option value="search">Search</option>
+      {Boolean(user) && !isOffline && (
+        <option value="__new__">+ New Label...</option>
+      )}
+    </>
+  );
+
+  const handleSelectFilter = (val: string) => {
+    setShowLabelDropdown(false);
+    if (val === '__new__') {
+      setNewLabelName('');
+      setShowCreateLabelModal(true);
+      return;
+    }
+    if (val !== 'search') {
+      setSearchQuery('');
+    }
+    setActiveLabelId(val);
+    if (val === 'search') {
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    }
+  };
+
+  const renderCustomDropdownItems = () => (
+    <>
+      {/* 1. User-defined labels */}
+      {showAccountFilters && labels.map(l => (
+        <button
+          key={l.id}
+          type="button"
+          className={`landing-filter-menu-item ${activeLabelId === l.id ? 'is-active' : ''}`}
+          onClick={() => handleSelectFilter(l.id)}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {l.name} <span className="filter-item-count">({labelCounts[l.id] || 0})</span>
+          </span>
+          {activeLabelId === l.id && <Check size={18} color="var(--primary-color)" style={{ flexShrink: 0 }} />}
+        </button>
+      ))}
+
+      {/* Thick divider after user-defined labels */}
+      {showAccountFilters && labels.length > 0 && (
+        <div className="landing-filter-menu-divider" />
+      )}
+
+      {/* 2. System-defined labels */}
+      <button
+        type="button"
+        className={`landing-filter-menu-item ${activeLabelId === 'all' ? 'is-active' : ''}`}
+        onClick={() => handleSelectFilter('all')}
+      >
+        <span>All Maps <span className="filter-item-count">({labelCounts.all || 0})</span></span>
+        {activeLabelId === 'all' && <Check size={18} color="var(--primary-color)" style={{ flexShrink: 0 }} />}
+      </button>
+
+      {showAccountFilters && (
+        <>
+          <button
+            type="button"
+            className={`landing-filter-menu-item ${activeLabelId === 'owned' ? 'is-active' : ''}`}
+            onClick={() => handleSelectFilter('owned')}
+          >
+            <span>Owned by Me <span className="filter-item-count">({labelCounts.owned || 0})</span></span>
+            {activeLabelId === 'owned' && <Check size={18} color="var(--primary-color)" style={{ flexShrink: 0 }} />}
+          </button>
+          <button
+            type="button"
+            className={`landing-filter-menu-item ${activeLabelId === 'shared' ? 'is-active' : ''}`}
+            onClick={() => handleSelectFilter('shared')}
+          >
+            <span>Shared with Me <span className="filter-item-count">({labelCounts.shared || 0})</span></span>
+            {activeLabelId === 'shared' && <Check size={18} color="var(--primary-color)" style={{ flexShrink: 0 }} />}
+          </button>
+        </>
+      )}
+
+      <button
+        type="button"
+        className={`landing-filter-menu-item ${activeLabelId === 'unlabelled' ? 'is-active' : ''}`}
+        onClick={() => handleSelectFilter('unlabelled')}
+      >
+        <span>Unlabelled Maps <span className="filter-item-count">({labelCounts.unlabelled || 0})</span></span>
+        {activeLabelId === 'unlabelled' && <Check size={18} color="var(--primary-color)" style={{ flexShrink: 0 }} />}
+      </button>
+
+      <button
+        type="button"
+        className={`landing-filter-menu-item ${activeLabelId === 'offline' ? 'is-active' : ''}`}
+        onClick={() => handleSelectFilter('offline')}
+      >
+        <span>Downloaded <span className="filter-item-count">({labelCounts.offline || 0})</span></span>
+        {activeLabelId === 'offline' && <Check size={18} color="var(--primary-color)" style={{ flexShrink: 0 }} />}
+      </button>
+
+      {/* Thick divider before Search and New Label */}
+      <div className="landing-filter-menu-divider" />
+
+      {/* 3. Search and New Label */}
+      <button
+        type="button"
+        className={`landing-filter-menu-item ${activeLabelId === 'search' ? 'is-active' : ''}`}
+        onClick={() => handleSelectFilter('search')}
+      >
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+          <Search size={18} color="var(--text-secondary)" />
+          Search
+        </span>
+        {activeLabelId === 'search' && <Check size={18} color="var(--primary-color)" style={{ flexShrink: 0 }} />}
+      </button>
+
+      {Boolean(user) && !isOffline && (
+        <button
+          type="button"
+          className="landing-filter-menu-item"
+          onClick={() => handleSelectFilter('__new__')}
+        >
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <Plus size={18} color="var(--primary-color)" />
+            + New Label...
+          </span>
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div
       ref={landingRootRef}
@@ -1475,52 +1643,70 @@ export default function LandingPage() {
                     </button>
                   )}
                   <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', marginLeft: '4px', flexShrink: 0 }}>
-                    <select
-                      value="search"
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === '__new__') {
-                          setNewLabelName('');
-                          setShowCreateLabelModal(true);
-                          return;
-                        }
-                        if (val !== 'search') {
-                          setSearchQuery('');
-                        }
-                        setActiveLabelId(val);
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSortDropdown(false);
+                        setShowLabelDropdown(prev => !prev);
                       }}
-                      title="Select label"
-                      aria-label="Select label"
+                      aria-label="Toggle label filter menu"
                       style={{
-                        position: 'absolute',
-                        inset: 0,
-                        opacity: 0,
+                        background: 'transparent',
+                        border: 'none',
+                        padding: '4px',
                         cursor: 'pointer',
-                        width: '100%',
-                        height: '100%',
-                        zIndex: 2,
+                        display: 'inline-flex',
+                        alignItems: 'center',
                       }}
                     >
-                      <option value="all">All Maps ({labelCounts.all || 0})</option>
-                      {showAccountFilters && (
-                        <>
-                          <option value="owned">Owned by Me ({labelCounts.owned || 0})</option>
-                          <option value="shared">Shared with Me ({labelCounts.shared || 0})</option>
-                        </>
-                      )}
-                      <option value="unlabelled">Unlabelled Maps ({labelCounts.unlabelled || 0})</option>
-                      <option value="offline">Downloaded ({labelCounts.offline || 0})</option>
-                      <option value="search">Search</option>
-                      {showAccountFilters && labels.map(l => (
-                        <option key={l.id} value={l.id}>
-                          {l.name} ({labelCounts[l.id] || 0})
-                        </option>
-                      ))}
-                      {Boolean(user) && !isOffline && (
-                        <option value="__new__">+ New Label...</option>
-                      )}
+                      <ChevronDown
+                        size={18}
+                        color="var(--primary-color)"
+                        style={{
+                          transform: showLabelDropdown ? 'rotate(180deg)' : 'none',
+                          transition: 'transform 0.2s ease',
+                        }}
+                      />
+                    </button>
+                    <select
+                      value="search"
+                      onChange={(e) => handleSelectFilter(e.target.value)}
+                      title="Select label"
+                      aria-label="Select label"
+                      tabIndex={-1}
+                      style={{
+                        position: 'absolute',
+                        opacity: 0,
+                        pointerEvents: 'none',
+                        width: '1px',
+                        height: '1px',
+                        margin: '-1px',
+                        border: 0,
+                        padding: 0,
+                        overflow: 'hidden',
+                        clip: 'rect(0 0 0 0)',
+                      }}
+                    >
+                      {renderLabelFilterOptions()}
                     </select>
-                    <ChevronDown size={18} color="var(--primary-color)" style={{ pointerEvents: 'none' }} />
+
+                    {showLabelDropdown && (
+                      <>
+                        <div
+                          style={{ position: 'fixed', inset: 0, zIndex: 100 }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowLabelDropdown(false);
+                          }}
+                        />
+                        <div
+                          className="landing-filter-menu is-search-anchor"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {renderCustomDropdownItems()}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -1534,6 +1720,21 @@ export default function LandingPage() {
                     background: 'transparent',
                     minWidth: 0,
                     maxWidth: '100%',
+                  }}
+                  onClick={() => {
+                    setShowSortDropdown(false);
+                    setShowLabelDropdown(prev => !prev);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  aria-haspopup="menu"
+                  aria-expanded={showLabelDropdown}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setShowSortDropdown(false);
+                      setShowLabelDropdown(prev => !prev);
+                    }
                   }}
                 >
                   <h2
@@ -1551,55 +1752,48 @@ export default function LandingPage() {
                       marginLeft: isTitleOverflowing ? '-18px' : '4px',
                       position: 'relative',
                       zIndex: 1,
+                      transform: showLabelDropdown ? 'rotate(180deg)' : 'none',
+                      transition: 'transform 0.2s ease',
                     }}
                   />
                   <select
                     value={activeLabelId}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '__new__') {
-                        setNewLabelName('');
-                        setShowCreateLabelModal(true);
-                        return;
-                      }
-                      if (val !== 'search') {
-                        setSearchQuery('');
-                      }
-                      setActiveLabelId(val);
-                      if (val === 'search') {
-                        setTimeout(() => searchInputRef.current?.focus(), 50);
-                      }
-                    }}
+                    onChange={(e) => handleSelectFilter(e.target.value)}
                     aria-label="Filter maps by label"
+                    tabIndex={-1}
                     style={{
                       position: 'absolute',
-                      inset: 0,
-                      width: '100%',
-                      height: '100%',
                       opacity: 0,
-                      cursor: 'pointer',
-                      zIndex: 2,
+                      pointerEvents: 'none',
+                      width: '1px',
+                      height: '1px',
+                      margin: '-1px',
+                      border: 0,
+                      padding: 0,
+                      overflow: 'hidden',
+                      clip: 'rect(0 0 0 0)',
                     }}
                   >
-                    <option value="all">All Maps ({labelCounts.all || 0})</option>
-                    {showAccountFilters && (
-                      <>
-                        <option value="owned">Owned by Me ({labelCounts.owned || 0})</option>
-                        <option value="shared">Shared with Me ({labelCounts.shared || 0})</option>
-                      </>
-                    )}
-                    <option value="unlabelled">Unlabelled Maps ({labelCounts.unlabelled || 0})</option>
-                    <option value="offline">Downloaded ({labelCounts.offline || 0})</option>
-                    <option value="search">Search</option>
-                    {showAccountFilters && labels.map(l => (
-                      <option key={l.id} value={l.id}>
-                        {l.name} ({labelCounts[l.id] || 0})
-                      </option>
-                    ))}
-                    {Boolean(user) && !isOffline && (
-                      <option value="__new__">+ New Label...</option>
-                    )}
+                    {renderLabelFilterOptions()}
                   </select>
+
+                  {showLabelDropdown && (
+                    <>
+                      <div
+                        style={{ position: 'fixed', inset: 0, zIndex: 100 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowLabelDropdown(false);
+                        }}
+                      />
+                      <div
+                        className="landing-filter-menu"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {renderCustomDropdownItems()}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1639,7 +1833,10 @@ export default function LandingPage() {
               <button
                 type="button"
                 className={`landing-sort-button ${isSortCollapsed ? 'sort-collapsed' : ''}`}
-                onClick={() => setShowSortDropdown(!showSortDropdown)}
+                onClick={() => {
+                  setShowLabelDropdown(false);
+                  setShowSortDropdown(!showSortDropdown);
+                }}
                 aria-label="Change sort order"
                 title={`Sort: ${activeSortMode === 'last_accessed' ? 'Last Accessed' : activeSortMode === 'custom' ? 'Custom' : activeSortMode === 'name' ? 'Alphabetical' : 'Date Created'}`}
               >

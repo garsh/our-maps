@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import LandingPage from '../LandingPage';
@@ -394,6 +394,143 @@ describe('LandingPage label persistence', () => {
 
     expect(screen.queryByRole('img', { name: 'Alice Adams' })).not.toBeInTheDocument();
     expect(screen.getByText('A')).toBeInTheDocument();
+  });
+
+  it('renders user-defined labels first, thick divider, system labels, thick divider, then Search and New Label', async () => {
+    renderLanding();
+
+    const select = await screen.findByLabelText('Filter maps by label') as HTMLSelectElement;
+    const children = Array.from(select.children);
+
+    // Map children to simplified descriptors
+    const childDescriptors = children.map(el => {
+      if (el.tagName.toLowerCase() === 'hr') {
+        return { tag: 'hr', className: el.className };
+      }
+      return { tag: 'option', value: (el as HTMLOptionElement).value };
+    });
+
+    expect(childDescriptors).toEqual([
+      { tag: 'option', value: 'label-123' },
+      { tag: 'hr', className: 'landing-select-divider' },
+      { tag: 'option', value: 'all' },
+      { tag: 'option', value: 'owned' },
+      { tag: 'option', value: 'shared' },
+      { tag: 'option', value: 'unlabelled' },
+      { tag: 'option', value: 'offline' },
+      { tag: 'hr', className: 'landing-select-divider' },
+      { tag: 'option', value: 'search' },
+      { tag: 'option', value: '__new__' },
+    ]);
+  });
+
+  it('omits the top divider when there are no user-defined labels', async () => {
+    (apiService.getLabels as any).mockResolvedValue({
+      labels: [],
+      assignments: [],
+      systemSettings: [],
+      systemOrder: [],
+    });
+
+    renderLanding();
+
+    const select = await screen.findByLabelText('Filter maps by label') as HTMLSelectElement;
+    const children = Array.from(select.children);
+
+    const childDescriptors = children.map(el => {
+      if (el.tagName.toLowerCase() === 'hr') {
+        return { tag: 'hr', className: el.className };
+      }
+      return { tag: 'option', value: (el as HTMLOptionElement).value };
+    });
+
+    expect(childDescriptors).toEqual([
+      { tag: 'option', value: 'all' },
+      { tag: 'option', value: 'owned' },
+      { tag: 'option', value: 'shared' },
+      { tag: 'option', value: 'unlabelled' },
+      { tag: 'option', value: 'offline' },
+      { tag: 'hr', className: 'landing-select-divider' },
+      { tag: 'option', value: 'search' },
+      { tag: 'option', value: '__new__' },
+    ]);
+  });
+
+  it('renders the same filter order in search mode dropdown', async () => {
+    renderLanding();
+
+    const initialSelect = await screen.findByLabelText('Filter maps by label') as HTMLSelectElement;
+    fireEvent.change(initialSelect, { target: { value: 'search' } });
+
+    const select = await screen.findByLabelText('Select label') as HTMLSelectElement;
+    const children = Array.from(select.children);
+
+    const childDescriptors = children.map(el => {
+      if (el.tagName.toLowerCase() === 'hr') {
+        return { tag: 'hr', className: el.className };
+      }
+      return { tag: 'option', value: (el as HTMLOptionElement).value };
+    });
+
+    expect(childDescriptors).toEqual([
+      { tag: 'option', value: 'label-123' },
+      { tag: 'hr', className: 'landing-select-divider' },
+      { tag: 'option', value: 'all' },
+      { tag: 'option', value: 'owned' },
+      { tag: 'option', value: 'shared' },
+      { tag: 'option', value: 'unlabelled' },
+      { tag: 'option', value: 'offline' },
+      { tag: 'hr', className: 'landing-select-divider' },
+      { tag: 'option', value: 'search' },
+      { tag: 'option', value: '__new__' },
+    ]);
+  });
+
+  it('opens custom dropdown on heading click and displays thick dividers', async () => {
+    renderLanding();
+
+    const heading = await screen.findByRole('heading', { level: 2 });
+    expect(heading).toHaveTextContent('All Maps');
+
+    // Click the heading container (role="button", aria-haspopup="menu")
+    const trigger = screen.getByRole('button', { name: /all maps/i });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    // Custom dropdown menu is visible with thick dividers
+    const menu = document.querySelector('.landing-filter-menu');
+    expect(menu).toBeInTheDocument();
+
+    const dividers = menu?.querySelectorAll('.landing-filter-menu-divider');
+    expect(dividers?.length).toBe(2);
+
+    // Click 'Road Trips' user label in the custom menu
+    const userLabelBtn = within(menu as HTMLElement).getByRole('button', { name: /road trips/i });
+    fireEvent.click(userLabelBtn);
+
+    // Menu closes and label is updated
+    await waitFor(() => {
+      expect(document.querySelector('.landing-filter-menu')).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Road Trips');
+    });
+  });
+
+  it('renders custom dropdown in search mode with thick dividers', async () => {
+    renderLanding();
+
+    const initialSelect = await screen.findByLabelText('Filter maps by label') as HTMLSelectElement;
+    fireEvent.change(initialSelect, { target: { value: 'search' } });
+
+    const toggleBtn = await screen.findByLabelText('Toggle label filter menu');
+    fireEvent.click(toggleBtn);
+
+    const menu = document.querySelector('.landing-filter-menu');
+    expect(menu).toBeInTheDocument();
+
+    const dividers = menu?.querySelectorAll('.landing-filter-menu-divider');
+    expect(dividers?.length).toBe(2);
   });
 });
 
